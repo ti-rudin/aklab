@@ -1,0 +1,18 @@
+{
+  "name": "www.todoit.ru",
+  "version": "1.0.0",
+  "main": "ecosystem-local.config.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy:prod": "bash scripts/deploy-prod.sh",
+    "check-env": "node scripts/check-env.js",
+    "health-check": "node scripts/health-check.js",
+    "setup:local": "cp .env.template .env && echo 'Edit .env with your values'"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}
