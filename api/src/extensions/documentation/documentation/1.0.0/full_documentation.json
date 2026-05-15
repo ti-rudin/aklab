@@ -1,21 +1,21 @@
 {
-  "openapi": "3.0.0",
   "info": {
+    "contact": {
+      "name": "TODOIT Support",
+      "email": "tirobots@yandex.ru",
+      "url": "mywebsite.io"
+    },
     "version": "1.0.0",
     "title": "DOCUMENTATION",
     "description": "",
     "termsOfService": "YOUR_TERMS_OF_SERVICE_URL",
-    "contact": {
-      "name": "TEAM",
-      "email": "contact-email@something.io",
-      "url": "mywebsite.io"
-    },
     "license": {
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "x-generation-date": "2026-05-14T12:40:24.692Z"
+    "x-generation-date": "2026-05-15T09:44:30.780Z"
   },
+  "openapi": "3.0.0",
   "x-strapi-config": {
     "plugins": [
       "upload",
