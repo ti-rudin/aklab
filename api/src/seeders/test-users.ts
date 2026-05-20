@@ -1,58 +1,61 @@
 /**
  * Создание тестового пользователя при старте
  * Env: TEST_USER_EMAIL, TEST_USER_PASSWORD (обязательные)
+ * 
+ * КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: После создания пользователя необходимо явно
+ * связать его с ролью в таблице up_users_role_lnk
  */
-export async function seedTestUsers(strapi: any): Promise<void> {
+const bcrypt = require('bcryptjs');
+
+module.exports = async function seedTestUsers(strapi: any): Promise<void> {
   try {
     const email = process.env.TEST_USER_EMAIL;
     const password = process.env.TEST_USER_PASSWORD;
 
     if (!email || !password) {
-      strapi.log.warn('[Seeders] TEST_USER_EMAIL или TEST_USER_PASSWORD не установлены, пропускаем создание test user');
+      strapi.log.warn('[TEST-USER] TEST_USER_EMAIL или TEST_USER_PASSWORD не установлены');
       return;
     }
 
     const username = email.split('@')[0];
 
+    // Получаем прямое соединение с БД
+    const db = strapi.db?.connection?.fn;
+    if (!db || !db.prepare) {
+      strapi.log.error('[TEST-USER] Не могу получить соединение с БД');
+      return;
+    }
+
     // Проверяем существование
-    const existingUser = await strapi.db.query('plugin::users-permissions.user').findOne({
-      where: { email },
-    });
-
-    if (existingUser) {
-      strapi.log.info(`[Seeders] Test user ${email} уже существует`);
+    const existing = db.prepare('SELECT * FROM up_users WHERE email = ?').get(email);
+    if (existing) {
+      strapi.log.info(`[TEST-USER] Пользователь ${email} уже существует (id: ${(existing as any).id})`);
       return;
     }
 
-    // Получаем роль Authenticated (дефолтная роль для пользователей)
-    const authRole = await strapi.db.query('plugin::users-permissions.role').findOne({
-      where: { type: 'authenticated' },
-    });
-
-    if (!authRole) {
-      strapi.log.warn('[Seeders] Роль authenticated не найдена, пропускаем создание test user');
+    // Получаем роль
+    const role = db.prepare('SELECT * FROM up_roles WHERE type = ?').get('authenticated') as any;
+    if (!role?.id) {
+      strapi.log.warn('[TEST-USER] Роль authenticated не найдена');
       return;
     }
 
-    // H2: Хешируем пароль ДО создания пользователя через users-permissions service
-    const userService = strapi.plugin('users-permissions').service('user');
-    const hashedPassword = await userService.hashPassword(password);
+    // Хешируем пароль
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // H1: db.query вместо entityService + hashed password
-    await strapi.db.query('plugin::users-permissions.user').create({
-      data: {
-        username,
-        email,
-        password: hashedPassword,
-        confirmed: true,
-        blocked: false,
-        provider: 'local',
-        role: authRole.id,
-      },
-    });
+    // Создаём пользователя
+    const result = db.prepare(`
+      INSERT INTO up_users (username, email, password, provider, confirmed, blocked, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run(username, email, hashedPassword, 'local', 1, 0) as any;
 
-    strapi.log.info(`[Seeders] Test user ${email} создан`);
+    // КЛЮЧЕВОЕ: Связываем пользователя с ролью
+    db.prepare('INSERT INTO up_users_role_lnk (user_id, role_id) VALUES (?, ?)').run(result.lastInsertRowid, role.id);
+
+    strapi.log.info(`[TEST-USER] Пользователь ${email} создан (id: ${result.lastInsertRowid})`);
+
   } catch (error: any) {
-    strapi.log.error('[Seeders] Ошибка создания test user:', error.message);
+    strapi.log.error('[TEST-USER] Ошибка:', error?.message || String(error));
   }
-}
+};
