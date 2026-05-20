@@ -6,7 +6,7 @@ module.exports = {
       name: 'aklab-api',
       cwd: '/home/rudin/aklab/api',
       script: 'node',
-      args: 'node_modules/@strapi/strapi/bin/strapi.js start',
+      args: 'node_modules/@strapi/strapi/bin/strapi.js develop',
       interpreter: 'none',
       health_check: {
         url: 'http://localhost:1338/_health',
