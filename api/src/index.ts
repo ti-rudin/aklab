@@ -1,19 +1,20 @@
-import type { Core } from '@strapi/strapi';
-import { runSeeders } from './seeders';
+// import type { Core } from '@strapi/strapi';
 
 export default {
+  /**
+   * An asynchronous register function that runs before
+   * your application is initialized.
+   *
+   * This gives you an opportunity to extend code.
+   */
   register(/* { strapi }: { strapi: Core.Strapi } */) {},
 
-  async bootstrap({ strapi }: { strapi: Core.Strapi }) {
-    // Валидация обязательных env vars
-    const required = ['APP_KEYS', 'JWT_SECRET', 'ADMIN_JWT_SECRET', 'API_TOKEN_SALT', 'TRANSFER_TOKEN_SALT'];
-    const missing = required.filter((v) => !process.env[v]);
-    if (missing.length > 0) {
-      strapi.log.error(`[Bootstrap] Отсутствуют критические env переменные: ${missing.join(', ')}`);
-      process.exit(1);
-    }
-
-    // Seeders
-    await runSeeders(strapi);
-  },
+  /**
+   * An asynchronous bootstrap function that runs before
+   * your application gets started.
+   *
+   * This gives you an opportunity to set up your data model,
+   * run jobs, or perform some special logic.
+   */
+  bootstrap(/* { strapi }: { strapi: Core.Strapi } */) {},
 };
