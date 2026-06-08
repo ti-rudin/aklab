@@ -145,4 +145,5 @@ api/package-lock.json
 app/package-lock.json
 .playwright-mcp/
 # Strapi auto-generated documentation at dev/start time
-api/src/extensions/documentation/documentation/*/full_documentation.jsonapi/.env.bak.*
+api/src/extensions/documentation/documentation/*/full_documentation.json
+api/.env.bak.*
