@@ -119,6 +119,9 @@ fi
 if [ "$NEED_INSTALL" = "true" ]; then
   log "npm install (root + workspaces)..."
   npm install --include=dev 2>&1 | tail -5
+  log "Install Playwright system deps + chromium..."
+  npx playwright install-deps chromium 2>&1 | tail -3 || true
+  npx playwright install chromium 2>&1 | tail -3
 else
   log "package-lock.json не изменился — пропускаем npm install"
 fi
