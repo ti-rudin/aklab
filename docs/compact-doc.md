@@ -208,6 +208,14 @@ deploy-prod.sh + бамп версии).
   fedresurs stub-парсер, health server, winston logger, zod config),
   ecosystem configs обновлены (dev + prod), `STRAPI_API_TOKEN` в .env.
   Fedresurs — SPA, нужен Playwright или внутренний API (stub пока). ✅
+- **Фаза 5 завершена** (8 июня 2026): Web UI MVP —
+  `PropertyListView.vue` (таблица + фильтры + пагинация),
+  `PropertyDetailView.vue` (карточка + статус + комментарии),
+  роуты `/properties` и `/properties/:id`, навигация. ✅
+- **Фаза 6 завершена** (8 июня 2026): analyzer микросервис —
+  `services/analyzer/` (сравнение Property с MarketReference,
+  вычисление deviation_percent, установка is_undervalued),
+  ecosystem configs обновлены. ✅
 - Содержимое:
   - **api/src/api/** — 5 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog) + controllers + services +
@@ -275,10 +283,9 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
-**Следующие шаги** (после чекпоинта Фазы 4):
-1. **Фаза 5** — Web UI MVP (список Property + фильтры + детали)
-2. **Фаза 6** — analyzer микросервис (сравнение с MarketReference)
-3. **Фаза 8** — Deploy на 151 (обновить ecosystem.config.js)
+**Следующие шаги** (после чекпоинта Фазы 6):
+1. **Фаза 7** — digest микросервис (утренний email)
+2. **Фаза 8** — Deploy на 151 (обновить deploy-prod.sh, npm install + build для services/*)
 
 **Локальное состояние**:
 - `~/github.nosync/aklab` — ветка `main`, последний коммит `1803f60`
