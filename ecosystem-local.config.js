@@ -47,5 +47,19 @@ module.exports = {
         STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
       },
     },
+    {
+      name: 'aklab-analyzer-dev',
+      cwd: __dirname + '/services/analyzer',
+      script: 'npm',
+      args: 'run dev',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        QUEUE_DB_PATH: __dirname + '/queue.db',
+        STRAPI_URL: 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+      },
+    },
   ],
 };
