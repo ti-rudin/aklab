@@ -5,21 +5,17 @@
  * Донор: strapi/src/services/queueService.ts в tirobots.
  *
  * Фаза 0: скелет — инициализация очереди, базовые методы.
- * Фаза 3 наполнит REQUEST_TYPE_TO_QUEUE конкретными типами.
+ * Фаза 3: REQUEST_TYPE_TO_QUEUE заполнен по docs/plan2.md.
  */
 
 import { SqliteQueue } from '@aklab/sqlite-queue';
 import type { Job } from '@aklab/sqlite-queue';
 
 // Маппинг requestType → имя SQLite очереди.
-// TODO Фаза 3: заполнить по docs/plan2.md:
-//   'parse:bankruptcy:request'    → 'parse-bankruptcy'
-//   'analyze:property:request'     → 'analyze-property'
-//   'digest:send:request'          → 'digest-send'
 const REQUEST_TYPE_TO_QUEUE: Record<string, string> = {
-  // 'parse:bankruptcy:request': 'parse-bankruptcy',
-  // 'analyze:property:request':  'analyze-property',
-  // 'digest:send:request':       'digest-send',
+  'parse:bankruptcy:request': 'parse-bankruptcy',
+  'analyze:property:request': 'analyze-property',
+  'digest:send:request': 'digest-send',
 };
 
 // Singleton SqliteQueue

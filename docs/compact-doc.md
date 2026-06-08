@@ -197,6 +197,12 @@ deploy-prod.sh + бамп версии).
 - **Фаза 1.5 завершена** (8 июня 2026): UI для MarketReference —
   `MarketReferencesView.vue` (таблица + форма добавления + inline edit цены +
   activate/deactivate), роут `/market-references`, ссылка из SettingsView. ✅
+- **Фаза 2 завершена** (8 июня 2026): Email-провайдер —
+  `@strapi/provider-email-nodemailer` в plugins.ts, SMTP через Yandex. ✅
+- **Фаза 3 завершена** (8 июня 2026): Queue + cron —
+  `REQUEST_TYPE_TO_QUEUE` заполнен (3 очереди), 4 cron-задачи
+  (parse:bankruptcy, analyze:properties, digest:morning, cleanup:old),
+  `@types/node-cron`, `node-cron` в api/package.json. ✅
 - Содержимое:
   - **api/src/api/** — 5 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog) + controllers + services +
@@ -264,10 +270,10 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
-**Следующие шаги** (после чекпоинта Фазы 1.5):
-1. **Фаза 2** — Email-провайдер (SMTP через nodemailer)
-2. **Фаза 3** — SQLite-queue + cron bootstrap
-3. **Фаза 4** — parser-bankruptcy микросервис
+**Следующие шаги** (после чекпоинта Фазы 3):
+1. **Фаза 4** — parser-bankruptcy микросервис (первый парсер)
+2. **Фаза 5** — Web UI MVP (список Property + фильтры)
+3. **Фаза 8** — Deploy на 151 (обновить ecosystem.config.js)
 
 **Локальное состояние**:
 - `~/github.nosync/aklab` — ветка `main`, последний коммит `1803f60`

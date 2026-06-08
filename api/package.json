@@ -18,8 +18,10 @@
     "@strapi/plugin-cloud": "5.44.0",
     "@strapi/plugin-documentation": "^5.44.0",
     "@strapi/plugin-users-permissions": "5.44.0",
+    "@strapi/provider-email-nodemailer": "^5.44.0",
     "@strapi/strapi": "5.44.0",
     "better-sqlite3": "12.8.0",
+    "node-cron": "^3.0.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/node-cron": "^3",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "typescript": "^5"
