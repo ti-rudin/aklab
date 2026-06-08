@@ -7,7 +7,7 @@
     <!-- Hero -->
     <header class="calculator-hero">
       <div class="calculator-hero__divider calculator-hero__divider--top" aria-hidden="true"></div>
-      <h1>TODOIT: System Exposure</h1>
+      <h1>AKLAB: System Exposure</h1>
       <p class="calculator-hero__subtitle">Калькулятор профиля системы</p>
       <p class="calculator-hero__tagline">Вводите факторы 1–5 — получайте индексы, executive-summary и графики.</p>
       <div class="calculator-hero__divider" aria-hidden="true"></div>
@@ -381,7 +381,7 @@
           </article>
 
           <article class="calc-card calculator-card">
-            <h3 class="calculator-subtitle">Рекомендуемые практики по осям TODOIT</h3>
+            <h3 class="calculator-subtitle">Рекомендуемые практики по осям AKLAB</h3>
             <div class="calculator-axis-practices" style="margin-top: 10px">
               <p class="calc-card-text" style="color: var(--text-muted)">Показываются только практики для факторов, которые не в «идеале».</p>
             </div>

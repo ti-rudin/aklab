@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col items-center justify-center min-h-[60vh] px-4">
-    <h1 class="text-4xl font-bold mb-4" style="color: var(--text-main)">TODOIT</h1>
+    <h1 class="text-4xl font-bold mb-4" style="color: var(--text-main)">AKLAB</h1>
     <p class="text-lg mb-8" style="color: var(--text-muted)">Система замеров и аналитики</p>
     <div class="flex gap-4">
       <router-link

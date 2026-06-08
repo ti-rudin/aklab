@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Деплой TODOIT в production
+# Деплой AKLAB в production
 # Usage: ./scripts/deploy-prod.sh [--force]
 
 set -e
@@ -47,8 +47,8 @@ rollback() {
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
     fi
-    pm2 restart todoit-api todoit-app 2>/dev/null || true
-    notify "❌ TODOIT deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
+    pm2 restart aklab-api aklab-app 2>/dev/null || true
+    notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
 }
 trap rollback ERR
@@ -123,7 +123,7 @@ log "Build App..."
 
 # === Step 7: PM2 restart ===
 log "PM2 restart..."
-pm2 stop todoit-api todoit-app 2>/dev/null || true
+pm2 stop aklab-api aklab-app 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
@@ -163,4 +163,4 @@ git push origin main 2>/dev/null || warn "Git push не удался (прове
 
 # === Done ===
 log "Deploy завершён успешно!"
-notify "✅ TODOIT v${VERSION} задеплоен"
+notify "✅ AKLAB v${VERSION} задеплоен"

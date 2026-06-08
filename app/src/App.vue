@@ -10,12 +10,12 @@
         <div class="flex justify-between h-16 items-center">
           <!-- Логотип -->
           <div class="flex items-center gap-6">
-            <router-link to="/" class="flex items-center" aria-label="TODOIT — на главную">
+            <router-link to="/" class="flex items-center" aria-label="AKLAB — на главную">
               <span
                 class="text-xl font-bold"
                 style="background: linear-gradient(110deg, #6d829e 0%, #9eb2cc 12%, #d2deef 24%, #ffffff 34%, #e8eef8 42%, #a4b6ce 52%, #f5f8fd 64%, #8fa4be 78%, #c5d3e6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text"
               >
-                TODOIT
+                AKLAB
               </span>
             </router-link>
 

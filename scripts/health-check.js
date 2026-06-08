@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Health check для TODOIT сервисов
+ * Health check для AKLAB сервисов
  * Usage: node scripts/health-check.js
  */
 
