@@ -26,11 +26,6 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         minLength: 1;
       }>;
-    adminPermissions: Schema.Attribute.Relation<
-      'oneToMany',
-      'admin::permission'
-    >;
-    adminUserOwner: Schema.Attribute.Relation<'manyToOne', 'admin::user'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -44,9 +39,6 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
         minLength: 1;
       }>;
     expiresAt: Schema.Attribute.DateTime;
-    kind: Schema.Attribute.Enumeration<['content-api', 'admin']> &
-      Schema.Attribute.Required &
-      Schema.Attribute.DefaultTo<'content-api'>;
     lastUsedAt: Schema.Attribute.DateTime;
     lifespan: Schema.Attribute.BigInteger;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -64,6 +56,7 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
     >;
     publishedAt: Schema.Attribute.DateTime;
     type: Schema.Attribute.Enumeration<['read-only', 'full-access', 'custom']> &
+      Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<'read-only'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
@@ -141,7 +134,6 @@ export interface AdminPermission extends Struct.CollectionTypeSchema {
         minLength: 1;
       }>;
     actionParameters: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<{}>;
-    apiToken: Schema.Attribute.Relation<'manyToOne', 'admin::api-token'>;
     conditions: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
@@ -393,8 +385,6 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
     };
   };
   attributes: {
-    apiTokens: Schema.Attribute.Relation<'oneToMany', 'admin::api-token'> &
-      Schema.Attribute.Private;
     blocked: Schema.Attribute.Boolean &
       Schema.Attribute.Private &
       Schema.Attribute.DefaultTo<false>;
@@ -437,6 +427,54 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     username: Schema.Attribute.String;
+  };
+}
+
+export interface ApiZamerZamer extends Struct.CollectionTypeSchema {
+  collectionName: 'zamers';
+  info: {
+    description: '\u0417\u0430\u043C\u0435\u0440 \u043F\u0440\u043E\u0444\u0438\u043B\u044F \u0441\u0438\u0441\u0442\u0435\u043C\u044B TODOIT';
+    displayName: 'Zamer';
+    pluralName: 'zamers';
+    singularName: 'zamer';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    annualRevenueRub: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    branchesCount: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    ceoCfoKpiAvailability: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    companyUsers: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    factors: Schema.Attribute.JSON;
+    industry: Schema.Attribute.String;
+    itCapexMlnRub: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itDependencyPct: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<100>;
+    itDevPct: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itFotMlnRub: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itMgmtPct: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itOpexMlnRub: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itOpsPct: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itStaffTotal: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    itSupportPct: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'api::zamer.zamer'> &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    owner: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
+    publishedAt: Schema.Attribute.DateTime;
+    results: Schema.Attribute.JSON;
+    staffTotal: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
   };
 }
 
@@ -951,6 +989,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
+      'api::zamer.zamer': ApiZamerZamer;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
       'plugin::i18n.locale': PluginI18NLocale;
