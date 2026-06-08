@@ -1,20 +1,21 @@
-// import type { Core } from '@strapi/strapi';
+import type { Core } from '@strapi/strapi';
+import { runSeeders } from './seeders';
 
 export default {
   /**
-   * An asynchronous register function that runs before
-   * your application is initialized.
-   *
-   * This gives you an opportunity to extend code.
+   * Runs before the application is initialized.
    */
-  register(/* { strapi }: { strapi: Core.Strapi } */) {},
+  register() {},
 
   /**
-   * An asynchronous bootstrap function that runs before
-   * your application gets started.
-   *
-   * This gives you an opportunity to set up your data model,
-   * run jobs, or perform some special logic.
+   * Bootstrap: запускает seed'ы (admin + test user) перед стартом приложения.
+   * Логика вынесена в src/seeders/index.ts (по образцу tirobots).
    */
-  bootstrap(/* { strapi }: { strapi: Core.Strapi } */) {},
+  async bootstrap({ strapi }: { strapi: Core.Strapi }) {
+    try {
+      await runSeeders(strapi as any);
+    } catch (err: any) {
+      strapi.log.error(`[bootstrap] runSeeders failed: ${err.message}`);
+    }
+  },
 };
