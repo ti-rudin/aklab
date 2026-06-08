@@ -164,6 +164,12 @@ deploy-prod.sh + бамп версии).
   Если упадёт — Strapi обычно стартует, просто скрипт не дождался.
 - **Admin при первом старте создаётся через /admin web UI**, не через env.
   Чтобы авто-seed из env — есть `api/src/seeders/index.ts`.
+- **Routes нужно создавать ВРУЧНУЮ через `factories.createCoreRouter(uid)`**.
+  Strapi 5 НЕ авто-генерирует CRUD-routes из content-types. Без
+  `api/src/api/<name>/routes/<name>.ts` файл endpoints возвращают 404
+  (хотя contentTypes зарегистрированы и таблицы в БД созданы).
+  Это противоречит тому, что пишут в некоторых старых туториалах для
+  Strapi 4 — для v5 нужен явный routes-файл.
 
 ### Git / .gitignore
 
@@ -183,17 +189,15 @@ deploy-prod.sh + бамп версии).
 - **Фаза 0 завершена** (8 июня 2026): `@aklab/sqlite-queue` в `lib/`,
   workspaces, `queueService.ts` singleton, `cron/index.ts` stub,
   слоты в PM2 под будущие сервисы. ✅ коммит `f913ea0`, push в origin main.
-- **Фаза 1 — ЧАСТИЧНО** (8 июня 2026): 5 content-types созданы, dist
-  пересобран, register+bootstrap работают, таблицы в БД созданы,
-  Setting засеян, public permissions добавлены (25 actions).
-  ❌ **БЛОКЕР**: GET /api/properties → 404 даже с API-токеном.
-  Гипотеза: dev-mode (`strapi develop`) не подхватывает новые
-  content-types в router'е, нужен production build + `strapi start`.
-  В процессе проверки.
+- **Фаза 1 завершена** (8 июня 2026): 5 content-types созданы, 5
+  routes-файлов (`factories.createCoreRouter`), dist пересобран,
+  register+bootstrap работают, таблицы в БД созданы, Setting засеян,
+  public permissions добавлены (25 actions), endpoints возвращают 200. ✅
+  Коммит `1803f60` + `(pending)` для routes.
 - Содержимое:
   - **api/src/api/** — 5 content-types (Property, Setting singleton,
-    MarketReference, UserComment, CronLog) + controllers + services,
-    `routes/<name>.ts` **УДАЛЕНЫ** (Strapi 5 авто-генерирует CRUD)
+    MarketReference, UserComment, CronLog) + controllers + services +
+    **routes** (фабрики `createCoreRouter(uid)` для каждого)
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/cron/index.ts** — stub `registerCrons()`
   - **api/src/seeders/index.ts** — `seedSettings()` + `seedPublicPermissions()`
@@ -236,37 +240,42 @@ deploy-prod.sh + бамп версии).
 
 **Сделано в Фазе 1** (8 июня 2026):
 - ✅ 5 content-types + controllers + services
-- ✅ dist пересобран (`rm -rf dist && npx strapi build` в фоне)
-- ✅ register() + bootstrap() работают (видно в pm2 logs:
-  `[register] QueueService initialized`, `[seed] ✅ Setting создан`,
-  `[cron] registerCrons() called`)
-- ✅ 5 таблиц в `api/.tmp/data.db` (properties, setting, market_references,
-  user_comments, cron_logs)
+- ✅ 5 routes-файлов через `factories.createCoreRouter(uid)`
+- ✅ `api/config/plugins.ts` — `jwtSecret: env('JWT_SECRET')` (фикс,
+  иначе users-permissions bootstrap падал)
+- ✅ dist пересобран, register+bootstrap работают
+- ✅ 5 таблиц в `api/.tmp/data.db` созданы
 - ✅ 25 public permissions (find/findOne/create/update/delete × 5)
-- ❌ Endpoints возвращают 404 (NotFoundError) — даже с API-токеном
+- ✅ Все endpoints возвращают HTTP 200 (для пустых коллекций `data: []`,
+  для singleton `setting` — `data: {...}`)
 
-**Текущая гипотеза блокера**:
-- В dev-mode `strapi develop` Strapi 5 пересобирает dist на лету,
-  но **router не подхватывает новые content-types** автоматически.
-- Решение: переключиться на `strapi build && strapi start` (production mode)
-  и перезапустить. Если после этого endpoints отдают 200/403 — закрыть Фазу 1.
+**Найдено и исправлено по ходу Фазы 1**:
+- ❌→✅ Endpoints `/api/*` → 404 (root cause: Strapi 5 НЕ авто-генерирует
+  routes; нужен явный `routes/<name>.ts` через `factories.createCoreRouter`)
+- ❌→✅ `Missing jwtSecret` при `strapi start` (root cause:
+  `api/config/plugins.ts` был пустым с момента merge 151)
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно (там уже таблицы и admin).
-- ❌ Не создавать `routes/<name>.ts` для content-types (см. gotcha #2).
 - ❌ Не запускать миграции Strapi (`strapi migration`) — мы на dev-режиме.
+- ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
+  endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
 **Следующие шаги** (после чекпоинта Фазы 1):
-1. Коммит + push Фазы 1 (содержимое есть, рестартовали на prod build)
-2. **Фаза 1.5** — UI для MarketReference (Vue-компонент, fetch с /api)
-3. **Фаза 2** — Email digest (HTML-шаблоны, расписание через cron)
+1. Push коммитов Фазы 1 (`1803f60` + `(pending)` для routes) в origin main
+2. Задеплоить на 192.168.11.151 через `scripts/deploy-prod.sh`
+3. **Фаза 1.5** — UI для MarketReference (Vue-компонент, fetch с /api)
+4. **Фаза 2** — Email digest (HTML-шаблоны, расписание через cron)
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `f913ea0`
-  (Фаза 0). Изменения Фазы 1 **не закоммичены** (5 schema.json +
-  seeders/index.ts + api/src/index.ts).
-- pm2: `aklab-api` online (Strapi dev), `aklab-app` online (Vite 5174).
-- Build Фазы 1 в процессе (background session_id `proc_95ef814aaea7`).
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `1803f60`
+  (jwtSecret фикс). `routes/<name>.ts` — в pending, плюс обновлён
+  `docs/compact-doc.md`.
+- Фаза 1 проверена локально: все endpoints /api/* возвращают 200,
+  /api/setting отдаёт singleton, /api/properties/1 → 404 (нет записи,
+  это правильно).
+- pm2: локально крутится `proc_bdb001e47ac3` (Strapi production), на 151
+  — `aklab-api` / `aklab-app`.
 
 ## Известные баги / TODO
 
