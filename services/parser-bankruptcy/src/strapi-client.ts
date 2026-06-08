@@ -69,7 +69,7 @@ export async function createProperty(props: {
   price_per_sqm?: number;
   property_type: string;
   auction_type: string;
-  published_at?: string;
+  published_at_source?: string;
   description?: string;
   contacts?: string;
 }): Promise<StrapiProperty> {
