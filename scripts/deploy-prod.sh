@@ -59,6 +59,20 @@ ROLLBACK_SHA=$(git rev-parse HEAD)
 log "Rollback SHA: ${ROLLBACK_SHA:0:8}"
 git pull origin main
 
+# === Step 1.5: Bump patch version ===
+CURRENT_VERSION=$(node -e "console.log(require('./package.json').version)")
+log "Bump version ${CURRENT_VERSION} → next patch..."
+NEW_VERSION=$(node -e "
+  const fs = require('fs');
+  const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+  const parts = pkg.version.split('.').map(Number);
+  parts[2]++;
+  pkg.version = parts.join('.');
+  fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+  console.log(pkg.version);
+")
+log "New version: ${NEW_VERSION}"
+
 # === Step 2: Pre-flight ===
 log "Pre-flight checks..."
 node scripts/check-env.js
@@ -127,18 +141,20 @@ pm2 stop aklab-api aklab-app 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
+# Strapi admin build занимает ~140s + ~10-20s на старт runtime.
+# Ждём до 3 минут (18 × 10s) — иначе rollback.
 log "Health check..."
-sleep 5
+sleep 10
 
 STRAPI_OK=false
-for i in 1 2 3 4 5 6; do
+for i in $(seq 1 18); do
   STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:1338/_health 2>/dev/null || echo "000")
   if [ "$STATUS" = "200" ] || [ "$STATUS" = "204" ]; then
     STRAPI_OK=true
     break
   fi
-  warn "Strapi не отвечает (attempt $i/6), ждём 5s..."
-  sleep 5
+  warn "Strapi не отвечает (attempt $i/18), ждём 10s..."
+  sleep 10
 done
 
 if [ "$STRAPI_OK" != "true" ]; then
