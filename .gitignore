@@ -75,6 +75,11 @@ $RECYCLE.BIN/
 *.sql
 *.sqlite
 *.sqlite3
+# SQLite queue (WAL/SHM файлы имеют суффиксы)
+queue.db
+queue.db-wal
+queue.db-shm
+queue.db-journal
 
 
 ############################

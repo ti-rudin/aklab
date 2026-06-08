@@ -1,21 +1,41 @@
 import type { Core } from '@strapi/strapi';
 import { runSeeders } from './seeders';
+import { getQueueService } from './services/queueService';
+import { registerCrons } from './cron';
 
 export default {
   /**
    * Runs before the application is initialized.
+   * Инициализирует QueueService (открывает queue.db через @aklab/sqlite-queue).
+   * Если БД не создана — она создастся автоматически при первом обращении.
    */
-  register() {},
+  register() {
+    try {
+      getQueueService();
+      strapi.log?.info?.('[register] QueueService initialized');
+    } catch (err: any) {
+      // strapi.log может быть ещё не доступен — fallback в console
+      // eslint-disable-next-line no-console
+      console.error(`[register] QueueService init failed: ${err?.message || err}`);
+    }
+  },
 
   /**
-   * Bootstrap: запускает seed'ы (admin + test user) перед стартом приложения.
+   * Bootstrap: seed'ы (admin + test user) + регистрация cron-задач.
    * Логика вынесена в src/seeders/index.ts (по образцу tirobots).
+   * Cron-задачи — в src/cron/index.ts (Фаза 0: stub, наполнится в Фазе 3).
    */
   async bootstrap({ strapi }: { strapi: Core.Strapi }) {
     try {
       await runSeeders(strapi as any);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] runSeeders failed: ${err.message}`);
+    }
+
+    try {
+      registerCrons(strapi as any);
+    } catch (err: any) {
+      strapi.log.error(`[bootstrap] registerCrons failed: ${err.message}`);
     }
   },
 };
