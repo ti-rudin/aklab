@@ -1,0 +1,22 @@
+{
+  "name": "@aklab/sqlite-queue",
+  "version": "0.1.0",
+  "description": "SQLite job queue for aklab — донор @tirobots/sqlite-queue",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "*.js",
+    "*.d.ts",
+    "*.js.map",
+    "package.json"
+  ],
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "@types/better-sqlite3": "^7.6.0"
+  }
+}

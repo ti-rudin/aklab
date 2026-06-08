@@ -30,5 +30,23 @@ module.exports = {
         PORT: process.env.PORT_APP || 5174,
       },
     },
+    // ─────────────────────────────────────────────────────────────────
+    // Микросервисы (dev): слоты закомментированы, появятся в Фазе 8.
+    // В dev режиме сервисы можно запускать отдельно:
+    //   cd services/parser-bankruptcy && npm run dev
+    // ─────────────────────────────────────────────────────────────────
+    // {
+    //   name: 'aklab-parser-bankruptcy-dev',
+    //   cwd: __dirname + '/services/parser-bankruptcy',
+    //   script: 'npm',
+    //   args: 'run dev',
+    //   interpreter: 'none',
+    //   env: {
+    //     ...process.env,
+    //     NODE_ENV: 'development',
+    //     QUEUE_DB_PATH: __dirname + '/queue.db',
+    //     STRAPI_URL: 'http://localhost:1338',
+    //   },
+    // },
   ],
 };
