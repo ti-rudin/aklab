@@ -63,7 +63,7 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
           price_per_sqm: prop.price_per_sqm,
           property_type: prop.property_type,
           auction_type: prop.auction_type,
-          published_at: prop.published_at,
+          published_at_source: prop.published_at,
           description: prop.description,
           contacts: prop.contacts,
         });

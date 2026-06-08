@@ -107,6 +107,7 @@ const { isDark, toggleTheme } = useTheme()
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 const navItems = [
+  { to: '/properties', label: 'Объекты' },
   { to: '/zamery', label: 'Замеры' },
   { to: '/settings', label: 'Настройки' },
 ]

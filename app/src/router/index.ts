@@ -24,6 +24,18 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/properties',
+      name: 'properties',
+      component: () => import('../views/PropertyListView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/properties/:id',
+      name: 'property-detail',
+      component: () => import('../views/PropertyDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/zamery/new',
       name: 'zamery-new',
       component: () => import('../views/ZameryEditView.vue'),
