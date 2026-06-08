@@ -1,0 +1,101 @@
+{
+  "kind": "collectionType",
+  "collectionName": "properties",
+  "info": {
+    "singularName": "property",
+    "pluralName": "properties",
+    "displayName": "Property"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "source": {
+      "type": "enumeration",
+      "enum": [
+        "fedresurs",
+        "aggregator-bankrot",
+        "torgi-gov",
+        "investmoscow",
+        "invest-mosreg",
+        "roseltorg",
+        "fabrikant",
+        "alfalot",
+        "etprf",
+        "sberbank-ast",
+        "m-ets"
+      ],
+      "required": true
+    },
+    "external_id": {
+      "type": "string",
+      "required": true
+    },
+    "url": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "address": {
+      "type": "text"
+    },
+    "city": {
+      "type": "enumeration",
+      "enum": ["moscow", "mo", "other"],
+      "default": "moscow"
+    },
+    "area_sqm": {
+      "type": "decimal"
+    },
+    "price": {
+      "type": "decimal"
+    },
+    "price_per_sqm": {
+      "type": "decimal"
+    },
+    "property_type": {
+      "type": "enumeration",
+      "enum": ["office", "warehouse", "retail", "production", "free_purpose", "other"],
+      "default": "other"
+    },
+    "auction_type": {
+      "type": "enumeration",
+      "enum": ["bankruptcy", "privatization", "marketplace"],
+      "default": "bankruptcy"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["new", "in_progress", "viewed", "rejected"],
+      "default": "new",
+      "required": true
+    },
+    "is_undervalued": {
+      "type": "boolean",
+      "default": null
+    },
+    "deviation_percent": {
+      "type": "decimal"
+    },
+    "manual_price_per_sqm": {
+      "type": "decimal"
+    },
+    "published_at_source": {
+      "type": "datetime"
+    },
+    "description": {
+      "type": "text"
+    },
+    "contacts": {
+      "type": "text"
+    },
+    "comments": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::user-comment.user-comment",
+      "mappedBy": "property"
+    }
+  }
+}

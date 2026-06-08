@@ -430,6 +430,216 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiCronLogCronLog extends Struct.CollectionTypeSchema {
+  collectionName: 'cron_logs';
+  info: {
+    displayName: 'Cron Log';
+    pluralName: 'cron-logs';
+    singularName: 'cron-log';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    error: Schema.Attribute.Text;
+    finished_at: Schema.Attribute.DateTime;
+    items_processed: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::cron-log.cron-log'
+    > &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    started_at: Schema.Attribute.DateTime & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiMarketReferenceMarketReference
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'market_references';
+  info: {
+    displayName: 'Market Reference';
+    pluralName: 'market-references';
+    singularName: 'market-reference';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    city: Schema.Attribute.Enumeration<['moscow', 'mo', 'other']> &
+      Schema.Attribute.Required;
+    created_by: Schema.Attribute.String;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    effective_from: Schema.Attribute.Date & Schema.Attribute.Required;
+    is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::market-reference.market-reference'
+    > &
+      Schema.Attribute.Private;
+    notes: Schema.Attribute.Text;
+    price_per_sqm: Schema.Attribute.Decimal & Schema.Attribute.Required;
+    property_type: Schema.Attribute.Enumeration<
+      ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']
+    > &
+      Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
+  collectionName: 'properties';
+  info: {
+    displayName: 'Property';
+    pluralName: 'properties';
+    singularName: 'property';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    address: Schema.Attribute.Text;
+    area_sqm: Schema.Attribute.Decimal;
+    auction_type: Schema.Attribute.Enumeration<
+      ['bankruptcy', 'privatization', 'marketplace']
+    > &
+      Schema.Attribute.DefaultTo<'bankruptcy'>;
+    city: Schema.Attribute.Enumeration<['moscow', 'mo', 'other']> &
+      Schema.Attribute.DefaultTo<'moscow'>;
+    comments: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::user-comment.user-comment'
+    >;
+    contacts: Schema.Attribute.Text;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    description: Schema.Attribute.Text;
+    deviation_percent: Schema.Attribute.Decimal;
+    external_id: Schema.Attribute.String & Schema.Attribute.Required;
+    is_undervalued: Schema.Attribute.Boolean;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::property.property'
+    > &
+      Schema.Attribute.Private;
+    manual_price_per_sqm: Schema.Attribute.Decimal;
+    price: Schema.Attribute.Decimal;
+    price_per_sqm: Schema.Attribute.Decimal;
+    property_type: Schema.Attribute.Enumeration<
+      ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']
+    > &
+      Schema.Attribute.DefaultTo<'other'>;
+    published_at_source: Schema.Attribute.DateTime;
+    publishedAt: Schema.Attribute.DateTime;
+    source: Schema.Attribute.Enumeration<
+      [
+        'fedresurs',
+        'aggregator-bankrot',
+        'torgi-gov',
+        'investmoscow',
+        'invest-mosreg',
+        'roseltorg',
+        'fabrikant',
+        'alfalot',
+        'etprf',
+        'sberbank-ast',
+        'm-ets',
+      ]
+    > &
+      Schema.Attribute.Required;
+    status: Schema.Attribute.Enumeration<
+      ['new', 'in_progress', 'viewed', 'rejected']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'new'>;
+    title: Schema.Attribute.String & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    url: Schema.Attribute.String;
+  };
+}
+
+export interface ApiSettingSetting extends Struct.SingleTypeSchema {
+  collectionName: 'setting';
+  info: {
+    displayName: 'Setting';
+    pluralName: 'settings';
+    singularName: 'setting';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    active_sources: Schema.Attribute.JSON;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    digest_time: Schema.Attribute.String & Schema.Attribute.DefaultTo<'09:00'>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::setting.setting'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    retention_months: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<6>;
+    smtp_to: Schema.Attribute.String;
+    threshold_percent: Schema.Attribute.Decimal &
+      Schema.Attribute.DefaultTo<20>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    work_hours_end: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<21>;
+    work_hours_start: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<9>;
+  };
+}
+
+export interface ApiUserCommentUserComment extends Struct.CollectionTypeSchema {
+  collectionName: 'user_comments';
+  info: {
+    displayName: 'User Comment';
+    pluralName: 'user-comments';
+    singularName: 'user-comment';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::user-comment.user-comment'
+    > &
+      Schema.Attribute.Private;
+    property: Schema.Attribute.Relation<'manyToOne', 'api::property.property'>;
+    publishedAt: Schema.Attribute.DateTime;
+    text: Schema.Attribute.Text & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface PluginContentReleasesRelease
   extends Struct.CollectionTypeSchema {
   collectionName: 'strapi_releases';
@@ -941,6 +1151,11 @@ declare module '@strapi/strapi' {
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
+      'api::cron-log.cron-log': ApiCronLogCronLog;
+      'api::market-reference.market-reference': ApiMarketReferenceMarketReference;
+      'api::property.property': ApiPropertyProperty;
+      'api::setting.setting': ApiSettingSetting;
+      'api::user-comment.user-comment': ApiUserCommentUserComment;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
       'plugin::i18n.locale': PluginI18NLocale;

@@ -1,0 +1,43 @@
+{
+  "kind": "collectionType",
+  "collectionName": "market_references",
+  "info": {
+    "singularName": "market-reference",
+    "pluralName": "market-references",
+    "displayName": "Market Reference"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "city": {
+      "type": "enumeration",
+      "enum": ["moscow", "mo", "other"],
+      "required": true
+    },
+    "property_type": {
+      "type": "enumeration",
+      "enum": ["office", "warehouse", "retail", "production", "free_purpose", "other"],
+      "required": true
+    },
+    "price_per_sqm": {
+      "type": "decimal",
+      "required": true
+    },
+    "effective_from": {
+      "type": "date",
+      "required": true
+    },
+    "notes": {
+      "type": "text"
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

@@ -29,6 +29,8 @@ const TEST_PWD_ENV = process.env['TEST_USER_' + 'PASSWORD'];
 export async function runSeeders(strapi: StrapiInstance): Promise<void> {
   await seedStrapiAdmin(strapi);
   await seedTestUser(strapi);
+  await seedSettings(strapi);
+  await seedPublicPermissions(strapi);
 }
 
 /**
@@ -159,6 +161,119 @@ async function seedTestUser(strapi: StrapiInstance): Promise<void> {
     strapi.log.info(`[seed] ✅ Test user ${TEST_ENV} создан (роль authenticated)`);
   } catch (err: any) {
     strapi.log.error(`[seed] Ошибка создания test user: ${err.message}`);
+    strapi.log.error(err);
+  }
+}
+
+/**
+ * Создаёт дефолтную запись Setting (singleton), если её ещё нет.
+ *
+ * Singleton в Strapi 5 — findOne возвращает null если ничего нет.
+ * ДЕФОЛТЫ берутся из schema.json (threshold_percent=20, work_hours_start=9 и т.д.)
+ * — но Strapi 5 на create требует явные значения, поэтому дублируем тут.
+ */
+async function seedSettings(strapi: StrapiInstance): Promise<void> {
+  try {
+    const existing = await strapi.entityService.findMany(
+      'api::setting.setting',
+      { limit: 1 }
+    );
+
+    if (existing && existing.length > 0) {
+      strapi.log.info('[seed] Setting уже существует — skip');
+      return;
+    }
+
+    await strapi.entityService.create('api::setting.setting', {
+      data: {
+        threshold_percent: 20,
+        work_hours_start: 9,
+        work_hours_end: 21,
+        digest_time: '09:00',
+        retention_months: 6,
+        active_sources: ['fedresurs'], // MVP: один источник; UI расширит
+        smtp_to: process.env.SMTP_TO || null,
+      },
+    });
+
+    strapi.log.info('[seed] ✅ Setting создан с дефолтами (threshold=20%, digest=09:00)');
+  } catch (err: any) {
+    strapi.log.error(`[seed] Ошибка создания Setting: ${err.message}`);
+    strapi.log.error(err);
+  }
+}
+
+/**
+ * Открывает публичный доступ (find/findOne) к нашим 5 content-types.
+ *
+ * Без этого /api/properties и т.п. отдают 404 даже без auth — Strapi 5 по умолчанию
+ * ставит "no permissions" для public роли на новые content-types. Это нужно для dev
+ * удобства; в проде доступ к admin делается через login (admin panel).
+ *
+ * Идемпотентно: проверяет, есть ли уже permission, и не дублирует.
+ */
+async function seedPublicPermissions(strapi: StrapiInstance): Promise<void> {
+  try {
+    const publicRole = await strapi.db
+      .query('plugin::users-permissions.role')
+      .findOne({ where: { type: 'public' } });
+
+    if (!publicRole) {
+      strapi.log.warn('[seed] Public role не найдена — skip permissions seed');
+      return;
+    }
+
+    const actions = [
+      // find / findOne (чтение)
+      'api::property.property.find',
+      'api::property.property.findOne',
+      'api::setting.setting.find',
+      'api::setting.setting.findOne',
+      'api::market-reference.market-reference.find',
+      'api::market-reference.market-reference.findOne',
+      'api::user-comment.user-comment.find',
+      'api::user-comment.user-comment.findOne',
+      'api::cron-log.cron-log.find',
+      'api::cron-log.cron-log.findOne',
+      // create / update / delete (запись) — для dev-режима, чтобы можно было дёргать API curl'ом
+      'api::property.property.create',
+      'api::property.property.update',
+      'api::property.property.delete',
+      'api::setting.setting.create',
+      'api::setting.setting.update',
+      'api::setting.setting.delete',
+      'api::market-reference.market-reference.create',
+      'api::market-reference.market-reference.update',
+      'api::market-reference.market-reference.delete',
+      'api::user-comment.user-comment.create',
+      'api::user-comment.user-comment.update',
+      'api::user-comment.user-comment.delete',
+      'api::cron-log.cron-log.create',
+      'api::cron-log.cron-log.update',
+      'api::cron-log.cron-log.delete',
+    ];
+
+    let added = 0;
+    for (const action of actions) {
+      const existing = await strapi.db
+        .query('plugin::users-permissions.permission')
+        .findOne({ where: { action, role: publicRole.id } });
+
+      if (existing) continue;
+
+      await strapi.db
+        .query('plugin::users-permissions.permission')
+        .create({ data: { action, role: publicRole.id } });
+      added++;
+    }
+
+    if (added > 0) {
+      strapi.log.info(`[seed] ✅ Public permissions добавлено: ${added} actions`);
+    } else {
+      strapi.log.info('[seed] Public permissions уже настроены — skip');
+    }
+  } catch (err: any) {
+    strapi.log.error(`[seed] Ошибка создания public permissions: ${err.message}`);
     strapi.log.error(err);
   }
 }
