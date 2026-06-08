@@ -19,10 +19,10 @@ export default defineConfig({
   },
   server: {
     port: parseInt(process.env.PORT_APP || '5174', 10),
-    allowedHosts: ['app.aklab.ti-soft.ru', 'api.aklab.ti-soft.ru', 'aklab.ti-soft.ru'],
+    allowedHosts: ['aklab.tirobots.ru', 'localhost', '127.0.0.1'],
   },
   preview: {
     port: parseInt(process.env.PORT_APP || '5174', 10),
-    allowedHosts: ['app.aklab.ti-soft.ru', 'api.aklab.ti-soft.ru', 'aklab.ti-soft.ru'],
+    allowedHosts: ['aklab.tirobots.ru', 'localhost', '127.0.0.1'],
   },
 })
