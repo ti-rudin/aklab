@@ -216,6 +216,9 @@ deploy-prod.sh + бамп версии).
   `services/analyzer/` (сравнение Property с MarketReference,
   вычисление deviation_percent, установка is_undervalued),
   ecosystem configs обновлены. ✅
+- **Фаза 7 завершена** (8 июня 2026): digest микросервис —
+  `services/digest/` (утренний email с недооценёнными объектами,
+  nodemailer напрямую, HTML-таблица), ecosystem configs обновлены. ✅
 - Содержимое:
   - **api/src/api/** — 5 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog) + controllers + services +
@@ -283,9 +286,8 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
-**Следующие шаги** (после чекпоинта Фазы 6):
-1. **Фаза 7** — digest микросервис (утренний email)
-2. **Фаза 8** — Deploy на 151 (обновить deploy-prod.sh, npm install + build для services/*)
+**Следующие шаги** (после чекпоинта Фазы 7):
+1. **Фаза 8** — Deploy на 151 (обновить deploy-prod.sh: npm install + build для services/*, pm2 restart все 5 процессов, проверить STRAPI_API_TOKEN + SMTP в .env на проде)
 
 **Локальное состояние**:
 - `~/github.nosync/aklab` — ветка `main`, последний коммит `1803f60`
