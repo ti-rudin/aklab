@@ -4,7 +4,7 @@
       <div class="rounded-2xl p-6 sm:p-8" style="background: var(--bg-elevated); box-shadow: var(--shadow-soft);">
         <!-- Логотип -->
         <div class="flex justify-center mb-4">
-          <span class="text-3xl font-bold" style="color: var(--text-main)">TODOIT</span>
+          <span class="text-3xl font-bold" style="color: var(--text-main)">AKLAB</span>
         </div>
 
         <!-- Заголовок -->

@@ -8,12 +8,8 @@ const config: Core.Config.Middlewares = [
     name: 'strapi::cors',
     config: {
       origin: [
-        'https://app.todoit.ru',
-        'https://api.todoit.ru',
-        'https://todoit.ru',
-        'https://app.aklab.ti-soft.ru',
-        'https://api.aklab.ti-soft.ru',
-        'https://aklab.ti-soft.ru',
+        'https://aklab.tirobots.ru',
+        'https://api-aklab.tirobots.ru',
         'http://localhost:5174',
         'http://localhost:4173',
       ],

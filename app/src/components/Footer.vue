@@ -34,12 +34,12 @@
           <h3 class="font-bold text-lg mb-4" style="color: var(--text-main)">Компания</h3>
           <ul class="space-y-3">
             <li>
-              <a href="https://todoit.ru" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Сайт TODOIT
+              <a href="https://aklab.tirobots.ru" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Сайт AKLAB
               </a>
             </li>
             <li>
-              <a href="https://todoit.ru/privacy.html" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+              <a href="https://aklab.tirobots.ru/privacy.html" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
                 Политика конфиденциальности
               </a>
             </li>
@@ -62,7 +62,7 @@
       <!-- Нижняя строка -->
       <div class="border-t pt-6 flex flex-col md:flex-row justify-between items-center gap-4" style="border-color: var(--border-subtle)">
         <p class="text-sm" style="color: var(--text-muted)">
-          &copy; {{ new Date().getFullYear() }} TODOIT. Все права защищены.
+          &copy; {{ new Date().getFullYear() }} AKLAB. Все права защищены.
         </p>
         <router-link
           :to="isAuthenticated ? '/zamery' : '/auth'"
