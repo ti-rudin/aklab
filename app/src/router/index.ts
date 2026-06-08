@@ -41,6 +41,12 @@ const router = createRouter({
       component: () => import('../views/SettingsView.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/market-references',
+      name: 'market-references',
+      component: () => import('../views/MarketReferencesView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 

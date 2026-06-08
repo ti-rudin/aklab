@@ -38,6 +38,17 @@
           </div>
         </div>
 
+        <!-- Эталоны -->
+        <div class="pt-4 border-t" style="border-color: var(--border-subtle)">
+          <router-link
+            to="/market-references"
+            class="flex items-center justify-between py-2 group"
+          >
+            <span style="color: var(--text-muted)">Эталоны стоимости ₽/м²</span>
+            <span class="text-sm group-hover:underline" style="color: var(--accent)">Открыть →</span>
+          </router-link>
+        </div>
+
         <!-- Выход -->
         <div class="pt-4 border-t" style="border-color: var(--border-subtle)">
           <button
