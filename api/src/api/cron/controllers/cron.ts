@@ -1,10 +1,13 @@
 /**
  * Cron controller — ручной запуск парсинга, анализа, дайджеста.
+ *
+ * queueService доступен через require('../../../services/queueService').
+ * Путь считается от dist/src/api/cron/controllers/ → dist/src/services/.
  */
 
 function getQueue() {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { getQueueService } = require('../../services/queueService');
+  const { getQueueService } = require('../../../services/queueService');
   return getQueueService();
 }
 
