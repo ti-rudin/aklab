@@ -69,9 +69,26 @@ module.exports = {
         STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
       },
     },
-    // {
-    //   name: 'aklab-digest-prod',
-    //   ...
-    // },
+    {
+      name: 'aklab-digest-prod',
+      cwd: '/home/rudin/aklab/services/digest',
+      script: 'node',
+      args: 'dist/index.js',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        NVM_DIR: '/home/rudin/.nvm',
+        PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
+        STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+        EMAIL_SMTP_HOST: process.env.EMAIL_SMTP_HOST || 'smtp.yandex.ru',
+        EMAIL_SMTP_PORT: process.env.EMAIL_SMTP_PORT || '465',
+        EMAIL_SMTP_USER: process.env.EMAIL_SMTP_USER || '',
+        EMAIL_SMTP_PASS: process.env.EMAIL_SMTP_PASS || '',
+        EMAIL_DEFAULT_FROM: process.env.EMAIL_DEFAULT_FROM || '',
+      },
+    },
   ],
 };
