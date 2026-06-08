@@ -29,13 +29,22 @@ const PROPERTY_KEYWORDS = [
   'доля нежилого', 'доля земельного',
 ];
 
+// Исключаем жильё, транспорт, оборудование и прочее не-коммерческое
+const EXCLUDE_KEYWORDS = [
+  'жилое', 'жилого', 'жилых', 'квартир', 'квартира', 'жилой',
+  'транспортн', 'автомобил', 'vehiclewagen', 'легков', 'грузов',
+  'автобус', 'прицеп', 'мотоцикл',
+  'оборудовани', 'станок', 'машин', 'прибор', 'инвентар',
+];
+
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
   if (lower.includes('офис') || lower.includes('административн')) return 'office';
   if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
   if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
   if (lower.includes('производствен') || lower.includes('промышленн') || lower.includes('цех')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ')) return 'free_purpose';
+  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
+      lower.includes('гараж') || lower.includes('бокс') || lower.includes('паркинг')) return 'free_purpose';
   return 'other';
 }
 
@@ -78,7 +87,7 @@ export class FabrikantParser implements SourceParser {
         await page.waitForTimeout(3000);
 
         // Извлекаем данные из SSR HTML через data-slot селекторы
-        const pageProperties = await page.evaluate((kw: string[]) => {
+        const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[] }) => {
           const results: Array<{
             lot_id: string;
             title: string;
@@ -101,8 +110,12 @@ export class FabrikantParser implements SourceParser {
 
             // Фильтр по ключевым словам недвижимости
             const fullText = el.textContent?.toLowerCase() || '';
-            const isProperty = kw.some(k => fullText.includes(k));
+            const isProperty = args.kw.some(k => fullText.includes(k));
             if (!isProperty) continue;
+
+            // Исключаем жильё, транспорт, оборудование
+            const isExcluded = args.exclude.some(k => fullText.includes(k));
+            if (isExcluded) continue;
 
             // Цена — ищем текст с "RUB"
             const textSlots = el.querySelectorAll('[data-slot="text"]');
@@ -139,7 +152,7 @@ export class FabrikantParser implements SourceParser {
           }
 
           return results;
-        }, PROPERTY_KEYWORDS);
+        }, { kw: PROPERTY_KEYWORDS, exclude: EXCLUDE_KEYWORDS });
 
         logger.info(`[fabrikant] Page ${pageNum}: found ${pageProperties.length} property cards`);
 
