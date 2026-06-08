@@ -1,0 +1,33 @@
+{
+  "kind": "collectionType",
+  "collectionName": "cron_logs",
+  "info": {
+    "singularName": "cron-log",
+    "pluralName": "cron-logs",
+    "displayName": "Cron Log"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "started_at": {
+      "type": "datetime",
+      "required": true
+    },
+    "finished_at": {
+      "type": "datetime"
+    },
+    "items_processed": {
+      "type": "integer",
+      "default": 0
+    },
+    "error": {
+      "type": "text"
+    }
+  }
+}

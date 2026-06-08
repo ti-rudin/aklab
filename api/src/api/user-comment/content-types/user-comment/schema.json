@@ -1,0 +1,25 @@
+{
+  "kind": "collectionType",
+  "collectionName": "user_comments",
+  "info": {
+    "singularName": "user-comment",
+    "pluralName": "user-comments",
+    "displayName": "User Comment"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "property": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::property.property",
+      "inversedBy": "comments"
+    },
+    "text": {
+      "type": "text",
+      "required": true
+    }
+  }
+}

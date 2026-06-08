@@ -1,0 +1,41 @@
+{
+  "kind": "singleType",
+  "collectionName": "setting",
+  "info": {
+    "singularName": "setting",
+    "pluralName": "settings",
+    "displayName": "Setting"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "threshold_percent": {
+      "type": "decimal",
+      "default": 20
+    },
+    "work_hours_start": {
+      "type": "integer",
+      "default": 9
+    },
+    "work_hours_end": {
+      "type": "integer",
+      "default": 21
+    },
+    "digest_time": {
+      "type": "string",
+      "default": "09:00"
+    },
+    "retention_months": {
+      "type": "integer",
+      "default": 6
+    },
+    "active_sources": {
+      "type": "json"
+    },
+    "smtp_to": {
+      "type": "string"
+    }
+  }
+}
