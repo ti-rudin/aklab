@@ -1,21 +1,32 @@
 /**
- * Fabrikant.ru — парсер торгов по банкротству.
+ * Fabrikant.ru — парсер продаж (банкротство, приватизация).
  *
  * Next.js SSR, нет публичного JSON API. Парсим HTML через Playwright.
- * URL: https://www.fabrikant.ru/procedure/search
+ * URL: https://www.fabrikant.ru/procedure/search/sales
+ *
+ * Структура карточки (data-slot-based):
+ *   [data-slot="card"][data-id="{lotId}"]
+ *     [data-slot="anchor"]  — заголовок лота (содержит адрес)
+ *     [data-slot="badge"]   — статус, источник
+ *     [data-slot="text"]    — организатор, даты, цена ("648 000,00 RUB")
+ *
+ * Пагинация: ?page=N (10 карточек на страницу)
  */
 
 import type { SourceParser, ParsedProperty } from './types';
 import { logger } from '../utils/logger';
 
 const BASE_URL = 'https://www.fabrikant.ru';
-const SEARCH_URL = `${BASE_URL}/procedure/search`;
+const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
+const MAX_PAGES = 5; // 50 карточек за запуск
 
-// Типы недвижимости для фильтрации
+// Ключевые слова недвижимости — фильтруем нерелевантные лоты
 const PROPERTY_KEYWORDS = [
   'нежилое', 'помещение', 'офис', 'склад', 'магазин', 'здание',
   'сооружение', 'гараж', 'паркинг', 'земельный участок', 'коммерческ',
   'торгов', 'административн', 'производствен', 'промышленн',
+  'кв.м', 'м²', 'кв.м.', 'метров', 'нежилого', 'нежилых',
+  'доля нежилого', 'доля земельного',
 ];
 
 function classifyPropertyType(text: string): string {
@@ -28,22 +39,15 @@ function classifyPropertyType(text: string): string {
   return 'other';
 }
 
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  // "1 234 567,89 руб." → 1234567.89
-  const cleaned = text.replace(/[^\d,.-]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? undefined : num;
-}
-
-function parseArea(text: string): number | undefined {
-  if (!text) return undefined;
-  // "123,45 кв.м" → 123.45
-  const match = text.match(/([\d\s]+[,.]?\d*)/);
-  if (!match) return undefined;
-  const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? undefined : num;
+function detectCity(address: string): string {
+  const lower = address.toLowerCase();
+  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
+  if (lower.includes('московская область') || lower.includes('московская обл') ||
+      lower.includes('подольск') || lower.includes('химки') || lower.includes('мытищи') ||
+      lower.includes('балашиха') || lower.includes('одинцово') || lower.includes('пушкино') ||
+      lower.includes('пушкин') || lower.includes('серпухов') || lower.includes('котельники') ||
+      lower.includes('луховицк') || lower.includes('домодедов') || lower.includes('люберц')) return 'mo';
+  return 'other';
 }
 
 export class FabrikantParser implements SourceParser {
@@ -51,7 +55,7 @@ export class FabrikantParser implements SourceParser {
 
   async parse(): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
-    
+
     logger.info('[fabrikant] Starting Playwright browser...');
     const browser = await chromium.launch({
       headless: true,
@@ -64,95 +68,120 @@ export class FabrikantParser implements SourceParser {
         locale: 'ru-RU',
       });
       const page = await context.newPage();
+      const allProperties: ParsedProperty[] = [];
 
-      // Загружаем страницу поиска с фильтром по недвижимости
-      logger.info('[fabrikant] Loading search page...');
-      await page.goto(SEARCH_URL, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000,
-      });
-      await page.waitForTimeout(5000);
+      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+        const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}?page=${pageNum}`;
+        logger.info(`[fabrikant] Loading page ${pageNum}: ${url}`);
 
-      // Извлекаем данные о процедурах из SSR HTML
-      const properties = await page.evaluate(() => {
-        const results: Array<{
-          external_id: string;
-          url: string;
-          title: string;
-          address: string;
-          price?: number;
-          lot_id: string;
-        }> = [];
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
 
-        // Ищем карточки процедур — Fabrikant использует data-id на элементах
-        const cards = Array.from(document.querySelectorAll('[data-id], .procedure-card, .lot-card, article'));
-        
-        for (const card of cards) {
-          const el = card as HTMLElement;
-          const lotId = el.getAttribute('data-id') || el.querySelector('[data-id]')?.getAttribute('data-id');
-          if (!lotId) continue;
+        // Извлекаем данные из SSR HTML через data-slot селекторы
+        const pageProperties = await page.evaluate((kw: string[]) => {
+          const results: Array<{
+            lot_id: string;
+            title: string;
+            price_text: string;
+            proc_number: string;
+            link_href: string;
+          }> = [];
 
-          // Извлекаем текст
-          const titleEl = el.querySelector('h2, h3, .title, .name, [class*="title"], [class*="name"]');
-          const title = titleEl?.textContent?.trim() || '';
-          
-          // Пропускаем если нет нежилой недвижимости в тексте
-          const fullText = el.textContent?.toLowerCase() || '';
-          const isProperty = [
-            'нежилое', 'помещение', 'офис', 'склад', 'магазин', 'здание',
-            'сооружение', 'гараж', 'паркинг', 'земельный участок', 'коммерческ',
-            'торгов', 'административн', 'производствен', 'кв.м', 'м²',
-          ].some(kw => fullText.includes(kw));
-          
-          if (!isProperty) continue;
+          const cards = document.querySelectorAll('[data-slot="card"][data-id]');
 
-          // Цена
-          const priceEl = el.querySelector('[class*="price"], [class*="cost"], .lot-price');
-          const priceText = priceEl?.textContent?.trim() || '';
-          const price = priceText
-            ? parseFloat(priceText.replace(/[^\d,.-]/g, '').replace(',', '.'))
-            : undefined;
+          for (const card of Array.from(cards)) {
+            const el = card as HTMLElement;
+            const lotId = el.getAttribute('data-id');
+            if (!lotId) continue;
 
-          // Ссылка
-          const linkEl = el.querySelector('a[href]');
-          const href = linkEl?.getAttribute('href') || '';
-          const url = href.startsWith('http') ? href : `https://www.fabrikant.ru${href}`;
+            // Title — первый [data-slot="anchor"]
+            const anchor = el.querySelector('[data-slot="anchor"]');
+            const title = anchor?.textContent?.trim() || '';
+            if (!title) continue;
 
-          results.push({
-            external_id: lotId,
-            url,
-            title,
-            address: title, // Fabrikant обычно включает адрес в title
-            price: isNaN(price as number) ? undefined : price,
-            lot_id: lotId,
+            // Фильтр по ключевым словам недвижимости
+            const fullText = el.textContent?.toLowerCase() || '';
+            const isProperty = kw.some(k => fullText.includes(k));
+            if (!isProperty) continue;
+
+            // Цена — ищем текст с "RUB"
+            const textSlots = el.querySelectorAll('[data-slot="text"]');
+            let priceText = '';
+            for (const slot of Array.from(textSlots)) {
+              const t = slot.textContent?.trim() || '';
+              if (t.includes('RUB')) {
+                priceText = t;
+                break;
+              }
+            }
+
+            // Номер процедуры
+            let procNumber = '';
+            for (const slot of Array.from(textSlots)) {
+              const t = slot.textContent?.trim() || '';
+              if (/^\d+-\d+$/.test(t)) {
+                procNumber = t;
+                break;
+              }
+            }
+
+            // Ссылка
+            const link = anchor as HTMLAnchorElement;
+            const href = link?.href || '';
+
+            results.push({
+              lot_id: lotId,
+              title,
+              price_text: priceText,
+              proc_number: procNumber,
+              link_href: href,
+            });
+          }
+
+          return results;
+        }, PROPERTY_KEYWORDS);
+
+        logger.info(`[fabrikant] Page ${pageNum}: found ${pageProperties.length} property cards`);
+
+        // Преобразуем в ParsedProperty
+        for (const p of pageProperties) {
+          // Парсим цену: "648 000,00 RUB" → 648000
+          let price: number | undefined;
+          if (p.price_text) {
+            const cleaned = p.price_text.replace(/[^\d,]/g, '').replace(',', '.');
+            const num = parseFloat(cleaned);
+            if (!isNaN(num) && num > 0) price = num;
+          }
+
+          // Извлекаем адрес из title
+          const address = extractAddress(p.title);
+
+          // Извлекаем площадь из title: "36,2 кв.м" или "пл. 769"
+          const area = extractArea(p.title);
+
+          // Price per sqm
+          const pricePerSqm = price && area ? Math.round(price / area) : undefined;
+
+          allProperties.push({
+            external_id: `fabrikant-${p.lot_id}`,
+            url: p.link_href || `${BASE_URL}/procedure/search/sales`,
+            title: p.title,
+            address,
+            city: detectCity(address || p.title),
+            area_sqm: area,
+            price,
+            price_per_sqm: pricePerSqm,
+            property_type: classifyPropertyType(p.title),
+            auction_type: 'bankruptcy',
           });
         }
 
-        return results;
-      });
+        // Если на странице меньше 10 карточек — дальше пусто
+        if (pageProperties.length < 10) break;
+      }
 
-      logger.info(`[fabrikant] Found ${properties.length} property cards`);
-
-      // Преобразуем в ParsedProperty
-      const result: ParsedProperty[] = properties.map(p => {
-        const pricePerSqm = p.price && p.title
-          ? undefined // площадь нужно извлекать из описания
-          : undefined;
-
-        return {
-          external_id: `fabrikant-${p.lot_id}`,
-          url: p.url,
-          title: p.title,
-          address: p.address,
-          city: detectCity(p.address),
-          property_type: classifyPropertyType(p.title),
-          auction_type: 'bankruptcy',
-          price: p.price,
-        };
-      });
-
-      logger.info(`[fabrikant] Parsed ${result.length} properties`);
-      return result;
+      logger.info(`[fabrikant] Total: ${allProperties.length} properties`);
+      return allProperties;
 
     } catch (err: any) {
       logger.error(`[fabrikant] Parse error: ${err.message}`);
@@ -163,11 +192,57 @@ export class FabrikantParser implements SourceParser {
   }
 }
 
-function detectCity(address: string): string {
-  const lower = address.toLowerCase();
-  if (lower.includes('москва') || lower.includes('г. москва') || lower.includes('г.москва')) return 'moscow';
-  if (lower.includes('московская область') || lower.includes('мо') || lower.includes('подольск') ||
-      lower.includes('химки') || lower.includes('мытищи') || lower.includes('балашиха') ||
-      lower.includes('одинцово') || lower.includes('пушкин') || lower.includes('серпухов')) return 'mo';
-  return 'other';
+/**
+ * Извлекает адрес из заголовка лота.
+ * Паттерны:
+ *   "по адресу: Московская обл., г. Подольск, ..."
+ *   "адрес: г. Москва, ул. ..."
+ *   "расположенный по адресу: ..."
+ */
+function extractAddress(title: string): string {
+  // Паттерн 1: "по адресу: ..."
+  let match = title.match(/(?:по\s+адресу|адрес)[:\s]+(.+?)(?:,\s*(?:общ\.|пл\.|к\/н|собств\.|цена|$))/i);
+  if (match) return match[1].trim();
+
+  // Паттерн 2: "в <город>, <улица>" (для заголовков типа "Нежилое помещение в г. Москва, ...")
+  match = title.match(/(?:в|г\.)\s+((?:г\.?\s*)?(?:Москва|Московская\s+обл\.?)[^,]*(?:,\s*[^,]+){0,3})/i);
+  if (match) return match[1].trim();
+
+  // Паттерн 3: весь title как fallback
+  return title;
+}
+
+/**
+ * Извлекает площадь из заголовка.
+ * Паттерны:
+ *   "36,2 кв.м" / "36,2 кв.м."
+ *   "пл. 769" / "площадью 36,2 кв.м"
+ *   "общ. пл. 19,3 кв.м"
+ */
+function extractArea(title: string): number | undefined {
+  // Паттерн: число + кв.м
+  let match = title.match(/(\d[\d\s]*[,.]?\d*)\s*кв\.?\s*м/i);
+  if (match) {
+    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // Паттерн: "площадью N"
+  match = title.match(/площад[ьь]ю\s+(\d[\d\s]*[,.]?\d*)/i);
+  if (match) {
+    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // Паттерн: "пл. N"
+  match = title.match(/пл\.\s*(\d[\d\s]*[,.]?\d*)/);
+  if (match) {
+    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  return undefined;
 }
