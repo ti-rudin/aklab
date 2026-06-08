@@ -20,6 +20,14 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.PORT_APP || '5174', 10),
     allowedHosts: ['aklab.tirobots.ru', 'localhost', '127.0.0.1'],
+    // В dev-режиме проксируем /api на локальный Strapi (1338),
+    // чтобы избежать CORS-проблем и не хардкодить VITE_API_URL.
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:1338',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: parseInt(process.env.PORT_APP || '5174', 10),
