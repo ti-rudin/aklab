@@ -212,7 +212,7 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
     {
       name: 'Фабрикант',
       slug: 'fabrikant',
-      url: 'https://www.fabrikant.ru/procedure/search',
+      url: 'https://www.fabrikant.ru/procedure/search/sales',
       parser: 'fabrikant' as const,
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
@@ -225,6 +225,15 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
       parser: 'fedresurs' as const,
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
+      is_active: false, // Qrator 403 — отложен
+    },
+    {
+      name: 'ГИС Торги',
+      slug: 'torgi-gov',
+      url: 'https://torgi.gov.ru/new/public/lots/reg',
+      parser: 'torgi-gov' as const,
+      auction_type: 'privatization' as const,
+      region: 'Москва и МО',
       is_active: true,
     },
   ];
