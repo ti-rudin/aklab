@@ -87,6 +87,45 @@ export async function createProperty(props: {
 }
 
 /**
+ * Обновить статистику Source после парсинга.
+ */
+export async function updateSourceStats(sourceId: number, data: {
+  last_parse_status?: string;
+  last_parse_error?: string;
+  last_parsed_at?: string;
+  total_found?: number;
+  total_created?: number;
+  parse_count?: number;
+}): Promise<void> {
+  // Для инкремента parse_count, total_found, total_created — нужно сначала прочитать
+  const updateData: any = {};
+  
+  if (data.last_parse_status) updateData.last_parse_status = data.last_parse_status;
+  if (data.last_parse_error !== undefined) updateData.last_parse_error = data.last_parse_error;
+  if (data.last_parsed_at) updateData.last_parsed_at = data.last_parsed_at;
+
+  // Если нужно инкрементировать счётчики — читаем текущие
+  if (data.parse_count || data.total_found || data.total_created) {
+    try {
+      const res = await fetch(`${BASE}/sources/${sourceId}`, { headers: HEADERS });
+      if (res.ok) {
+        const json = (await res.json()) as StrapiResponse<any>;
+        const current = json.data;
+        if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
+        if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
+        if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
+      }
+    } catch {}
+  }
+
+  await fetch(`${BASE}/sources/${sourceId}`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ data: updateData }),
+  });
+}
+
+/**
  * Записать CronLog.
  */
 export async function logCron(entry: {

@@ -30,6 +30,7 @@ export async function runSeeders(strapi: StrapiInstance): Promise<void> {
   await seedStrapiAdmin(strapi);
   await seedTestUser(strapi);
   await seedSettings(strapi);
+  await seedSources(strapi);
   await seedPublicPermissions(strapi);
 }
 
@@ -204,6 +205,51 @@ async function seedSettings(strapi: StrapiInstance): Promise<void> {
 }
 
 /**
+ * Создаёт дефолтные источники парсинга, если их ещё нет.
+ */
+async function seedSources(strapi: StrapiInstance): Promise<void> {
+  const defaults = [
+    {
+      name: 'Фабрикант',
+      slug: 'fabrikant',
+      url: 'https://www.fabrikant.ru/procedure/search',
+      parser: 'fabrikant' as const,
+      auction_type: 'bankruptcy' as const,
+      region: 'Россия',
+      is_active: true,
+    },
+    {
+      name: 'Федресурс',
+      slug: 'fedresurs',
+      url: 'https://bankrot.fedresurs.ru',
+      parser: 'fedresurs' as const,
+      auction_type: 'bankruptcy' as const,
+      region: 'Россия',
+      is_active: true,
+    },
+  ];
+
+  for (const src of defaults) {
+    try {
+      const existing = await strapi.entityService.findMany('api::source.source', {
+        filters: { slug: src.slug },
+        limit: 1,
+      });
+
+      if (existing && existing.length > 0) {
+        strapi.log.info(`[seed] Source "${src.name}" уже существует — skip`);
+        continue;
+      }
+
+      await strapi.entityService.create('api::source.source', { data: src });
+      strapi.log.info(`[seed] ✅ Source "${src.name}" создан`);
+    } catch (err: any) {
+      strapi.log.error(`[seed] Ошибка создания source "${src.name}": ${err.message}`);
+    }
+  }
+}
+
+/**
  * Открывает публичный доступ (find/findOne) к нашим 5 content-types.
  *
  * Без этого /api/properties и т.п. отдают 404 даже без auth — Strapi 5 по умолчанию
@@ -225,6 +271,8 @@ async function seedPublicPermissions(strapi: StrapiInstance): Promise<void> {
 
     const actions = [
       // find / findOne (чтение)
+      'api::source.source.find',
+      'api::source.source.findOne',
       'api::property.property.find',
       'api::property.property.findOne',
       'api::setting.setting.find',
@@ -236,6 +284,9 @@ async function seedPublicPermissions(strapi: StrapiInstance): Promise<void> {
       'api::cron-log.cron-log.find',
       'api::cron-log.cron-log.findOne',
       // create / update / delete (запись) — для dev-режима, чтобы можно было дёргать API curl'ом
+      'api::source.source.create',
+      'api::source.source.update',
+      'api::source.source.delete',
       'api::property.property.create',
       'api::property.property.update',
       'api::property.property.delete',

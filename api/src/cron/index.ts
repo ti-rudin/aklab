@@ -1,15 +1,13 @@
 /**
  * Cron-планировщик для aklab.
  *
- * Фаза 3: 4 cron-задачи по docs/plan2.md:
+ * Задачи:
  *   - parse:bankruptcy    (каждый час, Europe/Moscow, noOverlap)
  *   - analyze:properties  (каждые 30 мин)
  *   - digest:morning      (по setting.digest_time, динамически)
  *   - cleanup:old         (3:00 ежедневно, retention_months из Setting)
  *
- * Все задачи только кладут jobs в очередь — реальную обработку делают
- * микросервисы (Фазы 4-7). Пока микросервисов нет, jobs просто лежат
- * в queue.db и обрабатываются вручную или логируются.
+ * Источники читаются из коллекции Source (is_active=true).
  */
 
 import type { Core } from '@strapi/strapi';
@@ -18,15 +16,18 @@ import { getQueueService } from '../services/queueService';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
 
-/** Получить singleton Setting (с cast'ом, т.к. Strapi entityService типы неточны) */
 async function getSetting(strapi: Core.Strapi): Promise<any> {
   const list = await (strapi as any).entityService.findMany('api::setting.setting', { limit: 1 });
   return list?.[0] || null;
 }
 
-/**
- * Регистрирует все cron-задачи. Вызывается из api/src/index.ts::bootstrap().
- */
+async function getActiveSources(strapi: Core.Strapi): Promise<any[]> {
+  return (strapi as any).entityService.findMany('api::source.source', {
+    filters: { is_active: true },
+    limit: 50,
+  });
+}
+
 export function registerCrons(strapi: Core.Strapi): void {
   const queueService = getQueueService();
 
@@ -35,11 +36,16 @@ export function registerCrons(strapi: Core.Strapi): void {
     const corrId = `cron-parse-${Date.now()}`;
     strapi.log.info(`[cron] parse:bankruptcy triggered (${corrId})`);
     try {
-      const setting = await getSetting(strapi);
-      const sources: string[] = setting?.active_sources || ['fedresurs'];
-      for (const source of sources) {
-        queueService.addToQueue('parse-bankruptcy', { source }, { correlationId: corrId });
-        strapi.log.info(`[cron] → enqueued parse-bankruptcy for source=${source}`);
+      const sources = await getActiveSources(strapi);
+      for (const src of sources || []) {
+        queueService.addToQueue('parse-bankruptcy', {
+          source: src.slug,
+          sourceId: src.id,
+        }, { correlationId: corrId });
+        strapi.log.info(`[cron] → enqueued parse-bankruptcy for ${src.name} (${src.slug})`);
+      }
+      if (!sources?.length) {
+        strapi.log.info('[cron] No active sources — skip');
       }
     } catch (err: any) {
       strapi.log.error(`[cron] parse:bankruptcy error: ${err.message}`);

@@ -1,0 +1,79 @@
+{
+  "kind": "collectionType",
+  "collectionName": "sources",
+  "info": {
+    "singularName": "source",
+    "pluralName": "sources",
+    "displayName": "Source"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "maxLength": 100
+    },
+    "slug": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "maxLength": 50
+    },
+    "url": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "parser": {
+      "type": "enumeration",
+      "enum": ["fedresurs", "fabrikant", "torgi-gov", "investmoscow", "invest-mosreg", "roseltorg", "sberbank-ast", "alfalot", "etprf", "m-ets", "aggregator-bankrot"],
+      "required": true
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "auction_type": {
+      "type": "enumeration",
+      "enum": ["bankruptcy", "privatization", "marketplace"],
+      "default": "bankruptcy"
+    },
+    "region": {
+      "type": "string",
+      "maxLength": 100,
+      "default": "Москва и МО"
+    },
+    "last_parsed_at": {
+      "type": "datetime"
+    },
+    "last_parse_status": {
+      "type": "enumeration",
+      "enum": ["success", "error", "running", "never"],
+      "default": "never"
+    },
+    "last_parse_error": {
+      "type": "text"
+    },
+    "total_found": {
+      "type": "integer",
+      "default": 0,
+      "min": 0
+    },
+    "total_created": {
+      "type": "integer",
+      "default": 0,
+      "min": 0
+    },
+    "parse_count": {
+      "type": "integer",
+      "default": 0,
+      "min": 0
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}
