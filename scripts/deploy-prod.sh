@@ -47,7 +47,7 @@ rollback() {
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
     fi
-    pm2 restart aklab-api aklab-app 2>/dev/null || true
+    pm2 restart aklab-api aklab-app aklab-parser-bankruptcy-prod aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
     notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
 }
@@ -100,7 +100,7 @@ fi
 NEED_INSTALL=false
 
 # node_modules отсутствует — обязательно ставим
-if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ]; then
+if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ]; then
   NEED_INSTALL=true
   log "node_modules отсутствует — npm install обязателен"
 fi
@@ -117,9 +117,8 @@ if [ "$NEED_INSTALL" != "true" ]; then
 fi
 
 if [ "$NEED_INSTALL" = "true" ]; then
-  log "npm install..."
-  (cd api && npm install --include=dev 2>&1 | tail -3)
-  (cd app && npm install --include=dev 2>&1 | tail -3)
+  log "npm install (root + workspaces)..."
+  npm install --include=dev 2>&1 | tail -5
 else
   log "package-lock.json не изменился — пропускаем npm install"
 fi
@@ -129,15 +128,26 @@ log "Extract VITE_ vars → app/.env.local..."
 grep -E "^VITE_" .env > app/.env.local 2>/dev/null || true
 
 # === Step 6: Build ===
+log "Build lib/sqlite-queue..."
+(cd lib/sqlite-queue && npm run build 2>&1 | tail -3)
+
 log "Build API..."
 (cd api && npm run build 2>&1 | tail -3)
 
 log "Build App..."
 (cd app && npm run build 2>&1 | tail -3)
 
+log "Build services..."
+for svc in parser-bankruptcy analyzer digest; do
+  if [ -d "services/$svc" ]; then
+    log "  Build services/$svc..."
+    (cd "services/$svc" && npm run build 2>&1 | tail -3)
+  fi
+done
+
 # === Step 7: PM2 restart ===
-log "PM2 restart..."
-pm2 stop aklab-api aklab-app 2>/dev/null || true
+log "PM2 restart (all 5 processes)..."
+pm2 stop aklab-api aklab-app aklab-parser-bankruptcy-prod aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
@@ -158,7 +168,7 @@ for i in $(seq 1 18); do
 done
 
 if [ "$STRAPI_OK" != "true" ]; then
-  err "Strapi не поднялся за 30 секунд!"
+  err "Strapi не поднялся за 3 минуты!"
   exit 1
 fi
 log "Strapi OK"
@@ -169,6 +179,19 @@ if [ "$APP_STATUS" = "200" ]; then
 else
   warn "App вернул $APP_STATUS (может быть нормально для SPA)"
 fi
+
+# Проверяем health микросервисов (не блокирующий — warn)
+sleep 5
+for svc_port in "parser-bankruptcy:1340" "analyzer:1341" "digest:1342"; do
+  SVC_NAME="${svc_port%%:*}"
+  SVC_PORT="${svc_port##*:}"
+  SVC_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${SVC_PORT}/health" 2>/dev/null || echo "000")
+  if [ "$SVC_STATUS" = "200" ]; then
+    log "${SVC_NAME} OK (:${SVC_PORT})"
+  else
+    warn "${SVC_NAME} вернул ${SVC_STATUS} на :${SVC_PORT} (проверьте pm2 logs aklab-${SVC_NAME}-prod)"
+  fi
+done
 
 # === Step 9: Git commit ===
 VERSION=$(node -e "console.log(require('./package.json').version)")
