@@ -611,6 +611,106 @@ export interface ApiSettingSetting extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiSourceSource extends Struct.CollectionTypeSchema {
+  collectionName: 'sources';
+  info: {
+    displayName: 'Source';
+    pluralName: 'sources';
+    singularName: 'source';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    auction_type: Schema.Attribute.Enumeration<
+      ['bankruptcy', 'privatization', 'marketplace']
+    > &
+      Schema.Attribute.DefaultTo<'bankruptcy'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    last_parse_error: Schema.Attribute.Text;
+    last_parse_status: Schema.Attribute.Enumeration<
+      ['success', 'error', 'running', 'never']
+    > &
+      Schema.Attribute.DefaultTo<'never'>;
+    last_parsed_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::source.source'
+    > &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 100;
+      }>;
+    notes: Schema.Attribute.Text;
+    parse_count: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    parser: Schema.Attribute.Enumeration<
+      [
+        'fedresurs',
+        'fabrikant',
+        'torgi-gov',
+        'investmoscow',
+        'invest-mosreg',
+        'roseltorg',
+        'sberbank-ast',
+        'alfalot',
+        'etprf',
+        'm-ets',
+        'aggregator-bankrot',
+      ]
+    > &
+      Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    region: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 100;
+      }> &
+      Schema.Attribute.DefaultTo<'\u041C\u043E\u0441\u043A\u0432\u0430 \u0438 \u041C\u041E'>;
+    slug: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 50;
+      }>;
+    total_created: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    total_found: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    url: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 500;
+      }>;
+  };
+}
+
 export interface ApiUserCommentUserComment extends Struct.CollectionTypeSchema {
   collectionName: 'user_comments';
   info: {
@@ -1155,6 +1255,7 @@ declare module '@strapi/strapi' {
       'api::market-reference.market-reference': ApiMarketReferenceMarketReference;
       'api::property.property': ApiPropertyProperty;
       'api::setting.setting': ApiSettingSetting;
+      'api::source.source': ApiSourceSource;
       'api::user-comment.user-comment': ApiUserCommentUserComment;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

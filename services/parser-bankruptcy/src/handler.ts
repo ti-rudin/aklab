@@ -2,24 +2,24 @@
  * Handler для parse-bankruptcy jobs.
  *
  * Получает source, вызывает парсер, дедуплицирует, создаёт Property в Strapi.
+ * Обновляет Source stats (total_found, total_created, parse_count, last_parse_*).
  */
 
 import type { Job } from '@aklab/sqlite-queue';
 import { getSourceParser } from './sources';
-import { propertyExists, createProperty, logCron } from './strapi-client';
+import { propertyExists, createProperty, logCron, updateSourceStats } from './strapi-client';
 import { logger } from './utils/logger';
 
 export interface ParseRequest {
   source: string;
+  sourceId?: number;
   correlationId?: string;
 }
 
-/**
- * Обрабатывает parse-bankruptcy job.
- */
 export async function handleParseJob(job: Job): Promise<{ processed: number; created: number; skipped: number }> {
   const req = job.data as ParseRequest;
   const source = req.source;
+  const sourceId = req.sourceId;
   const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
   const startedAt = new Date().toISOString();
 
@@ -29,7 +29,7 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
   if (!parser) {
     const msg = `Unknown source: ${source}`;
     logger.error(msg, { correlationId: corrId });
-    throw new Error(msg); // retry не поможет — PermanentError в будущем
+    throw new Error(msg);
   }
 
   let processed = 0;
@@ -44,7 +44,6 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
 
     for (const prop of properties) {
       try {
-        // Дедупликация: проверяем source + external_id
         const exists = await propertyExists(source, prop.external_id);
         if (exists) {
           skipped++;
@@ -70,22 +69,44 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
         created++;
       } catch (err: any) {
         logger.warn(`Failed to create property ${prop.external_id}: ${err.message}`, { correlationId: corrId });
-        // Продолжаем — не падаем из-за одного объекта
       }
     }
   } catch (err: any) {
     errorMsg = err.message;
     logger.error(`Parse failed for ${source}: ${err.message}`, { correlationId: corrId });
-    throw err; // пусть worker ретраит
+
+    // Обновляем Source stats — ошибка
+    if (sourceId) {
+      await updateSourceStats(sourceId, {
+        last_parse_status: 'error',
+        last_parse_error: err.message,
+        last_parsed_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+
+    throw err;
   } finally {
-    // Логируем CronLog
     await logCron({
       name: `parse-${source}`,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
       items_processed: created,
       error: errorMsg,
-    }).catch(() => {}); // не падаем если лог не записался
+    }).catch(() => {});
+  }
+
+  // Обновляем Source stats — успех
+  if (sourceId) {
+    await updateSourceStats(sourceId, {
+      last_parse_status: 'success',
+      last_parse_error: undefined,
+      last_parsed_at: new Date().toISOString(),
+      total_found: processed,
+      total_created: created,
+      parse_count: 1, // инкремент
+    }).catch((err: any) => {
+      logger.warn(`Failed to update source stats: ${err.message}`, { correlationId: corrId });
+    });
   }
 
   logger.info(`Done: ${created} created, ${skipped} skipped, ${processed} total`, { correlationId: corrId });

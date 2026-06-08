@@ -59,6 +59,12 @@ const router = createRouter({
       component: () => import('../views/MarketReferencesView.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/sources',
+      name: 'sources',
+      component: () => import('../views/SourceListView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 

@@ -108,6 +108,7 @@ const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 const navItems = [
   { to: '/properties', label: 'Объекты' },
+  { to: '/sources', label: 'Источники' },
   { to: '/zamery', label: 'Замеры' },
   { to: '/settings', label: 'Настройки' },
 ]
