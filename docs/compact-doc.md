@@ -185,52 +185,29 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.3 (после Фазы 0, до push Фазы 1)
-- **Фаза 0 завершена** (8 июня 2026): `@aklab/sqlite-queue` в `lib/`,
-  workspaces, `queueService.ts` singleton, `cron/index.ts` stub,
-  слоты в PM2 под будущие сервисы. ✅ коммит `f913ea0`, push в origin main.
-- **Фаза 1 завершена** (8 июня 2026): 5 content-types созданы, 5
-  routes-файлов (`factories.createCoreRouter`), dist пересобран,
-  register+bootstrap работают, таблицы в БД созданы, Setting засеян,
-  public permissions добавлены (25 actions), endpoints возвращают 200. ✅
-  Коммит `1803f60` + `3bf51e5` для routes.
-- **Фаза 1.5 завершена** (8 июня 2026): UI для MarketReference —
-  `MarketReferencesView.vue` (таблица + форма добавления + inline edit цены +
-  activate/deactivate), роут `/market-references`, ссылка из SettingsView. ✅
-- **Фаза 2 завершена** (8 июня 2026): Email-провайдер —
-  `@strapi/provider-email-nodemailer` в plugins.ts, SMTP через Yandex. ✅
-- **Фаза 3 завершена** (8 июня 2026): Queue + cron —
-  `REQUEST_TYPE_TO_QUEUE` заполнен (3 очереди), 4 cron-задачи
-  (parse:bankruptcy, analyze:properties, digest:morning, cleanup:old),
-  `@types/node-cron`, `node-cron` в api/package.json. ✅
-- **Фаза 4 завершена** (8 июня 2026): parser-bankruptcy микросервис —
-  `services/parser-bankruptcy/` (queue-worker, handler, strapi-client,
-  fedresurs stub-парсер, health server, winston logger, zod config),
-  ecosystem configs обновлены (dev + prod), `STRAPI_API_TOKEN` в .env.
-  Fedresurs — SPA, нужен Playwright или внутренний API (stub пока). ✅
-- **Фаза 5 завершена** (8 июня 2026): Web UI MVP —
-  `PropertyListView.vue` (таблица + фильтры + пагинация),
-  `PropertyDetailView.vue` (карточка + статус + комментарии),
-  роуты `/properties` и `/properties/:id`, навигация. ✅
-- **Фаза 6 завершена** (8 июня 2026): analyzer микросервис —
-  `services/analyzer/` (сравнение Property с MarketReference,
-  вычисление deviation_percent, установка is_undervalued),
-  ecosystem configs обновлены. ✅
-- **Фаза 7 завершена** (8 июня 2026): digest микросервис —
-  `services/digest/` (утренний email с недооценёнными объектами,
-  nodemailer напрямую, HTML-таблица), ecosystem configs обновлены. ✅
+- Версия: 1.0.9
+- **Фазы 0–8 завершены** (8 июня 2026): все content-types, UI, микросервисы,
+  деплой на прод. ✅
+- **Sources CRUD** (8 июня 2026): content-type `Source` (name, slug, url,
+  parser, is_active, stats), дефолтные источники (fabrikant, fedresurs),
+  UI-страница `/sources` с тогглами и статистикой, custom endpoint
+  `POST /api/cron/parse/:slug` для ручного запуска. ✅
+- **Парсеры** (8 июня 2026):
+  - `fabrikant` — Playwright, HTML scraping `fabrikant.ru/procedure/search`
+  - `fedresurs` — Playwright, REST API `/backend/cmpbankrupts` → `/companies/{guid}/trades`
+    (**geo-blocked** HTTP 451 с нерусских IP, работает с прод-сервера 192.168.11.151)
 - Содержимое:
-  - **api/src/api/** — 5 content-types (Property, Setting singleton,
-    MarketReference, UserComment, CronLog) + controllers + services +
-    **routes** (фабрики `createCoreRouter(uid)` для каждого)
+  - **api/src/api/** — 7 content-types (Property, Setting singleton,
+    MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
-  - **api/src/cron/index.ts** — stub `registerCrons()`
-  - **api/src/seeders/index.ts** — `seedSettings()` + `seedPublicPermissions()`
-    + admin seed (через .env: `STRAPI_ADMIN_EMAIL`/`STRAPI_ADMIN_PASSWORD`)
-  - **api/src/index.ts** — register (`QueueService.init`) + bootstrap
-    (`registerCrons` + `runSeeders`)
+  - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
+  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedPublicPermissions
+  - **services/parser-bankruptcy/** — FabrikantParser + FedresursParser через Playwright
+  - **services/analyzer/** — сравнение Property с MarketReference
+  - **services/digest/** — утренний email через nodemailer
   - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
-  - **services/** — пустая папка (заготовка под Фазы 4-7)
+- На проде (192.168.11.151): 5 PM2 процессов (api, app, parser-bankruptcy,
+  analyzer, digest), все health OK. Playwright chromium установлен.
 - В .env на проде: `STRAPI_ADMIN_EMAIL=admin@aklab.ti-soft.ru`,
   `STRAPI_ADMIN_PASSWORD=…` (см. .env), `TEST_USER_EMAIL=test@aklab.ti-soft.ru`
 - В БД на проде admin `ax.rudin@gmail.com` (создан Strapi через /admin
@@ -260,6 +237,11 @@ deploy-prod.sh + бамп версии).
 5. **dist/src/index.js пустой после `tsc`** — это нормально, Strapi в
    dev-mode загружает TypeScript напрямую через ts-node, а не из dist.
    Но production build (`strapi build`) — собирает в dist по-настоящему.
+6. **Custom controllers require path** — `require('../../services/queueService')`
+   из `api/src/api/cron/controllers/cron.ts` НЕ работает в prod, т.к.
+   dist-структура: `dist/src/api/cron/controllers/cron.js` → нужен путь
+   `../../../services/queueService` (3 уровня вверх до `dist/src/`, затем
+   `services/`). Проверять `node -e "require(...)"` на сервере.
 
 ## Session handoff (Фаза 1 → следующая сессия)
 
