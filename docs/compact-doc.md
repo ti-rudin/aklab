@@ -319,6 +319,10 @@ deploy-prod.sh + бамп версии).
     пересобирать: `cd app && npm run build`. Deploy-prod.sh делает
     это автоматически (build на шаге 6), но только если файл уже
     в репо на момент git pull.
+12. **Changelog.json: build vs generate** — deploy-prod.sh генерирует
+    changelog.json ПОСЛЕ build app (шаг 9 vs шаг 6). Нужно копировать
+    `app/public/changelog.json` → `app/dist/changelog.json` после
+    генерации. Иначе dist содержит старую версию.
 
 ## Session handoff (v1.0.13 → следующая сессия)
 
