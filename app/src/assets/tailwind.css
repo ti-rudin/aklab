@@ -7,6 +7,7 @@
   --bg-main: #050713;
   --bg-alt: #0b0f1f;
   --bg-elevated: #101528;
+  --bg-input: #0d1225;
   --accent: #4f8cff;
   --accent-soft: rgba(79, 140, 255, 0.2);
   --accent-strong: #8b5cff;
@@ -33,6 +34,7 @@ html[data-theme="light"] {
   --bg-main: #f0f3fb;
   --bg-alt: #e6ebf7;
   --bg-elevated: #ffffff;
+  --bg-input: #ffffff;
   --text-main: #0b1220;
   --text-muted: #2b3a52;
   --border-subtle: rgba(15, 23, 42, 0.10);
