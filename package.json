@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "smoke": "node scripts/smoke-test.js",
+    "smoke:local": "node scripts/smoke-test.js --local",
     "deploy:prod": "bash scripts/deploy-prod.sh",
     "check-env": "node scripts/check-env.js",
     "health-check": "node scripts/health-check.js",
