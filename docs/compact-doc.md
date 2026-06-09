@@ -190,9 +190,18 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.12
-- **Фазы 0–10 завершены** (9 июня 2026): все content-types, UI, микросервисы,
-  авторизация, smoke-тесты, changelog. ✅
+- Версия: 1.0.13
+- **Фазы 0–10 + микросервисы парсеров завершены** (9 июня 2026).
+- **Микросервисы парсеров** (v1.0.13): каждый парсер = отдельный сервис.
+  - `services/_shared/` — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types)
+  - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
+  - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
+  - `services/parser-bankruptcy/` — LEGACY, оставлен для справки, PM2 stopped
+- **Health badges** на `/sources` — 🟢 Online / 🔴 Offline (polling каждые 30с)
+- **Per-source cron расписание** — cron expr в Source.schedule (дефолт `0 3 * * *`)
+- **Inline-редактирование расписания** на `/sources`
+- **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
+- **Документация** — `docs/adding-source.md`, `docs/plan3.md`
 - **Frontend** — 8 страниц (все требуют авторизации, кроме /auth):
   `/properties`, `/properties/:id`, `/sources`, `/market-references`,
   `/settings`, `/changelog`, `/auth`. Home → redirect на `/properties`.
@@ -201,7 +210,7 @@ deploy-prod.sh + бамп версии).
 - **Smoke test** — `npm run smoke` (14 checks: health, auth, endpoints,
   data integrity, microservices). Работает с JWT.
 - **Changelog** — автогенерация при deploy:
-  - `app/public/changelog.json` — предзаполнен v1.0.0–v1.0.11
+  - `app/public/changelog.json` — предзаполнен v1.0.0–v1.0.13
   - `scripts/generate-changelog.js` — парсит conventional commits между релизами
   - `deploy-prod.sh` шаг 9 — генерирует и добавляет запись в changelog.json
   - UI: `/changelog` — фильтры (Все/Новое/Улучшения/Исправления), пагинация
@@ -250,6 +259,10 @@ deploy-prod.sh + бамп версии).
 - Source schema: +schedule (cron expr, дефолт "0 3 * * *"), +health_port (int)
 - Health proxy: `GET /api/sources/:id/health` → Strapi проксирует на `localhost:{health_port}/health`
 - Cron per-source: каждый Source получает свой cron job по `Source.schedule`
+- **Strapi 5 sort** — поле `createdAt` (camelCase), НЕ `created_at`. Если
+  sort вернёт пустой массив — проверить имя поля.
+- Seeder **идемпотентен** — при добавлении новых полей в Source нужно
+  обновлять существующие записи через API (PUT /api/sources/:docId).
 - Документация: `docs/adding-source.md` — инструкция добавления нового источника
 - CORS в `api/config/middlewares.ts` уже включает
   `https://aklab.tirobots.ru` и `http://localhost:5174`
@@ -307,15 +320,20 @@ deploy-prod.sh + бамп версии).
     это автоматически (build на шаге 6), но только если файл уже
     в репо на момент git pull.
 
-## Session handoff (Фаза 10 → следующая сессия)
+## Session handoff (v1.0.13 → следующая сессия)
 
-**Сделано в Фазе 9** (9 июня 2026, v1.0.11):
-- ✅ Удалены Zamery (ZameryView, ZameryEditView, HomeView, stores/zamery.ts)
-- ✅ Все API endpoints переключены на Authenticated (JWT required)
-- ✅ Public role: только login/register/forgot-password
-- ✅ SettingsView переработан — реальные настройки (порог, SMTP, cron)
-- ✅ SourceListView переведён на shared axios (api/strapi.ts)
-- ✅ Smoke test 14/14 ✅ (`npm run smoke`)
+**Сделано в v1.0.13** (9 июня 2026):
+- ✅ Микросервисы парсеров: parser-fabrikant (1345), parser-torgi-gov (1346)
+- ✅ Shared library: services/_shared/ (@aklab/service-shared)
+- ✅ Source schema: +schedule, +health_port
+- ✅ Health proxy: GET /api/sources/:id/health
+- ✅ Cron per-source расписание (Source.schedule)
+- ✅ Health badges на /sources (🟢/🔴)
+- ✅ Inline-редактирование расписания
+- ✅ docs/adding-source.md — инструкция добавления нового источника
+- ✅ docs/plan3.md — план работ по микросервисам
+- ✅ Changelog v1.0.12/v1.0.13 добавлены
+- ✅ deploy-prod.sh обновлён (build shared, новые сервисы)
 
 **Сделано в Фазе 10** (9 июня 2026, v1.0.12):
 - ✅ ChangelogView.vue — фильтры + пагинация
@@ -331,13 +349,13 @@ deploy-prod.sh + бамп версии).
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
 **Следующие шаги**:
-1. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito)
-2. **Фаза 12** — Telegram алерты (мгновенные уведомления)
-3. **Фаза 13** — email дайджест (утренняя рассылка)
+1. Удалить `services/parser-bankruptcy/` после проверки на проде
+2. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito) — по `docs/adding-source.md`
+3. **Фаза 12** — Telegram алерты (мгновенные уведомления)
+4. **Фаза 13** — email дайджест (утренняя рассылка)
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `1ea1677`
-  (release v1.0.12). Все файлы changelog, smoke, auth в origin.
+- `~/github.nosync/aklab` — ветка `main`, последний коммит sync с origin.
 - Smoke test: `npm run smoke` → 14/14 ✅
 - PM2 локально: `pm2 start ecosystem-local.config.js` (api:1338, app:5174)
 
@@ -379,6 +397,9 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 ## Связанные документы
 
 - `docs/plan1.md` — что делает продукт (бизнес-логика, источники данных)
+- `docs/plan2.md` — план MVP (9 фаз)
+- `docs/plan3.md` — план микросервисов парсеров (6 фаз)
+- `docs/adding-source.md` — инструкция добавления нового источника
 - `docs/setup-local.md` — пошаговая установка локально с нуля
 - Глобальные правила (CLAUDE.md пользователя) — НЕ дублируются тут, см.
   родительский `~/.claude/CLAUDE.md`
