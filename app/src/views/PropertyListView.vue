@@ -153,12 +153,25 @@
     </div>
 
     <!-- Пагинация -->
-    <div v-if="totalPages > 1" class="flex justify-center gap-2 mt-6">
-      <button v-for="p in totalPages" :key="p"
-        @click="page = p"
-        class="px-3 py-1 rounded-lg text-sm"
-        :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-        {{ p }}
+    <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
+      <button @click="page > 1 && page--" :disabled="page <= 1"
+        class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+        :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+        ‹
+      </button>
+      <template v-for="p in visiblePages" :key="String(p)">
+        <span v-if="p === '...'" class="px-1 text-sm hidden sm:inline" style="color: var(--text-muted)">…</span>
+        <button v-else @click="page = Number(p)"
+          class="px-2 py-1 sm:px-3 rounded-lg text-xs sm:text-sm hidden sm:inline-block"
+          :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+          {{ p }}
+        </button>
+      </template>
+      <span class="sm:hidden text-xs px-2" style="color: var(--text-muted)">{{ page }} / {{ totalPages }}</span>
+      <button @click="page < totalPages && page++" :disabled="page >= totalPages"
+        class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+        :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+        ›
       </button>
     </div>
   </div>
@@ -204,6 +217,24 @@ const filters = reactive({
 })
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
+
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = page.value
+  const pages: (number | string)[] = []
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i)
+    return pages
+  }
+  pages.push(1)
+  if (current > 3) pages.push('...')
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (current < total - 2) pages.push('...')
+  pages.push(total)
+  return pages
+})
 
 const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
 const typeLabel = (v: string) => ({
@@ -258,12 +289,17 @@ function resetFilters() {
   page.value = 1
 }
 
-watch([filters, page], () => {
-  page.value = 1 // сброс страницы при смене фильтров (кроме самого page)
+watch([filters, page], ([, newPage], [, oldPage]) => {
+  if (newPage === oldPage) {
+    if (page.value !== 1) {
+      page.value = 1
+    } else {
+      fetchItems()
+    }
+    return
+  }
   fetchItems()
 }, { deep: true })
-
-watch(page, fetchItems)
 
 onMounted(fetchItems)
 </script>
