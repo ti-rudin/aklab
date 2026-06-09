@@ -205,13 +205,19 @@ CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
 CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSION" 2>/tmp/changelog-gen.log || echo '')
 
 if [ -n "$CHANGELOG_ITEMS" ] && [ "$CHANGELOG_ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
-  # Определяем текущую дату на русском
-  CHANGELOG_DATE=$(date -d "$(date +%Y-%m-%d)" '+%-d %B %Y' 2>/dev/null || date '+%d %B %Y')
-  # Fallback для macOS
-  if [[ "$(uname)" == "Darwin" ]]; then
-    CHANGELOG_DATE=$(date '+%-d %B %Y')
-  fi
-  CHANGELOG_TIME=$(date '+%H:%M')
+  # Дата и время по Москве (UTC+3), русские названия месяцев
+  MOSCOW_DATE=$(TZ=Europe/Moscow node -e "
+    const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    const d = new Date();
+    const msk = new Date(d.getTime() + (3 * 60 - d.getTimezoneOffset()) * 60000);
+    process.stdout.write(msk.getDate() + ' ' + months[msk.getMonth()] + ' ' + msk.getFullYear());
+  ")
+  CHANGELOG_TIME=$(TZ=Europe/Moscow node -e "
+    const d = new Date();
+    const msk = new Date(d.getTime() + (3 * 60 - d.getTimezoneOffset()) * 60000);
+    process.stdout.write(String(msk.getHours()).padStart(2,'0') + ':' + String(msk.getMinutes()).padStart(2,'0'));
+  ")
+  CHANGELOG_DATE="$MOSCOW_DATE"
 
   # Добавляем новую запись в начало changelog.json
   node -e "
