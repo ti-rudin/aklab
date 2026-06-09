@@ -69,8 +69,8 @@
       <p class="text-lg" style="color: var(--text-muted)">Эталоны не добавлены</p>
     </div>
 
-    <!-- Таблица -->
-    <div v-else class="rounded-xl border overflow-hidden" style="border-color: var(--border-subtle)">
+    <!-- Desktop: Таблица -->
+    <div v-else class="hidden md:block rounded-xl border overflow-hidden" style="border-color: var(--border-subtle)">
       <table class="w-full text-sm">
         <thead>
           <tr style="background: var(--bg-elevated)">
@@ -120,6 +120,56 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Mobile: Карточки -->
+    <div v-if="!loading && items.length > 0" class="md:hidden space-y-3">
+      <div v-for="item in items" :key="item.id"
+        class="rounded-xl border p-4 transition-all"
+        :style="{ background: 'var(--bg-elevated)', borderColor: 'var(--border-subtle)', opacity: item.is_active ? 1 : 0.5 }">
+        <!-- Заголовок: город + тип + статус -->
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold" style="color: var(--text-main)">{{ cityLabel(item.city) }}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full" style="background: var(--bg-main); color: var(--text-muted)">{{ typeLabel(item.property_type) }}</span>
+          </div>
+          <span v-if="item.is_active" class="text-xs px-2 py-0.5 rounded-full shrink-0" style="background: rgba(16,185,129,0.15); color: #10b981">Активен</span>
+          <span v-else class="text-xs px-2 py-0.5 rounded-full shrink-0" style="background: rgba(239,68,68,0.15); color: #fca5a5">Неактивен</span>
+        </div>
+
+        <!-- Цена -->
+        <div class="mb-3">
+          <div class="text-xs mb-1" style="color: var(--text-muted)">₽/м²</div>
+          <template v-if="editingId === item.id">
+            <input v-model.number="editPrice" type="number" min="1" class="w-full px-3 py-2 rounded-lg border text-lg font-mono font-bold"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+          </template>
+          <template v-else>
+            <div class="text-lg font-mono font-bold" style="color: var(--text-main)">{{ Number(item.price_per_sqm).toLocaleString('ru-RU') }} ₽</div>
+          </template>
+        </div>
+
+        <!-- Дата + примечание -->
+        <div class="text-xs mb-3 space-y-1" style="color: var(--text-muted)">
+          <div v-if="item.effective_from">С {{ formatDate(item.effective_from) }}</div>
+          <div v-if="item.notes">{{ item.notes }}</div>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="flex gap-2">
+          <template v-if="editingId === item.id">
+            <button @click="saveEdit(item.id)" class="px-3 py-1.5 rounded-lg text-xs font-semibold" style="background: #10b981; color: white">Сохранить</button>
+            <button @click="cancelEdit" class="px-3 py-1.5 rounded-lg text-xs font-semibold border" style="border-color: var(--border-subtle); color: var(--text-muted)">Отмена</button>
+          </template>
+          <template v-else>
+            <button v-if="item.is_active" @click="startEdit(item)" class="px-3 py-1.5 rounded-lg text-xs font-semibold" style="background: var(--accent); color: white">Изменить цену</button>
+            <button @click="toggleActive(item)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              :style="{ borderColor: 'var(--border-subtle)', color: item.is_active ? '#fca5a5' : '#10b981' }">
+              {{ item.is_active ? 'Деактивировать' : 'Активировать' }}
+            </button>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
