@@ -276,6 +276,11 @@ const availableParsers: ParserDef[] = [
   { slug: 'aggregator-bankrot', health_port: 1348 },
   { slug: 'alfalot', health_port: 1349 },
   { slug: 'etprf', health_port: 1350 },
+  { slug: 'sberbank-ast', health_port: 1351 },
+  { slug: 'invest-mosreg', health_port: 1352 },
+  { slug: 'investmoscow', health_port: 1353 },
+  { slug: 'roseltorg', health_port: 1354 },
+  { slug: 'm-ets', health_port: 1355 },
 ]
 
 const form = ref({
