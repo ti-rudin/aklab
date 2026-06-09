@@ -47,7 +47,7 @@ rollback() {
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
     fi
-    pm2 restart aklab-api aklab-app aklab-parser-bankruptcy-prod aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
+    pm2 restart aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
     notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
 }
@@ -134,6 +134,9 @@ grep -E "^VITE_" .env > app/.env.local 2>/dev/null || true
 log "Build lib/sqlite-queue..."
 (cd lib/sqlite-queue && npm run build 2>&1 | tail -3)
 
+log "Build services/_shared..."
+(cd services/_shared && npm run build 2>&1 | tail -3)
+
 log "Build API..."
 (cd api && npm run build 2>&1 | tail -3)
 
@@ -141,7 +144,7 @@ log "Build App..."
 (cd app && npm run build 2>&1 | tail -3)
 
 log "Build services..."
-for svc in parser-bankruptcy analyzer digest; do
+for svc in parser-fabrikant parser-torgi-gov analyzer digest; do
   if [ -d "services/$svc" ]; then
     log "  Build services/$svc..."
     (cd "services/$svc" && npm run build 2>&1 | tail -3)
@@ -149,8 +152,8 @@ for svc in parser-bankruptcy analyzer digest; do
 done
 
 # === Step 7: PM2 restart ===
-log "PM2 restart (all 5 processes)..."
-pm2 stop aklab-api aklab-app aklab-parser-bankruptcy-prod aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
+log "PM2 restart (all processes)..."
+pm2 stop aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
@@ -185,7 +188,7 @@ fi
 
 # Проверяем health микросервисов (не блокирующий — warn)
 sleep 5
-for svc_port in "parser-bankruptcy:1340" "analyzer:1341" "digest:1342"; do
+for svc_port in "parser-fabrikant:1345" "parser-torgi-gov:1346" "analyzer:1341" "digest:1342"; do
   SVC_NAME="${svc_port%%:*}"
   SVC_PORT="${svc_port##*:}"
   SVC_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${SVC_PORT}/health" 2>/dev/null || echo "000")

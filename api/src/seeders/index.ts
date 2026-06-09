@@ -217,6 +217,8 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
       is_active: true,
+      schedule: '0 3 * * *',
+      health_port: 1345,
     },
     {
       name: 'Федресурс',
@@ -226,6 +228,8 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
       is_active: false, // Qrator 403 — отложен
+      schedule: '0 3 * * *',
+      health_port: 1347,
     },
     {
       name: 'ГИС Торги',
@@ -235,6 +239,8 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
       auction_type: 'privatization' as const,
       region: 'Москва и МО',
       is_active: true,
+      schedule: '0 3 * * *',
+      health_port: 1346,
     },
   ];
 

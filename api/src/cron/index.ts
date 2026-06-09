@@ -2,12 +2,13 @@
  * Cron-планировщик для aklab.
  *
  * Задачи:
- *   - parse:bankruptcy    (каждый час, Europe/Moscow, noOverlap)
- *   - analyze:properties  (каждые 30 мин)
- *   - digest:morning      (по setting.digest_time, динамически)
- *   - cleanup:old         (3:00 ежедневно, retention_months из Setting)
+ *   - parse:<slug>         — per-source расписание из Source.schedule (cron expr)
+ *   - analyze:properties   — каждые 30 мин
+ *   - digest:morning       — по setting.digest_time, динамически
+ *   - cleanup:old          — 3:00 ежедневно, retention_months из Setting
  *
  * Источники читаются из коллекции Source (is_active=true).
+ * Для каждого источника создаётся отдельный cron job по его schedule.
  */
 
 import type { Core } from '@strapi/strapi';
@@ -15,6 +16,9 @@ import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
+
+// Хранилище активных cron jobs для пересоздания при изменении расписания
+const activeCronJobs = new Map<string, cron.ScheduledTask>();
 
 async function getSetting(strapi: Core.Strapi): Promise<any> {
   const list = await (strapi as any).entityService.findMany('api::setting.setting', { limit: 1 });
@@ -28,31 +32,61 @@ async function getActiveSources(strapi: Core.Strapi): Promise<any[]> {
   });
 }
 
-export function registerCrons(strapi: Core.Strapi): void {
+/**
+ * Регистрирует cron job для одного источника.
+ * Если job с таким slug уже есть — пересоздаёт (для обновления расписания).
+ */
+function registerSourceCron(strapi: Core.Strapi, source: any): void {
   const queueService = getQueueService();
+  const slug = source.slug;
+  const schedule = source.schedule || '0 3 * * *';
+  const sourceId = source.id;
 
-  // 1. parse:bankruptcy — каждый час
-  cron.schedule('0 * * * *', async () => {
-    const corrId = `cron-parse-${Date.now()}`;
-    strapi.log.info(`[cron] parse:bankruptcy triggered (${corrId})`);
+  // Удаляем старый job если есть
+  const existingJob = activeCronJobs.get(slug);
+  if (existingJob) {
+    existingJob.stop();
+    activeCronJobs.delete(slug);
+  }
+
+  // Определяем имя очереди по парсеру
+  const queueName = `parse-${slug}`;
+
+  const job = cron.schedule(schedule, async () => {
+    const corrId = `cron-parse-${slug}-${Date.now()}`;
+    strapi.log.info(`[cron] parse:${slug} triggered (${corrId})`);
     try {
-      const sources = await getActiveSources(strapi);
-      for (const src of sources || []) {
-        queueService.addToQueue('parse-bankruptcy', {
-          source: src.slug,
-          sourceId: src.id,
-        }, { correlationId: corrId });
-        strapi.log.info(`[cron] → enqueued parse-bankruptcy for ${src.name} (${src.slug})`);
-      }
-      if (!sources?.length) {
-        strapi.log.info('[cron] No active sources — skip');
-      }
+      queueService.addToQueue(queueName, {
+        source: slug,
+        sourceId,
+      }, { correlationId: corrId });
+      strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name}`);
     } catch (err: any) {
-      strapi.log.error(`[cron] parse:bankruptcy error: ${err.message}`);
+      strapi.log.error(`[cron] parse:${slug} error: ${err.message}`);
     }
   }, { timezone: CRON_TIMEZONE });
 
-  strapi.log.info('[cron] Registered: parse:bankruptcy (every hour, Europe/Moscow)');
+  activeCronJobs.set(slug, job);
+  strapi.log.info(`[cron] Registered: parse:${slug} (${schedule}, Europe/Moscow, queue=${queueName})`);
+}
+
+export function registerCrons(strapi: Core.Strapi): void {
+  const queueService = getQueueService();
+
+  // 1. Per-source parsing — регистрируем при старте
+  (async () => {
+    try {
+      const sources = await getActiveSources(strapi);
+      for (const src of sources || []) {
+        registerSourceCron(strapi, src);
+      }
+      if (!sources?.length) {
+        strapi.log.info('[cron] No active sources — no parse jobs registered');
+      }
+    } catch (err: any) {
+      strapi.log.error(`[cron] Failed to register source crons: ${err.message}`);
+    }
+  })();
 
   // 2. analyze:properties — каждые 30 минут
   cron.schedule('*/30 * * * *', async () => {
@@ -93,7 +127,7 @@ export function registerCrons(strapi: Core.Strapi): void {
         date: new Date().toISOString().slice(0, 10),
         smtpTo: setting?.smtp_to || null,
       }, { correlationId: corrId });
-      strapi.log.info(`[cron] → enqueued digest-send`);
+      strapi.log.info('[cron] → enqueued digest-send');
     } catch (err: any) {
       strapi.log.error(`[cron] digest:morning error: ${err.message}`);
     }
@@ -132,4 +166,11 @@ export function registerCrons(strapi: Core.Strapi): void {
   }, { timezone: CRON_TIMEZONE });
 
   strapi.log.info('[cron] Registered: cleanup:old (daily 03:00 MSK)');
+}
+
+/**
+ * Пересоздать cron job для источника (вызывается при изменении schedule через API).
+ */
+export function rescheduleSource(strapi: Core.Strapi, source: any): void {
+  registerSourceCron(strapi, source);
 }
