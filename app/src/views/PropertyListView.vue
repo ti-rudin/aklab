@@ -53,9 +53,7 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="text-center py-16">
-      <p style="color: var(--text-muted)">Загрузка…</p>
-    </div>
+    <SkeletonTable v-if="loading" :rows="6" />
 
     <!-- Пусто -->
     <div v-else-if="items.length === 0" class="text-center py-16">
@@ -178,6 +176,7 @@
 </template>
 
 <script setup lang="ts">
+import SkeletonTable from '@/components/SkeletonTable.vue'
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
