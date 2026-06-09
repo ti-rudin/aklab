@@ -34,6 +34,56 @@ export async function propertyExists(source: string, externalId: string): Promis
 }
 
 /**
+ * Проверить, является ли объект коммерческой недвижимостью.
+ * Фильтрует некоммерческие объекты (земельные участки, жильё, транспорт, оборудование и т.д.)
+ */
+function isCommercialProperty(props: { title: string; property_type: string; auction_type: string }): boolean {
+  // Marketplace — не фильтруем (там свои правила)
+  if (props.auction_type !== 'bankruptcy' && props.auction_type !== 'privatization') {
+    return true;
+  }
+
+  // Для типов, отличных от 'other', считаем коммерческими (office, warehouse, retail, production, free_purpose)
+  if (props.property_type !== 'other') {
+    return true;
+  }
+
+  const title = props.title.toLowerCase();
+
+  // Ключевые слова, по которым объект точно НЕ коммерческий
+  const nonCommercialPatterns = [
+    'жилой',
+    'жилого',
+    'жилых',
+    'квартир',
+    'комната',
+    'комнаты',
+    'комнат',
+    'автомобил',
+    'транспорт',
+    'оборудовани',
+    'станок',
+    'станки',
+    'инвентар',
+    'мебел',
+    'мебель',
+  ];
+
+  for (const pattern of nonCommercialPatterns) {
+    if (title.includes(pattern)) {
+      return false;
+    }
+  }
+
+  // 'земельный участок' — только если рядом нет 'нежилое'
+  if (title.includes('земельн') && title.includes('участок') && !title.includes('нежилое')) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Создать Property в Strapi.
  */
 export async function createProperty(props: {
@@ -52,6 +102,11 @@ export async function createProperty(props: {
   description?: string;
   contacts?: string;
 }): Promise<any> {
+  if (!isCommercialProperty(props)) {
+    logger.warn(`Skipping non-commercial property: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
+    return null;
+  }
+
   const res = await fetch(`${BASE}/properties`, {
     method: 'POST',
     headers: HEADERS,
