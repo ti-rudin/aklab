@@ -123,8 +123,8 @@ ssh rudin@192.168.11.151 'cd ~/aklab && export NVM_DIR="$HOME/.nvm" && [ -s "$NV
 ```
 
 Скрипт сам: git pull → bump patch-версии (1.0.X) → build (api 140s +
-app 3s) → PM2 restart → health check 190s → release-коммит → push origin.
-Дай foreground-таймаут минимум 300s.
+app 3s) → PM2 restart → health check 190s → **генерация changelog** →
+release-коммит → push origin. Дай foreground-таймаут минимум 300s.
 
 **Всегда логируй в файл** (`> /tmp/deploy.log 2>&1`) и читай файл через
 `tail`. Иначе теряешь вывод и не понимаешь, упало или прошло.
@@ -185,9 +185,21 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.10
-- **Фазы 0–8 завершены** (8 июня 2026): все content-types, UI, микросервисы,
-  деплой на прод. ✅
+- Версия: 1.0.12
+- **Фазы 0–10 завершены** (9 июня 2026): все content-types, UI, микросервисы,
+  авторизация, smoke-тесты, changelog. ✅
+- **Frontend** — 8 страниц (все требуют авторизации, кроме /auth):
+  `/properties`, `/properties/:id`, `/sources`, `/market-references`,
+  `/settings`, `/changelog`, `/auth`. Home → redirect на `/properties`.
+- **API security** — все endpoints требуют JWT (роль Authenticated).
+  Public role: только login/register/forgot-password. Проверяется smoke-тестом.
+- **Smoke test** — `npm run smoke` (14 checks: health, auth, endpoints,
+  data integrity, microservices). Работает с JWT.
+- **Changelog** — автогенерация при deploy:
+  - `app/public/changelog.json` — предзаполнен v1.0.0–v1.0.11
+  - `scripts/generate-changelog.js` — парсит conventional commits между релизами
+  - `deploy-prod.sh` шаг 9 — генерирует и добавляет запись в changelog.json
+  - UI: `/changelog` — фильтры (Все/Новое/Улучшения/Исправления), пагинация
 - **Sources CRUD** (8 июня 2026): content-type `Source` (name, slug, url,
   parser, is_active, stats), дефолтные источники (fabrikant, torgi-gov),
   UI-страница `/sources` с тогглами и статистикой, custom endpoint
@@ -209,11 +221,17 @@ deploy-prod.sh + бамп версии).
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
-  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedPublicPermissions
+  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions
   - **services/parser-bankruptcy/** — FabrikantParser + FedresursParser + TorgiGovParser
   - **services/analyzer/** — сравнение Property с MarketReference
   - **services/digest/** — утренний email через nodemailer
   - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
+  - **app/src/views/** — Auth, PropertyListView, PropertyDetailView,
+    SourceListView, MarketReferencesView, SettingsView, ChangelogView
+  - **app/src/stores/** — auth.ts (Pinia)
+  - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
+  - **scripts/smoke-test.js** — smoke тест (npm run smoke)
+  - **scripts/generate-changelog.js** — генератор changelog из git commits
 - На проде (192.168.11.151): 5 PM2 процессов (api, app, parser-bankruptcy,
   analyzer, digest), все health OK. Playwright chromium установлен.
 - В .env на проде: `STRAPI_ADMIN_EMAIL=admin@aklab.ti-soft.ru`,
@@ -267,25 +285,33 @@ deploy-prod.sh + бамп версии).
    перехват network response при навигации по UI-странице, но и это
    не удалось (Qrator проверяет TLS fingerprint). Отложен до решения
    с прокси/резидентным IP.
+10. **Deploy: push BEFORE deploy** — `deploy-prod.sh` делает
+    `git pull origin main` в самом начале. Если локальный коммит
+    НЕ в origin/main — файл не попадёт на сервер. **Правило:**
+    всегда `git push origin main` ДО запуска deploy. Иначе придётся
+    делать pull + rebuild app вручную на сервере.
+11. **Vite и public/ файлы** — Vite копирует `app/public/` → `app/dist/`
+    при build. Если файл появился в public/ после build — нужно
+    пересобирать: `cd app && npm run build`. Deploy-prod.sh делает
+    это автоматически (build на шаге 6), но только если файл уже
+    в репо на момент git pull.
 
-## Session handoff (Фаза 1 → следующая сессия)
+## Session handoff (Фаза 10 → следующая сессия)
 
-**Сделано в Фазе 1** (8 июня 2026):
-- ✅ 5 content-types + controllers + services
-- ✅ 5 routes-файлов через `factories.createCoreRouter(uid)`
-- ✅ `api/config/plugins.ts` — `jwtSecret: env('JWT_SECRET')` (фикс,
-  иначе users-permissions bootstrap падал)
-- ✅ dist пересобран, register+bootstrap работают
-- ✅ 5 таблиц в `api/.tmp/data.db` созданы
-- ✅ 25 public permissions (find/findOne/create/update/delete × 5)
-- ✅ Все endpoints возвращают HTTP 200 (для пустых коллекций `data: []`,
-  для singleton `setting` — `data: {...}`)
+**Сделано в Фазе 9** (9 июня 2026, v1.0.11):
+- ✅ Удалены Zamery (ZameryView, ZameryEditView, HomeView, stores/zamery.ts)
+- ✅ Все API endpoints переключены на Authenticated (JWT required)
+- ✅ Public role: только login/register/forgot-password
+- ✅ SettingsView переработан — реальные настройки (порог, SMTP, cron)
+- ✅ SourceListView переведён на shared axios (api/strapi.ts)
+- ✅ Smoke test 14/14 ✅ (`npm run smoke`)
 
-**Найдено и исправлено по ходу Фазы 1**:
-- ❌→✅ Endpoints `/api/*` → 404 (root cause: Strapi 5 НЕ авто-генерирует
-  routes; нужен явный `routes/<name>.ts` через `factories.createCoreRouter`)
-- ❌→✅ `Missing jwtSecret` при `strapi start` (root cause:
-  `api/config/plugins.ts` был пустым с момента merge 151)
+**Сделано в Фазе 10** (9 июня 2026, v1.0.12):
+- ✅ ChangelogView.vue — фильтры + пагинация
+- ✅ changelog.json — предзаполнен v1.0.0–v1.0.11
+- ✅ generate-changelog.js — парсит conventional commits
+- ✅ Интеграция в deploy-prod.sh (шаг 9: генерация перед release-коммитом)
+- ✅ Ссылка в Footer
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно (там уже таблицы и admin).
@@ -293,18 +319,16 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
-**Следующие шаги** (после чекпоинта Фазы 7):
-1. **Фаза 8** — Deploy на 151 (обновить deploy-prod.sh: npm install + build для services/*, pm2 restart все 5 процессов, проверить STRAPI_API_TOKEN + SMTP в .env на проде)
+**Следующие шаги**:
+1. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito)
+2. **Фаза 12** — Telegram алерты (мгновенные уведомления)
+3. **Фаза 13** — email дайджест (утренняя рассылка)
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `1803f60`
-  (jwtSecret фикс). `routes/<name>.ts` — в pending, плюс обновлён
-  `docs/compact-doc.md`.
-- Фаза 1 проверена локально: все endpoints /api/* возвращают 200,
-  /api/setting отдаёт singleton, /api/properties/1 → 404 (нет записи,
-  это правильно).
-- pm2: локально крутится `proc_bdb001e47ac3` (Strapi production), на 151
-  — `aklab-api` / `aklab-app`.
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `1ea1677`
+  (release v1.0.12). Все файлы changelog, smoke, auth в origin.
+- Smoke test: `npm run smoke` → 14/14 ✅
+- PM2 локально: `pm2 start ecosystem-local.config.js` (api:1338, app:5174)
 
 ## Известные баги / TODO
 
@@ -321,6 +345,9 @@ deploy-prod.sh + бамп версии).
 ## Полезные команды
 
 ```bash
+# Smoke test
+npm run smoke
+
 # Проверить что на 151 живо
 ssh rudin@192.168.11.151 'pm2 list && cd ~/aklab && git log --oneline -5 && grep version package.json | head -1'
 
