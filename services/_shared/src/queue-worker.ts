@@ -30,13 +30,22 @@ export function gracefulStopQueueWorker(timeoutMs: number): Promise<void> {
       resolve();
       return;
     }
+
     const timer = setTimeout(() => {
       logger.warn('Graceful stop timeout — force closing');
       stopQueueWorker();
       resolve();
     }, timeoutMs);
 
-    stopQueueWorker();
+    // Ждём завершения активных задач через queue.close() (graceful)
+    // Если за timeoutMs не завершатся — сработает setTimeout выше
+    try {
+      queue.close();
+      queue = null;
+      logger.info('Queue worker stopped gracefully');
+    } catch (err: any) {
+      logger.warn(`Queue close error: ${err.message}`);
+    }
     clearTimeout(timer);
     resolve();
   });

@@ -1,5 +1,5 @@
 import type { Job } from '@aklab/sqlite-queue';
-import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from './strapi-client';
+import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 
 export interface AnalyzeRequest {
