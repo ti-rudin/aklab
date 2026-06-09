@@ -10,10 +10,10 @@
         <!-- Заголовок -->
         <div class="text-center mb-6">
           <h1 class="text-2xl font-bold mb-2" style="color: var(--text-main)">
-            {{ isLoginMode ? 'Вход в личный кабинет' : 'Регистрация' }}
+            Вход в личный кабинет
           </h1>
           <p class="text-sm" style="color: var(--text-muted)">
-            {{ isLoginMode ? 'Введите данные для входа' : 'Создайте аккаунт' }}
+            Введите данные для входа
           </p>
         </div>
 
@@ -34,8 +34,8 @@
             />
           </div>
 
-          <!-- Пароль (только для входа) -->
-          <div v-if="isLoginMode">
+          <!-- Пароль -->
+          <div>
             <label for="password" class="block text-sm font-semibold mb-1" style="color: var(--text-main)">Пароль</label>
             <input
               id="password"
@@ -49,19 +49,9 @@
             />
           </div>
 
-          <!-- Инфо о регистрации -->
-          <div v-if="!isLoginMode" class="rounded-lg p-3 border" style="background: var(--accent-soft); border-color: var(--accent)">
-            <p class="text-sm" style="color: var(--accent)">Пароль будет сгенерирован автоматически и отправлен на email.</p>
-          </div>
-
           <!-- Ошибка -->
           <div v-if="error" class="rounded-lg p-3 border" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3)">
             <p class="text-sm" style="color: #fca5a5">{{ error }}</p>
-          </div>
-
-          <!-- Успех -->
-          <div v-if="successMessage" class="rounded-lg p-3 border" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3)">
-            <p class="text-sm" style="color: #6ee7b7">{{ successMessage }}</p>
           </div>
 
           <!-- Кнопка -->
@@ -76,23 +66,11 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              {{ isLoginMode ? 'Вход...' : 'Регистрация...' }}
+              Вход...
             </span>
-            <span v-else>{{ isLoginMode ? 'Войти' : 'Зарегистрироваться' }}</span>
+            <span v-else>Войти</span>
           </button>
         </form>
-
-        <!-- Переключение режима -->
-        <div class="text-center">
-          <button
-            @click="toggleMode"
-            type="button"
-            class="text-sm font-medium hover:opacity-80"
-            style="color: var(--accent)"
-          >
-            {{ isLoginMode ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти' }}
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -108,8 +86,6 @@ const authStore = useAuthStore()
 
 const loading = ref(false)
 const error = ref('')
-const successMessage = ref('')
-const isLoginMode = ref(true)
 
 const formData = reactive({
   email: '',
@@ -129,35 +105,7 @@ const handleLogin = async () => {
   }
 }
 
-const handleRegister = async () => {
-  if (!formData.email) {
-    error.value = 'Email обязателен'
-    return
-  }
-  loading.value = true
-  error.value = ''
-  try {
-    await authStore.register(formData.email)
-    successMessage.value = 'Регистрация успешна! Пароль отправлен на email.'
-    formData.email = ''
-    isLoginMode.value = true
-  } catch {
-    error.value = authStore.error || 'Ошибка регистрации'
-  } finally {
-    loading.value = false
-  }
-}
-
-const toggleMode = () => {
-  isLoginMode.value = !isLoginMode.value
-  error.value = ''
-  successMessage.value = ''
-  formData.email = ''
-  formData.password = ''
-}
-
 const handleSubmit = () => {
-  if (isLoginMode.value) handleLogin()
-  else handleRegister()
+  handleLogin()
 }
 </script>

@@ -46,6 +46,21 @@
 
           <!-- Кнопки справа -->
           <div class="flex items-center gap-2">
+            <!-- Гамбургер (mobile) -->
+            <button
+              v-if="isAuthenticated"
+              @click="mobileMenuOpen = !mobileMenuOpen"
+              class="sm:hidden p-2 rounded-lg transition-colors duration-200 hover:opacity-80"
+              style="color: var(--text-muted)"
+              aria-label="Меню"
+            >
+              <svg v-if="!mobileMenuOpen" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <svg v-else class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <!-- Тема -->
             <button
               @click="toggleTheme"
@@ -61,11 +76,11 @@
               </svg>
             </button>
 
-            <!-- Auth -->
+            <!-- Auth (desktop) -->
             <template v-if="isAuthenticated">
               <button
                 @click="handleLogout"
-                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 hover:opacity-80"
+                class="hidden sm:block px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 hover:opacity-80"
                 style="color: var(--text-muted)"
               >
                 Выйти
@@ -85,6 +100,39 @@
       </div>
     </nav>
 
+    <!-- Mobile menu -->
+    <transition name="slide-down">
+      <div
+        v-if="mobileMenuOpen && isAuthenticated"
+        class="sm:hidden glass border-b"
+        style="border-color: var(--border-subtle); background: var(--bg-elevated)"
+      >
+        <div class="px-4 py-3 space-y-1">
+          <router-link
+            v-for="item in navItems"
+            :key="item.to"
+            :to="item.to"
+            @click="mobileMenuOpen = false"
+            class="block px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
+            :class="isActive(item.to) ? 'font-semibold' : 'hover:opacity-80'"
+            :style="{
+              color: isActive(item.to) ? 'var(--accent)' : 'var(--text-muted)',
+              background: isActive(item.to) ? 'var(--accent-soft)' : 'transparent'
+            }"
+          >
+            {{ item.label }}
+          </router-link>
+          <button
+            @click="handleLogout"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 hover:opacity-80"
+            style="color: var(--text-muted)"
+          >
+            Выйти
+          </button>
+        </div>
+      </div>
+    </transition>
+
     <!-- Main content -->
     <main class="flex-grow">
       <router-view v-slot="{ Component, route }">
@@ -100,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
@@ -113,6 +161,8 @@ const { isDark, toggleTheme } = useTheme()
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
+const mobileMenuOpen = ref(false)
+
 const navItems = [
   { to: '/properties', label: 'Объекты' },
   { to: '/sources', label: 'Источники' },
@@ -122,8 +172,32 @@ const navItems = [
 
 const isActive = (path: string) => route.path.startsWith(path)
 
+// Закрываем мобильное меню при смене маршрута
+watch(() => route.path, () => {
+  mobileMenuOpen.value = false
+})
+
 const handleLogout = async () => {
   await authStore.logout()
+  mobileMenuOpen.value = false
   router.push('/')
 }
 </script>
+
+<style scoped>
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.slide-down-enter-to,
+.slide-down-leave-from {
+  opacity: 1;
+  max-height: 300px;
+}
+</style>
