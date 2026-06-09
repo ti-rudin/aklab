@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.24",
+    "date": "9 июня 2026",
+    "time": "22:54",
+    "items": [
+      {
+        "text": "Add 5 more parsers (sberbank-ast, invest-mosreg, investmoscow, roseltorg, m-ets)",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.22",
     "date": "9 июня 2026",
     "time": "12:38",
