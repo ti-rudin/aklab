@@ -100,7 +100,7 @@ fi
 NEED_INSTALL=false
 
 # node_modules отсутствует — обязательно ставим
-if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ]; then
+if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ] || [ ! -d "services/_shared/node_modules" ] || [ ! -d "services/parser-fabrikant/node_modules" ] || [ ! -d "services/parser-torgi-gov/node_modules" ]; then
   NEED_INSTALL=true
   log "node_modules отсутствует — npm install обязателен"
 fi
