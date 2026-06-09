@@ -7,8 +7,8 @@ const HEADERS = {
   Authorization: `Bearer ${config.strapi.apiToken}`,
 };
 
-export async function fetchProperty(id: number): Promise<any> {
-  const res = await fetch(`${BASE}/properties/${id}`, { headers: HEADERS });
+export async function fetchProperty(documentId: string): Promise<any> {
+  const res = await fetch(`${BASE}/properties/${documentId}`, { headers: HEADERS });
   if (!res.ok) throw new Error(`fetchProperty failed (${res.status})`);
   const data = (await res.json()) as any;
   return data.data;

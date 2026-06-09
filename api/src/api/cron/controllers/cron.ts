@@ -68,7 +68,7 @@ export default {
       });
 
       for (const prop of properties || []) {
-        qs.addToQueue('analyze-property', { property_id: prop.id }, { correlationId: corrId });
+        qs.addToQueue('analyze-property', { documentId: prop.documentId }, { correlationId: corrId });
       }
 
       ctx.body = {

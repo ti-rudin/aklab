@@ -3,7 +3,7 @@ import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty,
 import { logger } from './utils/logger';
 
 export interface AnalyzeRequest {
-  property_id: number;
+  documentId: string;
   correlationId?: string;
 }
 
@@ -12,12 +12,12 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
   const corrId = req.correlationId || job.correlation_id || `analyze-${Date.now()}`;
   const startedAt = new Date().toISOString();
 
-  logger.info(`Analyzing property_id=${req.property_id}`, { correlationId: corrId });
+  logger.info(`Analyzing documentId=${req.documentId}`, { correlationId: corrId });
 
   try {
-    const property = await fetchProperty(req.property_id);
+    const property = await fetchProperty(req.documentId);
     if (!property) {
-      logger.warn(`Property ${req.property_id} not found`, { correlationId: corrId });
+      logger.warn(`Property ${req.documentId} not found`, { correlationId: corrId });
       return { analyzed: false, undervalued: false };
     }
 
@@ -57,7 +57,7 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
 
     return { analyzed: true, undervalued: isUndervalued };
   } catch (err: any) {
-    logger.error(`Analyze failed for property ${req.property_id}: ${err.message}`, { correlationId: corrId });
+    logger.error(`Analyze failed for property ${req.documentId}: ${err.message}`, { correlationId: corrId });
     throw err;
   }
 }
