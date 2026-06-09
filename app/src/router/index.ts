@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
@@ -8,20 +7,16 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
-      meta: { requiresGuest: false },
+      redirect: () => {
+        const authStore = useAuthStore()
+        return authStore.isAuthenticated ? '/properties' : '/auth'
+      },
     },
     {
       path: '/auth',
       name: 'auth',
       component: () => import('../views/Auth.vue'),
       meta: { requiresGuest: true },
-    },
-    {
-      path: '/zamery',
-      name: 'zamery',
-      component: () => import('../views/ZameryView.vue'),
-      meta: { requiresAuth: true },
     },
     {
       path: '/properties',
@@ -36,15 +31,9 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/zamery/new',
-      name: 'zamery-new',
-      component: () => import('../views/ZameryEditView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/zamery/:id',
-      name: 'zamery-edit',
-      component: () => import('../views/ZameryEditView.vue'),
+      path: '/sources',
+      name: 'sources',
+      component: () => import('../views/SourceListView.vue'),
       meta: { requiresAuth: true },
     },
     {
@@ -57,12 +46,6 @@ const router = createRouter({
       path: '/market-references',
       name: 'market-references',
       component: () => import('../views/MarketReferencesView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/sources',
-      name: 'sources',
-      component: () => import('../views/SourceListView.vue'),
       meta: { requiresAuth: true },
     },
   ],
@@ -84,7 +67,7 @@ router.beforeEach(async (to) => {
 
   // Только для гостей, но пользователь авторизован
   if (to.meta.requiresGuest && authStore.isAuthenticated) {
-    return { name: 'zamery' }
+    return { name: 'properties' }
   }
 })
 

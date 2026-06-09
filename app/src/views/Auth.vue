@@ -121,7 +121,7 @@ const handleLogin = async () => {
   error.value = ''
   try {
     await authStore.loginWithEmail(formData.email, formData.password)
-    router.push('/zamery')
+    router.push('/properties')
   } catch {
     error.value = authStore.error || 'Ошибка входа'
   } finally {

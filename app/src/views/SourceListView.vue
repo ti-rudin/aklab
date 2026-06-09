@@ -170,8 +170,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-
-const API = import.meta.env.VITE_API_URL || '/api'
+import api from '@/api/strapi'
 
 interface Source {
   id: number
@@ -208,14 +207,11 @@ const form = ref({
   region: 'Москва и МО',
 })
 
-const headers = { 'Content-Type': 'application/json' }
-
 async function fetchSources() {
   loading.value = true
   try {
-    const res = await fetch(`${API}/sources?sort=created_at:desc&pagination[pageSize]=100`, { headers })
-    const data = await res.json()
-    sources.value = data.data || []
+    const res = await api.get('/sources?sort=created_at:desc&pagination[pageSize]=100')
+    sources.value = res.data?.data || []
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -226,30 +222,18 @@ async function fetchSources() {
 async function createSource() {
   error.value = ''
   try {
-    const res = await fetch(`${API}/sources`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ data: form.value }),
-    })
-    if (!res.ok) {
-      const body = await res.json()
-      throw new Error(body.error?.message || `HTTP ${res.status}`)
-    }
+    await api.post('/sources', { data: form.value })
     showAddForm.value = false
     form.value = { name: '', slug: '', url: '', parser: 'fabrikant', auction_type: 'bankruptcy', region: 'Москва и МО' }
     await fetchSources()
   } catch (e: any) {
-    error.value = e.message
+    error.value = e.response?.data?.error?.message || e.message
   }
 }
 
 async function toggleActive(src: Source) {
   try {
-    await fetch(`${API}/sources/${src.documentId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ data: { is_active: !src.is_active } }),
-    })
+    await api.put(`/sources/${src.documentId}`, { data: { is_active: !src.is_active } })
     await fetchSources()
   } catch (e: any) {
     error.value = e.message
@@ -260,37 +244,20 @@ async function runParser(src: Source) {
   runningSource.value = src.id
   error.value = ''
   try {
-    // Отправляем job в очередь через Strapi API
     // Обновляем статус на "running"
-    await fetch(`${API}/sources/${src.documentId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ data: { last_parse_status: 'running', last_parse_error: null } }),
-    })
+    await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'running', last_parse_error: null } })
     await fetchSources()
 
-    // Триггерим парсинг через cron endpoint (или прямой вызов)
-    const res = await fetch(`${API}/cron/parse/${src.slug}`, {
-      method: 'POST',
-      headers,
-    })
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error?.message || `HTTP ${res.status}`)
-    }
+    // Триггерим парсинг
+    await api.post(`/cron/parse/${src.slug}`)
 
     // Ждём немного и обновляем
     await new Promise(r => setTimeout(r, 3000))
     await fetchSources()
   } catch (e: any) {
-    error.value = `Ошибка запуска: ${e.message}`
+    error.value = `Ошибка запуска: ${e.response?.data?.error?.message || e.message}`
     // Сбрасываем статус
-    await fetch(`${API}/sources/${src.documentId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ data: { last_parse_status: 'error', last_parse_error: e.message } }),
-    }).catch(() => {})
+    await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'error', last_parse_error: e.message } }).catch(() => {})
     await fetchSources()
   } finally {
     runningSource.value = null
