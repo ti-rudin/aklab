@@ -66,8 +66,14 @@
       </div>
     </div>
 
-    <!-- Загрузка -->
-    <div v-if="loading" class="text-center py-12" style="color: var(--text-muted)">Загрузка...</div>
+    <!-- Loading -->
+    <div v-if="loading" class="max-w-3xl mx-auto">
+      <div class="flex justify-between items-center mb-6">
+        <div class="skeleton h-8 w-40" />
+        <div class="skeleton h-9 w-36 rounded-lg" />
+      </div>
+      <SkeletonLoader :lines="6" height="3.5rem" />
+    </div>
 
     <!-- Список источников -->
     <div v-else-if="sources.length === 0" class="text-center py-12" style="color: var(--text-muted)">
@@ -221,6 +227,7 @@
 </template>
 
 <script setup lang="ts">
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/api/strapi'
 

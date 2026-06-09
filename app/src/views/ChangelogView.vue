@@ -5,7 +5,10 @@
       <p style="color: var(--text-muted)">История изменений и обновлений AKLAB</p>
     </header>
 
-    <div v-if="loading" class="text-center py-12" style="color: var(--text-muted)">Загрузка...</div>
+    <div v-if="loading" class="max-w-3xl mx-auto">
+      <div class="skeleton h-8 w-48 mb-6" />
+      <SkeletonLoader :lines="8" height="2.5rem" />
+    </div>
 
     <!-- Фильтр по категориям -->
     <nav v-else class="changelog-filters">
@@ -60,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { ref, computed, watch, onMounted } from 'vue'
 
 type ItemType = 'new' | 'improvement' | 'fix'

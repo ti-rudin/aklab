@@ -4,8 +4,10 @@
     <router-link to="/properties" class="text-sm hover:underline mb-6 inline-block" style="color: var(--text-muted)">← К списку объектов</router-link>
 
     <!-- Loading -->
-    <div v-if="loading" class="text-center py-16">
-      <p style="color: var(--text-muted)">Загрузка…</p>
+    <div v-if="loading" class="max-w-4xl mx-auto px-4 py-8">
+      <div class="skeleton h-8 w-64 mb-4" />
+      <div class="skeleton h-64 w-full mb-6" />
+      <SkeletonLoader :lines="8" />
     </div>
 
     <!-- Не найден -->
@@ -131,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/strapi'

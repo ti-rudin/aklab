@@ -10,7 +10,6 @@
   --bg-input: #0d1225;
   --accent: #4f8cff;
   --accent-soft: rgba(79, 140, 255, 0.2);
-  --accent-strong: #8b5cff;
   --text-main: #f5f7ff;
   --text-muted: #a3adc7;
   --border-subtle: rgba(255, 255, 255, 0.08);
@@ -46,7 +45,6 @@ html[data-theme="light"] {
   --glass-blur: blur(16px);
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.14);
-  --accent-strong: #7c3aed;
 }
 
 /* Base styles */
@@ -54,6 +52,17 @@ body {
   background: var(--bg-main);
   color: var(--text-main);
   transition: background-color var(--transition-med), color var(--transition-med);
+  font-family: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace for data */
+.font-mono, code, pre {
+  font-family: 'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* Dark body gradient */
@@ -69,6 +78,46 @@ html:not(.light):not([data-theme="light"]) body {
 .text-content-muted { color: var(--text-muted); }
 .border-theme { border-color: var(--border-subtle); }
 .glass { background: var(--glass-bg); backdrop-filter: var(--glass-blur); }
+
+/* Interactive states */
+.btn-primary {
+  transition: all var(--transition-fast);
+}
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.card-interactive {
+  transition: all var(--transition-med);
+}
+.card-interactive:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+.card-interactive:active {
+  transform: translateY(0) scale(0.995);
+}
+
+/* Skeleton loader */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton {
+  background: var(--bg-alt);
+  border-radius: var(--radius-md);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* Page transitions */
 .page-enter-active,

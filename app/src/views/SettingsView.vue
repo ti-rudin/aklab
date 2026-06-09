@@ -3,8 +3,9 @@
     <h1 class="text-2xl font-bold mb-6" style="color: var(--text-main)">Настройки</h1>
 
     <!-- Loading -->
-    <div v-if="loading" class="text-center py-12" style="color: var(--text-muted)">
-      Загрузка...
+    <div v-if="loading">
+      <div class="skeleton h-8 w-40 mb-6" />
+      <SkeletonLoader :lines="6" height="3.5rem" />
     </div>
 
     <!-- Error -->
@@ -158,6 +159,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api/strapi'
