@@ -51,7 +51,7 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
           continue;
         }
 
-        await createProperty({
+        const result = await createProperty({
           source,
           external_id: prop.external_id,
           url: prop.url,
@@ -67,7 +67,7 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
           description: prop.description,
           contacts: prop.contacts,
         });
-        created++;
+        if (result) created++;
       } catch (err: any) {
         logger.warn(`Failed to create property ${prop.external_id}: ${err.message}`, { correlationId: corrId });
       }
