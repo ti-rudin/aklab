@@ -8,7 +8,7 @@ export default {
       method: 'GET',
       path: '/sources/:id/health',
       handler: 'api::source.source.healthCheck',
-      config: { auth: {} },
+      config: { auth: false, policies: [] },
     },
     // Standard CRUD
     {
