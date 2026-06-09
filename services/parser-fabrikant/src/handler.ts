@@ -18,6 +18,7 @@ import { FabrikantParser } from './sources/fabrikant';
 export interface ParseRequest {
   source: string;
   sourceId?: number;
+  documentId?: string;
   correlationId?: string;
 }
 
@@ -26,7 +27,7 @@ const parser = new FabrikantParser();
 export async function handleParseJob(job: Job): Promise<{ processed: number; created: number; skipped: number }> {
   const req = job.data as ParseRequest;
   const source = req.source;
-  const sourceId = req.sourceId;
+  const documentId = req.documentId;
   const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
   const startedAt = new Date().toISOString();
 
@@ -75,8 +76,8 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
     errorMsg = err.message;
     logger.error(`Parse failed for ${source}: ${err.message}`, { correlationId: corrId });
 
-    if (sourceId) {
-      await updateSourceStats(sourceId, {
+    if (documentId) {
+      await updateSourceStats(documentId, {
         last_parse_status: 'error',
         last_parse_error: err.message,
         last_parsed_at: new Date().toISOString(),
@@ -94,8 +95,8 @@ export async function handleParseJob(job: Job): Promise<{ processed: number; cre
     }).catch(() => {});
   }
 
-  if (sourceId) {
-    await updateSourceStats(sourceId, {
+  if (documentId) {
+    await updateSourceStats(documentId, {
       last_parse_status: 'success',
       last_parse_error: undefined,
       last_parsed_at: new Date().toISOString(),

@@ -41,6 +41,7 @@ export default {
       qs.addToQueue(queueName, {
         source: slug,
         sourceId: source.id,
+        documentId: source.documentId,
       }, { correlationId: corrId });
 
       strapi.log.info(`[cron] Manual parse triggered for ${source.name} (${corrId})`);

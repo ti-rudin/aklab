@@ -41,6 +41,7 @@ function registerSourceCron(strapi: Core.Strapi, source: any): void {
   const slug = source.slug;
   const schedule = source.schedule || '0 3 * * *';
   const sourceId = source.id;
+  const documentId = source.documentId;
 
   // Удаляем старый job если есть
   const existingJob = activeCronJobs.get(slug);
@@ -59,6 +60,7 @@ function registerSourceCron(strapi: Core.Strapi, source: any): void {
       queueService.addToQueue(queueName, {
         source: slug,
         sourceId,
+        documentId,
       }, { correlationId: corrId });
       strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name}`);
     } catch (err: any) {

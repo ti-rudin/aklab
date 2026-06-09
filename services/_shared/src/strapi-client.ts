@@ -67,8 +67,9 @@ export async function createProperty(props: {
 
 /**
  * Обновить статистику Source после парсинга.
+ * Strapi 5 REST API использует documentId, а не числовой id.
  */
-export async function updateSourceStats(sourceId: number, data: {
+export async function updateSourceStats(documentId: string, data: {
   last_parse_status?: string;
   last_parse_error?: string;
   last_parsed_at?: string;
@@ -84,22 +85,30 @@ export async function updateSourceStats(sourceId: number, data: {
 
   if (data.parse_count || data.total_found || data.total_created) {
     try {
-      const res = await fetch(`${BASE}/sources/${sourceId}`, { headers: HEADERS });
+      const res = await fetch(`${BASE}/sources/${documentId}`, { headers: HEADERS });
       if (res.ok) {
         const json = (await res.json()) as StrapiResponse<any>;
         const current = json.data;
         if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
         if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
         if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
+      } else {
+        logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
       }
-    } catch {}
+    } catch (err: any) {
+      logger.warn(`updateSourceStats GET error: ${err.message}`);
+    }
   }
 
-  await fetch(`${BASE}/sources/${sourceId}`, {
+  const putRes = await fetch(`${BASE}/sources/${documentId}`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: updateData }),
   });
+  if (!putRes.ok) {
+    const body = await putRes.text();
+    logger.warn(`updateSourceStats PUT failed (${putRes.status}): ${body}`);
+  }
 }
 
 /**
