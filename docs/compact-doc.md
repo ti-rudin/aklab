@@ -342,17 +342,25 @@ deploy-prod.sh + бамп версии).
     счётчики total_found/total_created/parse_count = 0, т.к.
     `updateSourceStats` передавал числовой id → 404 → молчаливый
     провал. Исправлено в v1.0.19.
+17. **Seeder singleton через entityService** — `entityService.findMany`
+    для singleton content-types (Setting) может не находить записи
+    из-за draft/published state → seeder создаёт дубли при каждом
+    bootstrap. **Решение**: использовать `db.query(uid).findOne({})`
+    вместо `entityService.findMany`. Исправлено в v1.0.20.
 
 ## Session handoff (v1.0.19 → следующая сессия)
+
+**Сделано в v1.0.20** (9 июня 2026):
+- ✅ **Parser-bankruptcy удалён** — legacy монолит заменён на parser-fabrikant + parser-torgi-gov. PM2 процесс `aklab-parser-bankruptcy-prod` удалён с прод-сервера (192.168.11.151).
+- ✅ **Seeder fix** — `seedSettings` переписан на `db.query.findOne` вместо `entityService.findMany` (draft/published state bug создавал дубли Setting при каждом bootstrap). Удалено 16 дублей на проде.
+- ✅ **smtp_to настроен** — `a@rudin.ru` задан как дефолт в seeder и установлен в БД на проде. Email-дайджест теперь может отправлять.
+- ✅ **Telegram alerts УДАЛЕНЫ из плана** — по решению пользователя, алерты в Telegram не нужны. Только email-дайджест.
 
 **Сделано в v1.0.19** (9 июня 2026):
 - ✅ **Source stats counters fixed** — `updateSourceStats` использовал числовой `id`, а Strapi 5 REST API требует `documentId`. Все запросы получали 404 → счётчики = 0. Исправлено в `_shared/strapi-client.ts`, обоих парсерах, cron controller и scheduler.
 - ✅ **Mobile responsive** — Properties: таблица `hidden md:block` + карточки `md:hidden`; фильтры `flex-col sm:flex-row`. Sources: stats/buttons адаптивные.
 - ✅ **Theme fixes** — `--bg-input` добавлен в CSS (был фоллбэк `#fff`), badges на rgba, логотип conditional gradient.
 - ✅ **Frontend runParser** — polling 5s×24 вместо hardcoded 3s, убрана лишняя PUT-ка (бэкенд сам ставит `running`).
-
-**Сделано в v1.0.18** (9 июня 2026):
-- ✅ Mobile cards for Properties, responsive Sources, theme fixes, logo contrast.
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно (там уже таблицы и admin).
@@ -361,10 +369,10 @@ deploy-prod.sh + бамп версии).
   endpoints возвращают 404 (см. "Найдено и исправлено" выше).
 
 **Следующие шаги**:
-1. Удалить `services/parser-bankruptcy/` после проверки на проде
-2. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito) — по `docs/adding-source.md`
-3. **Фаза 12** — Telegram алерты (мгновенные уведомления)
-4. **Фаза 13** — email дайджест (утренняя рассылка)
+1. ~~Удалить `services/parser-bankruptcy/`~~ ✅ DONE
+2. ~~Telegram алерты~~ ❌ УДАЛЕНЫ из плана по решению пользователя
+3. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito) — по `docs/adding-source.md` (по запросу пользователя)
+4. **Email-дайджест** — рабочий, smtp_to=a@rudin.ru, cron в 09:00 МСК. Проверить получение первого письма.
 
 **Локальное состояние**:
 - `~/github.nosync/aklab` — ветка `main`, последний коммит sync с origin.
@@ -382,6 +390,12 @@ deploy-prod.sh + бамп версии).
   через `pm2 list` и `curl /_health`.
 - `api/src/extensions/documentation/documentation/1.0.0/full_documentation.json`
   один раз попал в коммит, был untrack'нут, добавлен в .gitignore.
+- **Seeder Setting дубли** — ИСПРАВЛЕНО (v1.0.20): `entityService.findMany`
+  не находил записи из-за draft/published state → seeder создавал дубль
+  при каждом bootstrap. Переписано на `db.query.findOne`.
+- **Email-дайджест** — рабочий, но зависит от наличия недооценённых
+  объектов. Если analyzer не нашёл `is_undervalued=true` — письмо не
+  отправляется (это нормальное поведение).
 
 ## Полезные команды
 
