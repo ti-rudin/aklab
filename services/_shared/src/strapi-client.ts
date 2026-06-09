@@ -43,11 +43,6 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
     return true;
   }
 
-  // Для типов, отличных от 'other', считаем коммерческими (office, warehouse, retail, production, free_purpose)
-  if (props.property_type !== 'other') {
-    return true;
-  }
-
   const title = props.title.toLowerCase();
 
   // Ключевые слова, по которым объект точно НЕ коммерческий
@@ -61,7 +56,8 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
     'автомобил', 'легков', 'грузов', 'автобус', 'прицеп', 'мотоцикл',
     'volkswagen', 'toyota', 'ford', 'bmw', 'mercedes', 'hyundai',
     'kia', 'nissan', 'renault', 'geely', 'lexus', 'honda', 'mazda',
-    'vin:', 'vin\t', 'объем двигател', 'л.с.',
+    'ваз ', 'lada ', 'лада',
+    'vin:', 'vin\t', 'объем двигател', 'л.с.', 'л/с',
     // Оборудование и прочее
     'оборудовани', 'станок', 'прибор', 'инвентар',
     'мебел', 'мебель', 'компьютер', 'сервер', 'принтер',
