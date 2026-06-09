@@ -5,7 +5,7 @@
     role="contentinfo"
   >
     <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
         <!-- Продукт -->
         <div>
           <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">Продукт</h3>
@@ -29,18 +29,6 @@
               <router-link to="/settings" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
                 Настройки
               </router-link>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Поддержка -->
-        <div>
-          <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">Поддержка</h3>
-          <ul class="space-y-2">
-            <li>
-              <a href="mailto:tirobots@yandex.ru" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                tirobots@yandex.ru
-              </a>
             </li>
           </ul>
         </div>
