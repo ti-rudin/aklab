@@ -373,30 +373,21 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.22 → следующая сессия)
+## Session handoff (v1.0.24 → следующая сессия)
 
-**Сделано в сессии 9 июня 2026 (после v1.0.22):**
-- ✅ **Кнопка "Добавить"** на `/sources` — убрана (источники через seeders)
-- ✅ **Analyzer documentId fix** — numeric id → documentId (3 файла)
-- ✅ **5 парсеров пересобраны** на проде (sberbank-ast, invest-mosreg, investmoscow, roseltorg, m-ets — dist/ отсутствовал)
-- ✅ **Пагинация** — компактная windowed для мобильных (`‹ 1 … 6 … 26 ›` / `‹ 6/26 ›`)
-- ✅ **Коммерческая фильтрация** — `isCommercialProperty()` в `_shared/strapi-client.ts` отсеивает жильё, транспорт, оборудование для `property_type=other`
-- ✅ **Полный E2E тест** — 10 парсеров → analyzer → digest email (5 недооценённых объектов)
-- ✅ **18 эталонов** создано (3 города × 6 типов, тестовые цены)
-- ✅ **Гамбургер-меню** на мобильных (sm:hidden → dropdown с навигацией + "Выйти")
-- ✅ **Регистрация убрана** — Auth.vue только логин (email + пароль), форма регистрации удалена
-- ✅ **Эталоны: мобильные карточки** — таблица → карточки на <md
-- ✅ **Футер: "Поддержка" убрана** — сетка 2 колонки вместо 3
-- ✅ **Design audit (taste-skill)** — 7 исправлений:
-  - Geist шрифт (CDN) вместо Inter
-  - OG-мета теги (og:title, og:description, og:image, twitter:card)
-  - Skeleton-лоадеры (SkeletonLoader + SkeletonTable компоненты)
-  - Hover/active состояния (.btn-primary, .card-interactive)
-  - 404 страница (NotFoundView + catch-all роут)
-  - Удалены мёртвые CSS (base.css, main.css, calculator.css)
-  - Удалён unused --accent-strong (фиолетовый)
-- ✅ **Парсеры: фильтр без цены** — `createProperty()` пропускает объекты без `price_per_sqm`. Авто-расчёт если есть price + area. 10 handlers исправлены: `if (result) created++` вместо голого `created++`
-- ✅ **v1.0.24** задеплоен
+**Сделано в сессии 9 июня 2026 (после v1.0.24):**
+- ✅ **Чистка БД** — удалено 238 объектов без цены/коммерции (261 → 23)
+- ✅ **Удалён parser-bankruptcy** — мёртвый код (fedresurs OFF)
+- ✅ **Generic parse handler** — `createParseHandler()` в `_shared/src/parse-handler.ts`, 10 handlers упрощены до 5 строк каждый (-1710 строк)
+- ✅ **Дупликация strapi-client** — analyzer/digest теперь импортируют из `@aklab/service-shared`, локальные strapi-client.ts удалены
+- ✅ **smtp_to fallback (gotcha #22)** — `getSetting()` в cron controller использует `db.query.findOne` вместо `entityService.findMany`
+- ✅ **gracefulStopQueueWorker** — timeout-код был мёртвым, исправлен
+- ✅ **WAL mode** — Strapi SQLite теперь использует WAL + busy_timeout=5000
+- ✅ **Индексы** — unique (source, external_id) + индексы на status/city/is_undervalued/property_type
+- ✅ **cleanup:old pagination** — цикл while до полной очистки
+- ✅ **propertyExists()** — fail-open → fail-closed (при ошибке API пропускаем, не дублируем)
+- ✅ **analyze:properties** — documentId вместо numeric id
+- ✅ **API permissions** — authenticated роль: read-only + user-comment create/update
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
@@ -404,16 +395,14 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Проверить ночной прогон** — утром проверить `/properties`: должны появиться только коммерческие объекты (фильтр работает)
-2. **Почистить старые объекты** — 366 без цены + ~347 "other/other" не-коммерческие в БД. Можно удалить: `DELETE FROM properties WHERE price_per_sqm IS NULL OR price_per_sqm = 0`
-3. **Установить реальные эталоны** — текущие 18 эталонов с тестовыми ценами (800-1500₽/м²). Нужны рыночные значения
-4. **Digest smtp_to** — исправить fallback (gotcha #22): использовать db.query вместо entityService для Setting
-5. **Parser handlers: created++** — `createProperty` теперь возвращает `null` для не-коммерческих, но handlers считают `created++` без проверки. Статистика total_created будет завышена
-6. **Удалить parser-bankruptcy локально** — `rm -rf services/parser-bankruptcy` + commit
-7. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
+1. **Деплой** — `git pull origin main` → build _shared → build services → PM2 restart
+2. **После деплоя** — удалить старые write permissions из authenticated роли на проде (через Admin Panel или SQL)
+3. **Старые объекты** — на проде уже очищено (238 удалено)
+4. **Установить реальные эталоны** — текущие 18 эталонов с тестовыми ценами (800-1500₽/м²). Нужны рыночные значения
+5. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `cd64eb7` (pagination + filter)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `abc55d7` (code quality overhaul)
 
 ## Известные баги / TODO
 
@@ -432,8 +421,7 @@ deploy-prod.sh + бамп версии).
 - **Email-дайджест** — рабочий, но зависит от наличия недооценённых
   объектов. Если analyzer не нашёл `is_undervalued=true` — письмо не
   отправляется (это нормальное поведение).
-- **Digest smtp_to fallback** — НЕИСПРАВЛЕНО (gotcha #22): email уходит
-  на `tirobots@yandex.ru` вместо `a@rudin.ru`.
+- **Digest smtp_to fallback** — ИСПРАВЛЕНО (v1.0.25): `getSetting()` в cron controller использует `db.query.findOne` вместо `entityService.findMany`.
 - **Parser handlers created++** — `createProperty` возвращает `null`
   для отфильтрованных объектов, но handlers не проверяют → `total_created`
   завышается. Косметика.
