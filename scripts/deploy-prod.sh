@@ -231,6 +231,9 @@ else
   log "Changelog: fallback (нет коммитов для генерации)"
 fi
 
+# Копируем changelog.json в dist (build уже был на шаге 6)
+cp "$CHANGELOG_JSON" "$PROJECT_ROOT/app/dist/changelog.json" 2>/dev/null && log "changelog.json → dist/"
+
 # === Step 10: Git commit ===
 VERSION=$(node -e "console.log(require('./package.json').version)")
 log "Version: $VERSION"
