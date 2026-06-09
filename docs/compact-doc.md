@@ -185,24 +185,32 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.9
+- Версия: 1.0.10
 - **Фазы 0–8 завершены** (8 июня 2026): все content-types, UI, микросервисы,
   деплой на прод. ✅
 - **Sources CRUD** (8 июня 2026): content-type `Source` (name, slug, url,
-  parser, is_active, stats), дефолтные источники (fabrikant, fedresurs),
+  parser, is_active, stats), дефолтные источники (fabrikant, torgi-gov),
   UI-страница `/sources` с тогглами и статистикой, custom endpoint
   `POST /api/cron/parse/:slug` для ручного запуска. ✅
-- **Парсеры** (8 июня 2026):
-  - `fabrikant` — Playwright, HTML scraping `fabrikant.ru/procedure/search`
-  - `fedresurs` — Playwright, REST API `/backend/cmpbankrupts` → `/companies/{guid}/trades`
-    (**geo-blocked** HTTP 451 с нерусских IP, работает с прод-сервера 192.168.11.151)
+- **Парсеры** (9 июня 2026):
+  - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
+    (data-slot selectors: `[data-slot="card"][data-id]`, title from
+    `[data-slot="anchor"]`, price from RUB in text slots). Пагинация
+    ?page=N, max 5 pages. Фильтр: keywords + exclude (жильё/транспорт).
+  - `torgi-gov` — **чистый JSON API** (`/new/api/public/lotcards/search`),
+    без Playwright. Фильтрация Москвы/МО в коде (subjectRFCode).
+    Площадь из characteristics.totalAreaRealty + fallback из title.
+    Цены обычно нет (аренда). 5 запросов по разным keywords.
+  - `fedresurs` — **ОТКЛЮЧЁН** (Qrator 403 anti-bot, не обходится
+    ни page.evaluate(fetch), ни page.request.get, ни navigate+intercept).
+    Парсер код есть, Source.is_active=false.
 - Содержимое:
   - **api/src/api/** — 7 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
   - **api/src/seeders/index.ts** — seedSettings + seedSources + seedPublicPermissions
-  - **services/parser-bankruptcy/** — FabrikantParser + FedresursParser через Playwright
+  - **services/parser-bankruptcy/** — FabrikantParser + FedresursParser + TorgiGovParser
   - **services/analyzer/** — сравнение Property с MarketReference
   - **services/digest/** — утренний email через nodemailer
   - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
@@ -242,6 +250,23 @@ deploy-prod.sh + бамп версии).
    dist-структура: `dist/src/api/cron/controllers/cron.js` → нужен путь
    `../../../services/queueService` (3 уровня вверх до `dist/src/`, затем
    `services/`). Проверять `node -e "require(...)"` на сервере.
+7. **Fabrikant.ru — data-slot selectors** (НЕ CSS class selectors!):
+   - Карточки: `[data-slot="card"][data-id]`
+   - Title: `[data-slot="anchor"]` (первый A-элемент)
+   - Цена: `[data-slot="text"]` содержащий "RUB"
+   - Номер: `[data-slot="text"]` matching `/^\d+-\d+$/`
+   - URL: `/procedure/search/sales` (вкладка "Продажи"), NOT `/procedure/search`
+   - Пагинация: `?page=N`
+8. **torgi.gov.ru — чистый JSON API** без авторизации:
+   `GET /new/api/public/lotcards/search?lotStatus=PUBLISHED,APPLICATIONS_SUBMISSION&size=100`
+   Параметр `subjectRFCode` НЕ работает как фильтр → фильтровать в коде.
+   Площадь: `characteristics[].code === "totalAreaRealty"`.
+9. **Fedresurs Qrator anti-bot** — блокирует ВСЕ API-подходы:
+   `page.evaluate(fetch())` → 403, `page.request.get()` → 403,
+   `page.goto(apiUrl)` → 403. Единственный рабочий вариант —
+   перехват network response при навигации по UI-странице, но и это
+   не удалось (Qrator проверяет TLS fingerprint). Отложен до решения
+   с прокси/резидентным IP.
 
 ## Session handoff (Фаза 1 → следующая сессия)
 
