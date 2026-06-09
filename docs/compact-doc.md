@@ -190,33 +190,32 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.13
-- **Фазы 0–10 + микросервисы парсеров завершены** (9 июня 2026).
-- **Микросервисы парсеров** (v1.0.13): каждый парсер = отдельный сервис.
-  - `services/_shared/` — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types)
+- Версия: 1.0.22
+- **11 источников парсинга** (10 активных, fedresurs OFF):
   - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
   - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
-  - `services/parser-bankruptcy/` — LEGACY, оставлен для справки, PM2 stopped
+  - `services/parser-aggregator-bankrot/` — Playwright HTML, порт 1348
+  - `services/parser-alfalot/` — Playwright SPA (ecosystem.alfalot.ru), порт 1349
+  - `services/parser-etprf/` — Playwright AJAX (sale.etprf.ru), порт 1350
+  - `services/parser-sberbank-ast/` — Playwright AJAX (utp.sberbank-ast.ru), порт 1351
+  - `services/parser-invest-mosreg/` — Playwright generic, порт 1352
+  - `services/parser-investmoscow/` — Playwright generic, порт 1353
+  - `services/parser-roseltorg/` — Playwright generic, порт 1354
+  - `services/parser-m-ets/` — Playwright generic, порт 1355
+  - `services/parser-bankruptcy/` — УДАЛЁН (legacy монолит)
+- **14 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest)
+- **Cron расписание**: fabrikant/torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, roseltorg/m-ets → 06:00
+- **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
+- **Telegram alerts**: УДАЛЕНЫ из плана
 - **Health badges** на `/sources` — 🟢 Online / 🔴 Offline (polling каждые 30с)
 - **Per-source cron расписание** — cron expr в Source.schedule (дефолт `0 3 * * *`)
 - **Inline-редактирование расписания** на `/sources`
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
-- **Документация** — `docs/adding-source.md`, `docs/plan3.md`
-- **Frontend** — 8 страниц (все требуют авторизации, кроме /auth):
-  `/properties`, `/properties/:id`, `/sources`, `/market-references`,
-  `/settings`, `/changelog`, `/auth`. Home → redirect на `/properties`.
+- **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **API security** — все endpoints требуют JWT (роль Authenticated).
-  Public role: только login/register/forgot-password. Проверяется smoke-тестом.
-- **Smoke test** — `npm run smoke` (14 checks: health, auth, endpoints,
-  data integrity, microservices). Работает с JWT.
-- **Changelog** — автогенерация при deploy:
-  - `app/public/changelog.json` — предзаполнен v1.0.0–v1.0.13
-  - `scripts/generate-changelog.js` — парсит conventional commits между релизами
-  - `deploy-prod.sh` шаг 9 — генерирует и добавляет запись в changelog.json
-  - UI: `/changelog` — фильтры (Все/Новое/Улучшения/Исправления), пагинация
-- **Sources CRUD** (8 июня 2026): content-type `Source` (name, slug, url,
-  parser, is_active, stats), дефолтные источники (fabrikant, torgi-gov),
-  UI-страница `/sources` с тогглами и статистикой, custom endpoint
+  Public role: только login/register/forgot-password.
+- **Changelog** — автогенерация при deploy (v1.0.0–v1.0.22)
+- **Frontend** — 8 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/auth`
   `POST /api/cron/parse/:slug` для ручного запуска. ✅
 - **Парсеры** (9 июня 2026):
   - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
@@ -347,37 +346,43 @@ deploy-prod.sh + бамп версии).
     из-за draft/published state → seeder создаёт дубли при каждом
     bootstrap. **Решение**: использовать `db.query(uid).findOne({})`
     вместо `entityService.findMany`. Исправлено в v1.0.20.
+18. **torgi.gov.ru API limitations** — параметр `size` игнорируется
+    (всегда 10 на страницу), `subjectRFCode` не работает как фильтр,
+    date параметры тоже игнорируются. Решение: увеличить MAX_PAGES,
+    фильтровать в коде по `createDate` и `subjectRFCode`.
+19. **Generic parsers** — invest-mosreg, investmoscow, roseltorg, m-ets
+    используют универсальные CSS-селекторы (`.card`, `[class*="card"]`).
+    Работают, но могут давать мало результатов. При проблемах —
+    уточнить селекторы через browser research на конкретном сайте.
 
-## Session handoff (v1.0.19 → следующая сессия)
+## Session handoff (v1.0.22 → следующая сессия)
 
-**Сделано в v1.0.20** (9 июня 2026):
-- ✅ **Parser-bankruptcy удалён** — legacy монолит заменён на parser-fabrikant + parser-torgi-gov. PM2 процесс `aklab-parser-bankruptcy-prod` удалён с прод-сервера (192.168.11.151).
-- ✅ **Seeder fix** — `seedSettings` переписан на `db.query.findOne` вместо `entityService.findMany` (draft/published state bug создавал дубли Setting при каждом bootstrap). Удалено 16 дублей на проде.
-- ✅ **smtp_to настроен** — `a@rudin.ru` задан как дефолт в seeder и установлен в БД на проде. Email-дайджест теперь может отправлять.
-- ✅ **Telegram alerts УДАЛЕНЫ из плана** — по решению пользователя, алерты в Telegram не нужны. Только email-дайджест.
-
-**Сделано в v1.0.19** (9 июня 2026):
-- ✅ **Source stats counters fixed** — `updateSourceStats` использовал числовой `id`, а Strapi 5 REST API требует `documentId`. Все запросы получали 404 → счётчики = 0. Исправлено в `_shared/strapi-client.ts`, обоих парсерах, cron controller и scheduler.
-- ✅ **Mobile responsive** — Properties: таблица `hidden md:block` + карточки `md:hidden`; фильтры `flex-col sm:flex-row`. Sources: stats/buttons адаптивные.
-- ✅ **Theme fixes** — `--bg-input` добавлен в CSS (был фоллбэк `#fff`), badges на rgba, логотип conditional gradient.
-- ✅ **Frontend runParser** — polling 5s×24 вместо hardcoded 3s, убрана лишняя PUT-ка (бэкенд сам ставит `running`).
+**Сделано в v1.0.22** (9 июня 2026):
+- ✅ **8 новых парсеров** — aggregator-bankrot, alfalot, etprf (Волна 1, исследованные селекторы), sberbank-ast (Волна 2), invest-mosreg, investmoscow, roseltorg, m-ets (Волна 2-3, generic selectors)
+- ✅ **torgi-gov: фильтр по дате** — только объекты за 24ч, MAX_PAGES=30, паузы между запросами
+- ✅ **fabrikant: паузы** — увеличен MAX_PAGES до 10, рандомные задержки
+- ✅ **14 PM2 процессов** на проде, все online
+- ✅ **11 sources в БД**, 10 активных (fedresurs OFF)
+- ✅ **Seeder fix** — db.query.findOne вместо entityService.findMany
+- ✅ **smtp_to=a@rudin.ru** — email-дайджест настроен
+- ✅ **Parser-bankruptcy удалён** с прод-сервера (код ещё в репо — локально нужно `rm -rf`)
+- ✅ **Telegram alerts** — удалены из плана
 
 **Что НЕ делать**:
-- ❌ Не удалять `api/.tmp/data.db` повторно (там уже таблицы и admin).
-- ❌ Не запускать миграции Strapi (`strapi migration`) — мы на dev-режиме.
-- ❌ Не удалять `api/src/api/<name>/routes/<name>.ts` — без них
-  endpoints возвращают 404 (см. "Найдено и исправлено" выше).
+- ❌ Не удалять `api/.tmp/data.db` повторно
+- ❌ Не запускать миграции Strapi
+- ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. ~~Удалить `services/parser-bankruptcy/`~~ ✅ DONE
-2. ~~Telegram алерты~~ ❌ УДАЛЕНЫ из плана по решению пользователя
-3. **Фаза 11** — дополнительные источники парсинга (ЦИАН, Avito) — по `docs/adding-source.md` (по запросу пользователя)
-4. **Email-дайджест** — рабочий, smtp_to=a@rudin.ru, cron в 09:00 МСК. Проверить получение первого письма.
+1. **Проверить ночной прогон** — завтра утром проверить `/properties` на наличие данных от новых парсеров
+2. **Отладить generic parsers** — если invest-mosreg, investmoscow, roseltorg, m-ets дают мало данных — уточнить селекторы через browser research
+3. **Удалить parser-bankruptcy локально** — `rm -rf services/parser-bankruptcy` + commit
+4. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит sync с origin.
-- Smoke test: `npm run smoke` → 14/14 ✅
-- PM2 локально: `pm2 start ecosystem-local.config.js` (api:1338, app:5174)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит sync с origin (v1.0.22).
+- Smoke test: `npm run smoke` → нужно проверить (обновлён для 12 микросервисов)
+- PM2 локально: `pm2 start ecosystem-local.config.js` (14 процессов)
 
 ## Известные баги / TODO
 
