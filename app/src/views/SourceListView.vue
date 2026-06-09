@@ -292,7 +292,7 @@ function onParserChange() {
 async function fetchSources() {
   loading.value = true
   try {
-    const res = await api.get('/sources?sort=created_at:desc&pagination[pageSize]=100')
+    const res = await api.get('/sources?sort=createdAt:desc&pagination[pageSize]=100')
     sources.value = res.data?.data || []
   } catch (e: any) {
     error.value = e.message
