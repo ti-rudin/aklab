@@ -215,7 +215,7 @@ deploy-prod.sh + бамп версии).
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
 - **Changelog** — автогенерация при deploy (v1.0.0–v1.0.22)
-- **Frontend** — 8 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/auth`
+- **Frontend** — 8 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/auth` + 404 catch-all
   `POST /api/cron/parse/:slug` для ручного запуска. ✅
 - **Парсеры** (9 июня 2026):
   - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
@@ -242,7 +242,8 @@ deploy-prod.sh + бамп версии).
   - **services/digest/** — утренний email через nodemailer
   - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
   - **app/src/views/** — Auth, PropertyListView, PropertyDetailView,
-    SourceListView, MarketReferencesView, SettingsView, ChangelogView
+    SourceListView, MarketReferencesView, SettingsView, ChangelogView, NotFoundView
+  - **app/src/components/** — Footer, SkeletonLoader, SkeletonTable
   - **app/src/stores/** — auth.ts (Pinia)
   - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
   - **scripts/smoke-test.js** — smoke тест (npm run smoke)
@@ -382,6 +383,18 @@ deploy-prod.sh + бамп версии).
 - ✅ **Коммерческая фильтрация** — `isCommercialProperty()` в `_shared/strapi-client.ts` отсеивает жильё, транспорт, оборудование для `property_type=other`
 - ✅ **Полный E2E тест** — 10 парсеров → analyzer → digest email (5 недооценённых объектов)
 - ✅ **18 эталонов** создано (3 города × 6 типов, тестовые цены)
+- ✅ **Гамбургер-меню** на мобильных (sm:hidden → dropdown с навигацией + "Выйти")
+- ✅ **Регистрация убрана** — Auth.vue только логин (email + пароль), форма регистрации удалена
+- ✅ **Эталоны: мобильные карточки** — таблица → карточки на <md
+- ✅ **Футер: "Поддержка" убрана** — сетка 2 колонки вместо 3
+- ✅ **Design audit (taste-skill)** — 7 исправлений:
+  - Geist шрифт (CDN) вместо Inter
+  - OG-мета теги (og:title, og:description, og:image, twitter:card)
+  - Skeleton-лоадеры (SkeletonLoader + SkeletonTable компоненты)
+  - Hover/active состояния (.btn-primary, .card-interactive)
+  - 404 страница (NotFoundView + catch-all роут)
+  - Удалены мёртвые CSS (base.css, main.css, calculator.css)
+  - Удалён unused --accent-strong (фиолетовый)
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
