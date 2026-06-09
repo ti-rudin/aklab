@@ -15,14 +15,14 @@ export async function handleParseJob(job: Job) {
     for (const prop of properties) {
       try {
         if (await propertyExists(req.source, prop.external_id)) { skipped++; continue; }
-        await createProperty({
+        const result = await createProperty({
           source: req.source, external_id: prop.external_id, url: prop.url,
           title: prop.title, address: prop.address, city: prop.city,
           area_sqm: prop.area_sqm, price: prop.price, price_per_sqm: prop.price_per_sqm,
           property_type: prop.property_type, auction_type: prop.auction_type,
           published_at_source: prop.published_at, description: prop.description, contacts: prop.contacts,
         });
-        created++;
+        if (result) created++;
       } catch (err: any) { logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId }); }
     }
   } catch (err: any) {

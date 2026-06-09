@@ -84,6 +84,7 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
 
 /**
  * Создать Property в Strapi.
+ * Фильтрует: некоммерческие объекты + объекты без данных для расчёта цены за м².
  */
 export async function createProperty(props: {
   source: string;
@@ -102,7 +103,18 @@ export async function createProperty(props: {
   contacts?: string;
 }): Promise<any> {
   if (!isCommercialProperty(props)) {
-    logger.warn(`Skipping non-commercial property: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
+    logger.warn(`Skipping non-commercial: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
+    return null;
+  }
+
+  // Авто-расчёт price_per_sqm если есть price и area
+  if (!props.price_per_sqm && props.price && props.area_sqm && props.area_sqm > 0) {
+    props.price_per_sqm = Math.round(props.price / props.area_sqm);
+  }
+
+  // Фильтр: без цены за м² объект не нужен
+  if (!props.price_per_sqm || props.price_per_sqm <= 0) {
+    logger.warn(`Skipping no-price-data: "${props.title}" price=${props.price} area=${props.area_sqm} source=${props.source}`);
     return null;
   }
 
