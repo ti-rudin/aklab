@@ -80,13 +80,57 @@ function commitToItem(commitMsg) {
       default: itemType = 'improvement'; break;
     }
 
-    // Конвертируем в пользовательский формат
-    return { text: capitalizeFirst(desc), type: itemType };
+    return { text: translateDesc(desc), type: itemType };
   }
 
-  // Не conventional commit — всё равно добавляем
-  return { text: capitalizeFirst(commitMsg), type: 'improvement' };
+  // Не conventional commit — пропускаем (обычно это release-коммиты)
+  return null;
 }
+
+/**
+ * Перевод описания коммита на русский.
+ * Сначала проверяем словарь, потом — fallback на capitalizeFirst.
+ */
+function translateDesc(desc) {
+  if (!desc) return desc;
+
+  // Точное совпадение
+  const exact = TRANSLATIONS[desc.toLowerCase().trim()];
+  if (exact) return exact;
+
+  // Частичное совпадение — ищем ключ как подстроку
+  for (const [en, ru] of Object.entries(TRANSLATIONS)) {
+    if (desc.toLowerCase().includes(en.toLowerCase())) {
+      return ru;
+    }
+  }
+
+  return capitalizeFirst(desc);
+}
+
+// Словарь: английское описание → русское
+const TRANSLATIONS = {
+  'sources microservices': 'Микросервисы парсеров',
+  'health badges': 'Health badges на странице Источники',
+  'per-source cron schedule': 'Per-source расписание парсинга',
+  'update compact-doc': 'Обновление документации',
+  'update plan2.md': 'Обновление плана',
+  'describecron ts strict': 'Исправление TypeScript в describeCron',
+  'sourcelistview sort=createdat': 'Исправление сортировки источников',
+  'deploy-prod.sh check node_modules': 'Проверка node_modules в скрипте деплоя',
+  'deploy-prod.sh copy changelog': 'Changelog копируется в dist после генерации',
+  'source routes': 'Маршруты источников',
+  'createrouter': 'Восстановление CRUD маршрутов',
+  'auth: false': 'Публичный health endpoint',
+  'changelog page': 'Страница changelog',
+  'auto-generation': 'Автогенерация changelog',
+  'inline-редактирование расписания': 'Inline-редактирование расписания',
+  'docs/adding-source.md': 'Документация: инструкция добавления источника',
+  'fix:': 'Исправлено:',
+  'feat:': 'Новая функция:',
+  'docs:': 'Документация:',
+  'refactor:': 'Рефакторинг:',
+};
 
 function capitalizeFirst(str) {
   if (!str) return str;
