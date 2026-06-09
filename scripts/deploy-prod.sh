@@ -196,10 +196,42 @@ for svc_port in "parser-bankruptcy:1340" "analyzer:1341" "digest:1342"; do
   fi
 done
 
-# === Step 9: Git commit ===
+# === Step 9: Generate changelog ===
+log "Генерация changelog..."
+CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
+CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSION" 2>/tmp/changelog-gen.log || echo '')
+
+if [ -n "$CHANGELOG_ITEMS" ] && [ "$CHANGELOG_ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
+  # Определяем текущую дату на русском
+  CHANGELOG_DATE=$(date -d "$(date +%Y-%m-%d)" '+%-d %B %Y' 2>/dev/null || date '+%d %B %Y')
+  # Fallback для macOS
+  if [[ "$(uname)" == "Darwin" ]]; then
+    CHANGELOG_DATE=$(date '+%-d %B %Y')
+  fi
+  CHANGELOG_TIME=$(date '+%H:%M')
+
+  # Добавляем новую запись в начало changelog.json
+  node -e "
+    const fs = require('fs');
+    const items = JSON.parse(process.argv[1]);
+    const changelog = JSON.parse(fs.readFileSync('$CHANGELOG_JSON', 'utf8'));
+    changelog.unshift({
+      version: 'v$NEW_VERSION',
+      date: '$CHANGELOG_DATE',
+      time: '$CHANGELOG_TIME',
+      items: items
+    });
+    fs.writeFileSync('$CHANGELOG_JSON', JSON.stringify(changelog, null, 2) + '\n');
+  " "$CHANGELOG_ITEMS"
+  log "changelog.json обновлён: v${NEW_VERSION}"
+else
+  log "Changelog: fallback (нет коммитов для генерации)"
+fi
+
+# === Step 10: Git commit ===
 VERSION=$(node -e "console.log(require('./package.json').version)")
 log "Version: $VERSION"
-git add package.json api/package.json app/package.json
+git add package.json api/package.json app/package.json app/public/changelog.json
 git commit -m "[release] v${VERSION} -- Deploy production" --allow-empty 2>/dev/null || true
 git push origin main 2>/dev/null || warn "Git push не удался (проверьте права)"
 
