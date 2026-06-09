@@ -2,13 +2,7 @@
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold" style="color: var(--text)">Источники парсинга</h1>
-      <button
-        @click="showAddForm = !showAddForm"
-        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        style="background: var(--accent); color: white"
-      >
-        {{ showAddForm ? '✕ Закрыть' : '+ Добавить' }}
-      </button>
+      <!-- Кнопка "Добавить" скрыта — источники управляются через seeders -->
     </div>
 
     <!-- Форма добавления -->
