@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.15",
+    "date": "9 June 2026",
+    "time": "02:44",
+    "items": [
+      {
+        "text": "Update compact-doc for v1.0.13 — microservices, health, schedule, gotchas",
+        "type": "improvement"
+      },
+      {
+        "text": "DescribeCron TS strict, changelog v1.0.12/v1.0.13",
+        "type": "fix"
+      },
+      {
+        "text": "SourceListView sort=createdAt (Strapi 5 camelCase), update compact-doc",
+        "type": "fix"
+      },
+      {
+        "text": "Update compact-doc and deploy-prod.sh for new microservice architecture",
+        "type": "improvement"
+      },
+      {
+        "text": "Deploy-prod.sh check node_modules for new workspace services",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.14",
     "date": "9 June 2026",
     "time": "02:19",
