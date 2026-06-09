@@ -72,6 +72,16 @@
       "default": 0,
       "min": 0
     },
+    "schedule": {
+      "type": "string",
+      "maxLength": 50,
+      "default": "0 3 * * *"
+    },
+    "health_port": {
+      "type": "integer",
+      "min": 1024,
+      "max": 65535
+    },
     "notes": {
       "type": "text"
     }

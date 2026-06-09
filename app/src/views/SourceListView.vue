@@ -33,8 +33,8 @@
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Парсер</label>
-          <select v-model="form.parser" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)">
-            <option v-for="p in availableParsers" :key="p" :value="p">{{ p }}</option>
+          <select v-model="form.parser" @change="onParserChange" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)">
+            <option v-for="p in availableParsers" :key="p.slug" :value="p.slug">{{ p.slug }}</option>
           </select>
         </div>
         <div>
@@ -48,6 +48,15 @@
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Регион</label>
           <input v-model="form.region" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="Москва и МО" />
+        </div>
+        <div>
+          <label class="block text-sm mb-1" style="color: var(--text-muted)">Расписание (cron)</label>
+          <input v-model="form.schedule" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="0 3 * * *" />
+          <span class="text-xs mt-1 block" style="color: var(--text-muted)">{{ describeCron(form.schedule) }}</span>
+        </div>
+        <div>
+          <label class="block text-sm mb-1" style="color: var(--text-muted)">Health порт</label>
+          <input v-model.number="form.health_port" type="number" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="1345" />
         </div>
       </div>
       <div class="mt-4 flex gap-2">
@@ -83,6 +92,16 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-3 mb-2">
               <h3 class="text-lg font-semibold truncate" style="color: var(--text)">{{ src.name }}</h3>
+              <!-- Health badge -->
+              <span
+                class="px-2 py-0.5 rounded-full text-xs font-medium"
+                :style="{
+                  background: healthColor(src).bg,
+                  color: healthColor(src).text
+                }"
+              >
+                {{ healthLabel(src) }}
+              </span>
               <span
                 class="px-2 py-0.5 rounded-full text-xs font-medium"
                 :style="{
@@ -106,6 +125,43 @@
               <span>{{ src.parser }}</span>
               <span>{{ src.url }}</span>
               <span v-if="src.region">{{ src.region }}</span>
+            </div>
+            <!-- Расписание -->
+            <div class="flex items-center gap-2 mt-2">
+              <span class="text-xs" style="color: var(--text-muted)">🕐 {{ src.schedule || '0 3 * * *' }}</span>
+              <span class="text-xs" style="color: var(--text-muted)">({{ describeCron(src.schedule || '0 3 * * *') }})</span>
+              <button
+                v-if="editingSchedule !== src.id"
+                @click="startEditSchedule(src)"
+                class="text-xs px-2 py-0.5 rounded transition-colors"
+                style="color: var(--accent); border: 1px solid var(--border-subtle)"
+              >
+                Изменить
+              </button>
+            </div>
+            <!-- Inline редактирование расписания -->
+            <div v-if="editingSchedule === src.id" class="flex items-center gap-2 mt-2">
+              <input
+                v-model="scheduleEdit"
+                class="w-32 rounded px-2 py-1 text-xs"
+                style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)"
+                placeholder="0 3 * * *"
+              />
+              <span class="text-xs" style="color: var(--text-muted)">{{ describeCron(scheduleEdit) }}</span>
+              <button
+                @click="saveSchedule(src)"
+                class="text-xs px-2 py-0.5 rounded font-medium"
+                style="background: var(--accent); color: white"
+              >
+                ✓
+              </button>
+              <button
+                @click="editingSchedule = null"
+                class="text-xs px-2 py-0.5 rounded"
+                style="color: var(--text-muted); border: 1px solid var(--border-subtle)"
+              >
+                ✕
+              </button>
             </div>
           </div>
 
@@ -169,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/api/strapi'
 
 interface Source {
@@ -182,6 +238,8 @@ interface Source {
   is_active: boolean
   auction_type: string
   region: string
+  schedule: string
+  health_port: number | null
   last_parsed_at: string | null
   last_parse_status: 'success' | 'error' | 'running' | 'never'
   last_parse_error: string | null
@@ -190,13 +248,30 @@ interface Source {
   parse_count: number
 }
 
+interface ParserDef {
+  slug: string
+  health_port: number
+}
+
 const sources = ref<Source[]>([])
 const loading = ref(true)
 const showAddForm = ref(false)
 const error = ref('')
 const runningSource = ref<number | null>(null)
+const healthStatuses = ref<Record<number, { status: string; error?: string }>>({})
 
-const availableParsers = ['fabrikant', 'fedresurs', 'torgi-gov', 'investmoscow', 'roseltorg', 'sberbank-ast']
+// Schedule editing
+const editingSchedule = ref<number | null>(null)
+const scheduleEdit = ref('')
+
+// Health polling interval
+let healthInterval: ReturnType<typeof setInterval> | null = null
+
+const availableParsers: ParserDef[] = [
+  { slug: 'fabrikant', health_port: 1345 },
+  { slug: 'torgi-gov', health_port: 1346 },
+  { slug: 'fedresurs', health_port: 1347 },
+]
 
 const form = ref({
   name: '',
@@ -205,7 +280,14 @@ const form = ref({
   parser: 'fabrikant',
   auction_type: 'bankruptcy',
   region: 'Москва и МО',
+  schedule: '0 3 * * *',
+  health_port: 1345,
 })
+
+function onParserChange() {
+  const p = availableParsers.find(x => x.slug === form.value.parser)
+  if (p) form.value.health_port = p.health_port
+}
 
 async function fetchSources() {
   loading.value = true
@@ -219,13 +301,26 @@ async function fetchSources() {
   }
 }
 
+async function fetchHealth() {
+  for (const src of sources.value) {
+    if (!src.health_port) continue
+    try {
+      const res = await api.get(`/sources/${src.id}/health`)
+      healthStatuses.value[src.id] = res.data?.data || { status: 'offline' }
+    } catch {
+      healthStatuses.value[src.id] = { status: 'offline' }
+    }
+  }
+}
+
 async function createSource() {
   error.value = ''
   try {
     await api.post('/sources', { data: form.value })
     showAddForm.value = false
-    form.value = { name: '', slug: '', url: '', parser: 'fabrikant', auction_type: 'bankruptcy', region: 'Москва и МО' }
+    form.value = { name: '', slug: '', url: '', parser: 'fabrikant', auction_type: 'bankruptcy', region: 'Москва и МО', schedule: '0 3 * * *', health_port: 1345 }
     await fetchSources()
+    await fetchHealth()
   } catch (e: any) {
     error.value = e.response?.data?.error?.message || e.message
   }
@@ -244,24 +339,49 @@ async function runParser(src: Source) {
   runningSource.value = src.id
   error.value = ''
   try {
-    // Обновляем статус на "running"
     await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'running', last_parse_error: null } })
     await fetchSources()
-
-    // Триггерим парсинг
     await api.post(`/cron/parse/${src.slug}`)
-
-    // Ждём немного и обновляем
     await new Promise(r => setTimeout(r, 3000))
     await fetchSources()
   } catch (e: any) {
     error.value = `Ошибка запуска: ${e.response?.data?.error?.message || e.message}`
-    // Сбрасываем статус
     await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'error', last_parse_error: e.message } }).catch(() => {})
     await fetchSources()
   } finally {
     runningSource.value = null
   }
+}
+
+function startEditSchedule(src: Source) {
+  editingSchedule.value = src.id
+  scheduleEdit.value = src.schedule || '0 3 * * *'
+}
+
+async function saveSchedule(src: Source) {
+  try {
+    await api.put(`/sources/${src.documentId}`, { data: { schedule: scheduleEdit.value } })
+    editingSchedule.value = null
+    await fetchSources()
+  } catch (e: any) {
+    error.value = `Ошибка сохранения расписания: ${e.message}`
+  }
+}
+
+function healthColor(src: Source) {
+  const h = healthStatuses.value[src.id]
+  if (!src.health_port) return { bg: 'var(--bg)', text: 'var(--text-muted)' }
+  if (!h) return { bg: '#fef3c7', text: '#92400e' } // loading — жёлтый
+  if (h.status === 'ok') return { bg: '#dcfce7', text: '#166534' }
+  return { bg: '#fef2f2', text: '#991b1b' }
+}
+
+function healthLabel(src: Source) {
+  const h = healthStatuses.value[src.id]
+  if (!src.health_port) return '⚪ Нет порта'
+  if (!h) return '⏳ Проверка...'
+  if (h.status === 'ok') return '🟢 Сервис ОК'
+  return '🔴 Сервис оффлайн'
 }
 
 function statusColor(status: string) {
@@ -288,5 +408,51 @@ function formatDate(iso: string) {
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(fetchSources)
+/**
+ * Human-readable описание cron-выражения (простая версия).
+ */
+function describeCron(expr: string): string {
+  if (!expr) return ''
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return expr
+
+  const [min, hour, dom, mon, dow] = parts
+
+  // Каждый час
+  if (min === '0' && hour === '*' && dom === '*' && mon === '*' && dow === '*')
+    return 'каждый час'
+
+  // Каждые N минут
+  if (min.startsWith('*/') && hour === '*')
+    return `каждые ${min.slice(2)} мин`
+
+  // Конкретное время ежедневно
+  if (dom === '*' && mon === '*' && dow === '*' && hour !== '*' && min !== '*') {
+    const h = hour.padStart(2, '0')
+    const m = min.padStart(2, '0')
+    return `ежедневно в ${h}:${m}`
+  }
+
+  // По дням недели
+  if (dom === '*' && mon === '*' && dow !== '*') {
+    const days = dow.split(',').map(d => {
+      const n = parseInt(d)
+      return ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][n] || d
+    })
+    return `по ${days.join(',')} в ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`
+  }
+
+  return expr
+}
+
+onMounted(async () => {
+  await fetchSources()
+  await fetchHealth()
+  // Polling health каждые 30 секунд
+  healthInterval = setInterval(fetchHealth, 30000)
+})
+
+onUnmounted(() => {
+  if (healthInterval) clearInterval(healthInterval)
+})
 </script>

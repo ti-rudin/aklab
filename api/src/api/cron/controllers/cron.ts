@@ -37,7 +37,8 @@ export default {
 
       const qs = getQueue();
       const corrId = `manual-parse-${Date.now()}`;
-      qs.addToQueue('parse-bankruptcy', {
+      const queueName = `parse-${slug}`;
+      qs.addToQueue(queueName, {
         source: slug,
         sourceId: source.id,
       }, { correlationId: corrId });

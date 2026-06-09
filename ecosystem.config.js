@@ -38,14 +38,36 @@ module.exports = {
     // Микросервисы (prod)
     // ─────────────────────────────────────────────────────────────────
     {
-      name: 'aklab-parser-bankruptcy-prod',
-      cwd: '/home/rudin/aklab/services/parser-bankruptcy',
+      name: 'aklab-parser-fabrikant',
+      cwd: '/home/rudin/aklab/services/parser-fabrikant',
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
       env: {
         ...process.env,
         NODE_ENV: 'production',
+        PORT: '1345',
+        SERVICE_NAME: 'parser-fabrikant',
+        QUEUE_NAME: 'parse-fabrikant',
+        NVM_DIR: '/home/rudin/.nvm',
+        PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
+        STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+      },
+    },
+    {
+      name: 'aklab-parser-torgi-gov',
+      cwd: '/home/rudin/aklab/services/parser-torgi-gov',
+      script: 'node',
+      args: 'dist/index.js',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        PORT: '1346',
+        SERVICE_NAME: 'parser-torgi-gov',
+        QUEUE_NAME: 'parse-torgi-gov',
         NVM_DIR: '/home/rudin/.nvm',
         PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',

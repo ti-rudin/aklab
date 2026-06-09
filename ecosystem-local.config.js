@@ -34,14 +34,34 @@ module.exports = {
     // Микросервисы (dev)
     // ─────────────────────────────────────────────────────────────────
     {
-      name: 'aklab-parser-bankruptcy-dev',
-      cwd: __dirname + '/services/parser-bankruptcy',
+      name: 'aklab-parser-fabrikant-dev',
+      cwd: __dirname + '/services/parser-fabrikant',
       script: 'npm',
       args: 'run dev',
       interpreter: 'none',
       env: {
         ...process.env,
         NODE_ENV: 'development',
+        PORT: '1345',
+        SERVICE_NAME: 'parser-fabrikant',
+        QUEUE_NAME: 'parse-fabrikant',
+        QUEUE_DB_PATH: __dirname + '/queue.db',
+        STRAPI_URL: 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+      },
+    },
+    {
+      name: 'aklab-parser-torgi-gov-dev',
+      cwd: __dirname + '/services/parser-torgi-gov',
+      script: 'npm',
+      args: 'run dev',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        PORT: '1346',
+        SERVICE_NAME: 'parser-torgi-gov',
+        QUEUE_NAME: 'parse-torgi-gov',
         QUEUE_DB_PATH: __dirname + '/queue.db',
         STRAPI_URL: 'http://localhost:1338',
         STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
