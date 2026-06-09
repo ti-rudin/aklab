@@ -395,6 +395,8 @@ deploy-prod.sh + бамп версии).
   - 404 страница (NotFoundView + catch-all роут)
   - Удалены мёртвые CSS (base.css, main.css, calculator.css)
   - Удалён unused --accent-strong (фиолетовый)
+- ✅ **Парсеры: фильтр без цены** — `createProperty()` пропускает объекты без `price_per_sqm`. Авто-расчёт если есть price + area. 10 handlers исправлены: `if (result) created++` вместо голого `created++`
+- ✅ **v1.0.24** задеплоен
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
