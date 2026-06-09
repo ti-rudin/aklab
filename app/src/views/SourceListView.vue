@@ -416,7 +416,11 @@ function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) return expr
 
-  const [min, hour, dom, mon, dow] = parts
+  const min = parts[0] || '*'
+  const hour = parts[1] || '*'
+  const dom = parts[2] || '*'
+  const mon = parts[3] || '*'
+  const dow = parts[4] || '*'
 
   // Каждый час
   if (min === '0' && hour === '*' && dom === '*' && mon === '*' && dow === '*')
