@@ -355,18 +355,33 @@ deploy-prod.sh + бамп версии).
     Работают, но могут давать мало результатов. При проблемах —
     уточнить селекторы через browser research на конкретном сайте.
 
+20. **Analyzer numeric id → documentId** — `analyzeAll` в cron controller
+    отправлял `property_id: prop.id` (numeric) в очередь, а analyzer
+    делал `GET /api/properties/${numericId}` → 404 (REST v5 принимает
+    только documentId). Исправлено: `documentId: prop.documentId` +
+    `fetchProperty(documentId: string)`. Три файла: cron controller,
+    analyzer handler, analyzer strapi-client.
+21. **Parser dist не собирается при deploy** — если новый парсер добавлен
+    в `services/` но его нет в `scripts/deploy-prod.sh` списке build,
+    `dist/` не создаётся → MODULE_NOT_FOUND при старте PM2. Проверять:
+    `ls services/parser-*/dist/index.js` на сервере после deploy.
+22. **Digest smtp_to fallback** — cron controller читает Setting через
+    `entityService.findMany` (singleton, gotcha #17). Если не находит —
+    `smtpTo = undefined` → digest использует `config.smtp.user`
+    (tirobots@yandex.ru) вместо `Setting.smtp_to` (a@rudin.ru).
+    Решение: использовать `db.query` как в seeder, или передавать
+    smtpTo напрямую из БД.
+
 ## Session handoff (v1.0.22 → следующая сессия)
 
-**Сделано в v1.0.22** (9 июня 2026):
-- ✅ **8 новых парсеров** — aggregator-bankrot, alfalot, etprf (Волна 1, исследованные селекторы), sberbank-ast (Волна 2), invest-mosreg, investmoscow, roseltorg, m-ets (Волна 2-3, generic selectors)
-- ✅ **torgi-gov: фильтр по дате** — только объекты за 24ч, MAX_PAGES=30, паузы между запросами
-- ✅ **fabrikant: паузы** — увеличен MAX_PAGES до 10, рандомные задержки
-- ✅ **14 PM2 процессов** на проде, все online
-- ✅ **11 sources в БД**, 10 активных (fedresurs OFF)
-- ✅ **Seeder fix** — db.query.findOne вместо entityService.findMany
-- ✅ **smtp_to=a@rudin.ru** — email-дайджест настроен
-- ✅ **Parser-bankruptcy удалён** с прод-сервера (код ещё в репо — локально нужно `rm -rf`)
-- ✅ **Telegram alerts** — удалены из плана
+**Сделано в сессии 9 июня 2026 (после v1.0.22):**
+- ✅ **Кнопка "Добавить"** на `/sources` — убрана (источники через seeders)
+- ✅ **Analyzer documentId fix** — numeric id → documentId (3 файла)
+- ✅ **5 парсеров пересобраны** на проде (sberbank-ast, invest-mosreg, investmoscow, roseltorg, m-ets — dist/ отсутствовал)
+- ✅ **Пагинация** — компактная windowed для мобильных (`‹ 1 … 6 … 26 ›` / `‹ 6/26 ›`)
+- ✅ **Коммерческая фильтрация** — `isCommercialProperty()` в `_shared/strapi-client.ts` отсеивает жильё, транспорт, оборудование для `property_type=other`
+- ✅ **Полный E2E тест** — 10 парсеров → analyzer → digest email (5 недооценённых объектов)
+- ✅ **18 эталонов** создано (3 города × 6 типов, тестовые цены)
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
@@ -374,15 +389,16 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Проверить ночной прогон** — завтра утром проверить `/properties` на наличие данных от новых парсеров
-2. **Отладить generic parsers** — если invest-mosreg, investmoscow, roseltorg, m-ets дают мало данных — уточнить селекторы через browser research
-3. **Удалить parser-bankruptcy локально** — `rm -rf services/parser-bankruptcy` + commit
-4. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
+1. **Проверить ночной прогон** — утром проверить `/properties`: должны появиться только коммерческие объекты (фильтр работает)
+2. **Почистить старые объекты** — 366 без цены + ~347 "other/other" не-коммерческие в БД. Можно удалить: `DELETE FROM properties WHERE price_per_sqm IS NULL OR price_per_sqm = 0`
+3. **Установить реальные эталоны** — текущие 18 эталонов с тестовыми ценами (800-1500₽/м²). Нужны рыночные значения
+4. **Digest smtp_to** — исправить fallback (gotcha #22): использовать db.query вместо entityService для Setting
+5. **Parser handlers: created++** — `createProperty` теперь возвращает `null` для не-коммерческих, но handlers считают `created++` без проверки. Статистика total_created будет завышена
+6. **Удалить parser-bankruptcy локально** — `rm -rf services/parser-bankruptcy` + commit
+7. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит sync с origin (v1.0.22).
-- Smoke test: `npm run smoke` → нужно проверить (обновлён для 12 микросервисов)
-- PM2 локально: `pm2 start ecosystem-local.config.js` (14 процессов)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `cd64eb7` (pagination + filter)
 
 ## Известные баги / TODO
 
@@ -401,6 +417,11 @@ deploy-prod.sh + бамп версии).
 - **Email-дайджест** — рабочий, но зависит от наличия недооценённых
   объектов. Если analyzer не нашёл `is_undervalued=true` — письмо не
   отправляется (это нормальное поведение).
+- **Digest smtp_to fallback** — НЕИСПРАВЛЕНО (gotcha #22): email уходит
+  на `tirobots@yandex.ru` вместо `a@rudin.ru`.
+- **Parser handlers created++** — `createProperty` возвращает `null`
+  для отфильтрованных объектов, но handlers не проверяют → `total_created`
+  завышается. Косметика.
 
 ## Полезные команды
 
