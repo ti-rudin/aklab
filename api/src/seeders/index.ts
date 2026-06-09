@@ -31,7 +31,7 @@ export async function runSeeders(strapi: StrapiInstance): Promise<void> {
   await seedTestUser(strapi);
   await seedSettings(strapi);
   await seedSources(strapi);
-  await seedPublicPermissions(strapi);
+  await seedApiPermissions(strapi);
 }
 
 /**
@@ -259,22 +259,22 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
 }
 
 /**
- * Открывает публичный доступ (find/findOne) к нашим 5 content-types.
+ * Открывает доступ к нашим content-types для роли Authenticated.
  *
- * Без этого /api/properties и т.п. отдают 404 даже без auth — Strapi 5 по умолчанию
- * ставит "no permissions" для public роли на новые content-types. Это нужно для dev
- * удобства; в проде доступ к admin делается через login (admin panel).
+ * Без этого /api/properties и т.п. отдают 404/403 для авторизованных
+ * пользователей. Strapi 5 по умолчанию ставит "no permissions" для новых
+ * content-types.
  *
  * Идемпотентно: проверяет, есть ли уже permission, и не дублирует.
  */
-async function seedPublicPermissions(strapi: StrapiInstance): Promise<void> {
+async function seedApiPermissions(strapi: StrapiInstance): Promise<void> {
   try {
-    const publicRole = await strapi.db
+    const authRole = await strapi.db
       .query('plugin::users-permissions.role')
-      .findOne({ where: { type: 'public' } });
+      .findOne({ where: { type: 'authenticated' } });
 
-    if (!publicRole) {
-      strapi.log.warn('[seed] Public role не найдена — skip permissions seed');
+    if (!authRole) {
+      strapi.log.warn('[seed] Authenticated role не найдена — skip permissions seed');
       return;
     }
 
@@ -317,20 +317,20 @@ async function seedPublicPermissions(strapi: StrapiInstance): Promise<void> {
     for (const action of actions) {
       const existing = await strapi.db
         .query('plugin::users-permissions.permission')
-        .findOne({ where: { action, role: publicRole.id } });
+        .findOne({ where: { action, role: authRole.id } });
 
       if (existing) continue;
 
       await strapi.db
         .query('plugin::users-permissions.permission')
-        .create({ data: { action, role: publicRole.id } });
+        .create({ data: { action, role: authRole.id } });
       added++;
     }
 
     if (added > 0) {
-      strapi.log.info(`[seed] ✅ Public permissions добавлено: ${added} actions`);
+      strapi.log.info(`[seed] ✅ Authenticated permissions добавлено: ${added} actions`);
     } else {
-      strapi.log.info('[seed] Public permissions уже настроены — skip');
+      strapi.log.info('[seed] Authenticated permissions уже настроены — skip');
     }
   } catch (err: any) {
     strapi.log.error(`[seed] Ошибка создания public permissions: ${err.message}`);

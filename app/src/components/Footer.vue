@@ -1,24 +1,28 @@
 <template>
   <footer
     class="border-t"
-    style="background: var(--bg-elevated); border-color: var(--border-subtle); min-height: 200px"
+    style="background: var(--bg-elevated); border-color: var(--border-subtle)"
     role="contentinfo"
   >
-    <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-6">
-      <!-- Основной контент -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+    <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
         <!-- Продукт -->
         <div>
-          <h3 class="font-bold text-lg mb-4" style="color: var(--text-main)">Продукт</h3>
-          <ul class="space-y-3">
+          <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">Продукт</h3>
+          <ul class="space-y-2">
             <li>
-              <router-link to="/" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Главная
+              <router-link to="/properties" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Объекты
               </router-link>
             </li>
             <li>
-              <router-link to="/zamery" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Замеры
+              <router-link to="/sources" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Источники
+              </router-link>
+            </li>
+            <li>
+              <router-link to="/market-references" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Рыночные эталоны
               </router-link>
             </li>
             <li>
@@ -29,27 +33,10 @@
           </ul>
         </div>
 
-        <!-- Компания -->
-        <div>
-          <h3 class="font-bold text-lg mb-4" style="color: var(--text-main)">Компания</h3>
-          <ul class="space-y-3">
-            <li>
-              <a href="https://aklab.tirobots.ru" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Сайт AKLAB
-              </a>
-            </li>
-            <li>
-              <a href="https://aklab.tirobots.ru/privacy.html" target="_blank" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Политика конфиденциальности
-              </a>
-            </li>
-          </ul>
-        </div>
-
         <!-- Поддержка -->
         <div>
-          <h3 class="font-bold text-lg mb-4" style="color: var(--text-main)">Поддержка</h3>
-          <ul class="space-y-3">
+          <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">Поддержка</h3>
+          <ul class="space-y-2">
             <li>
               <a href="mailto:tirobots@yandex.ru" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
                 tirobots@yandex.ru
@@ -57,29 +44,22 @@
             </li>
           </ul>
         </div>
+
+        <!-- Инфо -->
+        <div>
+          <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">AKLAB</h3>
+          <p class="text-sm" style="color: var(--text-muted)">
+            Мониторинг коммерческой недвижимости.
+            Автоматический поиск объектов ниже рыночной цены.
+          </p>
+        </div>
       </div>
 
-      <!-- Нижняя строка -->
-      <div class="border-t pt-6 flex flex-col md:flex-row justify-between items-center gap-4" style="border-color: var(--border-subtle)">
-        <p class="text-sm" style="color: var(--text-muted)">
-          &copy; {{ new Date().getFullYear() }} AKLAB. Все права защищены.
+      <div class="border-t pt-4" style="border-color: var(--border-subtle)">
+        <p class="text-xs text-center" style="color: var(--text-muted)">
+          &copy; {{ new Date().getFullYear() }} AKLAB
         </p>
-        <router-link
-          :to="isAuthenticated ? '/zamery' : '/auth'"
-          class="px-6 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
-          style="background: var(--accent)"
-        >
-          Начать
-        </router-link>
       </div>
     </div>
   </footer>
 </template>
-
-<script setup lang="ts">
-import { computed } from 'vue'
-import { useAuthStore } from '@/stores/auth'
-
-const authStore = useAuthStore()
-const isAuthenticated = computed(() => authStore.isAuthenticated)
-</script>

@@ -95,34 +95,31 @@ async function run() {
     ok('Auth check', `user=${res.data?.email}`);
   });
 
-  await test('GET /api/users/me without JWT → blocked', async () => {
-    const tmpJwt = jwt;
+  await test('GET /api/properties without JWT → blocked', async () => {
+    const savedJwt = jwt;
     jwt = null;
     try {
-      const res = await api('GET', '/api/users/me');
+      const res = await api('GET', '/api/properties');
       if (res.ok) throw new Error(`Expected error, got ${res.status}`);
       ok('No-auth blocked', `${res.status}`);
     } finally {
-      jwt = tmpJwt;
+      jwt = savedJwt;
     }
   });
 
-  // === 3. API endpoints (public — no JWT) ===
-  console.log('\n📦 API endpoints (public):');
-
-  const savedJwt = jwt;
-  jwt = null; // Используем public role
+  // === 3. API endpoints (authenticated) ===
+  console.log('\n📦 API endpoints:');
 
   await test('GET /api/properties', async () => {
     const res = await api('GET', '/api/properties');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
     const count = res.data?.data?.length || 0;
     ok('Properties', `${count} items`);
   });
 
   await test('GET /api/sources', async () => {
     const res = await api('GET', '/api/sources');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
     const sources = res.data?.data || [];
     const active = sources.filter(s => s.is_active);
     ok('Sources', `${sources.length} total, ${active.length} active`);
@@ -130,17 +127,17 @@ async function run() {
 
   await test('GET /api/setting', async () => {
     const res = await api('GET', '/api/setting');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
     ok('Setting', `threshold=${res.data?.data?.threshold_percent}`);
   });
 
   await test('GET /api/market-references', async () => {
     const res = await api('GET', '/api/market-references');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
     ok('Market references', `${res.data?.data?.length || 0} items`);
   });
 
-  // === 4. Data integrity (still public) ===
+  // === 4. Data integrity ===
   console.log('\n🔍 Data integrity:');
 
   await test('Active sources have correct parsers', async () => {
@@ -173,7 +170,6 @@ async function run() {
 
   // === 5. Microservices ===
   console.log('\n⚙️  Microservices:');
-  jwt = savedJwt; // Restore JWT
 
   const microservices = [
     { name: 'Parser', port: 1340 },
