@@ -151,9 +151,19 @@ export class TorgiGovParser implements SourceParser {
         let area: number | undefined;
         const chars = item.characteristics || [];
         for (const ch of chars) {
-          if (ch.code === 'SquareZU' || ch.code === 'Square' || ch.code === 'TotalArea') {
+          if (ch.code === 'totalAreaRealty' || ch.code === 'SquareZU' || ch.code === 'Square' || ch.code === 'TotalArea') {
             const val = parseFloat(String(ch.characteristicValue));
             if (!isNaN(val) && val > 0) area = val;
+          }
+        }
+
+        // Площадь из title (fallback): "95,3 кв.м" / "211 кв. м"
+        if (!area) {
+          const areaMatch = lotName.match(/(\d[\d\s]*[,.]?\d*)\s*кв\.?\s*м/i);
+          if (areaMatch) {
+            const cleaned = areaMatch[1].replace(/\s/g, '').replace(',', '.');
+            const num = parseFloat(cleaned);
+            if (!isNaN(num) && num > 0) area = num;
           }
         }
 
