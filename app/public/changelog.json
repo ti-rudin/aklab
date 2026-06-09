@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.22",
+    "date": "9 июня 2026",
+    "time": "12:38",
+    "items": [
+      {
+        "text": "Add 3 new parsers (aggregator-bankrot, alfalot, etprf) + date filtering + delays",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.21",
     "date": "9 июня 2026",
     "time": "12:01",
