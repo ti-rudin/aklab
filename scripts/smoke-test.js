@@ -143,7 +143,7 @@ async function run() {
   await test('Active sources have correct parsers', async () => {
     const res = await api('GET', '/api/sources');
     const sources = res.data?.data || [];
-    const validParsers = ['fabrikant', 'fedresurs', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf'];
+    const validParsers = ['fabrikant', 'fedresurs', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf', 'sberbank-ast', 'invest-mosreg', 'investmoscow', 'roseltorg', 'm-ets'];
     for (const src of sources) {
       if (src.is_active && !validParsers.includes(src.parser)) {
         throw new Error(`Source ${src.slug} has unknown parser: ${src.parser}`);
@@ -177,6 +177,11 @@ async function run() {
     { name: 'Parser-aggregator-bankrot', port: 1348 },
     { name: 'Parser-alfalot', port: 1349 },
     { name: 'Parser-etprf', port: 1350 },
+    { name: 'Parser-sberbank-ast', port: 1351 },
+    { name: 'Parser-invest-mosreg', port: 1352 },
+    { name: 'Parser-investmoscow', port: 1353 },
+    { name: 'Parser-roseltorg', port: 1354 },
+    { name: 'Parser-m-ets', port: 1355 },
     { name: 'Analyzer', port: 1341 },
     { name: 'Digest', port: 1342 },
   ];
