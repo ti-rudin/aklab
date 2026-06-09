@@ -206,15 +206,15 @@ CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSI
 
 if [ -n "$CHANGELOG_ITEMS" ] && [ "$CHANGELOG_ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
   # Дата и время по Москве (UTC+3), русские названия месяцев
-  MOSCOW_DATE=$(TZ=Europe/Moscow node -e "
-    const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  MOSCOW_DATE=$(node -e "
     const d = new Date();
-    const msk = new Date(d.getTime() + (3 * 60 - d.getTimezoneOffset()) * 60000);
+    const msk = new Date(d.toLocaleString('en-US', {timeZone:'Europe/Moscow'}));
+    const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
     process.stdout.write(msk.getDate() + ' ' + months[msk.getMonth()] + ' ' + msk.getFullYear());
   ")
-  CHANGELOG_TIME=$(TZ=Europe/Moscow node -e "
+  CHANGELOG_TIME=$(node -e "
     const d = new Date();
-    const msk = new Date(d.getTime() + (3 * 60 - d.getTimezoneOffset()) * 60000);
+    const msk = new Date(d.toLocaleString('en-US', {timeZone:'Europe/Moscow'}));
     process.stdout.write(String(msk.getHours()).padStart(2,'0') + ':' + String(msk.getMinutes()).padStart(2,'0'));
   ")
   CHANGELOG_DATE="$MOSCOW_DATE"
