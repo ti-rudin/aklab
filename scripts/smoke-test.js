@@ -143,7 +143,7 @@ async function run() {
   await test('Active sources have correct parsers', async () => {
     const res = await api('GET', '/api/sources');
     const sources = res.data?.data || [];
-    const validParsers = ['fabrikant', 'fedresurs', 'torgi-gov'];
+    const validParsers = ['fabrikant', 'fedresurs', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf'];
     for (const src of sources) {
       if (src.is_active && !validParsers.includes(src.parser)) {
         throw new Error(`Source ${src.slug} has unknown parser: ${src.parser}`);
@@ -174,6 +174,9 @@ async function run() {
   const microservices = [
     { name: 'Parser-fabrikant', port: 1345 },
     { name: 'Parser-torgi-gov', port: 1346 },
+    { name: 'Parser-aggregator-bankrot', port: 1348 },
+    { name: 'Parser-alfalot', port: 1349 },
+    { name: 'Parser-etprf', port: 1350 },
     { name: 'Analyzer', port: 1341 },
     { name: 'Digest', port: 1342 },
   ];

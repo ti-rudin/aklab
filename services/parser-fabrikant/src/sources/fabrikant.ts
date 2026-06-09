@@ -18,7 +18,7 @@ import { logger } from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
-const MAX_PAGES = 5; // 50 карточек за запуск
+const MAX_PAGES = 10; // 10 карточек на страницу, 10 стр = 100 items
 
 // Ключевые слова недвижимости — фильтруем нерелевантные лоты
 const PROPERTY_KEYWORDS = [
@@ -84,16 +84,23 @@ export class FabrikantParser implements SourceParser {
         const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}?page=${pageNum}`;
         logger.info(`[fabrikant] Loading page ${pageNum}: ${url}`);
 
+        // Пауза между страницами (имитация человека, 3-6 сек)
+        if (pageNum > 1) {
+          const delay = 3000 + Math.random() * 3000;
+          await new Promise(r => setTimeout(r, delay));
+        }
+
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(3000);
 
-        const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[] }) => {
+        const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {
           const results: Array<{
             lot_id: string;
             title: string;
             price_text: string;
             proc_number: string;
             link_href: string;
+            date_text: string;
           }> = [];
 
           const cards = document.querySelectorAll('[data-slot="card"][data-id]');
@@ -116,20 +123,21 @@ export class FabrikantParser implements SourceParser {
 
             const textSlots = el.querySelectorAll('[data-slot="text"]');
             let priceText = '';
-            for (const slot of Array.from(textSlots)) {
-              const t = slot.textContent?.trim() || '';
-              if (t.includes('RUB')) {
-                priceText = t;
-                break;
-              }
-            }
-
             let procNumber = '';
+            let dateText = '';
+
             for (const slot of Array.from(textSlots)) {
               const t = slot.textContent?.trim() || '';
-              if (/^\d+-\d+$/.test(t)) {
+              if (t.includes('RUB') && !priceText) {
+                priceText = t;
+              }
+              if (/^\d+-\d+$/.test(t) && !procNumber) {
                 procNumber = t;
-                break;
+              }
+              // Ищем дату в формате DD.MM.YYYY или "X дней/часов назад"
+              const dateMatch = t.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+              if (dateMatch && !dateText) {
+                dateText = t;
               }
             }
 
@@ -142,11 +150,12 @@ export class FabrikantParser implements SourceParser {
               price_text: priceText,
               proc_number: procNumber,
               link_href: href,
+              date_text: dateText,
             });
           }
 
           return results;
-        }, { kw: PROPERTY_KEYWORDS, exclude: EXCLUDE_KEYWORDS });
+        }, { kw: PROPERTY_KEYWORDS, exclude: EXCLUDE_KEYWORDS, cutoff: Date.now() - 24 * 3600 * 1000 });
 
         logger.info(`[fabrikant] Page ${pageNum}: found ${pageProperties.length} property cards`);
 
