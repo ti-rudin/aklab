@@ -6,7 +6,7 @@
     </div>
 
     <!-- Фильтры -->
-    <div class="rounded-xl p-4 border mb-6 flex flex-wrap gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+    <div class="rounded-xl p-4 border mb-6 flex flex-col sm:flex-row flex-wrap gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
         <select v-model="filters.city" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
@@ -63,8 +63,8 @@
       <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
     </div>
 
-    <!-- Таблица -->
-    <div v-else class="rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
+    <!-- Desktop: Таблица -->
+    <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
       <table class="w-full text-sm">
         <thead>
           <tr style="background: var(--bg-elevated)">
@@ -103,6 +103,53 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Mobile: Карточки -->
+    <div v-if="!loading && items.length > 0" class="md:hidden space-y-3">
+      <div
+        v-for="item in items"
+        :key="item.id"
+        class="rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
+        style="background: var(--bg-elevated); border-color: var(--border-subtle)"
+        @click="router.push(`/properties/${item.documentId}`)"
+      >
+        <!-- Заголовок + badges -->
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
+            <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">
+              ⚠ {{ item.deviation_percent }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Адрес + город + тип -->
+        <div class="text-xs mb-3" style="color: var(--text-muted)">
+          <span v-if="item.address">{{ item.address }}</span>
+          <span v-if="item.address && (item.city || item.property_type)"> · </span>
+          <span v-if="item.city">{{ cityLabel(item.city) }}</span>
+          <span v-if="item.city && item.property_type"> · </span>
+          <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+        </div>
+
+        <!-- Метрики -->
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
+            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-xs" style="color: var(--text-muted)">Цена</div>
+            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
+            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Пагинация -->
