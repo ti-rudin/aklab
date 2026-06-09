@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.19",
+    "date": "9 июня 2026",
+    "time": "07:01",
+    "items": [
+      {
+        "text": "Mobile responsive tables + theme fixes",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.18",
     "date": "9 июня 2026",
     "time": "06:38",
