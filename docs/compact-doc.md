@@ -335,28 +335,24 @@ deploy-prod.sh + бамп версии).
     git-коммитов (английский). Словарь переводов в
     `scripts/generate-changelog.js` (TRANSLATIONS). Дата/время —
     `TZ=Europe/Moscow` + русские названия месяцев.
+16. **Strapi 5 REST API — только documentId** — `GET/PUT/DELETE
+    /api/sources/:id` принимает ТОЛЬКО `documentId` (строка вида
+    `bv610wntnoe3l25gt3c6yd4t`), НЕ числовой `id`. `entityService`
+    возвращает оба поля, но REST — только `documentId`. Баг v1.0.18:
+    счётчики total_found/total_created/parse_count = 0, т.к.
+    `updateSourceStats` передавал числовой id → 404 → молчаливый
+    провал. Исправлено в v1.0.19.
 
-## Session handoff (v1.0.13 → следующая сессия)
+## Session handoff (v1.0.19 → следующая сессия)
 
-**Сделано в v1.0.13** (9 июня 2026):
-- ✅ Микросервисы парсеров: parser-fabrikant (1345), parser-torgi-gov (1346)
-- ✅ Shared library: services/_shared/ (@aklab/service-shared)
-- ✅ Source schema: +schedule, +health_port
-- ✅ Health proxy: GET /api/sources/:id/health
-- ✅ Cron per-source расписание (Source.schedule)
-- ✅ Health badges на /sources (🟢/🔴)
-- ✅ Inline-редактирование расписания
-- ✅ docs/adding-source.md — инструкция добавления нового источника
-- ✅ docs/plan3.md — план работ по микросервисам
-- ✅ Changelog v1.0.12/v1.0.13 добавлены
-- ✅ deploy-prod.sh обновлён (build shared, новые сервисы)
+**Сделано в v1.0.19** (9 июня 2026):
+- ✅ **Source stats counters fixed** — `updateSourceStats` использовал числовой `id`, а Strapi 5 REST API требует `documentId`. Все запросы получали 404 → счётчики = 0. Исправлено в `_shared/strapi-client.ts`, обоих парсерах, cron controller и scheduler.
+- ✅ **Mobile responsive** — Properties: таблица `hidden md:block` + карточки `md:hidden`; фильтры `flex-col sm:flex-row`. Sources: stats/buttons адаптивные.
+- ✅ **Theme fixes** — `--bg-input` добавлен в CSS (был фоллбэк `#fff`), badges на rgba, логотип conditional gradient.
+- ✅ **Frontend runParser** — polling 5s×24 вместо hardcoded 3s, убрана лишняя PUT-ка (бэкенд сам ставит `running`).
 
-**Сделано в Фазе 10** (9 июня 2026, v1.0.12):
-- ✅ ChangelogView.vue — фильтры + пагинация
-- ✅ changelog.json — предзаполнен v1.0.0–v1.0.11
-- ✅ generate-changelog.js — парсит conventional commits
-- ✅ Интеграция в deploy-prod.sh (шаг 9: генерация перед release-коммитом)
-- ✅ Ссылка в Footer
+**Сделано в v1.0.18** (9 июня 2026):
+- ✅ Mobile cards for Properties, responsive Sources, theme fixes, logo contrast.
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно (там уже таблицы и admin).
