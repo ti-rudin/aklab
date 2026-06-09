@@ -323,6 +323,18 @@ deploy-prod.sh + бамп версии).
     changelog.json ПОСЛЕ build app (шаг 9 vs шаг 6). Нужно копировать
     `app/public/changelog.json` → `app/dist/changelog.json` после
     генерации. Иначе dist содержит старую версию.
+13. **Strapi 5 custom routes + auth** — если заменить `createCoreRouter`
+    на explicit routes с `config: { auth: {} }`, Users-Permissions
+    требует явного grant для КАЖДОГО action. Без этого — 500 на всех
+    endpoints. **Решение**: `createCoreRouter` для CRUD + отдельный
+    файл `routes/health.ts` с `auth: false` для custom endpoints.
+14. **Seeder идемпотентен** — при добавлении новых полей в schema
+    существующие записи НЕ обновляются. Обновлять через API:
+    `PUT /api/sources/:documentId { data: { schedule: "0 3 * * *" } }`.
+15. **Changelog: русский язык + МСК** — генератор берёт текст из
+    git-коммитов (английский). Словарь переводов в
+    `scripts/generate-changelog.js` (TRANSLATIONS). Дата/время —
+    `TZ=Europe/Moscow` + русские названия месяцев.
 
 ## Session handoff (v1.0.13 → следующая сессия)
 
