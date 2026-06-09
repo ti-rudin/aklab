@@ -47,7 +47,7 @@ rollback() {
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
     fi
-    pm2 restart aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
+    pm2 restart aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod aklab-parser-aggregator-bankrot aklab-parser-alfalot aklab-parser-etprf 2>/dev/null || true
     notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
 }
@@ -100,7 +100,7 @@ fi
 NEED_INSTALL=false
 
 # node_modules отсутствует — обязательно ставим
-if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ] || [ ! -d "services/_shared/node_modules" ] || [ ! -d "services/parser-fabrikant/node_modules" ] || [ ! -d "services/parser-torgi-gov/node_modules" ]; then
+if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ] || [ ! -d "services/_shared/node_modules" ] || [ ! -d "services/parser-fabrikant/node_modules" ] || [ ! -d "services/parser-torgi-gov/node_modules" ] || [ ! -d "services/parser-aggregator-bankrot/node_modules" ] || [ ! -d "services/parser-alfalot/node_modules" ] || [ ! -d "services/parser-etprf/node_modules" ]; then
   NEED_INSTALL=true
   log "node_modules отсутствует — npm install обязателен"
 fi
@@ -144,7 +144,7 @@ log "Build App..."
 (cd app && npm run build 2>&1 | tail -3)
 
 log "Build services..."
-for svc in parser-fabrikant parser-torgi-gov analyzer digest; do
+for svc in parser-fabrikant parser-torgi-gov parser-aggregator-bankrot parser-alfalot parser-etprf analyzer digest; do
   if [ -d "services/$svc" ]; then
     log "  Build services/$svc..."
     (cd "services/$svc" && npm run build 2>&1 | tail -3)
@@ -153,7 +153,7 @@ done
 
 # === Step 7: PM2 restart ===
 log "PM2 restart (all processes)..."
-pm2 stop aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod 2>/dev/null || true
+pm2 stop aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod aklab-parser-aggregator-bankrot aklab-parser-alfalot aklab-parser-etprf 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
@@ -188,7 +188,7 @@ fi
 
 # Проверяем health микросервисов (не блокирующий — warn)
 sleep 5
-for svc_port in "parser-fabrikant:1345" "parser-torgi-gov:1346" "analyzer:1341" "digest:1342"; do
+for svc_port in "parser-fabrikant:1345" "parser-torgi-gov:1346" "parser-aggregator-bankrot:1348" "parser-alfalot:1349" "parser-etprf:1350" "analyzer:1341" "digest:1342"; do
   SVC_NAME="${svc_port%%:*}"
   SVC_PORT="${svc_port##*:}"
   SVC_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${SVC_PORT}/health" 2>/dev/null || echo "000")

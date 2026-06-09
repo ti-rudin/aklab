@@ -273,6 +273,9 @@ const availableParsers: ParserDef[] = [
   { slug: 'fabrikant', health_port: 1345 },
   { slug: 'torgi-gov', health_port: 1346 },
   { slug: 'fedresurs', health_port: 1347 },
+  { slug: 'aggregator-bankrot', health_port: 1348 },
+  { slug: 'alfalot', health_port: 1349 },
+  { slug: 'etprf', health_port: 1350 },
 ]
 
 const form = ref({

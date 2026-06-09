@@ -199,7 +199,7 @@ async function seedSettings(strapi: StrapiInstance): Promise<void> {
         work_hours_end: 21,
         digest_time: '09:00',
         retention_months: 6,
-        active_sources: ['fedresurs'], // MVP: один источник; UI расширит
+        active_sources: ['fabrikant', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf'],
         smtp_to: process.env.SMTP_TO || 'a@rudin.ru',
       },
     });
@@ -248,6 +248,39 @@ async function seedSources(strapi: StrapiInstance): Promise<void> {
       is_active: true,
       schedule: '0 3 * * *',
       health_port: 1346,
+    },
+    {
+      name: 'Агрегатор банкрот',
+      slug: 'aggregator-bankrot',
+      url: 'https://xn----etbpba5admdlad.xn--p1ai',
+      parser: 'aggregator-bankrot' as const,
+      auction_type: 'bankruptcy' as const,
+      region: 'Россия',
+      is_active: true,
+      schedule: '0 4 * * *',
+      health_port: 1348,
+    },
+    {
+      name: 'Alfalot',
+      slug: 'alfalot',
+      url: 'https://ecosystem.alfalot.ru/showcase/list?categories=1',
+      parser: 'alfalot' as const,
+      auction_type: 'bankruptcy' as const,
+      region: 'Россия',
+      is_active: true,
+      schedule: '0 4 * * *',
+      health_port: 1349,
+    },
+    {
+      name: 'ЕТП РФ',
+      slug: 'etprf',
+      url: 'https://sale.etprf.ru/Notification',
+      parser: 'etprf' as const,
+      auction_type: 'bankruptcy' as const,
+      region: 'Россия',
+      is_active: true,
+      schedule: '0 5 * * *',
+      health_port: 1350,
     },
   ];
 

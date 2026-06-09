@@ -13,8 +13,8 @@ import { logger } from '@aklab/service-shared';
 
 const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
 const BASE_URL = 'https://torgi.gov.ru/new/public/lots/reg';
-const PAGE_SIZE = 100;
-const MAX_PAGES = 5;
+const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
+const MAX_AGE_HOURS = 24; // только объекты за последние N часов
 
 const MOSCOW_REGIONS = new Set(['77', '50']);
 
@@ -58,6 +58,9 @@ export class TorgiGovParser implements SourceParser {
       } catch (err: any) {
         logger.warn(`[torgi-gov] Search "${query}" failed: ${err.message}`);
       }
+      // Пауза между поисковыми запросами (3-6 сек)
+      const delay = 3000 + Math.random() * 3000;
+      await new Promise(r => setTimeout(r, delay));
     }
 
     const seen = new Set<string>();
@@ -73,18 +76,26 @@ export class TorgiGovParser implements SourceParser {
 
   private async searchQuery(query: string): Promise<ParsedProperty[]> {
     const results: ParsedProperty[] = [];
+    const cutoff = new Date(Date.now() - MAX_AGE_HOURS * 3600 * 1000);
+    let consecutiveOld = 0; // счётчик страниц без свежих объектов
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const params = new URLSearchParams({
         lotStatus: 'PUBLISHED,APPLICATIONS_SUBMISSION',
         text: query,
-        size: String(PAGE_SIZE),
+        size: '10', // API всегда отдаёт 10, параметр формальный
         sort: 'firstVersionPublicationDate,desc',
         withFacets: 'false',
       });
 
       const url = `${API_URL}?${params}`;
       logger.info(`[torgi-gov] Fetching: ${query} (page ${page})`);
+
+      // Пауза между запросами (имитация человека, 2-5 сек)
+      if (page > 0) {
+        const delay = 2000 + Math.random() * 3000;
+        await new Promise(r => setTimeout(r, delay));
+      }
 
       const response = await fetch(url, {
         headers: {
@@ -103,7 +114,13 @@ export class TorgiGovParser implements SourceParser {
 
       if (!items.length) break;
 
+      let pageNewCount = 0;
+
       for (const item of items) {
+        // Фильтр по дате — только объекты за последние MAX_AGE_HOURS
+        const createDate = item.createDate ? new Date(item.createDate) : null;
+        if (createDate && createDate < cutoff) continue;
+
         const regionCode = String(item.subjectRFCode || '');
         if (!MOSCOW_REGIONS.has(regionCode)) continue;
 
@@ -155,9 +172,21 @@ export class TorgiGovParser implements SourceParser {
           property_type: classifyPropertyType(fullText),
           auction_type: item.biddType?.name?.includes('продаж') ? 'marketplace' : 'privatization',
         });
+        pageNewCount++;
       }
 
-      if (page >= data.totalPages - 1 || items.length < PAGE_SIZE) break;
+      // Ранний выход: если 3 страницы подряд без свежих объектов — дальше только старые
+      if (pageNewCount === 0) {
+        consecutiveOld++;
+        if (consecutiveOld >= 3) {
+          logger.info(`[torgi-gov] 3 consecutive pages with no recent items — stopping`);
+          break;
+        }
+      } else {
+        consecutiveOld = 0;
+      }
+
+      if (page >= data.totalPages - 1 || items.length < 10) break;
     }
 
     logger.info(`[torgi-gov] Query "${query}": ${results.length} properties`);
