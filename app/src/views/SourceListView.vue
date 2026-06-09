@@ -341,15 +341,18 @@ async function runParser(src: Source) {
   runningSource.value = src.id
   error.value = ''
   try {
-    await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'running', last_parse_error: null } })
-    await fetchSources()
     await api.post(`/cron/parse/${src.slug}`)
-    await new Promise(r => setTimeout(r, 3000))
+    // Бэкенд сам ставит last_parse_status: 'running'
     await fetchSources()
+    // Polling: ждём завершения парсинга (макс 2 мин)
+    for (let i = 0; i < 24; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      await fetchSources()
+      const updated = sources.value.find(s => s.id === src.id)
+      if (updated && updated.last_parse_status !== 'running') break
+    }
   } catch (e: any) {
     error.value = `Ошибка запуска: ${e.response?.data?.error?.message || e.message}`
-    await api.put(`/sources/${src.documentId}`, { data: { last_parse_status: 'error', last_parse_error: e.message } }).catch(() => {})
-    await fetchSources()
   } finally {
     runningSource.value = null
   }
