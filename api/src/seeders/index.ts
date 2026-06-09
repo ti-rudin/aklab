@@ -380,7 +380,7 @@ async function seedApiPermissions(strapi: StrapiInstance): Promise<void> {
     }
 
     const actions = [
-      // find / findOne (чтение)
+      // find / findOne (чтение) — для frontend
       'api::source.source.find',
       'api::source.source.findOne',
       'api::property.property.find',
@@ -393,25 +393,11 @@ async function seedApiPermissions(strapi: StrapiInstance): Promise<void> {
       'api::user-comment.user-comment.findOne',
       'api::cron-log.cron-log.find',
       'api::cron-log.cron-log.findOne',
-      // create / update / delete (запись) — для dev-режима, чтобы можно было дёргать API curl'ом
-      'api::source.source.create',
-      'api::source.source.update',
-      'api::source.source.delete',
-      'api::property.property.create',
-      'api::property.property.update',
-      'api::property.property.delete',
-      'api::setting.setting.create',
-      'api::setting.setting.update',
-      'api::setting.setting.delete',
-      'api::market-reference.market-reference.create',
-      'api::market-reference.market-reference.update',
-      'api::market-reference.market-reference.delete',
+      // create / update только для user-comment (пользователи могут комментировать)
       'api::user-comment.user-comment.create',
       'api::user-comment.user-comment.update',
-      'api::user-comment.user-comment.delete',
-      'api::cron-log.cron-log.create',
-      'api::cron-log.cron-log.update',
-      'api::cron-log.cron-log.delete',
+      // Остальные content-types — read-only для authenticated.
+      // Парсеры/API-токены используют STRAPI_API_TOKEN (admin-level).
     ];
 
     let added = 0;

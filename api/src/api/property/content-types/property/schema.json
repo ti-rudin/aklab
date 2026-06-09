@@ -9,6 +9,29 @@
   "options": {
     "draftAndPublish": false
   },
+  "indexes": [
+    {
+      "name": "properties_source_external_id_unique",
+      "unique": true,
+      "columns": ["source", "external_id"]
+    },
+    {
+      "name": "properties_status_idx",
+      "columns": ["status"]
+    },
+    {
+      "name": "properties_city_idx",
+      "columns": ["city"]
+    },
+    {
+      "name": "properties_is_undervalued_idx",
+      "columns": ["is_undervalued"]
+    },
+    {
+      "name": "properties_property_type_idx",
+      "columns": ["property_type"]
+    }
+  ],
   "pluginOptions": {},
   "attributes": {
     "source": {

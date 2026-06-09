@@ -29,7 +29,7 @@ export async function propertyExists(source: string, externalId: string): Promis
     return (data.data?.length ?? 0) > 0;
   } catch (err: any) {
     logger.warn(`propertyExists check failed: ${err.message}`);
-    return false;
+    return true; // fail-closed: при ошибке считаем что существует (пропускаем, не дублируем)
   }
 }
 
@@ -196,4 +196,62 @@ export async function logCron(entry: {
   } catch (err: any) {
     logger.warn(`logCron failed: ${err.message}`);
   }
+}
+
+/**
+ * Получить Property по documentId (для analyzer).
+ */
+export async function fetchProperty(documentId: string): Promise<any> {
+  const res = await fetch(`${BASE}/properties/${documentId}`, { headers: HEADERS });
+  if (!res.ok) throw new Error(`fetchProperty failed (${res.status})`);
+  const data = (await res.json()) as StrapiResponse<any>;
+  return data.data;
+}
+
+/**
+ * Найти активный MarketReference по city + property_type (для analyzer).
+ */
+export async function findActiveMarketReference(city: string, propertyType: string): Promise<any | null> {
+  const url = `${BASE}/market-references?filters[city][$eq]=${city}&filters[property_type][$eq]=${propertyType}&filters[is_active][$eq]=true&sort=effective_from:desc&pagination[limit]=1`;
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) return null;
+  const data = (await res.json()) as StrapiResponse<any[]>;
+  return data.data?.[0] || null;
+}
+
+/**
+ * Получить singleton Setting (для analyzer/digest).
+ */
+export async function fetchSetting(): Promise<any> {
+  const res = await fetch(`${BASE}/setting`, { headers: HEADERS });
+  if (!res.ok) return null;
+  const data = (await res.json()) as StrapiResponse<any>;
+  return data.data;
+}
+
+/**
+ * Обновить Property по documentId (для analyzer).
+ */
+export async function updateProperty(documentId: string, fields: Record<string, any>): Promise<void> {
+  const res = await fetch(`${BASE}/properties/${documentId}`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ data: fields }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`updateProperty failed (${res.status}): ${body}`);
+  }
+}
+
+/**
+ * Получить недооценённые объекты за последние 12 часов (для digest).
+ */
+export async function fetchUndervaluedProperties(): Promise<any[]> {
+  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const url = `${BASE}/properties?filters[is_undervalued][$eq]=true&filters[status][$ne]=rejected&filters[createdAt][$gte]=${since}&sort=deviation_percent:desc&pagination[limit]=50`;
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) return [];
+  const data = (await res.json()) as StrapiResponse<any[]>;
+  return data.data || [];
 }

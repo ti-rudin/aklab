@@ -1,6 +1,6 @@
 import type { Job } from '@aklab/sqlite-queue';
 import nodemailer from 'nodemailer';
-import { fetchUndervaluedProperties, logCron } from './strapi-client';
+import { fetchUndervaluedProperties, logCron } from '@aklab/service-shared';
 import { config } from './config';
 import { logger } from './utils/logger';
 

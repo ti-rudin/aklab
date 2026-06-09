@@ -21,8 +21,8 @@ const CRON_TIMEZONE = 'Europe/Moscow';
 const activeCronJobs = new Map<string, cron.ScheduledTask>();
 
 async function getSetting(strapi: Core.Strapi): Promise<any> {
-  const list = await (strapi as any).entityService.findMany('api::setting.setting', { limit: 1 });
-  return list?.[0] || null;
+  // db.query вместо entityService — надёжнее для singleton (gotcha #17)
+  return await (strapi as any).db.query('api::setting.setting').findOne({});
 }
 
 async function getActiveSources(strapi: Core.Strapi): Promise<any[]> {
@@ -100,7 +100,7 @@ export function registerCrons(strapi: Core.Strapi): void {
         limit: 50,
       });
       for (const prop of properties || []) {
-        queueService.addToQueue('analyze-property', { property_id: prop.id }, { correlationId: corrId });
+        queueService.addToQueue('analyze-property', { documentId: prop.documentId }, { correlationId: corrId });
       }
       if (properties?.length) {
         strapi.log.info(`[cron] → enqueued ${properties.length} properties for analysis`);
@@ -148,16 +148,20 @@ export function registerCrons(strapi: Core.Strapi): void {
       cutoff.setMonth(cutoff.getMonth() - retentionMonths);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-      const old = await (strapi as any).entityService.findMany('api::property.property', {
-        filters: { createdAt: { $lt: cutoffStr } },
-        limit: 100,
-      });
-
       let deleted = 0;
-      for (const prop of old || []) {
-        await (strapi as any).entityService.delete('api::property.property', prop.id);
-        deleted++;
-      }
+      let batchDeleted: number;
+      do {
+        const old = await (strapi as any).entityService.findMany('api::property.property', {
+          filters: { createdAt: { $lt: cutoffStr } },
+          limit: 100,
+        });
+        batchDeleted = 0;
+        for (const prop of old || []) {
+          await (strapi as any).entityService.delete('api::property.property', prop.id);
+          deleted++;
+          batchDeleted++;
+        }
+      } while (batchDeleted === 100);
 
       if (deleted > 0) {
         strapi.log.info(`[cron] cleanup:old deleted ${deleted} properties older than ${cutoffStr}`);
