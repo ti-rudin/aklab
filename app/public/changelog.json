@@ -1,20 +1,47 @@
 [
   {
-    "version": "v1.0.16",
-    "date": "9 June 2026",
-    "time": "02:58",
+    "version": "v1.0.17",
+    "date": "9 июня 2026",
+    "time": "12:10",
     "items": [
       {
-        "text": "Публичный health endpoint",
+        "text": "Gotchas #13-#15 — custom routes auth, seeder, changelog rus",
+        "type": "improvement"
+      },
+      {
+        "text": "Changelog Russian dates, Moscow time, translation dict",
         "type": "fix"
       },
       {
-        "text": "Add gotcha #12 — changelog.json build vs generate order",
-        "type": "improvement"
+        "text": "Маршруты источников",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.0.16",
+    "date": "9 июня 2026",
+    "time": "06:00",
+    "items": [
+      {
+        "text": "Health endpoint — отдельный route файл (auth: false)",
+        "type": "fix"
+      },
+      {
+        "text": "createCoreRouter восстановлен для CRUD маршрутов",
+        "type": "fix"
       },
       {
         "text": "Changelog копируется в dist после генерации",
         "type": "fix"
+      },
+      {
+        "text": "Даты на русском, время по МСК",
+        "type": "fix"
+      },
+      {
+        "text": "Gotchas #13-#15 в compact-doc",
+        "type": "improvement"
       }
     ]
   },
