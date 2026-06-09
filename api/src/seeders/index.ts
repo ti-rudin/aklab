@@ -175,13 +175,20 @@ async function seedTestUser(strapi: StrapiInstance): Promise<void> {
  */
 async function seedSettings(strapi: StrapiInstance): Promise<void> {
   try {
-    const existing = await strapi.entityService.findMany(
-      'api::setting.setting',
-      { limit: 1 }
-    );
-
-    if (existing && existing.length > 0) {
-      strapi.log.info('[seed] Setting уже существует — skip');
+    // Используем db.query вместо entityService — надёжнее для singleton,
+    // entityService.findMany может не находить записи из-за draft/published state
+    const existing = await strapi.db.query('api::setting.setting').findOne({});
+    if (existing) {
+      // Обновляем smtp_to если пустой
+      if (!existing.smtp_to) {
+        const defaultSmtpTo = process.env.SMTP_TO || 'a@rudin.ru';
+        await strapi.db.query('api::setting.setting').update({
+          where: { id: existing.id },
+          data: { smtp_to: defaultSmtpTo },
+        });
+        strapi.log.info(`[seed] Setting smtp_to обновлён: ${defaultSmtpTo}`);
+      }
+      strapi.log.info('[seed] Setting уже существует — skip create');
       return;
     }
 
@@ -193,7 +200,7 @@ async function seedSettings(strapi: StrapiInstance): Promise<void> {
         digest_time: '09:00',
         retention_months: 6,
         active_sources: ['fedresurs'], // MVP: один источник; UI расширит
-        smtp_to: process.env.SMTP_TO || null,
+        smtp_to: process.env.SMTP_TO || 'a@rudin.ru',
       },
     });
 
