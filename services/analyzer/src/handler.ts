@@ -1,10 +1,22 @@
 import type { Job } from '@aklab/sqlite-queue';
-import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron, downloadPropertyPhotos } from '@aklab/service-shared';
+import { SqliteQueue } from '@aklab/sqlite-queue';
+import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 
 export interface AnalyzeRequest {
   documentId: string;
   correlationId?: string;
+}
+
+let photoQueue: SqliteQueue | null = null;
+
+function getPhotoQueue(): SqliteQueue {
+  if (!photoQueue) {
+    // Same queue DB as everything else
+    const dbPath = process.env.QUEUE_DB_PATH || '../../queue.db';
+    photoQueue = new SqliteQueue(dbPath, { disableTimers: true });
+  }
+  return photoQueue;
 }
 
 export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; undervalued: boolean }> {
@@ -46,20 +58,19 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       manual_price_per_sqm: isUndervalued ? refPrice : null,
     });
 
-    // Download photos for undervalued properties if not already done
-    if (isUndervalued && property.photo_urls && Array.isArray(property.photo_urls) && property.photo_urls.length > 0 && !property.photos_downloaded) {
+    // Enqueue photo fetch for undervalued properties
+    if (isUndervalued && property.url && !property.photos_downloaded) {
       try {
-        logger.info(`Downloading photos for undervalued property ${property.documentId}`, { correlationId: corrId });
-        const downloadedPaths = await downloadPropertyPhotos(property.documentId, property.photo_urls);
-        if (downloadedPaths.length > 0) {
-          await updateProperty(property.documentId, {
-            photos: downloadedPaths,
-            photos_downloaded: true,
-          });
-          logger.info(`Downloaded ${downloadedPaths.length} photos for ${property.documentId}`, { correlationId: corrId });
-        }
+        const q = getPhotoQueue();
+        q.addToQueue('fetch-photos', {
+          documentId: property.documentId,
+          url: property.url,
+          source: property.source,
+          correlationId: corrId,
+        }, { correlationId: `photo-${property.documentId}` });
+        logger.info(`Enqueued photo fetch for ${property.documentId}`, { correlationId: corrId });
       } catch (err: any) {
-        logger.warn(`Photo download failed for ${property.documentId}: ${err.message}`, { correlationId: corrId });
+        logger.warn(`Failed to enqueue photo fetch: ${err.message}`, { correlationId: corrId });
       }
     }
 

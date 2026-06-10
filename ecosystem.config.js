@@ -113,6 +113,23 @@ module.exports = {
       },
     },
     {
+      name: 'aklab-photo-fetcher-prod',
+      cwd: '/home/rudin/aklab/services/photo-fetcher',
+      script: 'node',
+      args: 'dist/index.js',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        NVM_DIR: '/home/rudin/.nvm',
+        PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
+        STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+        PORT: '1356',
+      },
+    },
+    {
       name: 'aklab-parser-aggregator-bankrot',
       cwd: '/home/rudin/aklab/services/parser-aggregator-bankrot',
       script: 'node',

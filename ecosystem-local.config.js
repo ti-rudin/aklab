@@ -101,6 +101,21 @@ module.exports = {
       },
     },
     {
+      name: 'aklab-photo-fetcher-dev',
+      cwd: __dirname + '/services/photo-fetcher',
+      script: 'npm',
+      args: 'run dev',
+      interpreter: 'none',
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        QUEUE_DB_PATH: __dirname + '/queue.db',
+        STRAPI_URL: 'http://localhost:1338',
+        STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+        PORT: '1356',
+      },
+    },
+    {
       name: 'aklab-parser-aggregator-bankrot-dev',
       cwd: __dirname + '/services/parser-aggregator-bankrot',
       script: 'npm',
