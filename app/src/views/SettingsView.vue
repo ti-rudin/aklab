@@ -129,6 +129,92 @@
       </button>
     </form>
 
+    <!-- Ручной запуск -->
+    <div class="mt-8 pt-6 border-t" style="border-color: var(--border-subtle)">
+      <h2 class="text-lg font-semibold mb-2" style="color: var(--text-main)">Ручной запуск</h2>
+      <p class="text-xs mb-4" style="color: var(--text-muted)">
+        Полный цикл: парсинг всех активных источников → анализ цен → email-дайджест.
+      </p>
+
+      <!-- Прогресс -->
+      <div v-if="pipelineStage !== 'idle'" class="mb-4 p-4 rounded-lg space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+        <!-- Парсинг -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'parsing'">⏳</template>
+            <template v-else-if="parseDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'parsing'">
+                {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников обработано
+              </template>
+              <template v-else-if="parseDone">Завершён</template>
+              <template v-else>Ожидание...</template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analyze -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'analyzing'">⏳</template>
+            <template v-else-if="analyzeDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Анализ</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'analyzing'">
+                {{ analyzePending }} объектов в очереди
+              </template>
+              <template v-else-if="analyzeDone">Завершён</template>
+              <template v-else>Ожидание...</template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Digest -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'digesting'">⏳</template>
+            <template v-else-if="digestDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Дайджест</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
+              <template v-else-if="digestDone">Отправлен</template>
+              <template v-else>Ожидание...</template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Done -->
+        <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
+          ✓ Пайплайн завершён
+        </div>
+      </div>
+
+      <button
+        @click="runPipeline"
+        :disabled="pipelineStage !== 'idle'"
+        class="w-full px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+        :style="{
+          background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
+          border: '1px solid var(--border-subtle)',
+          color: pipelineStage === 'done' ? '#fff' : 'var(--text-main)',
+        }"
+      >
+        <template v-if="pipelineStage === 'idle'">Ручной запуск</template>
+        <template v-else-if="pipelineStage === 'done'">Готово — запустить ещё раз</template>
+        <template v-else>Выполняется...</template>
+      </button>
+    </div>
+
     <!-- Ссылки -->
     <div class="mt-8 pt-6 border-t space-y-3" style="border-color: var(--border-subtle)">
       <router-link
@@ -158,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -172,6 +258,19 @@ const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
 const documentId = ref('')
+
+// Pipeline state
+type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
+const pipelineStage = ref<PipelineStage>('idle')
+const parseSourcesTotal = ref(0)
+const parseSourcesDone = ref(0)
+const parseDone = ref(false)
+const analyzeDone = ref(false)
+const analyzePending = ref(0)
+const digestDone = ref(false)
+
+const parseSlugs = ref<string[]>([])
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const form = ref({
   threshold_percent: 20,
@@ -203,6 +302,168 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+onUnmounted(() => {
+  stopPolling()
+})
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function pollQueueStats() {
+  try {
+    const res = await api.get('/cron/queue-stats')
+    const data = res.data
+    if (!data?.ok) return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+function isQueueEmpty(queues: Record<string, any>, prefix: string): boolean {
+  // Check all queues matching prefix have 0 pending + active
+  for (const [name, stats] of Object.entries(queues)) {
+    if (name.startsWith(prefix)) {
+      const s = stats as { pending: number; active: number }
+      if (s.pending > 0 || s.active > 0) return false
+    }
+  }
+  return true
+}
+
+function countSourcesParsed(sources: any[], slugs: string[]): number {
+  return sources.filter((s: any) =>
+    slugs.includes(s.slug) && s.last_parse_status !== 'running' && s.last_parse_status !== 'never'
+  ).length
+}
+
+async function runPipeline() {
+  // Reset
+  pipelineStage.value = 'parsing'
+  parseDone.value = false
+  analyzeDone.value = false
+  digestDone.value = false
+  parseSourcesDone.value = 0
+  analyzePending.value = 0
+  error.value = ''
+
+  try {
+    // 1. Get active sources
+    const sourcesRes = await api.get('/sources', {
+      params: { 'filters[is_active][$eq]': true, 'pagination[pageSize]': 100 },
+    })
+    const sources = sourcesRes.data?.data || []
+
+    if (sources.length === 0) {
+      error.value = 'Нет активных источников'
+      pipelineStage.value = 'error'
+      return
+    }
+
+    parseSlugs.value = sources.map((s: any) => s.slug)
+    parseSourcesTotal.value = sources.length
+
+    // 2. Fire all parse jobs
+    await Promise.all(
+      sources.map((s: any) => api.post(`/cron/parse/${s.slug}`).catch(() => null))
+    )
+
+    // 3. Poll until all parse queues are empty
+    await new Promise<void>((resolve, reject) => {
+      let attempts = 0
+      const maxAttempts = 120 // 120 × 3s = 6 min max
+      pollTimer = setInterval(async () => {
+        attempts++
+        if (attempts > maxAttempts) {
+          stopPolling()
+          reject(new Error('Парсинг превысил таймаут (6 мин)'))
+          return
+        }
+
+        const stats = await pollQueueStats()
+        if (!stats) return
+
+        // Update parse progress from source statuses
+        parseSourcesDone.value = countSourcesParsed(stats.sources, parseSlugs.value)
+
+        // Check if all parse queues are drained
+        const allParseDone = isQueueEmpty(stats.queues, 'parse-')
+        if (allParseDone && parseSourcesDone.value >= parseSourcesTotal.value) {
+          stopPolling()
+          parseDone.value = true
+          pipelineStage.value = 'analyzing'
+          resolve()
+        }
+      }, 3000)
+    })
+
+    // 4. Fire analyze
+    await api.post('/cron/analyze')
+
+    // 5. Poll until analyze queue is empty
+    await new Promise<void>((resolve, reject) => {
+      let attempts = 0
+      const maxAttempts = 60 // 60 × 3s = 3 min max
+      pollTimer = setInterval(async () => {
+        attempts++
+        if (attempts > maxAttempts) {
+          stopPolling()
+          reject(new Error('Анализ превысил таймаут (3 мин)'))
+          return
+        }
+
+        const stats = await pollQueueStats()
+        if (!stats) return
+
+        const q = stats.queues['analyze-property'] || { pending: 0, active: 0 }
+        analyzePending.value = q.pending + q.active
+
+        if (isQueueEmpty(stats.queues, 'analyze-')) {
+          stopPolling()
+          analyzeDone.value = true
+          pipelineStage.value = 'digesting'
+          resolve()
+        }
+      }, 3000)
+    })
+
+    // 6. Fire digest
+    await api.post('/cron/digest')
+
+    // 7. Poll until digest queue is empty
+    await new Promise<void>((resolve, reject) => {
+      let attempts = 0
+      const maxAttempts = 30 // 30 × 3s = 90 sec max
+      pollTimer = setInterval(async () => {
+        attempts++
+        if (attempts > maxAttempts) {
+          stopPolling()
+          reject(new Error('Дайджест превысил таймаут (90 сек)'))
+          return
+        }
+
+        const stats = await pollQueueStats()
+        if (!stats) return
+
+        if (isQueueEmpty(stats.queues, 'digest-')) {
+          stopPolling()
+          digestDone.value = true
+          pipelineStage.value = 'done'
+          resolve()
+        }
+      }, 3000)
+    })
+  } catch (err: any) {
+    stopPolling()
+    pipelineStage.value = 'error'
+    error.value = err.message || 'Ошибка пайплайна'
+  }
+}
 
 const save = async () => {
   saving.value = true
