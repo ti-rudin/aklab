@@ -6,11 +6,11 @@
     </div>
 
     <!-- Кнопки действий -->
-    <div class="flex flex-wrap gap-3 mb-4">
+    <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
       <button
         @click="runPipeline"
         :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
-        class="px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+        class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
         :style="{
           background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
           border: '1px solid var(--border-subtle)',
@@ -24,7 +24,7 @@
       <button
         @click="clearNew"
         :disabled="clearing"
-        class="px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+        class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
         style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
       >
         {{ clearing ? 'Удаление...' : 'Очистить список' }}
@@ -47,13 +47,13 @@
         <!-- Price range -->
         <div class="mb-4">
           <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена лота (₽)</label>
-          <div class="flex items-center gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2 items-center">
             <input v-model="launchFilters.priceFrom" type="number" placeholder="от" min="0"
-              class="flex-1 px-3 py-2 rounded-lg border text-sm"
+              class="w-full px-3 py-2 rounded-lg border text-sm"
               style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            <span class="text-sm" style="color: var(--text-muted)">—</span>
+            <span class="text-sm text-center hidden sm:inline" style="color: var(--text-muted)">—</span>
             <input v-model="launchFilters.priceTo" type="number" placeholder="до" min="0"
-              class="flex-1 px-3 py-2 rounded-lg border text-sm"
+              class="w-full px-3 py-2 rounded-lg border text-sm"
               style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
           </div>
         </div>
@@ -61,17 +61,17 @@
         <!-- Cities -->
         <div class="mb-4">
           <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
-          <div class="flex flex-wrap gap-3">
+          <div class="grid grid-cols-3 gap-2">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded" style="accent-color: var(--accent)" />
+              <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
               <span class="text-sm" style="color: var(--text-main)">Москва</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded" style="accent-color: var(--accent)" />
+              <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
               <span class="text-sm" style="color: var(--text-main)">МО</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.other" class="rounded" style="accent-color: var(--accent)" />
+              <input type="checkbox" v-model="launchFilters.cities.other" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
               <span class="text-sm" style="color: var(--text-main)">Другие</span>
             </label>
           </div>
@@ -84,18 +84,18 @@
           </label>
           <div class="flex items-center gap-3">
             <input v-model.number="launchFilters.threshold" type="range" min="1" max="99" step="1"
-              class="flex-1" style="accent-color: var(--accent)" />
+              class="flex-1 min-w-0" style="accent-color: var(--accent)" />
             <input v-model.number="launchFilters.threshold" type="number" min="1" max="99"
-              class="w-16 px-2 py-1 rounded-lg border text-sm text-center"
+              class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
               style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
           </div>
         </div>
         
         <!-- Actions -->
-        <div class="flex justify-between pt-2 border-t" style="border-color: var(--border-subtle)">
-          <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80"
+        <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-2 border-t" style="border-color: var(--border-subtle)">
+          <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
             style="color: var(--text-muted)">Сбросить</button>
-          <span class="text-xs self-center" style="color: var(--text-muted)">
+          <span class="text-xs" style="color: var(--text-muted)">
             Фильтры применяются к этапу анализа
           </span>
         </div>
@@ -103,7 +103,7 @@
     </div>
 
     <!-- Прогресс пайплайна -->
-    <div v-if="pipelineStage !== 'idle'" class="mb-6 p-4 rounded-lg space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+    <div v-if="pipelineStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
       <!-- Парсинг -->
       <div class="flex items-center gap-3">
         <span class="flex-shrink-0 w-5 text-center">
@@ -185,10 +185,10 @@
     </div>
 
     <!-- Фильтры -->
-    <div class="rounded-xl p-4 border mb-6 flex flex-col sm:flex-row flex-wrap gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+    <div class="rounded-xl p-3 sm:p-4 border mb-6 grid grid-cols-2 sm:flex sm:flex-row sm:flex-wrap gap-2 sm:gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
-        <select v-model="filters.city" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.city" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option value="moscow">Москва</option>
           <option value="mo">МО</option>
@@ -197,7 +197,7 @@
       </div>
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
-        <select v-model="filters.status" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.status" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option value="new">Новый</option>
           <option value="in_progress">В работе</option>
@@ -207,14 +207,14 @@
       </div>
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
-        <select v-model="filters.source" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.source" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
         </select>
       </div>
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
-        <select v-model="filters.property_type" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option value="office">Офис</option>
           <option value="warehouse">Склад</option>
@@ -224,11 +224,11 @@
           <option value="other">Другое</option>
         </select>
       </div>
-      <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5">
+      <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5 col-span-2 sm:col-span-1">
         <input type="checkbox" v-model="filters.undervalued" class="rounded" />
         <span class="text-sm" style="color: var(--text-muted)">Только недооценённые</span>
       </label>
-      <button @click="resetFilters" class="px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
+      <button @click="resetFilters" class="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
     </div>
 
     <!-- Loading -->

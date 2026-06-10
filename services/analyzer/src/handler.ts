@@ -40,7 +40,7 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
     }
 
     // Use threshold from job data (frontend filter) or from settings
-    let threshold = req.threshold;
+    let threshold: number = req.threshold || 0;
     if (!threshold) {
       const setting = await fetchSetting();
       threshold = setting?.threshold_percent || 20;
