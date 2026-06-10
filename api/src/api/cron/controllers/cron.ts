@@ -114,8 +114,8 @@ export default {
       const qs = getQueue();
       const corrId = `manual-digest-${Date.now()}`;
 
-      const settings = await (strapi as any).entityService.findMany('api::setting.setting', { limit: 1 });
-      const smtpTo = settings?.[0]?.smtp_to || undefined;
+      const setting = await (strapi as any).db.query('api::setting.setting').findOne({});
+      const smtpTo = setting?.smtp_to || undefined;
 
       qs.addToQueue('digest-send', {
         date: new Date().toISOString().slice(0, 10),
