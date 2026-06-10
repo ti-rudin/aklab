@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.30",
+    "date": "10 июня 2026",
+    "time": "13:17",
+    "items": [
+      {
+        "text": "Alfalot area extraction — title-first priority",
+        "type": "fix"
+      },
+      {
+        "text": "Обновление документации",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.29",
     "date": "10 июня 2026",
     "time": "13:04",
