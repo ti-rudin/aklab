@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.25",
+    "date": "10 июня 2026",
+    "time": "09:05",
+    "items": [
+      {
+        "text": "Обновление документации",
+        "type": "improvement"
+      },
+      {
+        "text": "Design audit fixes - Geist font, OG tags, skeletons, 404, hover states, remove dead CSS",
+        "type": "new"
+      },
+      {
+        "text": "Meta tags, favicon (A in square)",
+        "type": "new"
+      },
+      {
+        "text": "Hamburger menu on mobile, remove registration",
+        "type": "new"
+      },
+      {
+        "text": "Remove support footer + mobile cards for market-references",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.24",
     "date": "9 июня 2026",
     "time": "22:54",
