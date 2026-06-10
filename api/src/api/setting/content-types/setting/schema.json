@@ -36,6 +36,10 @@
     },
     "smtp_to": {
       "type": "string"
+    },
+    "monitored_regions": {
+      "type": "json",
+      "default": ["moscow", "mo"]
     }
   }
 }
