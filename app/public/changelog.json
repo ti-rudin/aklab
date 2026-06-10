@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.27",
+    "date": "10 июня 2026",
+    "time": "11:28",
+    "items": [
+      {
+        "text": "M-ets price parsing bug + aggregator-bankrot area extraction",
+        "type": "fix"
+      },
+      {
+        "text": "Bump session handoff to v1.0.25",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.26",
     "date": "10 июня 2026",
     "time": "09:54",
