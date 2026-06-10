@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.31",
+    "date": "10 июня 2026",
+    "time": "13:35",
+    "items": [
+      {
+        "text": "Column sorting on /properties — Площадь, ₽/м², Оценка",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.30",
     "date": "10 июня 2026",
     "time": "13:17",
