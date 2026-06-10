@@ -106,6 +106,7 @@ export class AggregatorBankrotParser implements SourceParser {
             link: string;
             price_text: string;
             excerpt: string;
+            photo_urls: string[];
           }> = [];
 
           const items = document.querySelectorAll('li.search-page-cards__item');
@@ -129,7 +130,17 @@ export class AggregatorBankrotParser implements SourceParser {
 
             const excerpt = card.querySelector('.card__excerpt a')?.textContent?.trim() || '';
 
-            results.push({ lot_id: lotId, title, link, price_text: priceText, excerpt });
+            // Extract photo URLs from img elements
+            const imgs = card.querySelectorAll('img');
+            const photoUrls: string[] = [];
+            for (const img of Array.from(imgs)) {
+              const src = (img as HTMLImageElement).src;
+              if (src && !src.includes('data:') && !src.includes('svg')) {
+                photoUrls.push(src);
+              }
+            }
+
+            results.push({ lot_id: lotId, title, link, price_text: priceText, excerpt, photo_urls: photoUrls });
           }
           return results;
         });
@@ -154,6 +165,7 @@ export class AggregatorBankrotParser implements SourceParser {
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
             property_type: classifyPropertyType(card.title + ' ' + card.excerpt),
             auction_type: 'bankruptcy',
+            photo_urls: card.photo_urls,
           });
           pageNewCount++;
         }

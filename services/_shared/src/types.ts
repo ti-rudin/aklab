@@ -16,6 +16,7 @@ export interface ParsedProperty {
   published_at?: string;
   description?: string;
   contacts?: string;
+  photo_urls?: string[];
 }
 
 export interface SourceParser {

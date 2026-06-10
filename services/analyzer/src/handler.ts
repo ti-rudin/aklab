@@ -1,5 +1,5 @@
 import type { Job } from '@aklab/sqlite-queue';
-import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from '@aklab/service-shared';
+import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron, downloadPropertyPhotos } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 
 export interface AnalyzeRequest {
@@ -45,6 +45,23 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       deviation_percent: isUndervalued ? Math.round(deviation * 10) / 10 : 0,
       manual_price_per_sqm: isUndervalued ? refPrice : null,
     });
+
+    // Download photos for undervalued properties if not already done
+    if (isUndervalued && property.photo_urls && Array.isArray(property.photo_urls) && property.photo_urls.length > 0 && !property.photos_downloaded) {
+      try {
+        logger.info(`Downloading photos for undervalued property ${property.documentId}`, { correlationId: corrId });
+        const downloadedPaths = await downloadPropertyPhotos(property.documentId, property.photo_urls);
+        if (downloadedPaths.length > 0) {
+          await updateProperty(property.documentId, {
+            photos: downloadedPaths,
+            photos_downloaded: true,
+          });
+          logger.info(`Downloaded ${downloadedPaths.length} photos for ${property.documentId}`, { correlationId: corrId });
+        }
+      } catch (err: any) {
+        logger.warn(`Photo download failed for ${property.documentId}: ${err.message}`, { correlationId: corrId });
+      }
+    }
 
     logger.info(`Property ${property.documentId}: deviation=${deviation.toFixed(1)}%, undervalued=${isUndervalued}`, { correlationId: corrId });
 
