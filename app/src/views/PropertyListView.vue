@@ -31,6 +31,77 @@
       </button>
     </div>
 
+    <!-- Параметры запуска -->
+    <div class="mb-4">
+      <button @click="launchFiltersOpen = !launchFiltersOpen" 
+        class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
+        style="color: var(--text-muted)">
+        <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
+        <span>Параметры запуска</span>
+        <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-xs rounded-full" 
+          style="background: var(--accent); color: white">{{ activeFilterCount }}</span>
+      </button>
+      
+      <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border" 
+        style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <!-- Price range -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена лота (₽)</label>
+          <div class="flex items-center gap-2">
+            <input v-model="launchFilters.priceFrom" type="number" placeholder="от" min="0"
+              class="flex-1 px-3 py-2 rounded-lg border text-sm"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            <span class="text-sm" style="color: var(--text-muted)">—</span>
+            <input v-model="launchFilters.priceTo" type="number" placeholder="до" min="0"
+              class="flex-1 px-3 py-2 rounded-lg border text-sm"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+          </div>
+        </div>
+        
+        <!-- Cities -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
+          <div class="flex flex-wrap gap-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded" style="accent-color: var(--accent)" />
+              <span class="text-sm" style="color: var(--text-main)">Москва</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded" style="accent-color: var(--accent)" />
+              <span class="text-sm" style="color: var(--text-main)">МО</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" v-model="launchFilters.cities.other" class="rounded" style="accent-color: var(--accent)" />
+              <span class="text-sm" style="color: var(--text-main)">Другие</span>
+            </label>
+          </div>
+        </div>
+        
+        <!-- Threshold -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
+            Порог отсечения: <span class="font-semibold" style="color: var(--text-main)">{{ launchFilters.threshold }}%</span>
+          </label>
+          <div class="flex items-center gap-3">
+            <input v-model.number="launchFilters.threshold" type="range" min="1" max="99" step="1"
+              class="flex-1" style="accent-color: var(--accent)" />
+            <input v-model.number="launchFilters.threshold" type="number" min="1" max="99"
+              class="w-16 px-2 py-1 rounded-lg border text-sm text-center"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+          </div>
+        </div>
+        
+        <!-- Actions -->
+        <div class="flex justify-between pt-2 border-t" style="border-color: var(--border-subtle)">
+          <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80"
+            style="color: var(--text-muted)">Сбросить</button>
+          <span class="text-xs self-center" style="color: var(--text-muted)">
+            Фильтры применяются к этапу анализа
+          </span>
+        </div>
+      </div>
+    </div>
+
     <!-- Прогресс пайплайна -->
     <div v-if="pipelineStage !== 'idle'" class="mb-6 p-4 rounded-lg space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
       <!-- Парсинг -->
@@ -343,6 +414,52 @@ const filters = reactive({
   undervalued: false,
 })
 
+// Launch filters (for pipeline analysis step)
+const launchFiltersOpen = ref(false)
+const launchFilters = reactive({
+  priceFrom: '',
+  priceTo: '',
+  cities: { moscow: true, mo: true, other: false },
+  threshold: 20,
+})
+
+// Load from localStorage
+try {
+  const saved = localStorage.getItem('aklab-launch-filters')
+  if (saved) {
+    const parsed = JSON.parse(saved)
+    if (parsed.priceFrom) launchFilters.priceFrom = parsed.priceFrom
+    if (parsed.priceTo) launchFilters.priceTo = parsed.priceTo
+    if (parsed.cities) Object.assign(launchFilters.cities, parsed.cities)
+    if (parsed.threshold) launchFilters.threshold = parsed.threshold
+  }
+} catch {}
+
+// Save to localStorage on change
+watch(launchFilters, (val) => {
+  try {
+    localStorage.setItem('aklab-launch-filters', JSON.stringify(val))
+  } catch {}
+}, { deep: true })
+
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (launchFilters.priceFrom) count++
+  if (launchFilters.priceTo) count++
+  if (launchFilters.threshold !== 20) count++
+  if (!launchFilters.cities.moscow || !launchFilters.cities.mo || launchFilters.cities.other) count++
+  return count
+})
+
+function resetLaunchFilters() {
+  launchFilters.priceFrom = ''
+  launchFilters.priceTo = ''
+  launchFilters.cities.moscow = true
+  launchFilters.cities.mo = true
+  launchFilters.cities.other = false
+  launchFilters.threshold = 20
+}
+
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
 const visiblePages = computed(() => {
@@ -555,7 +672,18 @@ async function runPipeline() {
       }, 3000)
     })
 
-    await api.post('/cron/analyze')
+    // Build analysis filters
+    const analyzeBody: any = {}
+    if (launchFilters.priceFrom) analyzeBody.priceFrom = Number(launchFilters.priceFrom)
+    if (launchFilters.priceTo) analyzeBody.priceTo = Number(launchFilters.priceTo)
+    const cities = []
+    if (launchFilters.cities.moscow) cities.push('moscow')
+    if (launchFilters.cities.mo) cities.push('mo')
+    if (launchFilters.cities.other) cities.push('other')
+    if (cities.length > 0 && cities.length < 3) analyzeBody.city = cities
+    if (launchFilters.threshold !== 20) analyzeBody.threshold = launchFilters.threshold
+
+    await api.post('/cron/analyze', Object.keys(analyzeBody).length ? analyzeBody : undefined)
 
     await new Promise<void>((resolve, reject) => {
       let attempts = 0

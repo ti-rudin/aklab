@@ -5,6 +5,7 @@ import { logger } from './utils/logger';
 
 export interface AnalyzeRequest {
   documentId: string;
+  threshold?: number; // override from frontend filters
   correlationId?: string;
 }
 
@@ -12,7 +13,6 @@ let photoQueue: SqliteQueue | null = null;
 
 function getPhotoQueue(): SqliteQueue {
   if (!photoQueue) {
-    // Same queue DB as everything else
     const dbPath = process.env.QUEUE_DB_PATH || '../../queue.db';
     photoQueue = new SqliteQueue(dbPath, { disableTimers: true });
   }
@@ -39,8 +39,13 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       return { analyzed: false, undervalued: false };
     }
 
-    const setting = await fetchSetting();
-    const threshold = setting?.threshold_percent || 20;
+    // Use threshold from job data (frontend filter) or from settings
+    let threshold = req.threshold;
+    if (!threshold) {
+      const setting = await fetchSetting();
+      threshold = setting?.threshold_percent || 20;
+    }
+
     const refPrice = Number(ref.price_per_sqm);
     const actualPrice = Number(property.price_per_sqm);
 
@@ -74,7 +79,7 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       }
     }
 
-    logger.info(`Property ${property.documentId}: deviation=${deviation.toFixed(1)}%, undervalued=${isUndervalued}`, { correlationId: corrId });
+    logger.info(`Property ${property.documentId}: deviation=${deviation.toFixed(1)}%, threshold=${threshold}%, undervalued=${isUndervalued}`, { correlationId: corrId });
 
     await logCron({
       name: 'analyze-property',

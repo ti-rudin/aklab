@@ -1,81 +1,45 @@
 /**
- * Cron controller — ручной запуск парсинга, анализа, дайджеста.
- *
- * queueService доступен через require('../../../services/queueService').
- * Путь считается от dist/src/api/cron/controllers/ → dist/src/services/.
+ * Cron controller — manual triggers for parse/analyze/digest.
  */
 
+import { getQueueService } from '../../../services/queueService';
+
 function getQueue() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { getQueueService } = require('../../../services/queueService');
   return getQueueService();
 }
 
 export default {
-  async queueStats(ctx: any) {
-    try {
-      const qs = getQueue();
-      const stats = qs.getDetailedStats();
-
-      const sources = await (strapi as any).entityService.findMany('api::source.source', {
-        filters: { is_active: true },
-        fields: ['slug', 'name', 'last_parse_status', 'last_parsed_at'],
-        limit: 100,
-      });
-
-      ctx.body = {
-        ok: true,
-        queues: stats.queues,
-        total: stats.total,
-        sources: (sources || []).map((s: any) => ({
-          slug: s.slug,
-          name: s.name,
-          last_parse_status: s.last_parse_status,
-          last_parsed_at: s.last_parsed_at,
-        })),
-      };
-    } catch (err: any) {
-      ctx.internalServerError(err.message);
-    }
-  },
-
   async parseSource(ctx: any) {
-    const { slug } = ctx.params;
-
     try {
+      const { slug } = ctx.params;
+      const qs = getQueue();
+      const corrId = `manual-parse-${Date.now()}`;
+
+      // Find source by slug
       const sources = await (strapi as any).entityService.findMany('api::source.source', {
         filters: { slug },
         limit: 1,
       });
-
-      if (!sources?.length) {
-        return ctx.notFound(`Source "${slug}" not found`);
+      const source = sources?.[0];
+      if (!source) {
+        ctx.notFound(`Source ${slug} not found`);
+        return;
       }
-
-      const source = sources[0];
 
       if (!source.is_active) {
-        return ctx.badRequest(`Source "${source.name}" is not active`);
+        ctx.badRequest(`Source ${slug} is not active`);
+        return;
       }
 
-      await (strapi as any).entityService.update('api::source.source', source.id, {
-        data: { last_parse_status: 'running', last_parse_error: undefined },
-      });
-
-      const qs = getQueue();
-      const corrId = `manual-parse-${Date.now()}`;
-      const queueName = `parse-${slug}`;
-      qs.addToQueue(queueName, {
+      qs.addToQueue(`parse-${slug}`, {
         source: slug,
         sourceId: source.id,
         documentId: source.documentId,
       }, { correlationId: corrId });
 
-      strapi.log.info(`[cron] Manual parse triggered for ${source.name} (${corrId})`);
-
       ctx.body = {
         ok: true,
-        message: `Parse job enqueued for "${source.name}"`,
+        message: `Parse job enqueued for ${slug}`,
         correlationId: corrId,
       };
     } catch (err: any) {
@@ -89,19 +53,43 @@ export default {
       const qs = getQueue();
       const corrId = `manual-analyze-${Date.now()}`;
 
+      // Parse optional filters from request body
+      const body = ctx.request?.body || {};
+      const priceFrom = body.priceFrom ? Number(body.priceFrom) : null;
+      const priceTo = body.priceTo ? Number(body.priceTo) : null;
+      const cityFilter = body.city || null; // array of city codes
+      const threshold = body.threshold ? Number(body.threshold) : null;
+
+      // Build Strapi filters
+      const filters: any = { status: 'new', is_undervalued: { $null: true } };
+
+      if (priceFrom !== null && !isNaN(priceFrom)) {
+        filters.price = { ...(filters.price || {}), $gte: priceFrom };
+      }
+      if (priceTo !== null && !isNaN(priceTo)) {
+        filters.price = { ...(filters.price || {}), $lte: priceTo };
+      }
+      if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
+        filters.city = { $in: cityFilter };
+      }
+
       const properties = await (strapi as any).entityService.findMany('api::property.property', {
-        filters: { status: 'new', is_undervalued: { $null: true } },
-        limit: 100,
+        filters,
+        limit: 500,
       });
 
       for (const prop of properties || []) {
-        qs.addToQueue('analyze-property', { documentId: prop.documentId }, { correlationId: corrId });
+        qs.addToQueue('analyze-property', {
+          documentId: prop.documentId,
+          ...(threshold !== null && !isNaN(threshold) ? { threshold } : {}),
+        }, { correlationId: corrId });
       }
 
       ctx.body = {
         ok: true,
         message: `Enqueued ${properties?.length || 0} properties for analysis`,
         correlationId: corrId,
+        filters: { priceFrom, priceTo, city: cityFilter, threshold },
       };
     } catch (err: any) {
       strapi.log.error(`[cron] analyzeAll error: ${err.message}`);
@@ -129,6 +117,34 @@ export default {
       };
     } catch (err: any) {
       strapi.log.error(`[cron] sendDigest error: ${err.message}`);
+      ctx.internalServerError(err.message);
+    }
+  },
+
+  async getQueueStats(ctx: any) {
+    try {
+      const qs = getQueue();
+      const queues = qs.getStats();
+
+      // Also get source stats
+      const sources = await (strapi as any).entityService.findMany('api::source.source', {
+        limit: 50,
+      });
+
+      ctx.body = {
+        ok: true,
+        queues,
+        sources: (sources || []).map((s: any) => ({
+          slug: s.slug,
+          is_active: s.is_active,
+          last_parse_status: s.last_parse_status,
+          last_parsed_at: s.last_parsed_at,
+          total_created: s.total_created,
+          parse_count: s.parse_count,
+        })),
+      };
+    } catch (err: any) {
+      strapi.log.error(`[cron] getQueueStats error: ${err.message}`);
       ctx.internalServerError(err.message);
     }
   },
