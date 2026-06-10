@@ -91,8 +91,15 @@ function commitToItem(commitMsg) {
  * Перевод описания коммита на русский.
  * Сначала проверяем словарь, потом — fallback на capitalizeFirst.
  */
+function isRussian(text) {
+  return /[а-яА-ЯёЁ]/.test(text);
+}
+
 function translateDesc(desc) {
   if (!desc) return desc;
+
+  // Если уже на русском — возвращаем как есть
+  if (isRussian(desc)) return capitalizeFirst(desc);
 
   // Точное совпадение
   const exact = TRANSLATIONS[desc.toLowerCase().trim()];
@@ -126,6 +133,40 @@ const TRANSLATIONS = {
   'auto-generation': 'Автогенерация changelog',
   'inline-редактирование расписания': 'Inline-редактирование расписания',
   'docs/adding-source.md': 'Документация: инструкция добавления источника',
+  'documentation page': 'Страница документации',
+  'manual pipeline': 'Ручной запуск пайплайна',
+  'queue polling': 'Поллинг очередей задач',
+  'footer links': 'Ссылки в футере',
+  'column sorting': 'Сортировка колонок',
+  'monitored regions': 'Мониторинг регионов',
+  'region filtering': 'Фильтрация по регионам',
+  'alfalot area extraction': 'Извлечение площади в alfalot',
+  'title-first priority': 'Приоритет заголовка при извлечении площади',
+  'test user': 'Тестовый пользователь',
+  'deploy script': 'Скрипт деплоя',
+  'deploy-prod.sh': 'Скрипт деплоя на продакшен',
+  'strapi 5': 'Strapi 5',
+  'singleton': 'Singleton',
+  'setting schema': 'Схема настроек',
+  'm-ets': 'М-ЕТС',
+  'roseltorg': 'Росэлторг',
+  'invest-mosreg': 'Инвест МО',
+  'investmoscow': 'Инвест Москва',
+  'fabrikant': 'Фабрикант',
+  'aggregator-bankrot': 'Агрегатор банкротств',
+  'sberbank-ast': 'Сбербанк-АСТ',
+  'etprf': 'ЕТП РФ',
+  'torgi-gov': 'ГИС Торги',
+  'property': 'объект',
+  'properties': 'объекты',
+  'parser': 'парсер',
+  'parsers': 'парсеры',
+  'analyzer': 'анализатор',
+  'digest': 'дайджест',
+  'price': 'цена',
+  'area': 'площадь',
+  'frontend': 'фронтенд',
+  'backend': 'бэкенд',
   'fix:': 'Исправлено:',
   'feat:': 'Новая функция:',
   'docs:': 'Документация:',
