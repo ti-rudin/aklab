@@ -402,7 +402,7 @@ deploy-prod.sh + бамп версии).
 5. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `abc55d7` (code quality overhaul)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `c5d81be` (v1.0.25 code quality overhaul)
 
 ## Известные баги / TODO
 

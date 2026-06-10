@@ -92,7 +92,8 @@ export class MetsParser implements SourceParser {
           const el = card as HTMLElement;
           const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
           const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"]');
-          const priceEl = el.querySelector('.price, [class*="price"], [class*="cost"]');
+          // .cost = чистый price span; НЕ [class*="cost"] — матчит .cost-block с лишним текстом ("Осталось: N дней")
+          const priceEl = el.querySelector('.price, [class*="price"], .cost, .bid__value');
           const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
           if (!title || title.length < 5) continue;
           results.push({

@@ -86,7 +86,7 @@ export class RoseltorgParser implements SourceParser {
           const el = card as HTMLElement;
           const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
           const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"], td:nth-child(2)');
-          const priceEl = el.querySelector('.price, [class*="price"], [class*="cost"], td:nth-child(3)');
+          const priceEl = el.querySelector('.price, [class*="price"], .cost, td:nth-child(3)');
           const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
           if (!title || title.length < 5) continue;
           results.push({
