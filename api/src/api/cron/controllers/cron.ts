@@ -121,7 +121,7 @@ export default {
     }
   },
 
-  async getQueueStats(ctx: any) {
+  async queueStats(ctx: any) {
     try {
       const qs = getQueue();
       const queues = qs.getDetailedStats();
