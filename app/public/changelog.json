@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.33",
+    "date": "10 июня 2026",
+    "time": "14:55",
+    "items": [
+      {
+        "text": "Сохранение настроек — PUT /api/setting без documentId (singleton)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.32",
     "date": "10 июня 2026",
     "time": "14:27",
