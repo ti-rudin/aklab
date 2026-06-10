@@ -70,11 +70,17 @@
             <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
             <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
             <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
-            <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Площадь</th>
+            <th @click="toggleSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+              Площадь <span v-if="sort.field === 'area_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+            </th>
             <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
-            <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">₽/м²</th>
+            <th @click="toggleSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+              ₽/м² <span v-if="sort.field === 'price_per_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+            </th>
             <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Статус</th>
-            <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Оценка</th>
+            <th @click="toggleSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+              Оценка <span v-if="sort.field === 'deviation_percent'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -207,6 +213,20 @@ const pageSize = 25
 
 const sources = ['fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow', 'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf', 'sberbank-ast', 'm-ets']
 
+const sort = reactive({
+  field: 'createdAt' as string,
+  direction: 'desc' as 'asc' | 'desc',
+})
+
+function toggleSort(field: string) {
+  if (sort.field === field) {
+    sort.direction = sort.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    sort.field = field
+    sort.direction = 'desc'
+  }
+}
+
 const filters = reactive({
   city: '',
   status: '',
@@ -257,7 +277,7 @@ async function fetchItems() {
   loading.value = true
   try {
     const params: any = {
-      sort: 'createdAt:desc',
+      sort: `${sort.field}:${sort.direction}`,
       pagination: { page: page.value, pageSize },
     }
     // Фильтры
@@ -285,10 +305,12 @@ function resetFilters() {
   filters.source = ''
   filters.property_type = ''
   filters.undervalued = false
+  sort.field = 'createdAt'
+  sort.direction = 'desc'
   page.value = 1
 }
 
-watch([filters, page], ([, newPage], [, oldPage]) => {
+watch([filters, page, sort], ([, newPage], [, oldPage]) => {
   if (newPage === oldPage) {
     if (page.value !== 1) {
       page.value = 1
