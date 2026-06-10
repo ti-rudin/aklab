@@ -55,6 +55,13 @@ function extractArea(text: string): number | undefined {
     const num = parseFloat(cleaned);
     if (!isNaN(num) && num > 0) return num;
   }
+  // Сотки: "9 сот." → 900 м² (1 сотка = 100 м²)
+  const sotka = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:сот\.?|соток|сотки|сотка)/i);
+  if (sotka) {
+    const cleaned = sotka[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned) * 100;
+    if (!isNaN(num) && num > 0) return num;
+  }
   return undefined;
 }
 
