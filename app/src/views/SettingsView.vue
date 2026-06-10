@@ -468,7 +468,7 @@ const save = async () => {
 
   try {
     if (documentId.value) {
-      await api.put(`/setting/${documentId.value}`, { data: form.value })
+      await api.put('/setting', { data: form.value })
     } else {
       await api.post('/setting', { data: form.value })
     }
