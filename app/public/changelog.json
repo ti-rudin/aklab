@@ -1,5 +1,24 @@
 [
   {
+    "version": "v1.0.28",
+    "date": "10 июня 2026",
+    "time": "12:21",
+    "items": [
+      {
+        "text": "Documentation page, manual pipeline with queue polling, footer links",
+        "type": "new"
+      },
+      {
+        "text": "Session handoff v1.0.26 — m-ets price bug, extractArea fixes, gotchas",
+        "type": "improvement"
+      },
+      {
+        "text": "Aggregator-bankrot extractArea — add сотки support (1 сотка = 100 м²)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.27",
     "date": "10 июня 2026",
     "time": "11:28",
