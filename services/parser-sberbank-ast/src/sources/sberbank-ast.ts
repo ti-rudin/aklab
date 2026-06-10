@@ -12,6 +12,8 @@ const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
 const MAX_AGE_HOURS = 24;
+const GOTO_TIMEOUT = 60000;
+const MAX_RETRIES = 3;
 
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
@@ -55,8 +57,23 @@ export class SberbankAstParser implements SourceParser {
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
-      await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(5000);
+      // Retry при таймауте (сайт不稳定)
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          logger.info(`[sberbank-ast] Loading page (attempt ${attempt}/${MAX_RETRIES})...`);
+          await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+          await page.waitForTimeout(5000);
+          break;
+        } catch (err: any) {
+          if (attempt < MAX_RETRIES && err.message?.includes('Timeout')) {
+            const delay = 5000 + Math.random() * 5000;
+            logger.warn(`[sberbank-ast] Timeout on attempt ${attempt}, retrying in ${Math.round(delay / 1000)}s...`);
+            await new Promise(r => setTimeout(r, delay));
+          } else {
+            throw err;
+          }
+        }
+      }
 
       for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
         logger.info(`[sberbank-ast] Parsing page ${pageNum}`);
