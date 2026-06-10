@@ -190,7 +190,7 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.22
+- Версия: 1.0.26
 - **11 источников парсинга** (10 активных, fedresurs OFF):
   - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
   - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
@@ -373,21 +373,16 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.25 → следующая сессия)
+## Session handoff (v1.0.26 → следующая сессия)
 
-**Сделано в сессии 9 июня 2026 (v1.0.25):**
-- ✅ **Чистка БД** — удалено 238 объектов без цены/коммерции (261 → 23)
-- ✅ **Удалён parser-bankruptcy** — мёртвый код (fedresurs OFF)
-- ✅ **Generic parse handler** — `createParseHandler()` в `_shared/src/parse-handler.ts`, 10 handlers упрощены до 5 строк каждый (-1710 строк)
-- ✅ **Дупликация strapi-client** — analyzer/digest теперь импортируют из `@aklab/service-shared`, локальные strapi-client.ts удалены
-- ✅ **smtp_to fallback (gotcha #22)** — `getSetting()` в cron controller использует `db.query.findOne` вместо `entityService.findMany`
-- ✅ **gracefulStopQueueWorker** — timeout-код был мёртвым, исправлен
-- ✅ **WAL mode** — Strapi SQLite теперь использует WAL + busy_timeout=5000
-- ✅ **Индексы** — unique (source, external_id) + индексы на status/city/is_undervalued/property_type
-- ✅ **cleanup:old pagination** — цикл while до полной очистки
-- ✅ **propertyExists()** — fail-open → fail-closed (при ошибке API пропускаем, не дублируем)
-- ✅ **analyze:properties** — documentId вместо numeric id
-- ✅ **API permissions** — authenticated роль: read-only + user-comment create/update
+**Сделано в сессии 10 июня 2026 (v1.0.26):**
+- ✅ **m-ets price parsing bug** — `[class*="cost"]` матчил `.cost-block` с текстом "Осталось: N дней", склеивая цифры (11757600 → 1175760040). Фикс: `.cost` вместо `[class*="cost"]`. Затронуло roseltorg, invest-mosreg, investmoscow (превентивно).
+- ✅ **aggregator-bankrot area extraction** — `extractArea(excerpt)` брал площадь помещения (13 м²) вместо комплекса (9484 м²). Фикс: title → excerpt приоритет + fallback regex без "площадь" + сотки (1 сотка = 100 м²).
+- ✅ **Чистка БД** — удалено 89 объектов с неверными данными (бэкап data.db.bak.20260610)
+- ✅ **Деплой** — _shared + 5 парсеров пересобраны на проде
+- ✅ **Парсеры** — 10 запущено, 5 дали результаты: alfalot(57), aggregator-bankrot(20), etprf(14), m-ets(10), fabrikant(1). Итого 102 объекта.
+- ✅ **Analyzer** — запущен, 66/102 "недооценены" (много ложных: земля/гаражи в регионах vs грубые эталоны)
+- ✅ **Digest** — отправлен, 50 объектов
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
@@ -395,14 +390,15 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Деплой** — `git pull origin main` → build _shared → build services → PM2 restart
-2. **После деплоя** — удалить старые write permissions из authenticated роли на проде (через Admin Panel или SQL)
-3. **Старые объекты** — на проде уже очищено (238 удалено)
-4. **Установить реальные эталоны** — текущие 18 эталонов с тестовыми ценами (800-1500₽/м²). Нужны рыночные значения
-5. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
+1. **Установить реальные эталоны** — текущие 18 market references с тестовыми ценами. Земельные участки и гаражи дают ложные срабатывания. Нужны реальные рыночные цены по городам и типам.
+2. **investmoscow/roseltorg/invest-mosreg** — селекторы не матчат карточки (хватает мусор: телефоны, "База знаний"). Нужно обновить CSS-селекторы через browser research.
+3. **sberbank-ast** — фильтрует как некоммерцию (аренда вместо продажи). Проверить `isCommercialProperty()`.
+4. **torgi-gov** — 0 результатов (нет коммерческих лотов по фильтру). Нормальное поведение.
+5. **m-ets дубли** — каждый объект x2 (внешние ID совпадают?). Проверить `external_id` генерацию.
+6. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `c5d81be` (v1.0.25 code quality overhaul)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `fa2a27b` (fix: aggregator-bankrot extractArea — сотки)
 
 ## Известные баги / TODO
 
@@ -425,6 +421,16 @@ deploy-prod.sh + бамп версии).
 - **Parser handlers created++** — `createProperty` возвращает `null`
   для отфильтрованных объектов, но handlers не проверяют → `total_created`
   завышается. Косметика.
+- **`[class*="cost"]` selector bug** — ИСПРАВЛЕНО (v1.0.26): generic parsers
+  (m-ets, roseltorg, invest-mosreg, investmoscow) использовали `[class*="cost"]`
+  для поиска цены, но это матчит `.cost-block` содержащий "Осталось: N дней".
+  `parsePrice` склеивал все цифры → цена x100. Фикс: `.cost` (exact class).
+- **aggregator-bankrot extractArea** — ИСПРАВЛЕНО (v1.0.26): regex брал
+  площадь из excerpt (помещение 13 м²) вместо title (комплекс 9484 м²).
+  Фикс: title-first приоритет + fallback regex + сотки (×100).
+- **Analyzer false positives** — земельные участки и гаражи в регионах
+  (267 ₽/м²) сравниваются с эталоном "other/other" = 65,200 ₽/м² → 99%
+  deviation. Нужны реальные эталоны с разделением типов недвижимости.
 
 ## Полезные команды
 
