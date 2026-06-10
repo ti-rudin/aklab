@@ -114,6 +114,16 @@
     "contacts": {
       "type": "text"
     },
+    "photo_urls": {
+      "type": "json"
+    },
+    "photos": {
+      "type": "json"
+    },
+    "photos_downloaded": {
+      "type": "boolean",
+      "default": false
+    },
     "comments": {
       "type": "relation",
       "relation": "oneToMany",

@@ -101,6 +101,7 @@ export class FabrikantParser implements SourceParser {
             proc_number: string;
             link_href: string;
             date_text: string;
+            photo_urls: string[];
           }> = [];
 
           const cards = document.querySelectorAll('[data-slot="card"][data-id]');
@@ -141,6 +142,16 @@ export class FabrikantParser implements SourceParser {
               }
             }
 
+            // Extract photo URLs from img elements
+            const imgs = el.querySelectorAll('img');
+            const photoUrls: string[] = [];
+            for (const img of Array.from(imgs)) {
+              const src = (img as HTMLImageElement).src;
+              if (src && !src.includes('data:') && !src.includes('svg')) {
+                photoUrls.push(src);
+              }
+            }
+
             const link = anchor as HTMLAnchorElement;
             const href = link?.href || '';
 
@@ -151,6 +162,7 @@ export class FabrikantParser implements SourceParser {
               proc_number: procNumber,
               link_href: href,
               date_text: dateText,
+              photo_urls: photoUrls,
             });
           }
 
@@ -182,6 +194,7 @@ export class FabrikantParser implements SourceParser {
             price_per_sqm: pricePerSqm,
             property_type: classifyPropertyType(p.title),
             auction_type: 'bankruptcy',
+            photo_urls: p.photo_urls,
           });
         }
 

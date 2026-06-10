@@ -85,6 +85,28 @@
         </div>
       </div>
 
+      <!-- Фотогалерея (только для недооценённых) -->
+      <div v-if="property.is_undervalued && property.photos?.length" class="rounded-xl p-6 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📸 Фотографии</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div v-for="(photo, idx) in property.photos" :key="idx"
+            class="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+            @click="openLightbox(idx)">
+            <img :src="photoUrl(photo)" :alt="`Фото ${idx + 1}`"
+              class="w-full h-full object-cover" />
+          </div>
+        </div>
+        <!-- Lightbox -->
+        <div v-if="lightbox.open" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          @click.self="lightbox.open = false">
+          <button @click="lightbox.open = false" class="absolute top-4 right-4 text-white text-2xl">✕</button>
+          <button @click="prevPhoto" class="absolute left-4 text-white text-3xl">‹</button>
+          <img :src="photoUrl(property.photos[lightbox.idx])" class="max-h-[80vh] max-w-[90vw] object-contain" />
+          <button @click="nextPhoto" class="absolute right-4 text-white text-3xl">›</button>
+          <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos.length }}</div>
+        </div>
+      </div>
+
       <!-- Действия -->
       <div class="rounded-xl p-6 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Действия</h2>
@@ -134,7 +156,7 @@
 
 <script setup lang="ts">
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
 
@@ -160,6 +182,9 @@ interface Property {
   description: string | null
   contacts: string | null
   comments?: Comment[]
+  photos?: string[]
+  photos_downloaded?: boolean
+  photo_urls?: string[]
 }
 
 interface Comment {
@@ -203,6 +228,24 @@ const statusStyle = (s: string) => ({
 
 const formatPrice = (v: string | number) => Number(v).toLocaleString('ru-RU')
 const formatDate = (d: string) => new Date(d).toLocaleString('ru-RU')
+
+// Photo gallery
+const lightbox = reactive({ open: false, idx: 0 })
+
+function photoUrl(path: string) {
+  return `${api.defaults.baseURL}${path}`
+}
+
+function openLightbox(idx: number) {
+  lightbox.idx = idx
+  lightbox.open = true
+}
+function nextPhoto() {
+  if (property.value && lightbox.idx < property.value.photos!.length - 1) lightbox.idx++
+}
+function prevPhoto() {
+  if (lightbox.idx > 0) lightbox.idx--
+}
 
 async function fetchProperty() {
   loading.value = true

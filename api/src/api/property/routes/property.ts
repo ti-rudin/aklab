@@ -1,14 +1,39 @@
 /**
  * property router
  *
- * Фаза 1: стандартные CRUD-маршруты через factories.createCoreRouter.
- * Без этого файла Strapi 5 не регистрирует /api/properties — loadAPIs
- * видит routes=[] и router не подключает content-type.
- *
- * Фаза 5+ может добавить кастомные маршруты (например,
- * /api/properties/undervalued, /api/properties/stats) через
- * extend в config: { ... }.
+ * Стандартные CRUD-маршруты + кастомные эндпоинты.
  */
 import { factories } from '@strapi/strapi';
 
-export default factories.createCoreRouter('api::property.property');
+const coreRouter = factories.createCoreRouter('api::property.property');
+
+const customRoutes = [
+  {
+    method: 'POST' as const,
+    path: '/properties/clear-new',
+    handler: 'property.clearNew',
+    config: {
+      auth: false,
+      policies: [],
+    },
+  },
+  {
+    method: 'GET' as const,
+    path: '/photos/:documentId/:filename',
+    handler: 'property.servePhoto',
+    config: {
+      auth: false,
+      policies: [],
+    },
+  },
+];
+
+// coreRouter.routes may be a function or array depending on Strapi version
+const getCoreRoutes = () => {
+  const r = (coreRouter as any).routes;
+  return typeof r === 'function' ? r() : r;
+};
+
+export default {
+  routes: [...getCoreRoutes(), ...customRoutes],
+};
