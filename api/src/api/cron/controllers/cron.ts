@@ -124,7 +124,7 @@ export default {
   async getQueueStats(ctx: any) {
     try {
       const qs = getQueue();
-      const queues = qs.getStats();
+      const queues = qs.getDetailedStats();
 
       // Also get source stats
       const sources = await (strapi as any).entityService.findMany('api::source.source', {
