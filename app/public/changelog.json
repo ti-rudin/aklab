@@ -1,5 +1,28 @@
 [
   {
+    "version": "v1.0.26",
+    "date": "10 июня 2026",
+    "time": "09:54",
+    "items": [
+      {
+        "text": "Обновление документации",
+        "type": "improvement"
+      },
+      {
+        "text": "Code quality overhaul (11 fixes)",
+        "type": "improvement"
+      },
+      {
+        "text": "Session wrap - parser price filter, gotcha #23 (shared lib build)",
+        "type": "improvement"
+      },
+      {
+        "text": "Skip objects without price_per_sqm data - filter in createProperty + fix created++ counters",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.25",
     "date": "10 июня 2026",
     "time": "09:05",
