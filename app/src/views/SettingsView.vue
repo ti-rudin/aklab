@@ -59,62 +59,14 @@
           Email для дайджеста
         </label>
         <p class="text-xs mb-2" style="color: var(--text-muted)">
-          Куда отправлять утренний дайджест недооценённых объектов.
+          Куда отправлять утренний дайджест недооценённых объектов. Можно указать несколько адресов через запятую.
         </p>
         <input
           v-model="form.smtp_to"
-          type="email"
+          type="text" 
           class="w-full px-3 py-2 rounded-lg border text-sm"
           style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
           placeholder="email@example.com"
-        />
-      </div>
-
-      <!-- Рабочее время -->
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
-            Начало рабочего времени
-          </label>
-          <input
-            v-model.number="form.work_hours_start"
-            type="number"
-            min="0"
-            max="23"
-            class="w-full px-3 py-2 rounded-lg border text-sm"
-            style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
-            Конец рабочего времени
-          </label>
-          <input
-            v-model.number="form.work_hours_end"
-            type="number"
-            min="0"
-            max="23"
-            class="w-full px-3 py-2 rounded-lg border text-sm"
-            style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
-          />
-        </div>
-      </div>
-
-      <!-- Срок хранения -->
-      <div>
-        <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
-          Срок хранения объектов (мес.)
-        </label>
-        <p class="text-xs mb-2" style="color: var(--text-muted)">
-          Автоматическое удаление объектов старше N месяцев.
-        </p>
-        <input
-          v-model.number="form.retention_months"
-          type="number"
-          min="1"
-          max="24"
-          class="w-full px-3 py-2 rounded-lg border text-sm"
-          style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
         />
       </div>
 
@@ -159,7 +111,7 @@
     <div class="mt-8 pt-6 border-t" style="border-color: var(--border-subtle)">
       <h2 class="text-lg font-semibold mb-2" style="color: var(--text-main)">Ручной запуск</h2>
       <p class="text-xs mb-4" style="color: var(--text-muted)">
-        Полный цикл: парсинг всех активных источников → анализ цен → email-дайджест.
+        Полный цикл: парсинг всех активных источников → анализ цен → email-дайджест. Парсеры выкачивают объекты, созданные за последние 24 часа.
       </p>
 
       <!-- Прогресс -->
@@ -302,10 +254,7 @@ const form = ref({
   threshold_percent: 20,
   digest_time: '09:00',
   smtp_to: '',
-  work_hours_start: 9,
-  work_hours_end: 21,
-  retention_months: 6,
-  monitored_regions: ['moscow', 'mo'] as string[],
+  monitored_regions: ['moscow', 'mo'] as string[]
 })
 const regionOptions = [
   { value: 'moscow', label: 'Москва' },
@@ -335,9 +284,6 @@ onMounted(async () => {
         threshold_percent: data.threshold_percent ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
-        work_hours_start: data.work_hours_start ?? 9,
-        work_hours_end: data.work_hours_end ?? 21,
-        retention_months: data.retention_months ?? 6,
         monitored_regions: data.monitored_regions ?? ['moscow', 'mo'],
       }
       // Sync regionChecked from loaded data
