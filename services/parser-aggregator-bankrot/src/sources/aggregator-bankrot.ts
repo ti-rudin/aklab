@@ -48,6 +48,13 @@ function extractArea(text: string): number | undefined {
     const num = parseFloat(cleaned);
     if (!isNaN(num) && num > 0) return num;
   }
+  // Fallback: "9484 кв.м" без слова "площадь" (часто в title)
+  const fallback = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
+  if (fallback) {
+    const cleaned = fallback[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) return num;
+  }
   return undefined;
 }
 
@@ -124,7 +131,8 @@ export class AggregatorBankrotParser implements SourceParser {
 
         let pageNewCount = 0;
         for (const card of cards) {
-          const area = extractArea(card.excerpt);
+          // Приоритет: title (там "9484 кв.м"), потом excerpt (может быть площадь отдельного помещения)
+          const area = extractArea(card.title) || extractArea(card.excerpt);
           const price = parsePrice(card.price_text);
           const address = card.excerpt.match(/(?:адрес|ул\.|ул\s|город|г\.|пос\.|дер\.)[^,]*/i)?.[0]?.trim() || '';
 

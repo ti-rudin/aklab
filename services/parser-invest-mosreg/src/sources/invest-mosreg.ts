@@ -90,7 +90,7 @@ export class InvestMosregParser implements SourceParser {
           const el = card as HTMLElement;
           const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
           const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"]');
-          const priceEl = el.querySelector('.price, [class*="price"], [class*="cost"]');
+          const priceEl = el.querySelector('.price, [class*="price"], .cost');
           const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
           if (!title || title.length < 5) continue;
           results.push({
