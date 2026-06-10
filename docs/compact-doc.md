@@ -214,10 +214,10 @@ deploy-prod.sh + бамп версии).
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
-- **Changelog** — автогенерация при deploy (v1.0.0–v1.0.28)
+- **Changelog** — автогенерация при deploy (v1.0.0–v1.0.34)
 - **Footer** — «История изменений» (was Changelog) + «Документация» (подробная архитектура)
 - **Frontend** — 9 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/documentation`, `/auth` + 404 catch-all
-- **Ручной запуск пайплайна** — на `/settings` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 6 мин, анализ 3 мин, дайджест 90 сек.
+- **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 6 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Парсеры** (9 июня 2026):
   - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
@@ -375,15 +375,21 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.28 → следующая сессия)
+## Session handoff (v1.0.34 → следующая сессия)
 
-**Сделано в сессии 10 июня 2026 (v1.0.28):**
+**Сделано в сессии 10 июня 2026 (v1.0.28–v1.0.34):**
 - ✅ **Страница «Документация»** (`/documentation`) — подробная архитектура: диаграмма, таблица сервисов с портами, карточки парсеров, поток данных, API endpoints, шаги деплоя, порядок сборки.
 - ✅ **Footer** — "Changelog" → "История изменений", добавлена "Документация".
 - ✅ **Ручной запуск пайплайна** — кнопка на `/settings`, поллинг очередей через `GET /api/cron/queue-stats` каждые 3с (без фиксированных таймаутов). Этапы: парсинг (6 мин) → анализ (3 мин) → дайджест (90 сек).
 - ✅ **Мониторинг регионов** — `Setting.monitored_regions` (json, дефолт `["moscow","mo"]`). Дайджест фильтрует объекты по `city[$in]`. Мультиселект чекбоксов на `/settings`.
 - ✅ **Test user credentials** — смена email с `test@aklab.ti-soft.ru` на `test@aklab.tirobots.ru`. Gotcha: username `test` конфликтует → нужно удалять старого юзера перед созданием нового.
 - ✅ **Deploy script** — подтверждён как самодостаточный (строит всё: lib → _shared → api → app → 12 сервисов). Обновлена ошибка в aklab skill.
+- ✅ **Параметры запуска (v1.0.33)** — collapsible панель на `/properties`: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер). Фильтры сохраняются в localStorage. Backend: `POST /cron/analyze` принимает `{ priceFrom, priceTo, city, threshold }`.
+- ✅ **Дефолтные регионы** — `moscow + mo + other` (включая other). Раньше был только moscow + mo.
+- ✅ **Результаты пайплайна (v1.0.33)** — подробные результаты: парсинг (источники + объекты + ошибки), анализ (по городам), дайджест (отправлен/пропущен).
+- ✅ **Кнопка «Запустить ещё раз»** — теперь активна после завершения пайплайна (`pipelineStage === done`).
+- ✅ **SMTP to fix (v1.0.34)** — `entityService.findMany` для singleton → `db.query.findOne({})`. Теперь digest шлёт на `Setting.smtp_to` (a@rudin.ru), а не на `config.smtp.user` (tirobots@yandex.ru).
+- ✅ **Mobile-first UI** — кнопки `w-full sm:w-auto`, цена инпуты `grid-cols-1 sm:grid-cols-[1fr_auto_1fr]`, чекбоксы `grid-cols-3`, фильтры `grid-cols-2 sm:flex`, слайдер `min-w-0`.
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
