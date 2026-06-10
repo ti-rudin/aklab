@@ -119,7 +119,14 @@ export class AlfalotParser implements SourceParser {
         logger.info(`[alfalot] Page ${pageNum}: ${cards.length} cards`);
 
         for (const card of cards) {
-          const area = card.area ? parseFloat(card.area.replace(',', '.')) : undefined;
+          // Title-first: "Сооружение 21 кв.м" → 21, badge may contain lot/building area
+          const titleAreaMatch = card.title.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
+          let area = titleAreaMatch
+            ? parseFloat(titleAreaMatch[1].replace(/\s/g, '').replace(',', '.'))
+            : undefined;
+          if (!area || area <= 0) {
+            area = card.area ? parseFloat(card.area.replace(',', '.')) : undefined;
+          }
           const price = parsePrice(card.price_text);
           const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
 
