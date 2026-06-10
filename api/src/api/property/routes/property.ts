@@ -1,39 +1,55 @@
 /**
  * property router
  *
- * Стандартные CRUD-маршруты + кастомные эндпоинты.
+ * Core CRUD + кастомные эндпоинты.
+ * НЕ используем coreRouter.routes — он вызывается до инициализации Strapi.
  */
-import { factories } from '@strapi/strapi';
-
-const coreRouter = factories.createCoreRouter('api::property.property');
-
-const customRoutes = [
-  {
-    method: 'POST' as const,
-    path: '/properties/clear-new',
-    handler: 'property.clearNew',
-    config: {
-      auth: false,
-      policies: [],
-    },
-  },
-  {
-    method: 'GET' as const,
-    path: '/photos/:documentId/:filename',
-    handler: 'property.servePhoto',
-    config: {
-      auth: false,
-      policies: [],
-    },
-  },
-];
-
-// coreRouter.routes may be a function or array depending on Strapi version
-const getCoreRoutes = () => {
-  const r = (coreRouter as any).routes;
-  return typeof r === 'function' ? r() : r;
-};
 
 export default {
-  routes: [...getCoreRoutes(), ...customRoutes],
+  routes: [
+    // Custom routes (must come before core to avoid conflicts)
+    {
+      method: 'POST',
+      path: '/properties/clear-new',
+      handler: 'property.clearNew',
+      config: { auth: false, policies: [] },
+    },
+    {
+      method: 'GET',
+      path: '/photos/:documentId/:filename',
+      handler: 'property.servePhoto',
+      config: { auth: false, policies: [] },
+    },
+    // Core CRUD routes
+    {
+      method: 'GET',
+      path: '/properties',
+      handler: 'property.find',
+      config: { auth: false },
+    },
+    {
+      method: 'GET',
+      path: '/properties/:id',
+      handler: 'property.findOne',
+      config: { auth: false },
+    },
+    {
+      method: 'POST',
+      path: '/properties',
+      handler: 'property.create',
+      config: { auth: false },
+    },
+    {
+      method: 'PUT',
+      path: '/properties/:id',
+      handler: 'property.update',
+      config: { auth: false },
+    },
+    {
+      method: 'DELETE',
+      path: '/properties/:id',
+      handler: 'property.delete',
+      config: { auth: false },
+    },
+  ],
 };
