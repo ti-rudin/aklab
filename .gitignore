@@ -147,3 +147,4 @@ app/package-lock.json
 # Strapi auto-generated documentation at dev/start time
 api/src/extensions/documentation/documentation/*/full_documentation.json
 api/.env.bak.*
+services/photo-fetcher/data/
