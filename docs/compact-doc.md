@@ -373,9 +373,9 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.24 → следующая сессия)
+## Session handoff (v1.0.25 → следующая сессия)
 
-**Сделано в сессии 9 июня 2026 (после v1.0.24):**
+**Сделано в сессии 9 июня 2026 (v1.0.25):**
 - ✅ **Чистка БД** — удалено 238 объектов без цены/коммерции (261 → 23)
 - ✅ **Удалён parser-bankruptcy** — мёртвый код (fedresurs OFF)
 - ✅ **Generic parse handler** — `createParseHandler()` в `_shared/src/parse-handler.ts`, 10 handlers упрощены до 5 строк каждый (-1710 строк)
