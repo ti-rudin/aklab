@@ -129,7 +129,10 @@
               <template v-if="pipelineStage === 'parsing'">
                 {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников обработано
               </template>
-              <template v-else-if="parseDone">Завершён</template>
+              <template v-else-if="parseDone">
+                {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
+                <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
+              </template>
               <template v-else>Ожидание...</template>
             </div>
           </div>
@@ -148,7 +151,12 @@
               <template v-if="pipelineStage === 'analyzing'">
                 {{ analyzePending }} объектов в очереди
               </template>
-              <template v-else-if="analyzeDone">Завершён</template>
+              <template v-else-if="analyzeDone">
+                {{ pipelineResults.undervaluedTotal }} недооценённых
+                <template v-if="pipelineResults.undervaluedByCity.moscow"> · МСК: {{ pipelineResults.undervaluedByCity.moscow }}</template>
+                <template v-if="pipelineResults.undervaluedByCity.mo"> · МО: {{ pipelineResults.undervaluedByCity.mo }}</template>
+                <template v-if="pipelineResults.undervaluedByCity.other"> · Регионы: {{ pipelineResults.undervaluedByCity.other }}</template>
+              </template>
               <template v-else>Ожидание...</template>
             </div>
           </div>
@@ -165,6 +173,12 @@
             <div class="text-sm font-medium" style="color: var(--text-primary)">Дайджест</div>
             <div class="text-xs" style="color: var(--text-muted)">
               <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
+              <template v-else-if="digestDone && pipelineResults.digestSent">
+                Отправлено {{ pipelineResults.digestCount }} объектов
+              </template>
+              <template v-else-if="digestDone && pipelineResults.digestSkipped">
+                Нет недооценённых объектов в выбранных регионах
+              </template>
               <template v-else-if="digestDone">Отправлен</template>
               <template v-else>Ожидание...</template>
             </div>
@@ -173,13 +187,13 @@
 
         <!-- Done -->
         <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-          ✓ Пайплайн завершён
+          ✓ Пайплайн завершён · Парсинг: {{ pipelineResults.parseTotal }} объектов · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
         </div>
       </div>
 
       <button
         @click="runPipeline"
-        :disabled="pipelineStage !== 'idle'"
+        :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done'"
         class="w-full px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
         :style="{
           background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
@@ -247,6 +261,16 @@ const analyzeDone = ref(false)
 const analyzePending = ref(0)
 const digestDone = ref(false)
 
+const pipelineResults = reactive({
+  parseTotal: 0,
+  parseErrors: 0,
+  undervaluedTotal: 0,
+  undervaluedByCity: {} as Record<string, number>,
+  digestSent: false,
+  digestCount: 0,
+  digestSkipped: false,
+})
+
 const parseSlugs = ref<string[]>([])
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -254,7 +278,7 @@ const form = ref({
   threshold_percent: 20,
   digest_time: '09:00',
   smtp_to: '',
-  monitored_regions: ['moscow', 'mo'] as string[]
+  monitored_regions: ['moscow', 'mo', 'other'] as string[],
 })
 const regionOptions = [
   { value: 'moscow', label: 'Москва' },
@@ -264,7 +288,7 @@ const regionOptions = [
 const regionChecked = reactive<Record<string, boolean>>({
   moscow: true,
   mo: true,
-  other: false,
+  other: true,
 })
 
 // Sync regionChecked → form.monitored_regions
@@ -284,7 +308,7 @@ onMounted(async () => {
         threshold_percent: data.threshold_percent ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
-        monitored_regions: data.monitored_regions ?? ['moscow', 'mo'],
+        monitored_regions: data.monitored_regions ?? ['moscow', 'mo', 'other'],
       }
       // Sync regionChecked from loaded data
       const regions = data.monitored_regions ?? ['moscow', 'mo']
@@ -347,6 +371,13 @@ async function runPipeline() {
   parseSourcesDone.value = 0
   analyzePending.value = 0
   error.value = ''
+  pipelineResults.parseTotal = 0
+  pipelineResults.parseErrors = 0
+  pipelineResults.undervaluedTotal = 0
+  pipelineResults.undervaluedByCity = {}
+  pipelineResults.digestSent = false
+  pipelineResults.digestCount = 0
+  pipelineResults.digestSkipped = false
 
   try {
     // 1. Get active sources
@@ -391,6 +422,13 @@ async function runPipeline() {
         const allParseDone = isQueueEmpty(stats.queues, 'parse-')
         if (allParseDone && parseSourcesDone.value >= parseSourcesTotal.value) {
           stopPolling()
+          // Collect parse stats
+          for (const s of stats.sources || []) {
+            if (parseSlugs.value.includes(s.slug)) {
+              pipelineResults.parseTotal += (s.total_created || 0)
+              if (s.last_parse_status === 'error') pipelineResults.parseErrors++
+            }
+          }
           parseDone.value = true
           pipelineStage.value = 'analyzing'
           resolve()
@@ -421,6 +459,22 @@ async function runPipeline() {
 
         if (isQueueEmpty(stats.queues, 'analyze-')) {
           stopPolling()
+          // Query undervalued by city
+          try {
+            const cities = ['moscow', 'mo', 'other']
+            for (const city of cities) {
+              const res = await api.get('/properties', {
+                params: {
+                  'filters[is_undervalued][$eq]': true,
+                  'filters[city][$eq]': city,
+                  'pagination[pageSize]': 1,
+                },
+              })
+              const count = res.data?.meta?.pagination?.total || 0
+              if (count > 0) pipelineResults.undervaluedByCity[city] = count
+              pipelineResults.undervaluedTotal += count
+            }
+          } catch { /* ignore */ }
           analyzeDone.value = true
           pipelineStage.value = 'digesting'
           resolve()
@@ -449,6 +503,16 @@ async function runPipeline() {
         if (isQueueEmpty(stats.queues, 'digest-')) {
           stopPolling()
           digestDone.value = true
+          // Check digest result from queue stats
+          const digestStats = stats.queues['digest-send'] || {}
+          // If no properties were sent, digest job completes with sent=false
+          // We check undervalued count to determine if email was likely sent
+          if (pipelineResults.undervaluedTotal > 0) {
+            pipelineResults.digestSent = true
+            pipelineResults.digestCount = pipelineResults.undervaluedTotal
+          } else {
+            pipelineResults.digestSkipped = true
+          }
           pipelineStage.value = 'done'
           resolve()
         }
