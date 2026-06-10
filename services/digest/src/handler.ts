@@ -1,6 +1,6 @@
 import type { Job } from '@aklab/sqlite-queue';
 import nodemailer from 'nodemailer';
-import { fetchUndervaluedProperties, logCron } from '@aklab/service-shared';
+import { fetchUndervaluedProperties, fetchSetting, logCron } from '@aklab/service-shared';
 import { config } from './config';
 import { logger } from './utils/logger';
 
@@ -22,8 +22,11 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
   const startedAt = new Date().toISOString();
 
   logger.info(`Digest triggered for ${req.date}`, { correlationId: corrId });
+  // Загружаем настройки для фильтрации по регионам
+  const setting = await fetchSetting().catch(() => null);
+  const regions: string[] = setting?.monitored_regions || ['moscow', 'mo'];
 
-  const properties = await fetchUndervaluedProperties();
+  const properties = await fetchUndervaluedProperties(regions);
   if (properties.length === 0) {
     logger.info('No undervalued properties — skipping email', { correlationId: corrId });
     return { sent: false, count: 0 };

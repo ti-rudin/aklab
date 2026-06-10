@@ -118,6 +118,32 @@
         />
       </div>
 
+      <!-- Регионы мониторинга -->
+      <div>
+        <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
+          Регионы мониторинга
+        </label>
+        <p class="text-xs mb-2" style="color: var(--text-muted)">
+          Объекты из неотмеченных регионов не попадут в дайджест.
+        </p>
+        <div class="space-y-2">
+          <label
+            v-for="opt in regionOptions"
+            :key="opt.value"
+            class="flex items-center gap-2 cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              :value="opt.value"
+              v-model="regionChecked[opt.value]"
+              class="rounded border-gray-300"
+              style="accent-color: var(--accent)"
+            />
+            <span class="text-sm" style="color: var(--text-main)">{{ opt.label }}</span>
+          </label>
+        </div>
+      </div>
+
       <!-- Кнопка -->
       <button
         type="submit"
@@ -244,7 +270,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -279,7 +305,25 @@ const form = ref({
   work_hours_start: 9,
   work_hours_end: 21,
   retention_months: 6,
+  monitored_regions: ['moscow', 'mo'] as string[],
 })
+const regionOptions = [
+  { value: 'moscow', label: 'Москва' },
+  { value: 'mo', label: 'Московская область' },
+  { value: 'other', label: 'Другие регионы' },
+]
+const regionChecked = reactive<Record<string, boolean>>({
+  moscow: true,
+  mo: true,
+  other: false,
+})
+
+// Sync regionChecked → form.monitored_regions
+watch(regionChecked, (val) => {
+  form.value.monitored_regions = Object.entries(val)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+}, { deep: true })
 
 onMounted(async () => {
   try {
@@ -294,7 +338,13 @@ onMounted(async () => {
         work_hours_start: data.work_hours_start ?? 9,
         work_hours_end: data.work_hours_end ?? 21,
         retention_months: data.retention_months ?? 6,
+        monitored_regions: data.monitored_regions ?? ['moscow', 'mo'],
       }
+      // Sync regionChecked from loaded data
+      const regions = data.monitored_regions ?? ['moscow', 'mo']
+      regionChecked.moscow = regions.includes('moscow')
+      regionChecked.mo = regions.includes('mo')
+      regionChecked.other = regions.includes('other')
     }
   } catch (err: any) {
     error.value = 'Не удалось загрузить настройки'
