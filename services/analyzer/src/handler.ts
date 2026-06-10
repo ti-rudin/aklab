@@ -62,7 +62,7 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
     if (isUndervalued && property.url && !property.photos_downloaded) {
       try {
         const q = getPhotoQueue();
-        q.addToQueue('fetch-photos', {
+        q.add('fetch-photos', {
           documentId: property.documentId,
           url: property.url,
           source: property.source,
