@@ -40,9 +40,18 @@
             Мониторинг коммерческой недвижимости.
             Автоматический поиск объектов ниже рыночной цены.
           </p>
-          <router-link to="/changelog" class="text-sm hover:opacity-80 transition-opacity mt-2 inline-block" style="color: var(--text-muted)">
-            Changelog
-          </router-link>
+          <ul class="space-y-2 mt-2">
+            <li>
+              <router-link to="/changelog" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                История изменений
+              </router-link>
+            </li>
+            <li>
+              <router-link to="/documentation" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Документация
+              </router-link>
+            </li>
+          </ul>
         </div>
       </div>
 

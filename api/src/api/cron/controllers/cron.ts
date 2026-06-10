@@ -12,6 +12,33 @@ function getQueue() {
 }
 
 export default {
+  async queueStats(ctx: any) {
+    try {
+      const qs = getQueue();
+      const stats = qs.getDetailedStats();
+
+      const sources = await (strapi as any).entityService.findMany('api::source.source', {
+        filters: { is_active: true },
+        fields: ['slug', 'name', 'last_parse_status', 'last_parsed_at'],
+        limit: 100,
+      });
+
+      ctx.body = {
+        ok: true,
+        queues: stats.queues,
+        total: stats.total,
+        sources: (sources || []).map((s: any) => ({
+          slug: s.slug,
+          name: s.name,
+          last_parse_status: s.last_parse_status,
+          last_parsed_at: s.last_parsed_at,
+        })),
+      };
+    } catch (err: any) {
+      ctx.internalServerError(err.message);
+    }
+  },
+
   async parseSource(ctx: any) {
     const { slug } = ctx.params;
 

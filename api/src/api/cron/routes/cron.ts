@@ -4,6 +4,12 @@
 export default {
   routes: [
     {
+      method: 'GET',
+      path: '/cron/queue-stats',
+      handler: 'cron.queueStats',
+      config: { auth: false, policies: [] },
+    },
+    {
       method: 'POST',
       path: '/cron/parse/:slug',
       handler: 'cron.parseSource',
