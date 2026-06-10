@@ -190,7 +190,7 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.26
+- Версия: 1.0.28
 - **11 источников парсинга** (10 активных, fedresurs OFF):
   - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
   - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
@@ -214,9 +214,11 @@ deploy-prod.sh + бамп версии).
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
-- **Changelog** — автогенерация при deploy (v1.0.0–v1.0.22)
-- **Frontend** — 8 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/auth` + 404 catch-all
-  `POST /api/cron/parse/:slug` для ручного запуска. ✅
+- **Changelog** — автогенерация при deploy (v1.0.0–v1.0.28)
+- **Footer** — «История изменений» (was Changelog) + «Документация» (подробная архитектура)
+- **Frontend** — 9 страниц: `/properties`, `/properties/:id`, `/sources`, `/market-references`, `/settings`, `/changelog`, `/documentation`, `/auth` + 404 catch-all
+- **Ручной запуск пайплайна** — на `/settings` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 6 мин, анализ 3 мин, дайджест 90 сек.
+- **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Парсеры** (9 июня 2026):
   - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
     (data-slot selectors: `[data-slot="card"][data-id]`, title from
@@ -234,7 +236,7 @@ deploy-prod.sh + бамп версии).
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
-  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions
+  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions + seedTestUser + seedStrapiAdmin
   - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types)
   - **services/parser-fabrikant/** — FabrikantParser (порт 1345, очередь `parse-fabrikant`)
   - **services/parser-torgi-gov/** — TorgiGovParser (порт 1346, очередь `parse-torgi-gov`)
@@ -373,16 +375,15 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.26 → следующая сессия)
+## Session handoff (v1.0.28 → следующая сессия)
 
-**Сделано в сессии 10 июня 2026 (v1.0.26):**
-- ✅ **m-ets price parsing bug** — `[class*="cost"]` матчил `.cost-block` с текстом "Осталось: N дней", склеивая цифры (11757600 → 1175760040). Фикс: `.cost` вместо `[class*="cost"]`. Затронуло roseltorg, invest-mosreg, investmoscow (превентивно).
-- ✅ **aggregator-bankrot area extraction** — `extractArea(excerpt)` брал площадь помещения (13 м²) вместо комплекса (9484 м²). Фикс: title → excerpt приоритет + fallback regex без "площадь" + сотки (1 сотка = 100 м²).
-- ✅ **Чистка БД** — удалено 89 объектов с неверными данными (бэкап data.db.bak.20260610)
-- ✅ **Деплой** — _shared + 5 парсеров пересобраны на проде
-- ✅ **Парсеры** — 10 запущено, 5 дали результаты: alfalot(57), aggregator-bankrot(20), etprf(14), m-ets(10), fabrikant(1). Итого 102 объекта.
-- ✅ **Analyzer** — запущен, 66/102 "недооценены" (много ложных: земля/гаражи в регионах vs грубые эталоны)
-- ✅ **Digest** — отправлен, 50 объектов
+**Сделано в сессии 10 июня 2026 (v1.0.28):**
+- ✅ **Страница «Документация»** (`/documentation`) — подробная архитектура: диаграмма, таблица сервисов с портами, карточки парсеров, поток данных, API endpoints, шаги деплоя, порядок сборки.
+- ✅ **Footer** — "Changelog" → "История изменений", добавлена "Документация".
+- ✅ **Ручной запуск пайплайна** — кнопка на `/settings`, поллинг очередей через `GET /api/cron/queue-stats` каждые 3с (без фиксированных таймаутов). Этапы: парсинг (6 мин) → анализ (3 мин) → дайджест (90 сек).
+- ✅ **Мониторинг регионов** — `Setting.monitored_regions` (json, дефолт `["moscow","mo"]`). Дайджест фильтрует объекты по `city[$in]`. Мультиселект чекбоксов на `/settings`.
+- ✅ **Test user credentials** — смена email с `test@aklab.ti-soft.ru` на `test@aklab.tirobots.ru`. Gotcha: username `test` конфликтует → нужно удалять старого юзера перед созданием нового.
+- ✅ **Deploy script** — подтверждён как самодостаточный (строит всё: lib → _shared → api → app → 12 сервисов). Обновлена ошибка в aklab skill.
 
 **Что НЕ делать**:
 - ❌ Не удалять `api/.tmp/data.db` повторно
