@@ -74,8 +74,9 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
       return { fetched: false, count: 0 };
     }
 
-    // Download photos
-    const photosDir = path.join(process.cwd(), 'data', 'photos', req.documentId);
+    // Download photos — write to API's data/photos/ so servePhoto controller can read them
+    const photosBase = process.env.PHOTOS_BASE_DIR || path.join(process.cwd(), '..', '..', 'api', 'data', 'photos');
+    const photosDir = path.join(photosBase, req.documentId);
     await fs.mkdir(photosDir, { recursive: true });
 
     const downloaded: string[] = [];
