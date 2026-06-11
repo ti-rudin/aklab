@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.36",
+    "date": "11 июня 2026",
+    "time": "09:31",
+    "items": [
+      {
+        "text": "цена",
+        "type": "new"
+      },
+      {
+        "text": "Обновление документации",
+        "type": "improvement"
+      },
+      {
+        "text": "QueueStats handler name sync",
+        "type": "fix"
+      },
+      {
+        "text": "объект",
+        "type": "fix"
+      },
+      {
+        "text": "GetDetailedStats + threshold type",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.35",
     "date": "11 июня 2026",
     "time": "00:45",
