@@ -3,7 +3,7 @@
  *
  * Задачи:
  *   - parse:<slug>         — per-source расписание из Source.schedule (cron expr)
- *   - analyze:properties   — каждые 30 мин
+ *   - analyze:properties   — ежедневно в 08:00 МСК (после парсеров 03:00–06:00)
  *   - digest:morning       — по setting.digest_time, динамически
  *   - cleanup:old          — 3:00 ежедневно, retention_months из Setting
  *
@@ -90,8 +90,8 @@ export function registerCrons(strapi: Core.Strapi): void {
     }
   })();
 
-  // 2. analyze:properties — каждые 30 минут
-  cron.schedule('*/30 * * * *', async () => {
+  // 2. analyze:properties — ежедневно в 08:00 МСК, после парсеров (03:00–06:00)
+  cron.schedule('0 8 * * *', async () => {
     const corrId = `cron-analyze-${Date.now()}`;
     strapi.log.info(`[cron] analyze:properties triggered (${corrId})`);
     try {
@@ -110,7 +110,7 @@ export function registerCrons(strapi: Core.Strapi): void {
     }
   }, { timezone: CRON_TIMEZONE });
 
-  strapi.log.info('[cron] Registered: analyze:properties (every 30 min)');
+  strapi.log.info('[cron] Registered: analyze:properties (daily 08:00 MSK)');
 
   // 3. digest:morning — по времени из Setting (проверяем каждый час)
   cron.schedule('0 * * * *', async () => {
