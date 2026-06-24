@@ -190,7 +190,7 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.28
+- Версия: 1.0.36
 - **11 источников парсинга** (10 активных, fedresurs OFF):
   - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
   - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
@@ -203,7 +203,7 @@ deploy-prod.sh + бамп версии).
   - `services/parser-roseltorg/` — Playwright generic, порт 1354
   - `services/parser-m-ets/` — Playwright generic, порт 1355
   - `services/parser-bankruptcy/` — УДАЛЁН (legacy монолит)
-- **14 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest)
+- **14 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
 - **Cron расписание**: fabrikant/torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, roseltorg/m-ets → 06:00
 - **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
 - **Telegram alerts**: УДАЛЕНЫ из плана
@@ -375,7 +375,10 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.34 → следующая сессия)
+## Session handoff (v1.0.36 → следующая сессия)
+
+**Сделано в сессии 11 июня 2026 (v1.0.36):**
+- ✅ **Photo-fetcher cwd mismatch (v1.0.36)** — photo-fetcher писал фото в свой `data/photos/`, API читал из своего → 404. Фикс: handler.ts пишет в `../../api/data/photos/` (env override `PHOTOS_BASE_DIR`). 28 папок с фото перенесены на проде вручную.
 
 **Сделано в сессии 10 июня 2026 (v1.0.28–v1.0.34):**
 - ✅ **Страница «Документация»** (`/documentation`) — подробная архитектура: диаграмма, таблица сервисов с портами, карточки парсеров, поток данных, API endpoints, шаги деплоя, порядок сборки.
@@ -405,7 +408,7 @@ deploy-prod.sh + бамп версии).
 6. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `fa2a27b` (fix: aggregator-bankrot extractArea — сотки)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `5baf466` ([release] v1.0.36)
 
 ## Известные баги / TODO
 
@@ -438,6 +441,10 @@ deploy-prod.sh + бамп версии).
 - **Analyzer false positives** — земельные участки и гаражи в регионах
   (267 ₽/м²) сравниваются с эталоном "other/other" = 65,200 ₽/м² → 99%
   deviation. Нужны реальные эталоны с разделением типов недвижимости.
+- **Photo-fetcher cwd mismatch** — ИСПРАВЛЕНО (v1.0.36): photo-fetcher
+  и API — разные PM2-процессы с разными cwd. `process.cwd()/data/photos/`
+  в photo-fetcher ≠ то же в API → фото не отдавались (404). Фикс:
+  handler.ts пишет в `../../api/data/photos/`.
 
 ## Полезные команды
 
