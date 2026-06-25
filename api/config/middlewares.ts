@@ -10,6 +10,8 @@ const config: Core.Config.Middlewares = [
       origin: [
         'https://aklab.tirobots.ru',
         'https://api-aklab.tirobots.ru',
+        'https://aklab-dev.tirobots.ru',
+        'https://api-aklab-dev.tirobots.ru',
         'http://localhost:5174',
         'http://localhost:4173',
       ],
