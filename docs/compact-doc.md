@@ -21,25 +21,34 @@ content-types ещё не созданы, кроме стандартных `use
 
 | Компонент | Технология | Порт prod | Порт dev | Где крутится |
 |-----------|-----------|-----------|----------|--------------|
-| Frontend | Vue 3 + Vite | 5174 | 5174 | Vite preview (prod), vite dev (локально) |
-| Backend | Strapi 5.46.1 + SQLite | 1338 | 1338 | Strapi start (prod), strapi develop (локально) |
-| Reverse proxy | Traefik v2.10 | 80/443 | — | 192.168.11.131 (отдельный хост) |
+| Frontend | Vue 3 + Vite | 5174 | 5174 | Vite preview (prod + dev) |
+| Backend | Strapi 5.44.0 + SQLite | 1338 | 1338 | Strapi start (prod + dev) |
+| Reverse proxy (prod) | Traefik v2.10 (Docker) | 80/443 | — | 213.184.136.221 (localhost) |
+| Reverse proxy (dev) | Traefik v2.10 (Docker) | 80/443 | — | 192.168.11.131 (отдельный хост) |
 
-PM2-процессы на проде: `aklab-api`, `aklab-app`. Плюс рядом `todoit-api`,
-`todoit-app` — это другой проект, не трогай.
+PM2-процессы на проде (213.184.136.221): 15 процессов (api, app, 10 парсеров,
+analyzer, digest, photo-fetcher). На dev (192.168.11.151): аналогично + рядом
+`todoit-api`, `todoit-app` — это другой проект, не трогай.
 
 ### Домены
 
-- `https://aklab.tirobots.ru` → Traefik → 192.168.11.151:5174 (Vite preview)
-- `https://api-aklab.tirobots.ru` → Traefik → 192.168.11.151:1338 (Strapi)
+**Prod (213.184.136.221):**
+- `https://aklab.tirobots.ru` → Traefik (localhost) → :5174 (Vite preview)
+- `https://api-aklab.tirobots.ru` → Traefik (localhost) → :1338 (Strapi)
+
+**Dev (192.168.11.151, Traefik на 131):**
+- `https://aklab-dev.tirobots.ru` → Traefik (131) → 192.168.11.151:5174
+- `https://api-aklab-dev.tirobots.ru` → Traefik (131) → 192.168.11.151:1338
+
 - **СТАРЫЕ, УДАЛЕНЫ** из CORS и Traefik: `*.aklab.ti-soft.ru`, `todoit.ru`,
   `app.todoit.ru`, `api.todoit.ru`. Если где-то всплывут — это баг, не лечи.
 
 ### Source of truth
 
-- `~/aklab` (bare-репа) на **192.168.11.151** — это **прод-репо**, его
-  трогает `git pull` при деплое
-- `~/github.nosync/aklab` на твоём маке — локальная копия для разработки
+`~/aklab` на **213.184.136.221** — это **прод-репо**, его трогает `git pull`
+при деплое. SSH: `ssh -p 5733 root@213.184.136.221` → `su - rudin`
+`~/aklab` на **192.168.11.151** — это **dev-репо** (бывший prod)
+@@ ~/github.nosync/aklab on your mac — local copy for development
 - GitHub: `https://github.com/ti-rudin/aklab.git` (HTTPS, авторизация
   через `gh` CLI от аккаунта `ti-rudin`)
 
@@ -190,7 +199,12 @@ deploy-prod.sh + бамп версии).
 
 ## Текущее состояние (июнь 2026)
 
-- Версия: 1.0.28
+- Версия: 1.0.37
+- **Инфраструктура (24.06.2026):**
+  - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
+  - **Dev:** 192.168.11.151 (rudin), бывший prod
+  - **Traefik prod:** Docker на 213.184.136.221 (`/opt/traefik/`)
+  - **Traefik dev:** Docker на 192.168.11.131 (редактировать `/home/rudin/home-traefik/traefik-config.yml`)
 - **11 источников парсинга** (10 активных, fedresurs OFF):
   - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
   - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
@@ -203,7 +217,7 @@ deploy-prod.sh + бамп версии).
   - `services/parser-roseltorg/` — Playwright generic, порт 1354
   - `services/parser-m-ets/` — Playwright generic, порт 1355
   - `services/parser-bankruptcy/` — УДАЛЁН (legacy монолит)
-- **14 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest)
+- **14 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
 - **Cron расписание**: fabrikant/torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, roseltorg/m-ets → 06:00
 - **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
 - **Telegram alerts**: УДАЛЕНЫ из плана
@@ -375,7 +389,37 @@ deploy-prod.sh + бамп версии).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
 
-## Session handoff (v1.0.34 → следующая сессия)
+## Session handoff (v1.0.37 → следующая сессия)
+
+**Сделано в сессии 24 июня 2026 (v1.0.37 — миграция инфраструктуры):**
+- ✅ **Новый prod-сервер** — 213.184.136.221:5733 (root, Ubuntu 26.04, nedvizhka, 15GB RAM)
+- ✅ **Node v20.20.2 + PM2 7.0.1 + gh (ti-rudin)** — настроено на новом сервере
+- ✅ **aklab клонирован и развёрнут** — 15 PM2 процессов online, Strapi health: 204
+- ✅ **Traefik v2.10 (Docker)** — `/opt/traefik/docker-compose.yml`, ports 80/443/8080
+- ✅ **Playwright chromium** установлен для парсеров
+- ✅ **PM2 startup** — systemd service `pm2-rudin.service`
+- ✅ **DNS** — aklab.tirobots.ru + api-aklab.tirobots.ru → 213.184.136.221
+- ✅ **151 → dev** — Traefik на 131 обновлён (dev-домены), app/.env VITE_API_URL, CORS
+- ✅ **aklab skill и compact-doc.md** обновлены
+
+**✅ Инфраструктура полностью работает (25.06.2026):**
+- Порты 80/443 открыты через pfSense NAT на провайдере
+- Let's Encrypt сертификаты получены автоматически
+- Frontend: `https://aklab.tirobots.ru/` → 200
+- API health: `https://api-aklab.tirobots.ru/_health` → 204
+- Admin: `https://api-aklab.tirobots.ru/admin` → 200
+
+**Gotcha: Docker networking** — Traefik в контейнере не видит `127.0.0.1:port` хоста. В `dynamic.yml` нужно указывать приватный IP: `http://192.168.31.147:5174`.
+
+**Gotchas миграции:**
+- `api/` и `app/` — НЕ workspace-пакеты, нужен отдельный `npm install` в каждой
+- `strapi build` (admin panel) занимает ~40с на новом сервере (vs ~140с на 151)
+- `ecosystem.config.js` содержит PATH с версией Node — при смене версии обновить v20.20.2
+- Seeder отработал при первом старте: admin@aklab.ti-soft.ru, 11 sources, 1 test user
+- SQLite quoting в SSH+paramiko — проблема с экранированием, использовать Python-скрипт на сервере
+
+**Сделано в сессии 11 июня 2026 (v1.0.36):**
+- ✅ **Photo-fetcher cwd mismatch (v1.0.36)** — photo-fetcher писал фото в свой `data/photos/`, API читал из своего → 404. Фикс: handler.ts пишет в `../../api/data/photos/` (env override `PHOTOS_BASE_DIR`). 28 папок с фото перенесены на проде вручную.
 
 **Сделано в сессии 10 июня 2026 (v1.0.28–v1.0.34):**
 - ✅ **Страница «Документация»** (`/documentation`) — подробная архитектура: диаграмма, таблица сервисов с портами, карточки парсеров, поток данных, API endpoints, шаги деплоя, порядок сборки.
@@ -405,7 +449,7 @@ deploy-prod.sh + бамп версии).
 6. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
 **Локальное состояние**:
-- `~/github.nosync/aklab` — ветка `main`, последний коммит `fa2a27b` (fix: aggregator-bankrot extractArea — сотки)
+- `~/github.nosync/aklab` — ветка `main`, последний коммит `5baf466` ([release] v1.0.36)
 
 ## Известные баги / TODO
 
@@ -438,6 +482,10 @@ deploy-prod.sh + бамп версии).
 - **Analyzer false positives** — земельные участки и гаражи в регионах
   (267 ₽/м²) сравниваются с эталоном "other/other" = 65,200 ₽/м² → 99%
   deviation. Нужны реальные эталоны с разделением типов недвижимости.
+- **Photo-fetcher cwd mismatch** — ИСПРАВЛЕНО (v1.0.36): photo-fetcher
+  и API — разные PM2-процессы с разными cwd. `process.cwd()/data/photos/`
+  в photo-fetcher ≠ то же в API → фото не отдавались (404). Фикс:
+  handler.ts пишет в `../../api/data/photos/`.
 
 ## Полезные команды
 
