@@ -1,0 +1,120 @@
+name: Deploy — Dev
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backup DB
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            cd ~/aklab
+            BACKUP_DIR=~/aklab-backups
+            mkdir -p $BACKUP_DIR
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            /usr/bin/sqlite3 api/.tmp/data.db ".backup $BACKUP_DIR/data-${TIMESTAMP}.db"
+            ls -t $BACKUP_DIR/data-*.db | tail -n +8 | xargs rm -f 2>/dev/null || true
+            echo "✅ Backup: $BACKUP_DIR/data-${TIMESTAMP}.db"
+
+      - name: Deploy
+        id: deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          command_timeout: 10m
+          script: |
+            source ~/.nvm/nvm.sh
+            cd ~/aklab
+            git pull origin dev --ff-only
+
+            # Build shared libs
+            cd lib/sqlite-queue && npm run build && cd ../..
+            cd services/_shared && npm run build && cd ../..
+
+            # Build API
+            cd api && npm run build && cd ..
+
+            # Build frontend (with dev API URL)
+            cd app && npm run build && cd ..
+
+            # Restart services
+            pm2 restart aklab-api aklab-app
+
+            # Get version
+            echo "VERSION=$(node -p "require('./package.json').version")" >> /tmp/deploy-vars.env
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          command_timeout: 3m
+          script: |
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -m 10 'http://localhost:1338/_health' 2>/dev/null || echo "000")
+              if [ "$STATUS" = "204" ]; then
+                echo "✅ Health check passed"
+                exit 0
+              fi
+              echo "⏳ Attempt $i: status=$STATUS, waiting 10s..."
+              sleep 10
+            done
+            echo "❌ Health check failed"
+            exit 1
+
+      - name: Smoke test
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          command_timeout: 2m
+          script: |
+            source ~/.nvm/nvm.sh
+            cd ~/aklab
+            set -a && source .env && set +a
+            npm run smoke:local
+
+      - name: Generate changelog & notify
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          command_timeout: 1m
+          script: |
+            source ~/.nvm/nvm.sh
+            cd ~/aklab
+            VERSION=$(node -p "require('./package.json').version")
+
+            # Generate changelog
+            node scripts/generate-changelog-ai.js "$VERSION" > /tmp/changelog-items.json 2>/dev/null || echo '[]' > /tmp/changelog-items.json
+
+            if [ "${{ job.status }}" = "success" ]; then
+              bash scripts/notify-deploy.sh success dev "$VERSION" /tmp/changelog-items.json
+            else
+              bash scripts/notify-deploy.sh failure dev "$VERSION" "" "Deploy workflow failed at step: ${{ steps.deploy.outcome || 'unknown' }}"
+            fi
