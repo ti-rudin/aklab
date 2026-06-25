@@ -148,3 +148,7 @@ app/package-lock.json
 api/src/extensions/documentation/documentation/*/full_documentation.json
 api/.env.bak.*
 services/photo-fetcher/data/
+data.db
+api/data.db
+api/data/
+test-results/
