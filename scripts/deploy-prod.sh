@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Деплой AKLAB в production
-# Usage: ./scripts/deploy-prod.sh [--force]
+# Usage: ./scripts/deploy-prod.sh [--force] [--ci]
 
 set -e
 
@@ -14,7 +14,13 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 FORCE=false
-[[ "$1" == "--force" ]] && FORCE=true
+CI_MODE=false
+for arg in "$@"; do
+  case $arg in
+    --force) FORCE=true ;;
+    --ci) CI_MODE=true ;;
+  esac
+done
 
 # Цвета
 RED='\033[0;31m'
@@ -48,7 +54,11 @@ rollback() {
       log "DB восстановлен из backup"
     fi
     pm2 restart aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod aklab-photo-fetcher-prod aklab-parser-aggregator-bankrot aklab-parser-alfalot aklab-parser-etprf aklab-parser-sberbank-ast aklab-parser-invest-mosreg aklab-parser-investmoscow aklab-parser-roseltorg aklab-parser-m-ets 2>/dev/null || true
-    notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
+    if [ "$CI_MODE" = "true" ]; then
+      bash "$PROJECT_ROOT/scripts/notify-deploy.sh" failure prod "unknown" "" "Rollback to ${ROLLBACK_SHA:0:8}"
+    else
+      notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
+    fi
   fi
 }
 trap rollback ERR
@@ -86,14 +96,22 @@ fi
 
 # === Step 3: DB backup ===
 log "Backup SQLite..."
+BACKUP_DIR="$HOME/aklab-backups"
+mkdir -p "$BACKUP_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
 if [ -f "api/.tmp/data.db" ]; then
   if command -v sqlite3 &> /dev/null; then
     sqlite3 api/.tmp/data.db ".backup api/.tmp/data.db.bak"
-    log "Backup: api/.tmp/data.db.bak"
+    sqlite3 api/.tmp/data.db ".backup $BACKUP_DIR/data-${TIMESTAMP}.db"
+    log "Backup: api/.tmp/data.db.bak + $BACKUP_DIR/data-${TIMESTAMP}.db"
   else
     warn "sqlite3 не установлен — пропускаем backup (apt install sqlite3)"
     cp api/.tmp/data.db api/.tmp/data.db.bak 2>/dev/null || true
+    cp api/.tmp/data.db "$BACKUP_DIR/data-${TIMESTAMP}.db" 2>/dev/null || true
   fi
+  # Хранить последние 7 бэкапов
+  ls -t "$BACKUP_DIR"/data-*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 fi
 
 # === Step 4: Smart npm install ===
@@ -199,10 +217,15 @@ for svc_port in "photo-fetcher:1356" "parser-fabrikant:1345" "parser-torgi-gov:1
   fi
 done
 
-# === Step 9: Generate changelog ===
+# === Step 9: Generate changelog (AI first, fallback to rule-based) ===
 log "Генерация changelog..."
 CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
-CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSION" 2>/tmp/changelog-gen.log || echo '')
+CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog-ai.js" "$NEW_VERSION" 2>/tmp/changelog-ai.log || echo '')
+
+if [ -z "$CHANGELOG_ITEMS" ] || [ "$CHANGELOG_ITEMS" = '[]' ]; then
+  log "AI changelog пуст — fallback на rule-based"
+  CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSION" 2>/tmp/changelog-gen.log || echo '')
+fi
 
 if [ -n "$CHANGELOG_ITEMS" ] && [ "$CHANGELOG_ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
   # Дата и время по Москве (UTC+3), русские названия месяцев
@@ -249,4 +272,10 @@ git push origin main 2>/dev/null || warn "Git push не удался (прове
 
 # === Done ===
 log "Deploy завершён успешно!"
-notify "✅ AKLAB v${VERSION} задеплоен"
+
+if [ "$CI_MODE" = "true" ]; then
+  # В CI-режиме — email вместо Telegram
+  bash "$PROJECT_ROOT/scripts/notify-deploy.sh" success prod "$VERSION" "$CHANGELOG_JSON"
+else
+  notify "✅ AKLAB v${VERSION} задеплоен"
+fi
