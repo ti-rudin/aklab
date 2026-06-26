@@ -1,5 +1,40 @@
 [
   {
+    "version": "v1.0.38",
+    "date": "26 июня 2026",
+    "time": "09:00",
+    "items": [
+      {
+        "text": "CI/CD — GitHub Actions workflows для автоматического деплоя (dev + prod)",
+        "type": "improvement"
+      },
+      {
+        "text": "AI-генерация changelog через Xiaomi MiMo",
+        "type": "improvement"
+      },
+      {
+        "text": "Email-уведомления о результатах деплоя",
+        "type": "improvement"
+      },
+      {
+        "text": "E2E тесты (Playwright) — добавлены и исправлены локаторы",
+        "type": "new"
+      },
+      {
+        "text": "Закрыт /api/properties от публичного доступа",
+        "type": "fix"
+      },
+      {
+        "text": "Strapi 5 config.auth — исправлен crash (boolean → объект)",
+        "type": "fix"
+      },
+      {
+        "text": "Node v20.20.2 в ecosystem.config.js (был v22.20.0)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.37",
     "date": "18 июня 2026",
     "time": "23:20",
