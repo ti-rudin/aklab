@@ -147,6 +147,28 @@
           </div>
         </div>
       </div>
+
+      <!-- История событий -->
+      <div v-if="events.length" class="rounded-xl p-6 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📋 История</h2>
+        <div class="space-y-3">
+          <div v-for="evt in events" :key="evt.documentId"
+            class="flex items-start gap-3 pb-3 border-b last:border-b-0"
+            style="border-color: var(--border-subtle)">
+            <div class="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0"
+              :style="{ background: eventTypeColor[evt.event_type] || '#6b7280' }" />
+            <div class="flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-medium" style="color: var(--text-main)">{{ eventTypeLabel[evt.event_type] || evt.event_type }}</span>
+                <span v-if="evt.old_value" class="text-xs px-1.5 py-0.5 rounded" style="background: var(--bg-main); color: var(--text-muted)">{{ evt.old_value }}</span>
+                <span v-if="evt.new_value" class="text-xs" style="color: var(--text-muted)">→</span>
+                <span v-if="evt.new_value" class="text-xs px-1.5 py-0.5 rounded font-medium" style="background: var(--accent-soft); color: var(--accent)">{{ evt.new_value }}</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--text-muted)">{{ formatDate(evt.createdAt) }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Ошибка -->
@@ -195,6 +217,7 @@ interface Comment {
 
 const property = ref<Property | null>(null)
 const comments = ref<Comment[]>([])
+const events = ref<any[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
@@ -263,6 +286,38 @@ async function fetchProperty() {
   }
 }
 
+async function fetchEvents() {
+  if (!property.value) return
+  try {
+    const { data } = await api.get('/property-events', {
+      params: {
+        'filters[property][documentId][$eq]': property.value.documentId,
+        'sort': 'createdAt:desc',
+        'pagination[pageSize]': 50,
+      }
+    })
+    events.value = data.data || []
+  } catch { /* ignore */ }
+}
+
+const eventTypeLabel: Record<string, string> = {
+  created: 'Создан',
+  entered_focus: 'Вошёл в фокус',
+  left_focus: 'Вышел из фокуса',
+  score_changed: 'Скор изменён',
+  status_changed: 'Статус изменён',
+  price_changed: 'Цена изменена',
+}
+
+const eventTypeColor: Record<string, string> = {
+  created: '#10b981',
+  entered_focus: '#4f8cff',
+  left_focus: '#6b7280',
+  score_changed: '#f59e0b',
+  status_changed: '#8b5cf6',
+  price_changed: '#ef4444',
+}
+
 async function changeStatus(status: string) {
   if (!property.value) return
   saving.value = true
@@ -303,5 +358,8 @@ async function addComment() {
   }
 }
 
-onMounted(fetchProperty)
+onMounted(async () => {
+  await fetchProperty()
+  await fetchEvents()
+})
 </script>

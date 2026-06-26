@@ -5,8 +5,9 @@ export default defineConfig({
   timeout: 30000,
   expect: { timeout: 10000 },
   use: {
-    baseURL: process.env.FRONTEND_URL || 'http://localhost:5174',
+    baseURL: process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru',
     headless: true,
+    screenshot: 'only-on-failure',
   },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
