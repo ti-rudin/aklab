@@ -600,32 +600,32 @@ test.describe('10. Волна 4 — Dashboard (ожидает деплой)', ()
 
   test('10.1 Dashboard loads after login', async ({ page }) => {
     await login(page);
-    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
+    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('h1:has-text("Дашборд"), h1:has-text("Dashboard")')).toBeVisible({ timeout: 10000 });
   });
 
   test('10.2 Shows stats (new objects, focus count, avg score)', async ({ page }) => {
     await login(page);
-    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
+    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     // Проверяем наличие карточек со статистикой
     await expect(page.locator('text=/Новых|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.3 Shows top 5 objects', async ({ page }) => {
     await login(page);
-    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
+    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('text=/Всего объектов|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.4 Shows sources status', async ({ page }) => {
     await login(page);
-    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
+    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('text=/Источники|Sources/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.5 Quick action buttons work', async ({ page }) => {
     await login(page);
-    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
+    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     // Кнопки быстрых действий
     const quickAction = page.locator('button').filter({ hasText: /Запустить|Обновить|Пересчитать/ }).first();
     await expect(quickAction).toBeVisible({ timeout: 10000 });
