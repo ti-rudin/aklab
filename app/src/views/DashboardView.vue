@@ -65,12 +65,12 @@
         <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Действия</h2>
           <div class="space-y-3">
-            <button @click="runParsing" :disabled="actionLoading"
+            <button @click="runParsing" :disabled="!!actionLoading"
               class="w-full px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
               style="background: var(--accent)">
               {{ actionLoading === 'parse' ? 'Запуск…' : '▶ Запустить парсинг' }}
             </button>
-            <button @click="runScoring" :disabled="actionLoading"
+            <button @click="runScoring" :disabled="!!actionLoading"
               class="w-full px-4 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
               style="background: var(--bg-main); border: 1px solid var(--border-subtle); color: var(--text-main)">
               {{ actionLoading === 'score' ? 'Запуск…' : '🔄 Пересчитать выборку' }}
