@@ -14,6 +14,7 @@
 import type { Core } from '@strapi/strapi';
 import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
+import { scoreAllProperties } from "../services/focusEngine";
 
 const CRON_TIMEZONE = 'Europe/Moscow';
 
@@ -111,6 +112,22 @@ export function registerCrons(strapi: Core.Strapi): void {
   }, { timezone: CRON_TIMEZONE });
 
   strapi.log.info('[cron] Registered: analyze:properties (daily 08:00 MSK)');
+
+  // 2b. score:properties — ежедневно в 08:05 МСК (после analyze в 08:00)
+  cron.schedule('5 8 * * *', async () => {
+    const corrId = `cron-score-${Date.now()}`;
+    strapi.log.info(`[cron] score:properties triggered (${corrId})`);
+    try {
+      const result = await scoreAllProperties();
+      strapi.log.info(
+        `[cron] score:properties done: scored=${result.scored}, in_focus=${result.in_focus}, tags=${JSON.stringify(result.by_tag)}`
+      );
+    } catch (err: any) {
+      strapi.log.error(`[cron] score:properties error: ${err.message}`);
+    }
+  }, { timezone: CRON_TIMEZONE });
+
+  strapi.log.info('[cron] Registered: score:properties (daily 08:05 MSK)');
 
   // 3. digest:morning — по времени из Setting (проверяем каждый час)
   cron.schedule('0 * * * *', async () => {

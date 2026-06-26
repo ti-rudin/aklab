@@ -1,5 +1,5 @@
 /**
- * Custom cron routes — ручной запуск парсинга/анализа/дайджеста.
+ * Custom cron routes — ручной запуск парсинга/анализа/дайджеста/скоринга.
  */
 export default {
   routes: [
@@ -25,6 +25,12 @@ export default {
       method: 'POST',
       path: '/cron/digest',
       handler: 'cron.sendDigest',
+      config: { auth: false, policies: [] },
+    },
+    {
+      method: 'POST',
+      path: '/cron/score',
+      handler: 'cron.scoreProperties',
       config: { auth: false, policies: [] },
     },
   ],

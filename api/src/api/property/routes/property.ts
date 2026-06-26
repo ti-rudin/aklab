@@ -20,6 +20,12 @@ export default {
       handler: 'property.servePhoto',
       config: { auth: false, policies: [] },
     },
+    {
+      method: 'GET',
+      path: '/properties/focus',
+      handler: 'property.getFocus',
+      config: { auth: false, policies: [] },
+    },
     // Core CRUD routes
     {
       method: 'GET',

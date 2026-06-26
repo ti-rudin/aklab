@@ -1,8 +1,9 @@
 /**
- * Cron controller — manual triggers for parse/analyze/digest.
+ * Cron controller — manual triggers for parse/analyze/digest/score.
  */
 
 import { getQueueService } from '../../../services/queueService';
+import { scoreProperty } from '../../../services/focusEngine';
 
 function getQueue() {
   return getQueueService();
@@ -145,6 +146,116 @@ export default {
       };
     } catch (err: any) {
       strapi.log.error(`[cron] getQueueStats error: ${err.message}`);
+      ctx.internalServerError(err.message);
+    }
+  },
+
+  /**
+   * POST /api/cron/score
+   * Ручной запуск scoring — оценка всех status='new' по focus rules.
+   */
+  async scoreProperties(ctx: any) {
+    try {
+      const body = ctx.request?.body || {};
+      let threshold = body.threshold ? Number(body.threshold) : null;
+      const cityFilter: string[] | null = body.city || null;
+      const priceFrom = body.priceFrom ? Number(body.priceFrom) : null;
+      const priceTo = body.priceTo ? Number(body.priceTo) : null;
+
+      // Если порог не задан — берём из Setting
+      if (threshold === null || isNaN(threshold)) {
+        const setting = await (strapi as any).db.query('api::setting.setting').findOne({});
+        threshold = setting?.threshold_percent || 20;
+      }
+
+      // Загружаем активные правила
+      const rules = await (strapi as any).entityService.findMany('api::focus-rule.focus-rule', {
+        filters: { is_active: true },
+        sort: { priority: 'asc' },
+        limit: 100,
+      });
+
+      if (!rules || rules.length === 0) {
+        ctx.body = { ok: true, scored: 0, in_focus: 0, by_tag: {}, message: 'No active focus rules' };
+        return;
+      }
+
+      // Строим фильтры для свойств
+      const where: any = { status: 'new' };
+      if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
+        where.city = { $in: cityFilter };
+      }
+      if (priceFrom !== null && !isNaN(priceFrom)) {
+        where.price = { ...(where.price || {}), $gte: priceFrom };
+      }
+      if (priceTo !== null && !isNaN(priceTo)) {
+        where.price = { ...(where.price || {}), $lte: priceTo };
+      }
+
+      // Пагинация: обрабатываем батчами
+      const BATCH = 200;
+      let offset = 0;
+      let scored = 0;
+      let inFocus = 0;
+      const byTag: Record<string, number> = {};
+
+      while (true) {
+        const properties = await (strapi as any).db.query('api::property.property').findMany({
+          where,
+          orderBy: { id: 'asc' },
+          limit: BATCH,
+          offset,
+        });
+
+        if (!properties || properties.length === 0) break;
+
+        for (const prop of properties) {
+          const result = scoreProperty(prop, rules);
+
+          // Обновляем объект
+          await (strapi as any).db.query('api::property.property').update({
+            where: { id: prop.id },
+            data: {
+              focus_score: result.score,
+              tags: result.tags,
+            },
+          });
+
+          // Записываем события
+          for (const evt of result.events) {
+            await (strapi as any).entityService.create('api::property-event.property-event', {
+              data: {
+                event_type: evt.event_type,
+                old_value: evt.old_value || null,
+                new_value: evt.new_value || null,
+                property: prop.id,
+              },
+            });
+          }
+
+          scored++;
+          if (result.score >= (threshold as number)) {
+            inFocus++;
+          }
+          for (const tag of result.tags) {
+            byTag[tag] = (byTag[tag] || 0) + 1;
+          }
+        }
+
+        if (properties.length < BATCH) break;
+        offset += BATCH;
+      }
+
+      ctx.body = {
+        ok: true,
+        scored,
+        in_focus: inFocus,
+        by_tag: byTag,
+        threshold,
+        filters: { city: cityFilter, priceFrom, priceTo },
+      };
+    } catch (err: any) {
+      strapi.log.error(`[cron] scoreProperties error: ${err.message}`);
       ctx.internalServerError(err.message);
     }
   },
