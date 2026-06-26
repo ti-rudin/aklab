@@ -30,7 +30,7 @@ async function fetchFocusProperties(threshold: number): Promise<any[]> {
   const url = `${BASE}/api/properties/focus?threshold=${threshold}&pageSize=100&sort=-focus_score`;
   const res = await fetch(url, { headers: HEADERS });
   if (!res.ok) return [];
-  const json = await res.json();
+  const json: any = await res.json();
   return json.data || [];
 }
 
