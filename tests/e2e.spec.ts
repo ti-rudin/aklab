@@ -48,13 +48,9 @@ async function login(page: import('@playwright/test').Page) {
     await page.locator('button[type="submit"]').click();
     await page.waitForLoadState('networkidle').catch(() => {});
   }
-}
-    await page.waitForTimeout(2000);
-  }
-  await expect(page).toHaveURL(/\/(properties|$)/, { timeout: 15000 });
-}
 
 
+}
 async function loginAPI(request: import('@playwright/test').APIRequestContext) {
   const resp = await request.post(`${API}/api/auth/local`, {
     data: { identifier: EMAIL, password: PASS },
