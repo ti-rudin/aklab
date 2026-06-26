@@ -164,13 +164,18 @@ const isAuthenticated = computed(() => authStore.isAuthenticated)
 const mobileMenuOpen = ref(false)
 
 const navItems = [
+  { to: '/', label: 'Дашборд' },
   { to: '/properties', label: 'Объекты' },
+  { to: '/rules', label: 'Правила' },
   { to: '/sources', label: 'Источники' },
   { to: '/market-references', label: 'Эталоны' },
   { to: '/settings', label: 'Настройки' },
 ]
 
-const isActive = (path: string) => route.path.startsWith(path)
+const isActive = (path: string) => {
+  if (path === '/') return route.path === '/'
+  return route.path.startsWith(path)
+}
 
 // Закрываем мобильное меню при смене маршрута
 watch(() => route.path, () => {

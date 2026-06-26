@@ -7,10 +7,8 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      redirect: () => {
-        const authStore = useAuthStore()
-        return authStore.isAuthenticated ? '/properties' : '/auth'
-      },
+      component: () => import('../views/DashboardView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/auth',
@@ -58,6 +56,12 @@ const router = createRouter({
       path: '/documentation',
       name: 'documentation',
       component: () => import('../views/DocumentationView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/rules',
+      name: 'rules',
+      component: () => import('../views/RulesView.vue'),
       meta: { requiresAuth: true },
     },
     {
