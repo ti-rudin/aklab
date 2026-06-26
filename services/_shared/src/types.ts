@@ -10,6 +10,7 @@ export interface ParsedProperty {
   city: string; // moscow | mo | other
   area_sqm?: number;
   price?: number;
+  minimum_price?: number;
   price_per_sqm?: number;
   property_type: string; // office | warehouse | retail | production | free_purpose | other
   auction_type: string; // bankruptcy | privatization | marketplace
