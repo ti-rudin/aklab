@@ -91,15 +91,21 @@ export default factories.createCoreController("api::property.property", ({ strap
     }
 
     // Сортировка
-    const allowedSorts = ["focus_score", "price_per_sqm", "area_sqm", "deviation_percent", "createdAt"];
+    const allowedSorts: Record<string, string> = {
+      focus_score: "focus_score",
+      price_per_sqm: "price_per_sqm",
+      area_sqm: "area_sqm",
+      deviation_percent: "deviation_percent",
+      createdAt: "created_at",
+    };
     let sortField = "focus_score";
     let sortDir = "DESC";
 
     if (sortParam) {
       const desc = sortParam.startsWith("-");
       const field = desc ? sortParam.slice(1) : sortParam;
-      if (allowedSorts.includes(field)) {
-        sortField = field;
+      if (allowedSorts[field]) {
+        sortField = allowedSorts[field];
         sortDir = desc ? "DESC" : "ASC";
       }
     }
@@ -125,7 +131,7 @@ export default factories.createCoreController("api::property.property", ({ strap
     ctx.body = {
       data: data.map((row: any) => ({
         id: row.id,
-        documentId: row.documentId,
+        documentId: row.document_id,
         title: row.title,
         source: row.source,
         external_id: row.external_id,
@@ -143,7 +149,7 @@ export default factories.createCoreController("api::property.property", ({ strap
         tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
         minimum_price: row.minimum_price,
         first_seen_at: row.first_seen_at,
-        createdAt: row.createdAt,
+        createdAt: row.created_at,
       })),
       meta: {
         page,
