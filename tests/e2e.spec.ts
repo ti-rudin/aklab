@@ -24,33 +24,22 @@ const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 // ─── helpers ──────────────────────────────────────────────────────────
 
 async function login(page: import('@playwright/test').Page) {
-  // API login for reliable JWT, inject into localStorage
-  const apiCtx = page.request;
-  const resp = await apiCtx.post(`${API}/api/auth/local`, {
-    data: { identifier: EMAIL, password: PASS },
-  });
-  const body = await resp.json();
-  if (body.jwt && body.user) {
-    // Set localStorage before navigating
-    await page.addInitScript(({ jwt, user }) => {
-      localStorage.setItem('jwt', jwt);
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('lastAuthTime', Date.now().toString());
-    }, { jwt: body.jwt, user: body.user });
-    await page.goto('/');
-    await page.waitForLoadState('networkidle').catch(() => {});
-  } else {
-    // Fallback UI login
+  for (let attempt = 1; attempt <= 3; attempt++) {
     await page.goto('/auth');
     await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
     await page.locator('#email').fill(EMAIL);
     await page.locator('#password').fill(PASS);
     await page.locator('button[type="submit"]').click();
-    await page.waitForLoadState('networkidle').catch(() => {});
+    try {
+      await page.waitForURL(/\/(properties|$)/, { timeout: 20000 });
+      return;
+    } catch {
+      if (attempt === 3) throw new Error('Login failed after 3 attempts');
+      await page.waitForTimeout(3000);
+    }
   }
-
-
 }
+
 async function loginAPI(request: import('@playwright/test').APIRequestContext) {
   const resp = await request.post(`${API}/api/auth/local`, {
     data: { identifier: EMAIL, password: PASS },
