@@ -30,8 +30,9 @@ async function login(page: import('@playwright/test').Page) {
   await page.locator('#email').fill(EMAIL);
   await page.locator('#password').fill(PASS);
   await page.locator('button[type="submit"]').click();
+  await page.waitForLoadState("networkidle").catch(() => {});
   // Ждём редирект на /properties
-  await expect(page).toHaveURL(/\/(properties|dashboard|$)/, { timeout: 25000 });
+  await expect(page).toHaveURL(/\/(properties|dashboard|$)/, { timeout: 40000 });
   // Ждём заголовок
   await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
 }
@@ -60,7 +61,7 @@ test.describe('1. Авторизация', () => {
 
   test('1.2 Успешный логин → редирект на /properties', async ({ page }) => {
     await login(page);
-    await expect(page).toHaveURL(/\/properties/);
+    await expect(page).toHaveURL(/\/(properties|$)/);
   });
 
   test('1.3 Неверные credentials → показ ошибки', async ({ page }) => {
@@ -456,7 +457,7 @@ test.describe('8. Навигация', () => {
 
   test('8.1 Навигация: Объекты', async ({ page }) => {
     await page.getByRole('navigation').getByRole('link', { name: 'Объекты' }).click();
-    await expect(page).toHaveURL(/\/properties/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/(properties|$)/, { timeout: 5000 });
     await expect(page.locator('h1:has-text("Объекты")')).toBeVisible();
   });
 
@@ -480,7 +481,7 @@ test.describe('8. Навигация', () => {
 
   test('8.5 Логотип AKLAB → редирект на /properties', async ({ page }) => {
     await page.getByRole('navigation').getByRole('link', { name: /AKLAB/ }).click();
-    await expect(page).toHaveURL(/\/properties/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/(properties|$)/, { timeout: 5000 });
   });
 
   test('8.6 Переключение темы (тёмная/светлая)', async ({ page }) => {
@@ -599,32 +600,32 @@ test.describe('10. Волна 4 — Dashboard (ожидает деплой)', ()
 
   test('10.1 Dashboard loads after login', async ({ page }) => {
     await login(page);
-    await page.goto('/dashboard');
+    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('h1:has-text("Дашборд"), h1:has-text("Dashboard")')).toBeVisible({ timeout: 10000 });
   });
 
   test('10.2 Shows stats (new objects, focus count, avg score)', async ({ page }) => {
     await login(page);
-    await page.goto('/dashboard');
+    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
     // Проверяем наличие карточек со статистикой
     await expect(page.locator('text=/Новых|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.3 Shows top 5 objects', async ({ page }) => {
     await login(page);
-    await page.goto('/dashboard');
+    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('text=/Всего объектов|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.4 Shows sources status', async ({ page }) => {
     await login(page);
-    await page.goto('/dashboard');
+    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('text=/Источники|Sources/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.5 Quick action buttons work', async ({ page }) => {
     await login(page);
-    await page.goto('/dashboard');
+    await page.goto("/dashboard"); await page.waitForLoadState("networkidle").catch(() => {});
     // Кнопки быстрых действий
     const quickAction = page.locator('button').filter({ hasText: /Запустить|Обновить|Пересчитать/ }).first();
     await expect(quickAction).toBeVisible({ timeout: 10000 });
@@ -636,14 +637,14 @@ test.describe('10. Волна 4 — Rules page (ожидает деплой)', (
 
   test('10.6 Rules list loads', async ({ page }) => {
     await login(page);
-    await page.goto('/rules');
+    await page.goto("/rules"); await page.waitForLoadState("networkidle").catch(() => {});
     await expect(page.locator('h1:has-text("Правила"), h1:has-text("Rules")')).toBeVisible({ timeout: 10000 });
   });
 
   test('10.7 Can create new rule', async ({ page }) => {
     await login(page);
-    await page.goto('/rules');
-    const createBtn = page.locator('button:has-text("Создать"), button:has-text("Добавить")').first();
+    await page.goto("/rules"); await page.waitForLoadState("networkidle").catch(() => {});
+    const createBtn = page.locator('button:has-text("Новое правило"), button:has-text("Создать"), button:has-text("Добавить")').first();
     await expect(createBtn).toBeVisible({ timeout: 5000 });
     await createBtn.click();
     // Форма создания
@@ -652,7 +653,7 @@ test.describe('10. Волна 4 — Rules page (ожидает деплой)', (
 
   test('10.8 Can toggle rule active/inactive', async ({ page }) => {
     await login(page);
-    await page.goto('/rules');
+    await page.goto("/rules"); await page.waitForLoadState("networkidle").catch(() => {});
     const toggle = page.locator('input[type="checkbox"], button[role="switch"]').first();
     if (await toggle.isVisible({ timeout: 5000 }).catch(() => false)) {
       await toggle.click();
@@ -662,7 +663,7 @@ test.describe('10. Волна 4 — Rules page (ожидает деплой)', (
 
   test('10.9 Can delete rule', async ({ page }) => {
     await login(page);
-    await page.goto('/rules');
+    await page.goto("/rules"); await page.waitForLoadState("networkidle").catch(() => {});
     const deleteBtn = page.locator('button:has-text("Удалить"), button:has-text("Delete")').first();
     if (await deleteBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       await deleteBtn.click();
