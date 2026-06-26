@@ -17,7 +17,7 @@ import { test, expect } from '@playwright/test';
  */
 
 const FRONTEND = process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru';
-const API = process.env.API_URL || 'https://api-aklab.tirobots.ru';
+const API = process.env.API_URL || 'https://api-aklab-dev.tirobots.ru';
 const EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru';
 const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 
@@ -596,7 +596,6 @@ test.describe('9. API Smoke Tests', () => {
 
 test.describe('10. Волна 4 — Dashboard (ожидает деплой)', () => {
 
-  test.skip(true, 'Dashboard page not yet implemented in frontend router');
 
   test('10.1 Dashboard loads after login', async ({ page }) => {
     await login(page);
@@ -634,7 +633,6 @@ test.describe('10. Волна 4 — Dashboard (ожидает деплой)', ()
 
 test.describe('10. Волна 4 — Rules page (ожидает деплой)', () => {
 
-  test.skip(true, 'Rules page not yet implemented in frontend router');
 
   test('10.6 Rules list loads', async ({ page }) => {
     await login(page);
@@ -676,7 +674,6 @@ test.describe('10. Волна 4 — Rules page (ожидает деплой)', (
 
 test.describe('10. Волна 4 — Event Log on detail page (ожидает деплой)', () => {
 
-  test.skip(true, 'Event log section not yet visible in PropertyDetailView');
 
   test('10.10 Event log section visible on detail page', async ({ page }) => {
     await login(page);

@@ -1,6 +1,6 @@
 import type { Job } from '@aklab/sqlite-queue';
 import nodemailer from 'nodemailer';
-import { fetchUndervaluedProperties, fetchSetting, logCron } from '@aklab/service-shared';
+import { fetchSetting, logCron } from '@aklab/service-shared';
 import { config } from './config';
 import { logger } from './utils/logger';
 
@@ -10,11 +10,58 @@ export interface DigestRequest {
   correlationId?: string;
 }
 
-const cityLabel: Record<string, string> = { moscow: 'Москва', mo: 'МО', other: 'Другой' };
-const typeLabel: Record<string, string> = {
-  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
-  production: 'Производство', free_purpose: 'Св. назн.', other: 'Другое',
+const BASE = config.strapi.url;
+const HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json',
+  ...(config.strapi.apiToken ? { Authorization: `Bearer ${config.strapi.apiToken}` } : {}),
 };
+
+const cityLabel: Record<string, string> = { moscow: 'Москва', mo: 'МО', other: 'Другой' };
+
+const tagLabel: Record<string, string> = {
+  undervalued: 'Недооценён',
+  has_minimum_price: 'Торги',
+  new: 'Новый',
+  large_area: 'Большая пл.',
+  moscow_mo: 'МСК/МО',
+};
+
+async function fetchFocusProperties(threshold: number): Promise<any[]> {
+  const url = `${BASE}/api/properties/focus?threshold=${threshold}&pageSize=100&sort=-focus_score`;
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) return [];
+  const json = await res.json();
+  return json.data || [];
+}
+
+function propertyRow(p: any): string {
+  const tags = (p.tags || []).map((t: string) =>
+    `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:8px;font-size:11px;background:#e0e7ff;color:#3730a3">${tagLabel[t] || t}</span>`
+  ).join(' ');
+  return `
+    <tr>
+      <td style="padding:8px;border-bottom:1px solid #eee"><a href="${p.url || '#'}">${p.title}</a></td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${cityLabel[p.city] || p.city}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.area_sqm ? p.area_sqm + ' м²' : '—'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price ? Number(p.price).toLocaleString('ru-RU') + ' ₽' : '—'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price_per_sqm ? Number(p.price_per_sqm).toLocaleString('ru-RU') + ' ₽/м²' : '—'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;color:${(p.focus_score || 0) >= 50 ? '#ef4444' : '#f59e0b'}">${p.focus_score ?? '—'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${tags || '—'}</td>
+    </tr>
+  `;
+}
+
+function tableHeader(): string {
+  return `<thead><tr style="background:#f5f5f5">
+    <th style="padding:8px;text-align:left">Название</th>
+    <th style="padding:8px;text-align:left">Город</th>
+    <th style="padding:8px;text-align:right">Площадь</th>
+    <th style="padding:8px;text-align:right">Цена</th>
+    <th style="padding:8px;text-align:right">₽/м²</th>
+    <th style="padding:8px;text-align:center">Скор</th>
+    <th style="padding:8px;text-align:left">Теги</th>
+  </tr></thead>`;
+}
 
 export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count: number }> {
   const req = job.data as DigestRequest;
@@ -22,58 +69,56 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
   const startedAt = new Date().toISOString();
 
   logger.info(`Digest triggered for ${req.date}`, { correlationId: corrId });
-  // Загружаем настройки для фильтрации по регионам
+
   const setting = await fetchSetting().catch(() => null);
   const regions: string[] = setting?.monitored_regions || ['moscow', 'mo'];
 
-  const properties = await fetchUndervaluedProperties(regions);
-  if (properties.length === 0) {
-    logger.info('No undervalued properties — skipping email', { correlationId: corrId });
+  const allFocus = await fetchFocusProperties(20);
+  const filtered = allFocus.filter((p: any) => regions.includes(p.city));
+
+  if (filtered.length === 0) {
+    logger.info('No focus properties — skipping email', { correlationId: corrId });
     return { sent: false, count: 0 };
   }
+
+  const hot = filtered.filter((p: any) => (p.focus_score || 0) >= 50);
+  const regular = filtered.filter((p: any) => (p.focus_score || 0) < 50);
 
   const smtpTo = req.smtpTo || config.smtp.user;
   if (!smtpTo) {
     logger.warn('No smtpTo address — skipping email', { correlationId: corrId });
-    return { sent: false, count: properties.length };
+    return { sent: false, count: filtered.length };
   }
 
-  // Формируем HTML
-  const rows = properties.map((p: any) => `
-    <tr>
-      <td style="padding:8px;border-bottom:1px solid #eee"><a href="${p.url || '#'}">${p.title}</a></td>
-      <td style="padding:8px;border-bottom:1px solid #eee">${p.address || '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee">${cityLabel[p.city] || p.city}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.area_sqm ? p.area_sqm + ' м²' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price ? Number(p.price).toLocaleString('ru-RU') + ' ₽' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price_per_sqm ? Number(p.price_per_sqm).toLocaleString('ru-RU') + ' ₽/м²' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;color:#f59e0b;font-weight:bold">${p.deviation_percent}%</td>
-    </tr>
-  `).join('');
+  let sectionsHtml = '';
+  if (hot.length > 0) {
+    sectionsHtml += `
+      <h3 style="color:#ef4444;margin-top:24px">🔥 Горячее (${hot.length})</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        ${tableHeader()}
+        <tbody>${hot.map(propertyRow).join('')}</tbody>
+      </table>`;
+  }
+  if (regular.length > 0) {
+    sectionsHtml += `
+      <h3 style="color:#f59e0b;margin-top:24px">📋 Обычное (${regular.length})</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        ${tableHeader()}
+        <tbody>${regular.map(propertyRow).join('')}</tbody>
+      </table>`;
+  }
+
+  const avgScore = Math.round(filtered.reduce((s: number, p: any) => s + (p.focus_score || 0), 0) / filtered.length);
 
   const html = `
     <div style="font-family:sans-serif;max-width:900px;margin:0 auto">
-      <h2 style="color:#333">AKLAB: Недооценённые объекты за ${req.date}</h2>
-      <p style="color:#666">Найдено <strong>${properties.length}</strong> объектов с ценой ниже эталона.</p>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <thead>
-          <tr style="background:#f5f5f5">
-            <th style="padding:8px;text-align:left">Название</th>
-            <th style="padding:8px;text-align:left">Адрес</th>
-            <th style="padding:8px;text-align:left">Город</th>
-            <th style="padding:8px;text-align:right">Площадь</th>
-            <th style="padding:8px;text-align:right">Цена</th>
-            <th style="padding:8px;text-align:right">₽/м²</th>
-            <th style="padding:8px;text-align:center">Отклонение</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <h2 style="color:#333">AKLAB: Объекты в фокусе — ${req.date}</h2>
+      <p style="color:#666">В фокусе: <strong>${filtered.length}</strong> объектов · Средний скор: <strong>${avgScore}</strong></p>
+      <p style="color:#666;font-size:13px">🔥 Горячее (скор ≥ 50): ${hot.length} · 📋 Обычное (20-49): ${regular.length}</p>
+      ${sectionsHtml}
       <p style="color:#999;font-size:12px;margin-top:24px">AKLAB — мониторинг коммерческой недвижимости</p>
-    </div>
-  `;
+    </div>`;
 
-  // Отправляем через nodemailer
   try {
     const transporter = nodemailer.createTransport({
       host: config.smtp.host,
@@ -81,26 +126,18 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
       secure: true,
       auth: { user: config.smtp.user, pass: config.smtp.pass },
     });
-
     await transporter.sendMail({
       from: config.smtp.from,
       to: smtpTo,
-      subject: `AKLAB: ${properties.length} недооценённых объектов — ${req.date}`,
+      subject: `AKLAB: ${filtered.length} объектов в фокусе (скор ${avgScore}) — ${req.date}`,
       html,
     });
-
-    logger.info(`Email sent to ${smtpTo} with ${properties.length} properties`, { correlationId: corrId });
+    logger.info(`Email sent: ${hot.length} hot + ${regular.length} regular`, { correlationId: corrId });
   } catch (err: any) {
     logger.error(`Email send failed: ${err.message}`, { correlationId: corrId });
     throw err;
   }
 
-  await logCron({
-    name: 'digest-send',
-    started_at: startedAt,
-    finished_at: new Date().toISOString(),
-    items_processed: properties.length,
-  }).catch(() => {});
-
-  return { sent: true, count: properties.length };
+  await logCron({ name: 'digest-send', started_at: startedAt, finished_at: new Date().toISOString(), items_processed: filtered.length }).catch(() => {});
+  return { sent: true, count: filtered.length };
 }
