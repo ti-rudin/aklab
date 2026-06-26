@@ -553,7 +553,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data).toBeDefined();
   });
 
-  test.skip(true, 'Needs custom endpoint') '9.7 API settings endpoint works', async ({ request }) => {
+  test.skip('9.7 API settings endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/settings`, {
       headers: { Authorization: `Bearer ${jwt}` },
@@ -563,7 +563,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data).toBeDefined();
   });
 
-  test.skip(true, 'Needs custom endpoint') '9.8 API market-references endpoint works', async ({ request }) => {
+  test.skip('9.8 API market-references endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/market-references`, {
       headers: { Authorization: `Bearer ${jwt}` },
@@ -573,7 +573,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data).toBeDefined();
   });
 
-  test.skip(true, 'Needs custom endpoint') '9.9 API property-events endpoint works', async ({ request }) => {
+  test.skip('9.9 API property-events endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/property-events?pagination[pageSize]=5`, {
       headers: { Authorization: `Bearer ${jwt}` },
