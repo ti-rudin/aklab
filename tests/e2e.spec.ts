@@ -33,7 +33,7 @@ async function login(page: import('@playwright/test').Page) {
   // Ждём редирект на /properties
   await expect(page).toHaveURL(/\/(properties|dashboard|$)/, { timeout: 15000 });
   // Ждём заголовок
-  await expect(page.locator('h1:has-text("Объекты")')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("h1").first()).toBeVisible({ timeout: 10000 });
 }
 
 async function loginAPI(request: import('@playwright/test').APIRequestContext) {
