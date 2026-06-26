@@ -41,35 +41,51 @@ fi
 # Changelog content
 CHANGELOG_CONTENT=""
 if [ -n "$CHANGELOG_FILE" ] && [ -f "$CHANGELOG_FILE" ]; then
-  CHANGELOG_CONTENT=$(cat "$CHANGELOG_FILE" | head -30)
+  CHANGELOG_CONTENT=$(head -30 "$CHANGELOG_FILE")
 fi
 
 # Формируем тему и тело
 if [ "$STATUS" = "success" ]; then
   SUBJECT="✅ AKLAB $ENV — $VERSION"
-  BODY="Деплой $VERSION на $ENV выполнен успешно.\n\nВремя: $TIMESTAMP"
+  BODY="Деплой $VERSION на $ENV выполнен успешно.
+
+Время: $TIMESTAMP"
   if [ -n "$CHANGELOG_CONTENT" ]; then
-    BODY="$BODY\n\n--- Изменения ---\n$CHANGELOG_CONTENT"
+    BODY="$BODY
+
+--- Изменения ---
+$CHANGELOG_CONTENT"
   fi
 else
   SUBJECT="❌ AKLAB $ENV FAILED — $VERSION"
-  BODY="Деплой $VERSION на $ENV провалился.\n\nВремя: $TIMESTAMP\nОшибка: $ERROR_MSG\n\nТребуется ручное вмешательство."
+  BODY="Деплой $VERSION на $ENV провалился.
+
+Время: $TIMESTAMP
+Ошибка: $ERROR_MSG
+
+Требуется ручное вмешательство."
 fi
+
+# Пишем тело во временный файл (избежать quoting проблем)
+BODY_FILE=$(mktemp /tmp/deploy-notify-XXXXXX.txt)
+echo "$BODY" > "$BODY_FILE"
 
 # Отправляем через Node.js + nodemailer
 node -e "
 const nodemailer = require('nodemailer');
+const fs = require('fs');
 const transporter = nodemailer.createTransport({
-  host: '${SMTP_HOST}',
-  port: ${SMTP_PORT},
+  host: process.env.SMTP_HOST || '${SMTP_HOST}',
+  port: parseInt(process.env.SMTP_PORT || '${SMTP_PORT}'),
   secure: true,
-  auth: { user: '${SMTP_USER}', pass: '${SMTP_PASS}' }
+  auth: { user: process.env.SMTP_USER || '${SMTP_USER}', pass: process.env.SMTP_PASS || '${SMTP_PASS}' }
 });
+const body = fs.readFileSync('${BODY_FILE}', 'utf8');
 transporter.sendMail({
-  from: '${SMTP_USER}',
+  from: process.env.SMTP_USER || '${SMTP_USER}',
   to: '${NOTIFY_EMAIL}',
-  subject: $(python3 -c "import json; print(json.dumps('$SUBJECT'))"),
-  text: $(python3 -c "import json; print(json.dumps('$(echo -e "$BODY")'))")
+  subject: '${SUBJECT}',
+  text: body
 }).then(() => {
   console.log('✅ Email sent to ${NOTIFY_EMAIL}');
 }).catch(e => {
@@ -77,3 +93,5 @@ transporter.sendMail({
   process.exit(1);
 });
 "
+
+rm -f "$BODY_FILE"
