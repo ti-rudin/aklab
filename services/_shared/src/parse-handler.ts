@@ -43,6 +43,7 @@ export function createParseHandler(parser: SourceParser) {
             city: prop.city,
             area_sqm: prop.area_sqm,
             price: prop.price,
+            minimum_price: prop.minimum_price,
             price_per_sqm: prop.price_per_sqm,
             property_type: prop.property_type,
             auction_type: prop.auction_type,

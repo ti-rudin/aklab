@@ -1,0 +1,39 @@
+{
+  "kind": "collectionType",
+  "collectionName": "property_events",
+  "info": {
+    "singularName": "property-event",
+    "pluralName": "property-events",
+    "displayName": "Property Event"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "property": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::property.property",
+      "inversedBy": "property_events"
+    },
+    "event_type": {
+      "type": "enumeration",
+      "enum": [
+        "created",
+        "entered_focus",
+        "left_focus",
+        "score_changed",
+        "status_changed",
+        "price_changed"
+      ],
+      "required": true
+    },
+    "old_value": {
+      "type": "text"
+    },
+    "new_value": {
+      "type": "text"
+    }
+  }
+}

@@ -462,6 +462,44 @@ export interface ApiCronLogCronLog extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiFocusRuleFocusRule extends Struct.CollectionTypeSchema {
+  collectionName: 'focus_rules';
+  info: {
+    displayName: 'Focus Rule';
+    pluralName: 'focus-rules';
+    singularName: 'focus-rule';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    condition_type: Schema.Attribute.Enumeration<
+      ['deviation_threshold', 'has_field', 'city_match', 'custom']
+    > &
+      Schema.Attribute.Required;
+    condition_value: Schema.Attribute.String;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    description: Schema.Attribute.Text;
+    is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::focus-rule.focus-rule'
+    > &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String & Schema.Attribute.Required;
+    priority: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    publishedAt: Schema.Attribute.DateTime;
+    score: Schema.Attribute.Integer & Schema.Attribute.Required;
+    tag: Schema.Attribute.String & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiMarketReferenceMarketReference
   extends Struct.CollectionTypeSchema {
   collectionName: 'market_references';
@@ -501,6 +539,49 @@ export interface ApiMarketReferenceMarketReference
   };
 }
 
+export interface ApiPropertyEventPropertyEvent
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'property_events';
+  info: {
+    displayName: 'Property Event';
+    pluralName: 'property-events';
+    singularName: 'property-event';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    created_at: Schema.Attribute.DateTime;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    event_type: Schema.Attribute.Enumeration<
+      [
+        'created',
+        'entered_focus',
+        'left_focus',
+        'score_changed',
+        'status_changed',
+        'price_changed',
+      ]
+    > &
+      Schema.Attribute.Required;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::property-event.property-event'
+    > &
+      Schema.Attribute.Private;
+    new_value: Schema.Attribute.Text;
+    old_value: Schema.Attribute.Text;
+    property: Schema.Attribute.Relation<'manyToOne', 'api::property.property'>;
+    publishedAt: Schema.Attribute.DateTime;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
   collectionName: 'properties';
   info: {
@@ -531,6 +612,10 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
     description: Schema.Attribute.Text;
     deviation_percent: Schema.Attribute.Decimal;
     external_id: Schema.Attribute.String & Schema.Attribute.Required;
+    first_seen_at: Schema.Attribute.DateTime;
+    focus_score: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<0>;
     is_undervalued: Schema.Attribute.Boolean;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
@@ -539,8 +624,17 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     manual_price_per_sqm: Schema.Attribute.Decimal;
+    minimum_price: Schema.Attribute.Decimal;
+    photo_urls: Schema.Attribute.JSON;
+    photos: Schema.Attribute.JSON;
+    photos_downloaded: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
     price: Schema.Attribute.Decimal;
     price_per_sqm: Schema.Attribute.Decimal;
+    property_events: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::property-event.property-event'
+    >;
     property_type: Schema.Attribute.Enumeration<
       ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']
     > &
@@ -568,6 +662,7 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<'new'>;
+    tags: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
     title: Schema.Attribute.String & Schema.Attribute.Required;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
@@ -598,6 +693,8 @@ export interface ApiSettingSetting extends Struct.SingleTypeSchema {
       'api::setting.setting'
     > &
       Schema.Attribute.Private;
+    monitored_regions: Schema.Attribute.JSON &
+      Schema.Attribute.DefaultTo<['moscow', 'mo']>;
     publishedAt: Schema.Attribute.DateTime;
     retention_months: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<6>;
     smtp_to: Schema.Attribute.String;
@@ -629,6 +726,14 @@ export interface ApiSourceSource extends Struct.CollectionTypeSchema {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    health_port: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          max: 65535;
+          min: 1024;
+        },
+        number
+      >;
     is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
     last_parse_error: Schema.Attribute.Text;
     last_parse_status: Schema.Attribute.Enumeration<
@@ -679,6 +784,11 @@ export interface ApiSourceSource extends Struct.CollectionTypeSchema {
         maxLength: 100;
       }> &
       Schema.Attribute.DefaultTo<'\u041C\u043E\u0441\u043A\u0432\u0430 \u0438 \u041C\u041E'>;
+    schedule: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 50;
+      }> &
+      Schema.Attribute.DefaultTo<'0 3 * * *'>;
     slug: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &
@@ -1252,7 +1362,9 @@ declare module '@strapi/strapi' {
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
       'api::cron-log.cron-log': ApiCronLogCronLog;
+      'api::focus-rule.focus-rule': ApiFocusRuleFocusRule;
       'api::market-reference.market-reference': ApiMarketReferenceMarketReference;
+      'api::property-event.property-event': ApiPropertyEventPropertyEvent;
       'api::property.property': ApiPropertyProperty;
       'api::setting.setting': ApiSettingSetting;
       'api::source.source': ApiSourceSource;

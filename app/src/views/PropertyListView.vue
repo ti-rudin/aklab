@@ -2,361 +2,655 @@
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold" style="color: var(--text-main)">Объекты</h1>
-      <span class="text-sm" style="color: var(--text-muted)">{{ total }} шт.</span>
+      <span class="text-sm" style="color: var(--text-muted)">{{ activeTab === 'all' ? total : focusTotal }} шт.</span>
     </div>
 
-    <!-- Кнопки действий -->
-    <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+    <!-- Табы -->
+    <div class="flex gap-2 mb-6">
       <button
-        @click="runPipeline"
-        :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
-        class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+        @click="activeTab = 'all'"
+        class="px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
         :style="{
-          background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
-          border: '1px solid var(--border-subtle)',
-          color: pipelineStage === 'done' ? '#fff' : 'var(--text-main)',
+          background: activeTab === 'all' ? 'var(--accent)' : 'var(--bg-elevated)',
+          color: activeTab === 'all' ? '#fff' : 'var(--text-main)',
+          border: activeTab === 'all' ? 'none' : '1px solid var(--border-subtle)',
         }"
-      >
-        <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">Ручной запуск</template>
-        <template v-else-if="pipelineStage === 'done'">Готово — запустить ещё раз</template>
-        <template v-else>Выполняется...</template>
-      </button>
+      >Все объекты</button>
       <button
-        @click="clearNew"
-        :disabled="clearing"
-        class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-        style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
-      >
-        {{ clearing ? 'Удаление...' : 'Очистить список' }}
-      </button>
+        @click="switchToFocus"
+        class="px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
+        :style="{
+          background: activeTab === 'focus' ? 'var(--accent)' : 'var(--bg-elevated)',
+          color: activeTab === 'focus' ? '#fff' : 'var(--text-main)',
+          border: activeTab === 'focus' ? 'none' : '1px solid var(--border-subtle)',
+        }"
+      >В фокусе</button>
     </div>
 
-    <!-- Параметры запуска -->
-    <div class="mb-4">
-      <button @click="launchFiltersOpen = !launchFiltersOpen" 
-        class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
-        style="color: var(--text-muted)">
-        <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
-        <span>Параметры запуска</span>
-        <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-xs rounded-full" 
-          style="background: var(--accent); color: white">{{ activeFilterCount }}</span>
-      </button>
-      
-      <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border" 
-        style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-        <!-- Price range -->
-        <div class="mb-4">
-          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена лота (₽)</label>
-          <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2 items-center">
-            <input v-model="launchFilters.priceFrom" type="number" placeholder="от" min="0"
-              class="w-full px-3 py-2 rounded-lg border text-sm"
-              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            <span class="text-sm text-center hidden sm:inline" style="color: var(--text-muted)">—</span>
-            <input v-model="launchFilters.priceTo" type="number" placeholder="до" min="0"
-              class="w-full px-3 py-2 rounded-lg border text-sm"
-              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-          </div>
-        </div>
+    <!-- ============================== -->
+    <!-- ВСЕ ОБЪЕКТЫ (существующий UI) -->
+    <!-- ============================== -->
+    <template v-if="activeTab === 'all'">
+      <!-- Кнопки действий -->
+      <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+        <button
+          @click="runPipeline"
+          :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
+          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+          :style="{
+            background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            color: pipelineStage === 'done' ? '#fff' : 'var(--text-main)',
+          }"
+        >
+          <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">Ручной запуск</template>
+          <template v-else-if="pipelineStage === 'done'">Готово — запустить ещё раз</template>
+          <template v-else>Выполняется...</template>
+        </button>
+        <button
+          @click="clearNew"
+          :disabled="clearing"
+          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
+        >
+          {{ clearing ? 'Удаление...' : 'Очистить список' }}
+        </button>
+      </div>
+
+      <!-- Параметры запуска -->
+      <div class="mb-4">
+        <button @click="launchFiltersOpen = !launchFiltersOpen" 
+          class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
+          style="color: var(--text-muted)">
+          <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
+          <span>Параметры запуска</span>
+          <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-xs rounded-full" 
+            style="background: var(--accent); color: white">{{ activeFilterCount }}</span>
+        </button>
         
-        <!-- Cities -->
-        <div class="mb-4">
-          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
-          <div class="grid grid-cols-3 gap-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-              <span class="text-sm" style="color: var(--text-main)">Москва</span>
+        <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border" 
+          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+          <!-- Price range -->
+          <div class="mb-4">
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена лота (₽)</label>
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2 items-center">
+              <input v-model="launchFilters.priceFrom" type="number" placeholder="от" min="0"
+                class="w-full px-3 py-2 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+              <span class="text-sm text-center hidden sm:inline" style="color: var(--text-muted)">—</span>
+              <input v-model="launchFilters.priceTo" type="number" placeholder="до" min="0"
+                class="w-full px-3 py-2 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            </div>
+          </div>
+          
+          <!-- Cities -->
+          <div class="mb-4">
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
+            <div class="grid grid-cols-3 gap-2">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">Москва</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">МО</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" v-model="launchFilters.cities.other" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">Другие</span>
+              </label>
+            </div>
+          </div>
+          
+          <!-- Threshold -->
+          <div class="mb-4">
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
+              Порог отсечения: <span class="font-semibold" style="color: var(--text-main)">{{ launchFilters.threshold }}%</span>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-              <span class="text-sm" style="color: var(--text-main)">МО</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="launchFilters.cities.other" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-              <span class="text-sm" style="color: var(--text-main)">Другие</span>
-            </label>
+            <div class="flex items-center gap-3">
+              <input v-model.number="launchFilters.threshold" type="range" min="1" max="99" step="1"
+                class="flex-1 min-w-0" style="accent-color: var(--accent)" />
+              <input v-model.number="launchFilters.threshold" type="number" min="1" max="99"
+                class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            </div>
           </div>
-        </div>
-        
-        <!-- Threshold -->
-        <div class="mb-4">
-          <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
-            Порог отсечения: <span class="font-semibold" style="color: var(--text-main)">{{ launchFilters.threshold }}%</span>
-          </label>
-          <div class="flex items-center gap-3">
-            <input v-model.number="launchFilters.threshold" type="range" min="1" max="99" step="1"
-              class="flex-1 min-w-0" style="accent-color: var(--accent)" />
-            <input v-model.number="launchFilters.threshold" type="number" min="1" max="99"
-              class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
-              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-          </div>
-        </div>
-        
-        <!-- Actions -->
-        <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-2 border-t" style="border-color: var(--border-subtle)">
-          <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
-            style="color: var(--text-muted)">Сбросить</button>
-          <span class="text-xs" style="color: var(--text-muted)">
-            Фильтры применяются к этапу анализа
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Прогресс пайплайна -->
-    <div v-if="pipelineStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
-      <!-- Парсинг -->
-      <div class="flex items-center gap-3">
-        <span class="flex-shrink-0 w-5 text-center">
-          <template v-if="pipelineStage === 'parsing'">⏳</template>
-          <template v-else-if="parseDone">✓</template>
-          <template v-else>○</template>
-        </span>
-        <div class="flex-1">
-          <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
-          <div class="text-xs" style="color: var(--text-muted)">
-            <template v-if="pipelineStage === 'parsing'">
-              {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников обработано
-            </template>
-            <template v-else-if="parseDone">
-              {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
-              <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
-            </template>
-            <template v-else>Ожидание...</template>
-          </div>
-        </div>
-      </div>
-
-      <!-- Analyze -->
-      <div class="flex items-center gap-3">
-        <span class="flex-shrink-0 w-5 text-center">
-          <template v-if="pipelineStage === 'analyzing'">⏳</template>
-          <template v-else-if="analyzeDone">✓</template>
-          <template v-else>○</template>
-        </span>
-        <div class="flex-1">
-          <div class="text-sm font-medium" style="color: var(--text-primary)">Анализ</div>
-          <div class="text-xs" style="color: var(--text-muted)">
-            <template v-if="pipelineStage === 'analyzing'">
-              {{ analyzePending }} объектов в очереди
-            </template>
-            <template v-else-if="analyzeDone">
-              {{ pipelineResults.undervaluedTotal }} недооценённых
-              <template v-if="pipelineResults.undervaluedByCity.moscow"> · МСК: {{ pipelineResults.undervaluedByCity.moscow }}</template>
-              <template v-if="pipelineResults.undervaluedByCity.mo"> · МО: {{ pipelineResults.undervaluedByCity.mo }}</template>
-              <template v-if="pipelineResults.undervaluedByCity.other"> · Регионы: {{ pipelineResults.undervaluedByCity.other }}</template>
-            </template>
-            <template v-else>Ожидание...</template>
-          </div>
-        </div>
-      </div>
-
-      <!-- Digest -->
-      <div class="flex items-center gap-3">
-        <span class="flex-shrink-0 w-5 text-center">
-          <template v-if="pipelineStage === 'digesting'">⏳</template>
-          <template v-else-if="digestDone">✓</template>
-          <template v-else>○</template>
-        </span>
-        <div class="flex-1">
-          <div class="text-sm font-medium" style="color: var(--text-primary)">Дайджест</div>
-          <div class="text-xs" style="color: var(--text-muted)">
-            <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
-            <template v-else-if="digestDone && pipelineResults.digestSent">
-              Отправлено {{ pipelineResults.digestCount }} объектов
-            </template>
-            <template v-else-if="digestDone && pipelineResults.digestSkipped">
-              Нет недооценённых объектов в выбранных регионах
-            </template>
-            <template v-else-if="digestDone">Отправлен</template>
-            <template v-else>Ожидание...</template>
-          </div>
-        </div>
-      </div>
-
-      <!-- Done -->
-      <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-        ✓ Пайплайн завершён · Парсинг: {{ pipelineResults.parseTotal }} объектов · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
-      </div>
-
-      <!-- Error -->
-      <div v-if="pipelineStage === 'error'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
-        ✗ {{ pipelineError || 'Ошибка пайплайна' }}
-      </div>
-    </div>
-
-    <!-- Фильтры -->
-    <div class="rounded-xl p-3 sm:p-4 border mb-6 grid grid-cols-2 sm:flex sm:flex-row sm:flex-wrap gap-2 sm:gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
-        <select v-model="filters.city" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option value="moscow">Москва</option>
-          <option value="mo">МО</option>
-          <option value="other">Другой</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
-        <select v-model="filters.status" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option value="new">Новый</option>
-          <option value="in_progress">В работе</option>
-          <option value="viewed">Просмотрен</option>
-          <option value="rejected">Отклонён</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
-        <select v-model="filters.source" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
-        <select v-model="filters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option value="office">Офис</option>
-          <option value="warehouse">Склад</option>
-          <option value="retail">Торговля</option>
-          <option value="production">Производство</option>
-          <option value="free_purpose">Св. назначения</option>
-          <option value="other">Другое</option>
-        </select>
-      </div>
-      <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5 col-span-2 sm:col-span-1">
-        <input type="checkbox" v-model="filters.undervalued" class="rounded" />
-        <span class="text-sm" style="color: var(--text-muted)">Только недооценённые</span>
-      </label>
-      <button @click="resetFilters" class="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
-    </div>
-
-    <!-- Loading -->
-    <SkeletonTable v-if="loading" :rows="6" />
-
-    <!-- Пусто -->
-    <div v-else-if="items.length === 0" class="text-center py-16">
-      <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов</p>
-      <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
-    </div>
-
-    <!-- Desktop: Таблица -->
-    <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
-      <table class="w-full text-sm">
-        <thead>
-          <tr style="background: var(--bg-elevated)">
-            <th class="text-left px-3 py-2 font-semibold whitespace-nowrap" style="color: var(--text-muted)">Название</th>
-            <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
-            <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
-            <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
-            <th @click="toggleSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-              Площадь <span v-if="sort.field === 'area_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-            </th>
-            <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
-            <th @click="toggleSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-              ₽/м² <span v-if="sort.field === 'price_per_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-            </th>
-            <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Статус</th>
-            <th @click="toggleSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-              Оценка <span v-if="sort.field === 'deviation_percent'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in items" :key="item.id"
-            class="border-t cursor-pointer transition-colors hover:opacity-80"
-            :style="{ borderColor: 'var(--border-subtle)' }"
-            @click="router.push(`/properties/${item.documentId}`)">
-            <td class="px-3 py-2 max-w-[200px] truncate font-medium" style="color: var(--text-main)">{{ item.title }}</td>
-            <td class="px-3 py-2 max-w-[200px] truncate" style="color: var(--text-muted)">{{ item.address || '—' }}</td>
-            <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-main)">{{ cityLabel(item.city) }}</td>
-            <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-muted)">{{ typeLabel(item.property_type) }}</td>
-            <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
-            <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
-            <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
-            <td class="px-3 py-2 text-center">
-              <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
-            </td>
-            <td class="px-3 py-2 text-center">
-              <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
-                ⚠ {{ item.deviation_percent }}%
-              </span>
-              <span v-else class="text-xs" style="color: var(--text-muted)">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Mobile: Карточки -->
-    <div v-if="!loading && items.length > 0" class="md:hidden space-y-3">
-      <div
-        v-for="item in items"
-        :key="item.id"
-        class="rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
-        style="background: var(--bg-elevated); border-color: var(--border-subtle)"
-        @click="router.push(`/properties/${item.documentId}`)"
-      >
-        <!-- Заголовок + badges -->
-        <div class="flex items-start justify-between gap-2 mb-2">
-          <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
-            <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">
-              ⚠ {{ item.deviation_percent }}%
+          
+          <!-- Actions -->
+          <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-2 border-t" style="border-color: var(--border-subtle)">
+            <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
+              style="color: var(--text-muted)">Сбросить</button>
+            <span class="text-xs" style="color: var(--text-muted)">
+              Фильтры применяются к этапу анализа
             </span>
           </div>
         </div>
+      </div>
 
-        <!-- Адрес + город + тип -->
-        <div class="text-xs mb-3" style="color: var(--text-muted)">
-          <span v-if="item.address">{{ item.address }}</span>
-          <span v-if="item.address && (item.city || item.property_type)"> · </span>
-          <span v-if="item.city">{{ cityLabel(item.city) }}</span>
-          <span v-if="item.city && item.property_type"> · </span>
-          <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+      <!-- Прогресс пайплайна -->
+      <div v-if="pipelineStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+        <!-- Парсинг -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'parsing'">⏳</template>
+            <template v-else-if="parseDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'parsing'">
+                {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников обработано
+              </template>
+              <template v-else-if="parseDone">
+                {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
+                <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
+              </template>
+              <template v-else>Ожидание...</template>
+            </div>
+          </div>
         </div>
 
-        <!-- Метрики -->
-        <div class="grid grid-cols-3 gap-3">
-          <div>
-            <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
-            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
+        <!-- Analyze -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'analyzing'">⏳</template>
+            <template v-else-if="analyzeDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Анализ</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'analyzing'">
+                {{ analyzePending }} объектов в очереди
+              </template>
+              <template v-else-if="analyzeDone">
+                {{ pipelineResults.undervaluedTotal }} недооценённых
+                <template v-if="pipelineResults.undervaluedByCity.moscow"> · МСК: {{ pipelineResults.undervaluedByCity.moscow }}</template>
+                <template v-if="pipelineResults.undervaluedByCity.mo"> · МО: {{ pipelineResults.undervaluedByCity.mo }}</template>
+                <template v-if="pipelineResults.undervaluedByCity.other"> · Регионы: {{ pipelineResults.undervaluedByCity.other }}</template>
+              </template>
+              <template v-else>Ожидание...</template>
+            </div>
           </div>
-          <div>
-            <div class="text-xs" style="color: var(--text-muted)">Цена</div>
-            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</div>
+        </div>
+
+        <!-- Digest -->
+        <div class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-5 text-center">
+            <template v-if="pipelineStage === 'digesting'">⏳</template>
+            <template v-else-if="digestDone">✓</template>
+            <template v-else>○</template>
+          </span>
+          <div class="flex-1">
+            <div class="text-sm font-medium" style="color: var(--text-primary)">Дайджест</div>
+            <div class="text-xs" style="color: var(--text-muted)">
+              <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
+              <template v-else-if="digestDone && pipelineResults.digestSent">
+                Отправлено {{ pipelineResults.digestCount }} объектов
+              </template>
+              <template v-else-if="digestDone && pipelineResults.digestSkipped">
+                Нет недооценённых объектов в выбранных регионах
+              </template>
+              <template v-else-if="digestDone">Отправлен</template>
+              <template v-else>Ожидание...</template>
+            </div>
           </div>
-          <div>
-            <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
-            <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+        </div>
+
+        <!-- Done -->
+        <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
+          ✓ Пайплайн завершён · Парсинг: {{ pipelineResults.parseTotal }} объектов · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
+        </div>
+
+        <!-- Error -->
+        <div v-if="pipelineStage === 'error'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
+          ✗ {{ pipelineError || 'Ошибка пайплайна' }}
+        </div>
+      </div>
+
+      <!-- Фильтры -->
+      <div class="rounded-xl p-3 sm:p-4 border mb-6 grid grid-cols-2 sm:flex sm:flex-row sm:flex-wrap gap-2 sm:gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <div>
+          <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
+          <select v-model="filters.city" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+            <option value="">Все</option>
+            <option value="moscow">Москва</option>
+            <option value="mo">МО</option>
+            <option value="other">Другой</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
+          <select v-model="filters.status" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+            <option value="">Все</option>
+            <option value="new">Новый</option>
+            <option value="in_progress">В работе</option>
+            <option value="viewed">Просмотрен</option>
+            <option value="rejected">Отклонён</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
+          <select v-model="filters.source" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+            <option value="">Все</option>
+            <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
+          <select v-model="filters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+            <option value="">Все</option>
+            <option value="office">Офис</option>
+            <option value="warehouse">Склад</option>
+            <option value="retail">Торговля</option>
+            <option value="production">Производство</option>
+            <option value="free_purpose">Св. назначения</option>
+            <option value="other">Другое</option>
+          </select>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5 col-span-2 sm:col-span-1">
+          <input type="checkbox" v-model="filters.undervalued" class="rounded" />
+          <span class="text-sm" style="color: var(--text-muted)">Только недооценённые</span>
+        </label>
+        <button @click="resetFilters" class="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
+      </div>
+
+      <!-- Loading -->
+      <SkeletonTable v-if="loading" :rows="6" />
+
+      <!-- Пусто -->
+      <div v-else-if="items.length === 0" class="text-center py-16">
+        <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов</p>
+        <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
+      </div>
+
+      <!-- Desktop: Таблица -->
+      <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
+        <table class="w-full text-sm">
+          <thead>
+            <tr style="background: var(--bg-elevated)">
+              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap" style="color: var(--text-muted)">Название</th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
+              <th @click="toggleSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Площадь <span v-if="sort.field === 'area_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
+              <th @click="toggleSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                ₽/м² <span v-if="sort.field === 'price_per_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Статус</th>
+              <th @click="toggleSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Оценка <span v-if="sort.field === 'deviation_percent'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in items" :key="item.id"
+              class="border-t cursor-pointer transition-colors hover:opacity-80"
+              :style="{ borderColor: 'var(--border-subtle)' }"
+              @click="router.push(`/properties/${item.documentId}`)">
+              <td class="px-3 py-2 max-w-[200px] truncate font-medium" style="color: var(--text-main)">{{ item.title }}</td>
+              <td class="px-3 py-2 max-w-[200px] truncate" style="color: var(--text-muted)">{{ item.address || '—' }}</td>
+              <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-main)">{{ cityLabel(item.city) }}</td>
+              <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-muted)">{{ typeLabel(item.property_type) }}</td>
+              <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
+              <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
+              <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
+              <td class="px-3 py-2 text-center">
+                <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
+              </td>
+              <td class="px-3 py-2 text-center">
+                <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
+                  ⚠ {{ item.deviation_percent }}%
+                </span>
+                <span v-else class="text-xs" style="color: var(--text-muted)">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile: Карточки -->
+      <div v-if="!loading && items.length > 0" class="md:hidden space-y-3">
+        <div
+          v-for="item in items"
+          :key="item.id"
+          class="rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
+          style="background: var(--bg-elevated); border-color: var(--border-subtle)"
+          @click="router.push(`/properties/${item.documentId}`)"
+        >
+          <!-- Заголовок + badges -->
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
+              <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">
+                ⚠ {{ item.deviation_percent }}%
+              </span>
+            </div>
+          </div>
+
+          <!-- Адрес + город + тип -->
+          <div class="text-xs mb-3" style="color: var(--text-muted)">
+            <span v-if="item.address">{{ item.address }}</span>
+            <span v-if="item.address && (item.city || item.property_type)"> · </span>
+            <span v-if="item.city">{{ cityLabel(item.city) }}</span>
+            <span v-if="item.city && item.property_type"> · </span>
+            <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+          </div>
+
+          <!-- Метрики -->
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">Цена</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Пагинация -->
-    <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
-      <button @click="page > 1 && page--" :disabled="page <= 1"
-        class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
-        :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-        ‹
-      </button>
-      <template v-for="p in visiblePages" :key="String(p)">
-        <span v-if="p === '...'" class="px-1 text-sm hidden sm:inline" style="color: var(--text-muted)">…</span>
-        <button v-else @click="page = Number(p)"
-          class="px-2 py-1 sm:px-3 rounded-lg text-xs sm:text-sm hidden sm:inline-block"
-          :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-          {{ p }}
+      <!-- Пагинация -->
+      <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
+        <button @click="page > 1 && page--" :disabled="page <= 1"
+          class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+          :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+          ‹
         </button>
-      </template>
-      <span class="sm:hidden text-xs px-2" style="color: var(--text-muted)">{{ page }} / {{ totalPages }}</span>
-      <button @click="page < totalPages && page++" :disabled="page >= totalPages"
-        class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
-        :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-        ›
-      </button>
-    </div>
+        <template v-for="p in visiblePages" :key="String(p)">
+          <span v-if="p === '...'" class="px-1 text-sm hidden sm:inline" style="color: var(--text-muted)">…</span>
+          <button v-else @click="page = Number(p)"
+            class="px-2 py-1 sm:px-3 rounded-lg text-xs sm:text-sm hidden sm:inline-block"
+            :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+            {{ p }}
+          </button>
+        </template>
+        <span class="sm:hidden text-xs px-2" style="color: var(--text-muted)">{{ page }} / {{ totalPages }}</span>
+        <button @click="page < totalPages && page++" :disabled="page >= totalPages"
+          class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+          :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+          ›
+        </button>
+      </div>
+    </template>
+
+    <!-- ============================== -->
+    <!-- В ФОКУСЕ (новый UI)           -->
+    <!-- ============================== -->
+    <template v-if="activeTab === 'focus'">
+      <!-- Stats header -->
+      <div class="mb-4 text-sm font-medium" style="color: var(--text-main)">
+        В фокусе: <span class="font-bold">{{ focusTotal }}</span> объектов
+        <template v-if="focusAvgScore !== null"> · Средний скор: <span class="font-bold">{{ focusAvgScore }}</span></template>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+        <button
+          @click="recalculateScore"
+          :disabled="scoringLoading"
+          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
+        >
+          {{ scoringLoading ? 'Пересчёт...' : '🔄 Пересчитать' }}
+        </button>
+        <button
+          @click="exportCSV"
+          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
+          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
+        >
+          📥 Экспорт CSV
+        </button>
+      </div>
+
+      <!-- Focus filters -->
+      <div class="rounded-xl p-3 sm:p-4 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Порог (threshold) -->
+          <div>
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
+              Порог: <span class="font-semibold" style="color: var(--text-main)">{{ focusFilters.threshold }}</span>
+            </label>
+            <div class="flex items-center gap-3">
+              <input v-model.number="focusFilters.threshold" type="range" min="0" max="100" step="1"
+                class="flex-1 min-w-0" style="accent-color: var(--accent)" />
+              <input v-model.number="focusFilters.threshold" type="number" min="0" max="100"
+                class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            </div>
+          </div>
+
+          <!-- Город (checkboxes) -->
+          <div>
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
+            <div class="flex flex-wrap gap-3">
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" v-model="focusFilters.cities.moscow" class="rounded" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">Москва</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" v-model="focusFilters.cities.mo" class="rounded" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">МО</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" v-model="focusFilters.cities.other" class="rounded" style="accent-color: var(--accent)" />
+                <span class="text-sm" style="color: var(--text-main)">Другие</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Тип недвижимости -->
+          <div>
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Тип недвижимости</label>
+            <select v-model="focusFilters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+              <option value="">Все</option>
+              <option value="office">Офис</option>
+              <option value="warehouse">Склад</option>
+              <option value="retail">Торговля</option>
+              <option value="production">Производство</option>
+              <option value="free_purpose">Св. назначения</option>
+              <option value="other">Другое</option>
+            </select>
+          </div>
+
+          <!-- Теги -->
+          <div class="sm:col-span-2 lg:col-span-1">
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Теги</label>
+            <div class="flex flex-wrap gap-2">
+              <label v-for="tag in availableTags" :key="tag.value" class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" :value="tag.value" v-model="focusFilters.tags" class="rounded" style="accent-color: var(--accent)" />
+                <span class="text-xs px-1.5 py-0.5 rounded-full" :style="{ background: tag.bgColor, color: tag.textColor }">{{ tag.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Цена -->
+          <div>
+            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена (₽)</label>
+            <div class="flex gap-2 items-center">
+              <input v-model="focusFilters.priceFrom" type="number" placeholder="от" min="0"
+                class="w-full px-2 py-1.5 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+              <span class="text-sm" style="color: var(--text-muted)">—</span>
+              <input v-model="focusFilters.priceTo" type="number" placeholder="до" min="0"
+                class="w-full px-2 py-1.5 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Reset -->
+        <div class="mt-3 pt-2 border-t flex justify-end" style="border-color: var(--border-subtle)">
+          <button @click="resetFocusFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80"
+            style="color: var(--text-muted)">Сбросить фильтры</button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <SkeletonTable v-if="focusLoading" :rows="6" />
+
+      <!-- Пусто -->
+      <div v-else-if="focusItems.length === 0" class="text-center py-16">
+        <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов в фокусе</p>
+        <p class="text-sm" style="color: var(--text-muted)">Запустите пересчёт скоров или измените фильтры</p>
+      </div>
+
+      <!-- Desktop: Focus Table -->
+      <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
+        <table class="w-full text-sm">
+          <thead>
+            <tr style="background: var(--bg-elevated)">
+              <th class="px-3 py-2 w-8">
+                <input type="checkbox" :checked="allFocusChecked" @change="toggleAllFocus" class="rounded" style="accent-color: var(--accent)" />
+              </th>
+              <th @click="toggleFocusSort('title')" class="text-left px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80 whitespace-nowrap" style="color: var(--text-muted)">
+                Название <span v-if="focusSort.field === 'title'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
+              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
+              <th @click="toggleFocusSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Площадь <span v-if="focusSort.field === 'area_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th @click="toggleFocusSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                ₽/м² <span v-if="focusSort.field === 'price_per_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th @click="toggleFocusSort('focus_score')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Скор <span v-if="focusSort.field === 'focus_score'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Теги</th>
+              <th @click="toggleFocusSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Оценка <span v-if="focusSort.field === 'deviation_percent'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in focusItems" :key="item.id"
+              class="border-t cursor-pointer transition-colors hover:opacity-80"
+              :style="{ borderColor: 'var(--border-subtle)' }">
+              <td class="px-3 py-2" @click.stop>
+                <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded" style="accent-color: var(--accent)" />
+              </td>
+              <td class="px-3 py-2 max-w-[200px] truncate font-medium" style="color: var(--text-main)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ item.title }}</td>
+              <td class="px-3 py-2 max-w-[200px] truncate" style="color: var(--text-muted)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ item.address || '—' }}</td>
+              <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-main)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ cityLabel(item.city) }}</td>
+              <td class="px-3 py-2 whitespace-nowrap" style="color: var(--text-muted)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ typeLabel(item.property_type) }}</td>
+              <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
+              <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
+              <td class="px-3 py-2 text-right font-mono font-semibold" style="color: var(--text-main)"
+                @click="router.push(`/properties/${item.documentId}`)">{{ item.focus_score ?? '—' }}</td>
+              <td class="px-3 py-2" @click="router.push(`/properties/${item.documentId}`)">
+                <div class="flex flex-wrap gap-1">
+                  <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
+                  <span v-if="!item.tags || item.tags.length === 0" class="text-xs" style="color: var(--text-muted)">—</span>
+                </div>
+              </td>
+              <td class="px-3 py-2 text-center" @click="router.push(`/properties/${item.documentId}`)">
+                <div class="flex items-center justify-center gap-1.5">
+                  <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
+                  <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold" :style="deviationStyle(Number(item.deviation_percent))">
+                    {{ item.deviation_percent }}%
+                  </span>
+                  <span v-if="item.deviation_percent == null && !item.has_minimum_price" class="text-xs" style="color: var(--text-muted)">—</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile: Focus Cards -->
+      <div v-if="!focusLoading && focusItems.length > 0" class="md:hidden space-y-3">
+        <div
+          v-for="item in focusItems"
+          :key="item.id"
+          class="rounded-xl border p-4 transition-all hover:shadow-lg"
+          style="background: var(--bg-elevated); border-color: var(--border-subtle)"
+        >
+          <div class="flex items-start gap-2 mb-2">
+            <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded mt-1 flex-shrink-0" style="accent-color: var(--accent)" />
+            <div class="flex-1 min-w-0 cursor-pointer" @click="router.push(`/properties/${item.documentId}`)">
+              <h3 class="font-semibold text-sm truncate" style="color: var(--text-main)">{{ item.title }}</h3>
+              <div class="text-xs" style="color: var(--text-muted)">
+                <span v-if="item.address">{{ item.address }}</span>
+                <span v-if="item.address && (item.city || item.property_type)"> · </span>
+                <span v-if="item.city">{{ cityLabel(item.city) }}</span>
+                <span v-if="item.city && item.property_type"> · </span>
+                <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 mb-2">
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs" style="color: var(--text-muted)">Скор</div>
+              <div class="text-sm font-mono font-semibold" style="color: var(--text-main)">{{ item.focus_score ?? '—' }}</div>
+            </div>
+          </div>
+          <!-- Tags + deviation -->
+          <div class="flex flex-wrap gap-1">
+            <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
+            <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
+            <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold" :style="deviationStyle(Number(item.deviation_percent))">{{ item.deviation_percent }}%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Focus Pagination -->
+      <div v-if="focusTotalPages > 1" class="flex justify-between items-center mt-6">
+        <span class="text-xs" style="color: var(--text-muted)">
+          Показано {{ (focusPage - 1) * focusPageSize + 1 }}-{{ Math.min(focusPage * focusPageSize, focusTotal) }} из {{ focusTotal }}
+        </span>
+        <div class="flex gap-2">
+          <button @click="focusPage > 1 && focusPage--" :disabled="focusPage <= 1"
+            class="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
+            :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+            ‹ Назад
+          </button>
+          <button @click="focusPage < focusTotalPages && focusPage++" :disabled="focusPage >= focusTotalPages"
+            class="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
+            :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
+            Вперёд ›
+          </button>
+        </div>
+      </div>
+
+      <!-- Bulk action bar (floating) -->
+      <div v-if="focusSelected.size > 0"
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 z-50"
+        style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+        <span class="text-sm font-medium" style="color: var(--text-main)">Выбрано: {{ focusSelected.size }}</span>
+        <div class="flex gap-2">
+          <button @click="bulkSetStatus('viewed')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
+          <button @click="bulkSetStatus('rejected')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонён</button>
+          <button @click="bulkExportCSV" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -368,6 +662,35 @@ import api from '@/api/strapi'
 
 const router = useRouter()
 
+// ========================
+// Табы
+// ========================
+const activeTab = ref<'all' | 'focus'>('all')
+
+// ========================
+// Common helpers
+// ========================
+const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
+const typeLabel = (v: string) => ({
+  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
+  production: 'Производство', free_purpose: 'Св. назн.', other: 'Другое'
+})[v] || v
+const statusLabel = (v: string) => ({
+  new: 'Новый', in_progress: 'В работе', viewed: 'Просмотрен', rejected: 'Отклонён'
+})[v] || v
+
+const statusStyle = (s: string) => ({
+  new: { background: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
+  in_progress: { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
+  viewed: { background: 'rgba(16,185,129,0.15)', color: '#10b981' },
+  rejected: { background: 'rgba(239,68,68,0.15)', color: '#ef4444' },
+})[s] || {}
+
+const formatPrice = (v: string | number) => Number(v).toLocaleString('ru-RU')
+
+// ========================
+// ВСЕ ОБЪЕКТЫ (existing code)
+// ========================
 interface Property {
   id: number
   documentId: string
@@ -382,6 +705,9 @@ interface Property {
   is_undervalued: boolean | null
   deviation_percent: string | null
   source: string
+  focus_score?: number | null
+  tags?: string[]
+  has_minimum_price?: boolean
 }
 
 const items = ref<Property[]>([])
@@ -480,24 +806,6 @@ const visiblePages = computed(() => {
   return pages
 })
 
-const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
-const typeLabel = (v: string) => ({
-  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
-  production: 'Производство', free_purpose: 'Св. назн.', other: 'Другое'
-})[v] || v
-const statusLabel = (v: string) => ({
-  new: 'Новый', in_progress: 'В работе', viewed: 'Просмотрен', rejected: 'Отклонён'
-})[v] || v
-
-const statusStyle = (s: string) => ({
-  new: { background: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
-  in_progress: { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
-  viewed: { background: 'rgba(16,185,129,0.15)', color: '#10b981' },
-  rejected: { background: 'rgba(239,68,68,0.15)', color: '#ef4444' },
-})[s] || {}
-
-const formatPrice = (v: string | number) => Number(v).toLocaleString('ru-RU')
-
 async function fetchItems() {
   loading.value = true
   try {
@@ -505,7 +813,6 @@ async function fetchItems() {
       sort: `${sort.field}:${sort.direction}`,
       pagination: { page: page.value, pageSize },
     }
-    // Фильтры
     const f: any = {}
     if (filters.city) f.city = { $eq: filters.city }
     if (filters.status) f.status = { $eq: filters.status }
@@ -780,6 +1087,343 @@ async function clearNew() {
   }
 }
 
+// ========================
+// В ФОКУСЕ
+// ========================
+
+interface FocusProperty {
+  id: number
+  documentId: string
+  title: string
+  address: string | null
+  city: string
+  property_type: string
+  area_sqm: string | null
+  price: string | null
+  price_per_sqm: string | null
+  focus_score: number | null
+  deviation_percent: string | null
+  tags: string[]
+  has_minimum_price: boolean
+}
+
+const focusItems = ref<FocusProperty[]>([])
+const focusLoading = ref(false)
+const focusTotal = ref(0)
+const focusAvgScore = ref<number | null>(null)
+const focusPage = ref(1)
+const focusPageSize = 20
+const focusTotalPages = computed(() => Math.ceil(focusTotal.value / focusPageSize))
+
+const focusSort = reactive({
+  field: 'focus_score' as string,
+  direction: 'desc' as 'asc' | 'desc',
+})
+
+function toggleFocusSort(field: string) {
+  if (focusSort.field === field) {
+    focusSort.direction = focusSort.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    focusSort.field = field
+    focusSort.direction = 'desc'
+  }
+}
+
+const focusFilters = reactive({
+  threshold: 20,
+  cities: { moscow: true, mo: true, other: true },
+  property_type: '',
+  tags: [] as string[],
+  priceFrom: '',
+  priceTo: '',
+})
+
+// Available tags for multiselect
+const availableTags = [
+  { value: 'undervalued', label: 'Недооценён', bgColor: 'rgba(251,191,36,0.15)', textColor: '#f59e0b' },
+  { value: 'has_minimum_price', label: 'Торги', bgColor: 'rgba(79,140,255,0.15)', textColor: '#4f8cff' },
+  { value: 'new', label: 'Новый', bgColor: 'rgba(16,185,129,0.15)', textColor: '#10b981' },
+  { value: 'large_area', label: 'Большая пл.', bgColor: 'rgba(168,85,247,0.15)', textColor: '#a855f7' },
+  { value: 'moscow_mo', label: 'МСК/МО', bgColor: 'rgba(20,184,166,0.15)', textColor: '#14b8a6' },
+]
+
+// Load focus filters from localStorage
+try {
+  const saved = localStorage.getItem('aklab-focus-filters')
+  if (saved) {
+    const parsed = JSON.parse(saved)
+    if (parsed.threshold != null) focusFilters.threshold = parsed.threshold
+    if (parsed.cities) Object.assign(focusFilters.cities, parsed.cities)
+    if (parsed.property_type) focusFilters.property_type = parsed.property_type
+    if (parsed.tags) focusFilters.tags = parsed.tags
+    if (parsed.priceFrom) focusFilters.priceFrom = parsed.priceFrom
+    if (parsed.priceTo) focusFilters.priceTo = parsed.priceTo
+  }
+} catch {}
+
+// Save focus filters to localStorage on change
+watch(focusFilters, (val) => {
+  try {
+    localStorage.setItem('aklab-focus-filters', JSON.stringify(val))
+  } catch {}
+}, { deep: true })
+
+function resetFocusFilters() {
+  focusFilters.threshold = 20
+  focusFilters.cities.moscow = true
+  focusFilters.cities.mo = true
+  focusFilters.cities.other = true
+  focusFilters.property_type = ''
+  focusFilters.tags = []
+  focusFilters.priceFrom = ''
+  focusFilters.priceTo = ''
+}
+
+// Selection
+const focusSelected = reactive(new Set<number>())
+const allFocusChecked = computed(() => {
+  if (focusItems.value.length === 0) return false
+  return focusItems.value.every(item => focusSelected.has(item.id))
+})
+
+function toggleFocusSelect(id: number) {
+  if (focusSelected.has(id)) {
+    focusSelected.delete(id)
+  } else {
+    focusSelected.add(id)
+  }
+}
+
+function toggleAllFocus() {
+  if (allFocusChecked.value) {
+    focusSelected.clear()
+  } else {
+    focusItems.value.forEach(item => focusSelected.add(item.id))
+  }
+}
+
+// Tag styling
+function tagStyle(tag: string) {
+  const map: Record<string, { bg: string; color: string }> = {
+    undervalued: { bg: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
+    has_minimum_price: { bg: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
+    new: { bg: 'rgba(16,185,129,0.15)', color: '#10b981' },
+    large_area: { bg: 'rgba(168,85,247,0.15)', color: '#a855f7' },
+    moscow_mo: { bg: 'rgba(20,184,166,0.15)', color: '#14b8a6' },
+  }
+  const m = map[tag] || { bg: 'rgba(107,114,128,0.15)', color: '#6b7280' }
+  return { background: m.bg, color: m.color }
+}
+
+function tagLabel(tag: string) {
+  const map: Record<string, string> = {
+    undervalued: 'Недооценён',
+    has_minimum_price: 'Торги',
+    new: 'Новый',
+    large_area: 'Большая пл.',
+    moscow_mo: 'МСК/МО',
+  }
+  return map[tag] || tag
+}
+
+// Deviation color coding
+function deviationStyle(pct: number) {
+  if (pct <= -50) return { background: 'rgba(239,68,68,0.15)', color: '#ef4444' }
+  if (pct <= -30) return { background: 'rgba(249,115,22,0.15)', color: '#f97316' }
+  if (pct <= -20) return { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' }
+  return { background: 'rgba(107,114,128,0.15)', color: '#6b7280' }
+}
+
+// Fetch focus data
+async function fetchFocusItems() {
+  focusLoading.value = true
+  try {
+    const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
+
+    // Build city filter
+    const cityList: string[] = []
+    if (focusFilters.cities.moscow) cityList.push('moscow')
+    if (focusFilters.cities.mo) cityList.push('mo')
+    if (focusFilters.cities.other) cityList.push('other')
+
+    const params: any = {
+      threshold: focusFilters.threshold,
+      sort: sortParam,
+      page: focusPage.value,
+      pageSize: focusPageSize,
+    }
+    if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
+    if (focusFilters.property_type) params.type = focusFilters.property_type
+    if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
+    if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
+    if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
+
+    const { data } = await api.get('/properties/focus', { params })
+    focusItems.value = data.data || []
+    focusTotal.value = data.meta?.total || 0
+    focusAvgScore.value = data.meta?.avgScore ?? null
+  } catch (e: any) {
+    console.error('Failed to fetch focus items:', e)
+    focusItems.value = []
+    focusTotal.value = 0
+    focusAvgScore.value = null
+  } finally {
+    focusLoading.value = false
+  }
+}
+
+// Recalculate scoring
+const scoringLoading = ref(false)
+
+async function recalculateScore() {
+  scoringLoading.value = true
+  try {
+    const cityList: string[] = []
+    if (focusFilters.cities.moscow) cityList.push('moscow')
+    if (focusFilters.cities.mo) cityList.push('mo')
+    if (focusFilters.cities.other) cityList.push('other')
+
+    const body: any = { threshold: focusFilters.threshold }
+    if (cityList.length > 0 && cityList.length < 3) body.city = cityList
+    if (focusFilters.priceFrom) body.priceFrom = Number(focusFilters.priceFrom)
+    if (focusFilters.priceTo) body.priceTo = Number(focusFilters.priceTo)
+
+    await api.post('/cron/score', body)
+    // Refresh list after scoring
+    await fetchFocusItems()
+  } catch (e: any) {
+    console.error('Score recalculation failed:', e)
+    alert('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
+  } finally {
+    scoringLoading.value = false
+  }
+}
+
+// CSV Export
+async function exportCSV() {
+  try {
+    const cityList: string[] = []
+    if (focusFilters.cities.moscow) cityList.push('moscow')
+    if (focusFilters.cities.mo) cityList.push('mo')
+    if (focusFilters.cities.other) cityList.push('other')
+
+    const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
+
+    const params: any = {
+      threshold: focusFilters.threshold,
+      sort: sortParam,
+      page: 1,
+      pageSize: 1000,
+    }
+    if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
+    if (focusFilters.property_type) params.type = focusFilters.property_type
+    if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
+    if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
+    if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
+
+    const { data } = await api.get('/properties/focus', { params })
+    const rows = data.data || []
+
+    generateCSV(rows)
+  } catch (e: any) {
+    console.error('CSV export failed:', e)
+    alert('Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
+  }
+}
+
+function generateCSV(rows: any[]) {
+  const header = ['Название', 'Адрес', 'Город', 'Тип', 'Площадь', 'Цена', '₽/м²', 'Скор', 'Теги', 'Ссылка']
+  const csvRows = [header.join(';')]
+
+  for (const row of rows) {
+    const link = `${window.location.origin}/properties/${row.documentId}`
+    const values = [
+      escapeCSV(row.title),
+      escapeCSV(row.address || ''),
+      escapeCSV(cityLabel(row.city)),
+      escapeCSV(typeLabel(row.property_type)),
+      row.area_sqm || '',
+      row.price || '',
+      row.price_per_sqm || '',
+      row.focus_score ?? '',
+      escapeCSV((row.tags || []).join(', ')),
+      link,
+    ]
+    csvRows.push(values.join(';'))
+  }
+
+  const BOM = '\uFEFF'
+  const blob = new Blob([BOM + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `focus_export_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function escapeCSV(val: string): string {
+  if (!val) return ''
+  if (val.includes(';') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`
+  }
+  return val
+}
+
+// Bulk status change
+async function bulkSetStatus(status: string) {
+  const ids = Array.from(focusSelected)
+  try {
+    await Promise.all(ids.map(id => {
+      const item = focusItems.value.find(i => i.id === id)
+      if (!item) return Promise.resolve()
+      return api.put(`/properties/${item.documentId}`, { data: { status } })
+    }))
+    focusSelected.clear()
+    await fetchFocusItems()
+  } catch (e: any) {
+    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+  }
+}
+
+// Bulk CSV export (only selected)
+async function bulkExportCSV() {
+  const ids = Array.from(focusSelected)
+  const rows = focusItems.value.filter(i => ids.includes(i.id))
+  generateCSV(rows)
+}
+
+// Switch to focus tab
+function switchToFocus() {
+  activeTab.value = 'focus'
+  focusPage.value = 1
+  fetchFocusItems()
+}
+
+// Watch focus filters/sort/page for auto-refresh
+watch([() => focusFilters.threshold, () => focusFilters.cities, () => focusFilters.property_type, () => focusFilters.tags, () => focusFilters.priceFrom, () => focusFilters.priceTo], () => {
+  if (activeTab.value === 'focus') {
+    focusPage.value = 1
+    fetchFocusItems()
+  }
+}, { deep: true })
+
+watch(focusSort, () => {
+  if (activeTab.value === 'focus') {
+    focusPage.value = 1
+    fetchFocusItems()
+  }
+})
+
+watch(focusPage, () => {
+  if (activeTab.value === 'focus') {
+    fetchFocusItems()
+  }
+})
+
+// Lifecycle
 onUnmounted(() => {
   stopPolling()
 })

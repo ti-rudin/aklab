@@ -95,6 +95,7 @@ export async function createProperty(props: {
   city: string;
   area_sqm?: number;
   price?: number;
+  minimum_price?: number;
   price_per_sqm?: number;
   property_type: string;
   auction_type: string;

@@ -1,6 +1,6 @@
 {
   "name": "aklab",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "main": "ecosystem-local.config.js",
   "workspaces": [
     "lib/*",
@@ -25,6 +25,7 @@
     "nodemailer": "^8.0.10"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.10.0",
     "@types/node-cron": "^3.0.11",

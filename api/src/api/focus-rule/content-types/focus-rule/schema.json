@@ -1,0 +1,46 @@
+{
+  "kind": "collectionType",
+  "collectionName": "focus_rules",
+  "info": {
+    "singularName": "focus-rule",
+    "pluralName": "focus-rules",
+    "displayName": "Focus Rule"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "condition_type": {
+      "type": "enumeration",
+      "enum": ["deviation_threshold", "has_field", "city_match", "custom"],
+      "required": true
+    },
+    "condition_value": {
+      "type": "string"
+    },
+    "score": {
+      "type": "integer",
+      "required": true
+    },
+    "tag": {
+      "type": "string",
+      "required": true
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "priority": {
+      "type": "integer",
+      "default": 0
+    }
+  }
+}

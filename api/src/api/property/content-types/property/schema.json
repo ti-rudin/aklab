@@ -30,6 +30,10 @@
     {
       "name": "properties_property_type_idx",
       "columns": ["property_type"]
+    },
+    {
+      "name": "properties_focus_score_idx",
+      "columns": ["focus_score"]
     }
   ],
   "pluginOptions": {},
@@ -128,6 +132,27 @@
       "type": "relation",
       "relation": "oneToMany",
       "target": "api::user-comment.user-comment",
+      "mappedBy": "property"
+    },
+    "focus_score": {
+      "type": "integer",
+      "default": 0,
+      "required": true
+    },
+    "tags": {
+      "type": "json",
+      "default": []
+    },
+    "minimum_price": {
+      "type": "decimal"
+    },
+    "first_seen_at": {
+      "type": "datetime"
+    },
+    "property_events": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::property-event.property-event",
       "mappedBy": "property"
     }
   }

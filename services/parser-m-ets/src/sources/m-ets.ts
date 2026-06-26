@@ -78,7 +78,7 @@ export class MetsParser implements SourceParser {
       await page.waitForTimeout(5000);
 
       const cards = await page.evaluate(() => {
-        const results: Array<{ title: string; link: string; price_text: string; excerpt: string }> = [];
+        const results: Array<{ title: string; link: string; price_text: string; min_price_text: string; excerpt: string }> = [];
         const selectors = [
           '.card', '.lot-card', '.trade-card', '.search-result',
           '.list-item', 'article', 'tr', '[class*="card"]', '[class*="lot"]',
@@ -93,13 +93,17 @@ export class MetsParser implements SourceParser {
           const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
           const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"]');
           // .cost = чистый price span; НЕ [class*="cost"] — матчит .cost-block с лишним текстом ("Осталось: N дней")
-          const priceEl = el.querySelector('.price, [class*="price"], .cost, .bid__value');
+          // .cost = чистый price span; НЕ [class*='.cost'] — матчит .cost-block с лишним текстом
+          const priceEl = el.querySelector('.cost, .price.current, .bid__value');
+          // minimum_price из .price.min (красный цвет на m-ets.ru)
+          const minPriceEl = el.querySelector('.price.min');
           const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
           if (!title || title.length < 5) continue;
           results.push({
             title: title.slice(0, 200),
             link: linkEl?.href || '',
             price_text: priceEl?.textContent?.trim() || '',
+            min_price_text: minPriceEl?.textContent?.trim() || '',
             excerpt: el.textContent?.trim().slice(0, 500) || '',
           });
         }
@@ -121,6 +125,7 @@ export class MetsParser implements SourceParser {
           city: detectCity(card.title + ' ' + card.excerpt),
           area_sqm: area,
           price,
+          minimum_price: parsePrice(card.min_price_text),
           price_per_sqm: price && area ? Math.round(price / area) : undefined,
           property_type: classifyPropertyType(card.title),
           auction_type: 'marketplace',
