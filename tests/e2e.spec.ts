@@ -24,18 +24,31 @@ const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 // ─── helpers ──────────────────────────────────────────────────────────
 
 async function login(page: import('@playwright/test').Page) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // API login for reliable JWT, inject into localStorage
+  const apiCtx = page.request;
+  const resp = await apiCtx.post(`${API}/api/auth/local`, {
+    data: { identifier: EMAIL, password: PASS },
+  });
+  const body = await resp.json();
+  if (body.jwt && body.user) {
+    // Set localStorage before navigating
+    await page.addInitScript(({ jwt, user }) => {
+      localStorage.setItem('jwt', jwt);
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('lastAuthTime', Date.now().toString());
+    }, { jwt: body.jwt, user: body.user });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle').catch(() => {});
+  } else {
+    // Fallback UI login
     await page.goto('/auth');
     await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
     await page.locator('#email').fill(EMAIL);
     await page.locator('#password').fill(PASS);
     await page.locator('button[type="submit"]').click();
     await page.waitForLoadState('networkidle').catch(() => {});
-    const url = page.url();
-    if (!url.includes('/auth')) {
-      await expect(page.locator('h1').first()).toBeVisible({ timeout: 10000 }).catch(() => {});
-      return;
-    }
+  }
+}
     await page.waitForTimeout(2000);
   }
   await expect(page).toHaveURL(/\/(properties|$)/, { timeout: 15000 });
