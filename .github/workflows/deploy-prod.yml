@@ -1,6 +1,8 @@
 name: Deploy — Prod
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       confirm:
@@ -16,13 +18,13 @@ jobs:
     name: Validate confirmation
     runs-on: ubuntu-latest
     steps:
-      - name: Check confirmation
+      - name: Check confirmation (manual only)
         run: |
-          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.confirm }}" != "deploy" ]; then
             echo "❌ Confirmation must be 'deploy', got: ${{ inputs.confirm }}"
             exit 1
           fi
-          echo "✅ Confirmation accepted"
+          echo "✅ Proceeding with deploy"
 
   deploy:
     name: Deploy to Prod
@@ -42,7 +44,8 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT_PROD }}
           command_timeout: 15m
           script: |
-            source ~/.nvm/nvm.sh
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
             cd ~/aklab
             bash scripts/deploy-prod.sh --ci
 
@@ -72,7 +75,8 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT_PROD }}
           command_timeout: 1m
           script: |
-            source ~/.nvm/nvm.sh
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
             cd ~/aklab
             VERSION=$(node -p "require('./package.json').version")
 
