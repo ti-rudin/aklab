@@ -48,13 +48,38 @@
           <template v-else>Выполняется...</template>
         </button>
         <button
-          @click="clearNew"
+          @click="confirmClearNew"
           :disabled="clearing"
           class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
           style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
         >
           {{ clearing ? 'Удаление...' : 'Очистить список' }}
         </button>
+      </div>
+
+      <!-- Диалог подтверждения очистки -->
+      <div v-if="showClearDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center"
+        style="background: rgba(0,0,0,0.5)">
+        <div class="rounded-xl p-6 border max-w-md w-full mx-4 shadow-2xl"
+          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+          <h3 class="text-lg font-semibold mb-3" style="color: var(--text-main)">Подтверждение</h3>
+          <p class="text-sm mb-6" style="color: var(--text-muted)">
+            Вы уверены, что хотите удалить все объекты со статусом «Новый»? Это действие нельзя отменить.
+          </p>
+          <div class="flex justify-end gap-3">
+            <button @click="showClearDialog = false"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
+              style="background: var(--bg-main); border: 1px solid var(--border-subtle); color: var(--text-main)">
+              Отмена
+            </button>
+            <button @click="executeClearNew"
+              class="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
+              style="background: #ef4444">
+              Очистить
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Параметры запуска -->
@@ -1070,11 +1095,16 @@ async function runPipeline() {
   }
 }
 
-// Clear new properties
+// Clear new properties — with in-page confirmation dialog
 const clearing = ref(false)
+const showClearDialog = ref(false)
 
-async function clearNew() {
-  if (!confirm('Удалить все объекты со статусом "Новый"?')) return
+function confirmClearNew() {
+  showClearDialog.value = true
+}
+
+async function executeClearNew() {
+  showClearDialog.value = false
   clearing.value = true
   try {
     const { data } = await api.post('/properties/clear-new')
