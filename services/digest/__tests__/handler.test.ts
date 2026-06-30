@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
-// Mock nodemailer
-const mockSendMail = vi.fn().mockResolvedValue({});
-const mockCreateTransport = vi.fn().mockReturnValue({ sendMail: mockSendMail });
+// Mock nodemailer — use vi.hoisted so variables are available when vi.mock is hoisted
+const { mockSendMail, mockCreateTransport } = vi.hoisted(() => {
+  const mockSendMail = vi.fn().mockResolvedValue({});
+  const mockCreateTransport = vi.fn().mockReturnValue({ sendMail: mockSendMail });
+  return { mockSendMail, mockCreateTransport };
+});
 vi.mock('nodemailer', () => ({
   default: { createTransport: mockCreateTransport },
 }));
