@@ -7,6 +7,11 @@ const config = ({ env }: Core.Config.Shared.ConfigParams): Core.Config.Plugin =>
       jwt: {
         expiresIn: '30d',
       },
+      ratelimit: {
+        enabled: true,
+        interval: { min: 1 },
+        max: 50,
+      },
     },
   },
   email: {
