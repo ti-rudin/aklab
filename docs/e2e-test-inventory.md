@@ -1,8 +1,8 @@
 # AKLAB E2E Test Inventory
 
-> Source: `tests/e2e.spec.ts` (~1365 lines)  
+> Source: `tests/e2e.spec.ts` (~1380 lines)  
 > Runner: `npx playwright test` (chromium, headless)  
-> Generated: 2026-06-30  
+> Updated: 2026-07-01  
 > Base URL: `https://aklab-dev.tirobots.ru`
 
 ## Summary
@@ -30,28 +30,39 @@
 | 19 | Настройки — доп. фичи | 3 |
 | 20 | Журнал изменений и документация | 3 |
 | 21 | Подвал (Footer) | 1 |
-| **Total** | | **~113** |
+| **Total** | | **113** (108 pass, 5 skip) |
 
-## Login Helper
+## Login Helper — JWT Caching
 
 ```ts
-async function login(page) {
-  // 3 retries, waitForURL, timeout 20000
-  // Credentials: TEST_USER_EMAIL / TEST_USER_PASSWORD env vars
+// ONE API call per entire test suite — no rate limit issues
+let _cachedJWT: string | null = null;
+
+async function ensureAuth(page) {
+  if (!_cachedJWT) {
+    // Single POST /api/auth/local
+    _cachedJWT = body.jwt;
+  }
+  // Inject into localStorage — no UI login needed
+  page.evaluate(() => { localStorage.setItem('jwt', token); });
 }
 ```
+
+**Why**: Strapi `users-permissions` rate limiter (5 req/5min per user+IP) blocks
+UI login when 113 tests each call `/api/auth/local`. JWT caching = 1 request total.
 
 ## Key Patterns
 
 - All test names in Russian
 - `if (await X.isVisible({ timeout }).catch(() => false))` for optional elements
 - No hardcoded waits > 5000ms except 2000ms data load
-- API tests use `loginAPI(request)` for JWT
+- API tests use `loginAPI(request)` for JWT (also cached)
+- Status buttons: click any enabled button, not hardcoded label
 
 ## Running
 
 ```bash
-# On dev server
+# On dev server (~5.5 min)
 ssh rudin@192.168.11.151 "source ~/.nvm/nvm.sh && cd ~/aklab && npx playwright test"
 
 # Single test
@@ -61,12 +72,12 @@ npx playwright test --grep '1.1'
 npx playwright test --grep '18\.'
 ```
 
-## Frontend Fixes Applied (2026-06-30)
+## Fix History
 
-| Test | Issue | Fix |
-|------|-------|-----|
-| 10.1 Dashboard | Frontend build stale | Rebuilt `app/` on dev server |
-| 16.5 Source link | Nav "Источники" matched regex before detail link | Nav → "Парсеры" + aria-label="Источники" |
-| 18.4 Add etalon | Submit "Добавить" matched addBtn regex | Submit text → "Сохранить", isFormValid accepts name |
-| 11.5 Not found | Already implemented | No change needed |
-| 14.2 Clear dialog | Already implemented | No change needed |
+| Date | Test | Issue | Fix |
+|------|------|-------|-----|
+| 2026-06-30 | 10.1 Dashboard | Frontend build stale | Rebuilt `app/` on dev server |
+| 2026-06-30 | 16.5 Source link | Nav "Источники" matched regex | Nav → "Парсеры" + aria-label |
+| 2026-06-30 | 18.4 Add etalon | Submit text matched addBtn | Submit → "Сохранить" |
+| 2026-07-01 | 2.8, 10.1, 11.5, 14.2, 16.1 | Strapi rate limiter (5 req/5min) | JWT caching — 1 API call per suite |
+| 2026-07-01 | 16.1 Status change | Button disabled (already in status) | Click any enabled status button |
