@@ -55,7 +55,7 @@ function makeCtx(overrides: Record<string, any> = {}): any {
   };
 }
 
-describe.skip('cron controller', () => {
+describe('cron controller', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

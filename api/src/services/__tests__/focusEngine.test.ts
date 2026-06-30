@@ -356,7 +356,7 @@ describe('scoreProperty', () => {
   });
 });
 
-describe.skip('scoreAllProperties', () => {
+describe('scoreAllProperties', () => {
   const makeRule = (overrides: Partial<any> = {}): any => ({
     id: 1,
     name: 'test-rule',

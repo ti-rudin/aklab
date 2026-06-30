@@ -54,7 +54,7 @@ function makeCtx(overrides: Record<string, any> = {}): any {
   };
 }
 
-describe.skip('property controller', () => {
+describe('property controller', () => {
   let strapi: ReturnType<typeof makeStrapi>;
   let actions: Record<string, (ctx: any) => Promise<void>>;
 
