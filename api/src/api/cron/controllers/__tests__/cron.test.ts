@@ -8,12 +8,12 @@ const mockQueue = {
   sendRequest: vi.fn(),
 };
 
-vi.mock('../../../services/queueService', () => ({
+vi.mock('../../../../services/queueService', () => ({
   getQueueService: () => mockQueue,
 }));
 
 // --- Mock focusEngine ---
-vi.mock('../../../services/focusEngine', () => ({
+vi.mock('../../../../services/focusEngine', () => ({
   scoreProperty: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ global.strapi = mockStrapi;
 
 // Import after mocks
 import cronController from '../cron';
-import { scoreProperty } from '../../../services/focusEngine';
+import { scoreProperty } from '../../../../services/focusEngine';
 
 function makeCtx(overrides: Record<string, any> = {}): any {
   return {

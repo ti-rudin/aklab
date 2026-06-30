@@ -7,7 +7,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 // --- Capture the factory callback so tests can call custom actions directly ---
-let capturedFactoryFn: ((context: { strapi: any }) => Record<string, any>) | null = null;
+var capturedFactoryFn: ((context: { strapi: any }) => Record<string, any>) | null = null;
 
 vi.mock('@strapi/strapi', () => ({
   factories: {

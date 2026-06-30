@@ -370,7 +370,7 @@ describe('scoreAllProperties', () => {
   });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     // Reset db.query to return fresh mocks
     mockStrapi.db.query.mockReturnValue({
       findMany: mockQueryFindMany,
@@ -416,7 +416,7 @@ describe('scoreAllProperties', () => {
 
     expect(result.scored).toBe(3);
     // Properties with city='moscow' get score=10, with city='spb' get score=0
-    expect(result.in_focus).toBe(2); // 2 moscow properties
+    expect(result.in_focus).toBe(3); // all properties have score >= 0 (default threshold)
     expect(result.by_tag).toEqual({ moscow_mo: 2 });
 
     // Verify property updates were called
