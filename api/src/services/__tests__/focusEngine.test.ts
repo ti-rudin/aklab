@@ -498,3 +498,139 @@ describe.skip('scoreAllProperties', () => {
       'api::property-event.property-event',
       {
         data: {
+          event_type: 'entered_focus',
+          old_value: null,
+          new_value: 'high_value',
+          property: 1,
+        },
+      },
+    );
+  });
+
+  it('should create events for tag changes', async () => {
+    const rules = [makeRule({ score: 10, tag: 'moscow_mo' })];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+
+    // Property already has focus_score=10 but different old tag
+    const properties = [
+      { id: 1, city: 'moscow', focus_score: 10, tags: ['old_tag'] },
+    ];
+    mockQueryFindMany.mockResolvedValueOnce(properties);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+    mockQueryUpdate.mockResolvedValue({});
+    mockStrapi.entityService.create.mockResolvedValue({});
+
+    await scoreAllProperties();
+
+    // Should emit entered_focus for moscow_mo and left_focus for old_tag
+    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
+      'api::property-event.property-event',
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: 'entered_focus', new_value: 'moscow_mo' }),
+      }),
+    );
+    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
+      'api::property-event.property-event',
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: 'left_focus', old_value: 'old_tag' }),
+      }),
+    );
+  });
+
+  it('should not create events when nothing changed', async () => {
+    const rules = [makeRule({ score: 10, tag: 'moscow_mo' })];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+
+    const properties = [
+      { id: 1, city: 'moscow', focus_score: 10, tags: ['moscow_mo'] },
+    ];
+    mockQueryFindMany.mockResolvedValueOnce(properties);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+    mockQueryUpdate.mockResolvedValue({});
+
+    await scoreAllProperties();
+
+    // No events created
+    expect(mockStrapi.entityService.create).not.toHaveBeenCalled();
+  });
+
+  it('should aggregate by_tag correctly', async () => {
+    const rules = [
+      makeRule({ id: 1, condition_type: 'city_match', condition_value: 'moscow', score: 10, tag: 'moscow_mo', priority: 1 }),
+      makeRule({ id: 2, condition_type: 'has_field', condition_value: 'minimum_price', score: 5, tag: 'has_min', priority: 2 }),
+    ];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+
+    const properties = [
+      { id: 1, city: 'moscow', minimum_price: 100000, focus_score: 0, tags: [] },
+      { id: 2, city: 'moscow', minimum_price: null, focus_score: 0, tags: [] },
+      { id: 3, city: 'spb', minimum_price: 50000, focus_score: 0, tags: [] },
+    ];
+    mockQueryFindMany.mockResolvedValueOnce(properties);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+    mockQueryUpdate.mockResolvedValue({});
+    mockStrapi.entityService.create.mockResolvedValue({});
+
+    const result = await scoreAllProperties();
+
+    expect(result.by_tag).toEqual({ moscow_mo: 2, has_min: 2 });
+    // id=1: moscow + has_min, id=2: moscow only, id=3: has_min only
+  });
+
+  it('should use threshold parameter for in_focus counting', async () => {
+    const rules = [
+      makeRule({ id: 1, condition_type: 'city_match', condition_value: 'moscow', score: 10, tag: 'moscow_mo', priority: 1 }),
+    ];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+
+    const properties = [
+      { id: 1, city: 'moscow', focus_score: 0, tags: [] }, // score will be 10
+      { id: 2, city: 'spb', focus_score: 0, tags: [] },    // score will be 0
+    ];
+    mockQueryFindMany.mockResolvedValueOnce(properties);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+    mockQueryUpdate.mockResolvedValue({});
+    mockStrapi.entityService.create.mockResolvedValue({});
+
+    // With threshold=15, neither property is in focus (scores are 10 and 0)
+    const result = await scoreAllProperties(15);
+
+    expect(result.scored).toBe(2);
+    expect(result.in_focus).toBe(0);
+
+    // With threshold=5, one property is in focus (score 10 >= 5)
+    mockQueryFindMany.mockResolvedValueOnce([...properties]);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+
+    const result2 = await scoreAllProperties(5);
+
+    expect(result2.scored).toBe(2);
+    expect(result2.in_focus).toBe(1);
+  });
+
+  it('should handle empty properties list', async () => {
+    const rules = [makeRule()];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+    mockQueryFindMany.mockResolvedValue([]);
+
+    const result = await scoreAllProperties();
+
+    expect(result).toEqual({ scored: 0, in_focus: 0, by_tag: {} });
+    expect(mockQueryUpdate).not.toHaveBeenCalled();
+  });
+
+  it('should query with status=new filter', async () => {
+    const rules = [makeRule()];
+    mockStrapi.entityService.findMany.mockResolvedValue(rules);
+    mockQueryFindMany.mockResolvedValue([]);
+
+    await scoreAllProperties();
+
+    expect(mockQueryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: 'new' },
+        orderBy: { id: 'asc' },
+      }),
+    );
+  });
+});
