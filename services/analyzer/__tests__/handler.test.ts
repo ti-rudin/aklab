@@ -16,7 +16,7 @@ vi.mock('@aklab/service-shared', () => ({
   findActiveMarketReference: vi.fn(),
   fetchSetting: vi.fn(),
   updateProperty: vi.fn(),
-  logCron: vi.fn(),
+  logCron: vi.fn().mockResolvedValue({}),
 }));
 
 // Mock @aklab/sqlite-queue

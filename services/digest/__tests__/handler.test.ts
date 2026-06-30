@@ -13,7 +13,7 @@ vi.mock('nodemailer', () => ({
 // Mock @aklab/service-shared
 vi.mock('@aklab/service-shared', () => ({
   fetchSetting: vi.fn(),
-  logCron: vi.fn(),
+  logCron: vi.fn().mockResolvedValue({}),
 }));
 
 // Mock logger
