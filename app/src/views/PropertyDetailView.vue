@@ -68,8 +68,9 @@
         </div>
 
         <!-- Ссылка на источник -->
-        <div v-if="property.url" class="mb-4">
-          <a :href="property.url" target="_blank" rel="noopener" class="text-sm hover:underline" style="color: var(--accent)">Открыть на источнике →</a>
+        <div class="mb-4">
+          <a v-if="property.url" :href="property.url" target="_blank" rel="noopener" class="text-sm hover:underline" style="color: var(--accent)">Открыть на источнике →</a>
+          <span v-else class="text-sm" style="color: var(--text-muted)">Ссылка на источник недоступна</span>
         </div>
 
         <!-- Описание -->
@@ -277,10 +278,17 @@ async function fetchProperty() {
     const { data } = await api.get(`/properties/${docId}`, {
       params: { populate: 'comments' }
     })
-    property.value = data.data
-    comments.value = data.data?.comments || []
+    // Treat null/undefined/empty-object responses as "not found"
+    if (data.data && data.data.documentId) {
+      property.value = data.data
+      comments.value = data.data?.comments || []
+    } else {
+      property.value = null
+      error.value = 'Объект не найден'
+    }
   } catch (e: any) {
-    error.value = e.response?.data?.error?.message || 'Ошибка загрузки'
+    property.value = null
+    error.value = e.response?.data?.error?.message || 'Объект не найден'
   } finally {
     loading.value = false
   }
