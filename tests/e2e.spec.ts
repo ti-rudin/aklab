@@ -25,30 +25,43 @@ const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 
 // ─── helpers ──────────────────────────────────────────────────────────
 
-async function login(page: import('@playwright/test').Page) {
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    await page.goto('/auth');
-    await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
-    await page.locator('#email').fill(EMAIL);
-    await page.locator('#password').fill(PASS);
-    await page.locator('button[type="submit"]').click();
-    try {
-      await page.waitForURL(/\/(properties|$)/, { timeout: 15000 });
-      return;
-    } catch {
-      if (attempt === 5) throw new Error('Login failed after 5 attempts');
-      // Wait longer on rate limit (Internal Server Error)
-      await page.waitForTimeout(attempt <= 2 ? 3000 : 30000);
-    }
+// JWT cache — one API call for the entire test suite instead of 113
+let _cachedJWT: string | null = null;
+let _cachedUser: string | null = null;
+
+async function ensureAuth(page: import('@playwright/test').Page) {
+  if (!_cachedJWT) {
+    const resp = await page.request.post(`${API}/api/auth/local`, {
+      data: { identifier: EMAIL, password: PASS },
+    });
+    const body = await resp.json();
+    if (!body.jwt) throw new Error('Login API failed: ' + JSON.stringify(body));
+    _cachedJWT = body.jwt;
+    _cachedUser = JSON.stringify(body.user);
   }
+  await page.goto('/');
+  await page.evaluate(({ jwt, user }) => {
+    localStorage.setItem('jwt', jwt);
+    localStorage.setItem('user', user);
+    localStorage.setItem('lastAuthTime', Date.now().toString());
+  }, { jwt: _cachedJWT, user: _cachedUser! });
+}
+
+async function login(page: import('@playwright/test').Page) {
+  await ensureAuth(page);
+  await page.goto('/properties');
+  await page.waitForURL(/\/properties/, { timeout: 10000 });
 }
 
 async function loginAPI(request: import('@playwright/test').APIRequestContext) {
-  const resp = await request.post(`${API}/api/auth/local`, {
-    data: { identifier: EMAIL, password: PASS },
-  });
-  const body = await resp.json();
-  return body.jwt as string;
+  if (!_cachedJWT) {
+    const resp = await request.post(`${API}/api/auth/local`, {
+      data: { identifier: EMAIL, password: PASS },
+    });
+    const body = await resp.json();
+    _cachedJWT = body.jwt;
+  }
+  return _cachedJWT!;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
