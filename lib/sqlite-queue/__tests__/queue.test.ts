@@ -268,7 +268,7 @@ describe('process() and worker', () => {
 // ─── retry on failure ───────────────────────────────────────────────────────
 
 describe('retry on failure', () => {
-  test('retries temporary errors up to max_attempts', async () => {
+  test('retries temporary errors up to max_attempts', { timeout: 30_000 }, async () => {
     let attempts = 0;
 
     queue.add('retry', { n: 1 }, { maxAttempts: 3 });

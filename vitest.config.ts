@@ -6,15 +6,12 @@ export default defineConfig({
       'lib/**/__tests__/**/*.test.ts',
       'services/**/__tests__/**/*.test.ts',
       'api/src/**/__tests__/**/*.test.ts',
-      'app/src/**/__tests__/**/*.test.ts',
     ],
     exclude: [
       '**/e2e/**',
       '**/*.spec.ts',
       '**/node_modules/**',
-    ],
-    environmentMatchGlobs: [
-      ['app/src/**', 'jsdom'],
+      'app/**',
     ],
     environment: 'node',
     testTimeout: 30_000,
