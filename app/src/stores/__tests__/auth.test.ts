@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '../auth'
 
+vi.mock('@/stores/auth-helpers', () => ({
+  persistAuth: vi.fn(),
+  clearPersistedAuth: vi.fn(),
+  parseAuthError: vi.fn((e: any) => e?.message || 'Error'),
+}));
+
 vi.mock('@/api/strapi', () => ({
   default: {
     post: vi.fn(),

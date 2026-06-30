@@ -38,6 +38,7 @@
     "src/admin/",
     // Do not include test files
     "**/*.test.*",
+    "vitest.config.*",
     // Do not include plugins in the server compilation
     "src/plugins/**"
   ]

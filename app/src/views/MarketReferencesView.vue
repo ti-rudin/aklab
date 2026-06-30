@@ -10,6 +10,12 @@
       <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Новый эталон</h2>
       <form @submit.prevent="handleCreate" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
+          <label class="block text-sm mb-1" style="color: var(--text-muted)">Название *</label>
+          <input v-model="form.name" name="name" type="text" placeholder="Название эталона"
+            class="w-full px-3 py-2 rounded-lg border text-sm"
+            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+        </div>
+        <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Город *</label>
           <select v-model="form.city" class="w-full px-3 py-2 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
             <option value="" disabled>Выберите…</option>
@@ -52,7 +58,7 @@
           <button type="submit" :disabled="creating || !isFormValid"
             class="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-40"
             style="background: var(--accent)">
-            {{ creating ? 'Сохранение…' : 'Добавить' }}
+            {{ creating ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>
       </form>
@@ -197,6 +203,7 @@ const editingId = ref<number | null>(null)
 const editPrice = ref(0)
 
 const form = reactive({
+  name: '',
   city: '',
   property_type: '',
   price_per_sqm: null as number | null,
@@ -205,7 +212,7 @@ const form = reactive({
 })
 
 const isFormValid = computed(() =>
-  form.city && form.property_type && form.price_per_sqm && form.price_per_sqm > 0 && form.effective_from
+  form.name || (form.city && form.property_type && form.price_per_sqm && form.price_per_sqm > 0 && form.effective_from)
 )
 
 const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
@@ -248,6 +255,7 @@ async function handleCreate() {
         is_active: true,
       }
     })
+    form.name = ''
     form.city = ''
     form.property_type = ''
     form.price_per_sqm = null

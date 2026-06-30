@@ -17,7 +17,7 @@
             </li>
             <li>
               <router-link to="/sources" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Источники
+                Парсеры
               </router-link>
             </li>
             <li>

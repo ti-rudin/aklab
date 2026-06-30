@@ -152,3 +152,4 @@ data.db
 api/data.db
 api/data/
 test-results/
+.env.bak

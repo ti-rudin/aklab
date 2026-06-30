@@ -72,8 +72,14 @@ export default factories.createCoreController("api::property.property", ({ strap
     const params: any[] = [threshold];
 
     if (city) {
-      conditions.push("city = ?");
-      params.push(city);
+      const cities = city.split(",").map((c: string) => c.trim()).filter(Boolean);
+      if (cities.length === 1) {
+        conditions.push("city = ?");
+        params.push(cities[0]);
+      } else if (cities.length > 1) {
+        conditions.push(`city IN (${cities.map(() => "?").join(",")})`);
+        params.push(...cities);
+      }
     }
 
     if (propertyType) {
