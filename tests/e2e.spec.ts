@@ -26,18 +26,19 @@ const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 // ─── helpers ──────────────────────────────────────────────────────────
 
 async function login(page: import('@playwright/test').Page) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     await page.goto('/auth');
     await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
     await page.locator('#email').fill(EMAIL);
     await page.locator('#password').fill(PASS);
     await page.locator('button[type="submit"]').click();
     try {
-      await page.waitForURL(/\/(properties|$)/, { timeout: 20000 });
+      await page.waitForURL(/\/(properties|$)/, { timeout: 15000 });
       return;
     } catch {
-      if (attempt === 3) throw new Error('Login failed after 3 attempts');
-      await page.waitForTimeout(3000);
+      if (attempt === 5) throw new Error('Login failed after 5 attempts');
+      // Wait longer on rate limit (Internal Server Error)
+      await page.waitForTimeout(attempt <= 2 ? 3000 : 30000);
     }
   }
 }
