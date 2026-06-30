@@ -5,17 +5,8 @@
       <h1 class="text-2xl font-bold" style="color: var(--text-main)">Эталоны стоимости ₽/м²</h1>
     </div>
 
-    <!-- Кнопка показа формы -->
-    <div class="mb-6">
-      <button v-if="!showForm" @click="showForm = true"
-        class="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
-        style="background: var(--accent)">
-        Добавить эталон
-      </button>
-    </div>
-
     <!-- Форма добавления -->
-    <div v-if="showForm" class="rounded-xl p-6 border mb-8" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+    <div class="rounded-xl p-6 border mb-8" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
       <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Новый эталон</h2>
       <form @submit.prevent="handleCreate" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
@@ -210,7 +201,6 @@ const creating = ref(false)
 const error = ref('')
 const editingId = ref<number | null>(null)
 const editPrice = ref(0)
-const showForm = ref(false)
 
 const form = reactive({
   name: '',
@@ -271,7 +261,6 @@ async function handleCreate() {
     form.price_per_sqm = null
     form.effective_from = ''
     form.notes = ''
-    showForm.value = false
     await fetchItems()
   } catch (e: any) {
     error.value = e.response?.data?.error?.message || 'Ошибка создания'
