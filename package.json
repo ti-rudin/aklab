@@ -7,7 +7,9 @@
     "services/*"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:unit": "vitest run --reporter=verbose",
+    "test:e2e": "npx playwright test --reporter=line",
     "smoke": "node scripts/smoke-test.js",
     "smoke:local": "node scripts/smoke-test.js --local",
     "deploy:prod": "bash scripts/deploy-prod.sh",

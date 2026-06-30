@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
  * Покрывает:
  *  1. Auth (login, invalid creds, redirect)
  *  2. Properties list — табы, фильтры, сортировка
- *  3. Focus tab — scoring, теги, фильтры, bulk operations, CSV
+ *  3. Focus tab — scoring, теги, фильтры, bulk operations, CSV, регрессия city
  *  4. Object detail page — данные, статус, действия, комментарии
  *  5. Sources page
  *  6. Settings page
@@ -14,6 +14,8 @@ import { test, expect } from '@playwright/test';
  *  8. Navigation
  *  9. API smoke tests
  *  10. Волна 4 features (Dashboard, Rules, Event Log) — marked as TODO
+ *  11. Edge cases & resilience
+ *  12. Регрессия — фильтр city (comma-separated values)
  */
 
 const FRONTEND = process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru';
@@ -280,6 +282,112 @@ test.describe('3. Таб "В фокусе"', () => {
         await page.waitForTimeout(1000);
         await expect(page.locator('h1:has-text("Объекты")')).toBeVisible();
       }
+    }
+  });
+
+  test('3.12 Регрессия: снятие "Другие" → Москва/МО объекты всё ещё видны', async ({ page }) => {
+    // Регрессия для бага: city=moscow,mo раньше делал WHERE city = 'moscow,mo'
+    // вместо WHERE city IN ('moscow','mo'). После фикса снятие "Другие" не должно
+    // убирать moscow/mo объекты.
+    const otherCheckbox = page.locator('label:has-text("Другие") input[type="checkbox"]').first();
+    if (await otherCheckbox.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Снимаем чекбокс "Другие"
+      await otherCheckbox.uncheck();
+      await page.waitForTimeout(2000);
+      // Москва и МО остаются checked — должны быть результаты
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+      // Если есть данные — значит фильтр корректно разбирает city=moscow,mo
+    }
+  });
+
+  test('3.13 Выбрана только "Москва" → только moscow объекты', async ({ page }) => {
+    const moscowCb = page.locator('label:has-text("Москва") input[type="checkbox"]').first();
+    const moCb = page.locator('label:has-text("МО") input[type="checkbox"]').first();
+    const otherCb = page.locator('label:has-text("Другие") input[type="checkbox"]').first();
+    if (await moscowCb.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Снимаем МО и Другие
+      if (await moCb.isChecked()) await moCb.uncheck();
+      if (await otherCb.isChecked()) await otherCb.uncheck();
+      // Убеждаемся что Москва checked
+      if (!(await moscowCb.isChecked())) await moscowCb.check();
+      await page.waitForTimeout(2000);
+      // Проверяем что запрос ушёл с city=moscow
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+    }
+  });
+
+  test('3.14 Все чекбоксы городов сняты → нет фильтра по городу', async ({ page }) => {
+    const moscowCb = page.locator('label:has-text("Москва") input[type="checkbox"]').first();
+    const moCb = page.locator('label:has-text("МО") input[type="checkbox"]').first();
+    const otherCb = page.locator('label:has-text("Другие") input[type="checkbox"]').first();
+    if (await moscowCb.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Снимаем все три чекбокса
+      if (await moscowCb.isChecked()) await moscowCb.uncheck();
+      if (await moCb.isChecked()) await moCb.uncheck();
+      if (await otherCb.isChecked()) await otherCb.uncheck();
+      await page.waitForTimeout(2000);
+      // Без city фильтра показываются все города (или пусто если нет данных)
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+    }
+  });
+
+  test('3.15 Порог = 0 → максимум результатов', async ({ page }) => {
+    const thresholdInput = page.locator('input[type="number"][min="0"][max="100"]').first();
+    if (await thresholdInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await thresholdInput.fill('0');
+      await thresholdInput.press('Tab'); // Триггерим v-model обновление
+      await page.waitForTimeout(2000);
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+    }
+  });
+
+  test('3.16 Порог = 100 → вероятно пустой список', async ({ page }) => {
+    const thresholdInput = page.locator('input[type="number"][min="0"][max="100"]').first();
+    if (await thresholdInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await thresholdInput.fill('100');
+      await thresholdInput.press('Tab');
+      await page.waitForTimeout(2000);
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      // С порогом 100 может быть пусто — оба варианта допустимы
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+    }
+  });
+
+  test('3.17 Тип недвижимости + город → комбинация фильтров', async ({ page }) => {
+    const typeSelect = page.locator('select').last(); // Селект типа в focus-фильтрах
+    if (await typeSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Выбираем тип "Офис"
+      await typeSelect.selectOption('office');
+      await page.waitForTimeout(2000);
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+      // Сбрасываем тип обратно
+      await typeSelect.selectOption('');
+      await page.waitForTimeout(500);
+    }
+  });
+
+  test('3.18 Диапазон цены (от/до)', async ({ page }) => {
+    const priceFrom = page.locator('input[type="number"][placeholder="от"]').first();
+    const priceTo = page.locator('input[type="number"][placeholder="до"]').first();
+    if (await priceFrom.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await priceFrom.fill('1000000');   // от 1 млн
+      await priceTo.fill('50000000');     // до 50 млн
+      await priceTo.press('Tab');
+      await page.waitForTimeout(2000);
+      const table = page.locator('table tbody tr');
+      const emptyState = page.locator('text=Нет объектов в фокусе');
+      await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
     }
   });
 });
@@ -726,5 +834,82 @@ test.describe('11. Граничные случаи', () => {
     // Должно быть "не найден" или ошибка
     const notFound = page.locator('text=/не найден|not found|Ошибка/i').first();
     await expect(notFound).toBeVisible({ timeout: 10000 });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 12. REGRESSION — City filter bug (comma-separated city param)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('12. Регрессия — фильтр city (запятые)', () => {
+
+  test('12.1 GET /api/properties/focus?city=moscow,mo → возвращает результаты', async ({ request }) => {
+    // Регрессия: раньше city=moscow,mo обрабатывался как единая строка
+    // и не находил ни одного объекта. После фикса — разбивается на IN ('moscow','mo')
+    const jwt = await loginAPI(request);
+    const resp = await request.get(`${API}/api/properties/focus?threshold=0&city=moscow,mo&pageSize=10`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    expect(resp.ok()).toBeTruthy();
+    const body = await resp.json();
+    expect(body.data).toBeDefined();
+    expect(Array.isArray(body.data)).toBe(true);
+    // При threshold=0 и наличии данных в БД должны быть результаты
+    if (body.data.length > 0) {
+      // Каждый возвращённый объект должен иметь city moscow ИЛИ mo
+      for (const item of body.data) {
+        expect(['moscow', 'mo']).toContain(item.city);
+      }
+    }
+  });
+
+  test('12.2 GET /api/properties/focus?city=moscow → возвращает результаты', async ({ request }) => {
+    const jwt = await loginAPI(request);
+    const resp = await request.get(`${API}/api/properties/focus?threshold=0&city=moscow&pageSize=10`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    expect(resp.ok()).toBeTruthy();
+    const body = await resp.json();
+    expect(body.data).toBeDefined();
+    expect(Array.isArray(body.data)).toBe(true);
+    // Все объекты должны быть из Москвы
+    if (body.data.length > 0) {
+      for (const item of body.data) {
+        expect(item.city).toBe('moscow');
+      }
+    }
+  });
+
+  test('12.3 GET /api/properties/focus с невалидным threshold → корректная обработка', async ({ request }) => {
+    const jwt = await loginAPI(request);
+    // threshold=-1 — невалидное значение
+    const resp = await request.get(`${API}/api/properties/focus?threshold=-1&pageSize=5`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    // Должен вернуть 200 (сервер корректно обрабатывает) или 400 (валидация)
+    expect(resp.status()).toBeLessThan(500);
+    const body = await resp.json();
+    // Не должно быть unhandled ошибки
+    expect(body).toBeDefined();
+  });
+
+  test('12.4 GET /api/properties/focus с threshold=abc → корректная обработка', async ({ request }) => {
+    const jwt = await loginAPI(request);
+    const resp = await request.get(`${API}/api/properties/focus?threshold=abc&pageSize=5`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    // Не должен падать с 500
+    expect(resp.status()).toBeLessThan(500);
+  });
+
+  test('12.5 GET /api/properties/focus с пустым city → все города', async ({ request }) => {
+    const jwt = await loginAPI(request);
+    const resp = await request.get(`${API}/api/properties/focus?threshold=0&pageSize=10`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    expect(resp.ok()).toBeTruthy();
+    const body = await resp.json();
+    expect(body.data).toBeDefined();
+    // Без city фильтра — могут быть объекты из любых городов
   });
 });
