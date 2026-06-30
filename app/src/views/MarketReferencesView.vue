@@ -222,7 +222,7 @@ const form = reactive({
 })
 
 const isFormValid = computed(() =>
-  form.city && form.property_type && form.price_per_sqm && form.price_per_sqm > 0 && form.effective_from
+  form.name || (form.city && form.property_type && form.price_per_sqm && form.price_per_sqm > 0 && form.effective_from)
 )
 
 const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
