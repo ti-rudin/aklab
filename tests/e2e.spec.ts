@@ -19,39 +19,19 @@ import { test, expect } from '@playwright/test';
  */
 
 const FRONTEND = process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru';
-const API = process.env.API_URL || 'https://api-aklab-dev.tirobots.ru';
 const EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru';
 const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 
 // ─── helpers ──────────────────────────────────────────────────────────
-
-// JWT cache — one API call for the entire test suite instead of 113
-let _cachedJWT: string | null = null;
-let _cachedUser: string | null = null;
-
-async function ensureAuth(page: import('@playwright/test').Page) {
-  if (!_cachedJWT) {
-    const resp = await page.request.post(`${API}/api/auth/local`, {
-      data: { identifier: EMAIL, password: PASS },
-    });
-    const body = await resp.json();
-    if (!body.jwt) throw new Error('Login API failed: ' + JSON.stringify(body));
-    _cachedJWT = body.jwt;
-    _cachedUser = JSON.stringify(body.user);
-  }
-  await page.goto('/');
-  await page.evaluate(({ jwt, user }) => {
-    localStorage.setItem('jwt', jwt);
-    localStorage.setItem('user', user);
-    localStorage.setItem('lastAuthTime', Date.now().toString());
-  }, { jwt: _cachedJWT, user: _cachedUser! });
-}
+// Auth is handled via storageState from global-setup.ts (one API call total).
 
 async function login(page: import('@playwright/test').Page) {
-  await ensureAuth(page);
+  // JWT is pre-loaded into localStorage via storageState
   await page.goto('/properties');
   await page.waitForURL(/\/properties/, { timeout: 10000 });
 }
+
+let _cachedJWT: string | null = null;
 
 async function loginAPI(request: import('@playwright/test').APIRequestContext) {
   if (!_cachedJWT) {
@@ -69,6 +49,7 @@ async function loginAPI(request: import('@playwright/test').APIRequestContext) {
 // ═══════════════════════════════════════════════════════════════════════
 
 test.describe('1. Авторизация', () => {
+  test.use({ storageState: undefined }); // Auth tests need unauthenticated state
 
   test('1.1 Страница логина загружается', async ({ page }) => {
     await page.goto('/auth');
