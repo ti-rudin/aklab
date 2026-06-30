@@ -588,7 +588,6 @@ describe('scoreAllProperties', () => {
       { id: 2, city: 'spb', focus_score: 0, tags: [] },    // score will be 0
     ];
     mockQueryFindMany.mockResolvedValueOnce(properties);
-    mockQueryFindMany.mockResolvedValueOnce([]);
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
 
@@ -600,7 +599,6 @@ describe('scoreAllProperties', () => {
 
     // With threshold=5, one property is in focus (score 10 >= 5)
     mockQueryFindMany.mockResolvedValueOnce([...properties]);
-    mockQueryFindMany.mockResolvedValueOnce([]);
 
     const result2 = await scoreAllProperties(5);
 

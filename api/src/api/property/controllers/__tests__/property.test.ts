@@ -6,21 +6,20 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-// --- Capture the factory callback so tests can call custom actions directly ---
-var capturedFactoryFn: ((context: { strapi: any }) => Record<string, any>) | null = null;
-
+// --- Mock @strapi/strapi ---
 vi.mock('@strapi/strapi', () => ({
   factories: {
     createCoreController: vi.fn((_uid: string, factoryFn: any) => {
-      capturedFactoryFn = factoryFn;
-      return { __uid: _uid };
+      // Return the factory result as the controller object directly
+      // so tests can import it
+      return factoryFn;
     }),
   },
 }));
 
 // Import after mocks (vitest hoists vi.mock)
 import * as fs from 'fs/promises';
-import '../property'; // triggers createCoreController → capturedFactoryFn
+import propertyControllerFactory from '../property';
 
 // Build a mock strapi instance (fresh per test)
 function makeStrapi() {
@@ -60,9 +59,8 @@ describe('property controller', () => {
 
   beforeEach(() => {
     strapi = makeStrapi();
-    // Build actions from the captured factory with a fresh strapi each test
-    expect(capturedFactoryFn).not.toBeNull();
-    actions = capturedFactoryFn!({ strapi });
+    // The mock returns the factory function itself; call it to get actions
+    actions = (propertyControllerFactory as any)({ strapi });
     vi.clearAllMocks();
   });
 

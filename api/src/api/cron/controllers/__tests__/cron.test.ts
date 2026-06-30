@@ -57,7 +57,15 @@ function makeCtx(overrides: Record<string, any> = {}): any {
 
 describe('cron controller', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    // Re-set persistent mock returns after resetAllMocks
+    mockStrapi.db.query.mockReturnValue({
+      findOne: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    });
+    // @ts-ignore
+    global.strapi = mockStrapi;
   });
 
   // =================== parseSource ===================
