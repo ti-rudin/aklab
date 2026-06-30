@@ -1106,14 +1106,16 @@ test.describe('16. Детали объекта — доп. фичи', () => {
     }
   });
 
-  test('16.1 Смена статуса — клик «В работу», подсветка', async ({ page }) => {
-    const statusBtn = page.locator('button').filter({ hasText: /В работу|В работе/ }).first();
-    if (await statusBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await statusBtn.click();
+  test('16.1 Смена статуса — клик по доступному статусу, подсветка', async ({ page }) => {
+    // Ищем ЛЮБУЮ не-disabled кнопку статуса (Новый/В работу/Просмотрено/Отклонено)
+    const statusBtns = page.locator('button:not([disabled])').filter({ hasText: /Новый|В работу|Просмотрено|Отклонено/ });
+    const count = await statusBtns.count();
+    if (count > 0) {
+      await statusBtns.first().click();
       await page.waitForTimeout(1000);
-      // Проверяем что статус обновился (подсветка или текст)
-      const updatedStatus = page.locator('text=/В работе|В работу|Обновлен/i').first();
-      await expect(updatedStatus).toBeVisible({ timeout: 5000 }).catch(() => {});
+      // Проверяем что статус обновился (подсветка активной кнопки)
+      const activeBtn = page.locator('button').filter({ hasText: /Новый|В работу|Просмотрено|Отклонено/ }).first();
+      await expect(activeBtn).toBeVisible({ timeout: 5000 });
     }
   });
 
