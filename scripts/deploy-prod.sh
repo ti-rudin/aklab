@@ -48,7 +48,7 @@ ROLLBACK_SHA=""
 rollback() {
   if [ -n "$ROLLBACK_SHA" ]; then
     err "Rollback на ${ROLLBACK_SHA:0:8}..."
-    git checkout "$ROLLBACK_SHA" -- .
+    git reset --hard "$ROLLBACK_SHA"
     # Rebuild после rollback (dist/ может содержать новую версию)
     log "Rebuild на rollback SHA..."
     (cd lib/sqlite-queue && npm run build 2>&1 | tail -3) || true
