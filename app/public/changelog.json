@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.49",
+    "date": "1 июля 2026",
+    "time": "22:03",
+    "items": [
+      {
+        "text": "Добавить latitude/longitude в ParsedProperty",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.48",
     "date": "1 июля 2026",
     "time": "20:54",
