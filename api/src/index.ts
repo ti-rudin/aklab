@@ -26,6 +26,13 @@ export default {
    * Cron-задачи — в src/cron/index.ts (Фаза 0: stub, наполнится в Фазе 3).
    */
   async bootstrap({ strapi }: { strapi: Core.Strapi }) {
+    // Startup validation: проверяем критичные secrets
+    const requiredEnvVars = ['ADMIN_JWT_SECRET', 'API_TOKEN_SALT', 'JWT_SECRET'];
+    const missing = requiredEnvVars.filter(v => !process.env[v]);
+    if (missing.length > 0) {
+      throw new Error(`Missing required environment variables: ${missing.join(', ')}. Check api/.env`);
+    }
+
     try {
       await runSeeders(strapi as any);
     } catch (err: any) {
