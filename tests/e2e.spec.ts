@@ -631,7 +631,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data.length).toBeGreaterThan(0);
   });
 
-  test.skip('9.3 API properties returns list', async ({ request }) => {
+  test('9.3 API properties returns list', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/properties?pagination[pageSize]=5`, {
       headers: { Authorization: `Bearer ${jwt}` },
@@ -661,7 +661,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.queues).toBeDefined();
   });
 
-  test.skip('9.6 API focus-rules endpoint works', async ({ request }) => {
+  test('9.6 API focus-rules endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/focus-rules`, {
       headers: { Authorization: `Bearer ${jwt}` },
@@ -681,7 +681,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data).toBeDefined();
   });
 
-  test.skip('9.8 API market-references endpoint works', async ({ request }) => {
+  test('9.8 API market-references endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/market-references`, {
       headers: { Authorization: `Bearer ${jwt}` },
@@ -691,7 +691,7 @@ test.describe('9. API Smoke Tests', () => {
     expect(body.data).toBeDefined();
   });
 
-  test.skip('9.9 API property-events endpoint works', async ({ request }) => {
+  test('9.9 API property-events endpoint works', async ({ request }) => {
     const jwt = await loginAPI(request);
     const resp = await request.get(`${API}/api/property-events?pagination[pageSize]=5`, {
       headers: { Authorization: `Bearer ${jwt}` },
