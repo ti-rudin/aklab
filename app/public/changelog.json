@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.41",
+    "date": "1 июля 2026",
+    "time": "13:27",
+    "items": [
+      {
+        "text": "«Посмотреть соседей на ЦИАН» button with Nominatim geocoding",
+        "type": "new"
+      },
+      {
+        "text": "Git reset --hard before pull in CI mode",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.39",
     "date": "1 июля 2026",
     "time": "13:10",
