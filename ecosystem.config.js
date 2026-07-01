@@ -1,3 +1,10 @@
+// PM2 log rotation: установить один раз на сервере:
+//   pm2 install pm2-logrotate
+//   pm2 set pm2-logrotate:max_size 10M
+//   pm2 set pm2-logrotate:retain 7
+//   pm2 set pm2-logrotate:compress true
+//   pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm
+
 require('dotenv').config({ path: __dirname + '/.env' });
 
 module.exports = {
