@@ -1108,10 +1108,12 @@ async function executeClearNew() {
   clearing.value = true
   try {
     const { data } = await api.post('/properties/clear-new')
-    alert(`Удалено ${data.deleted} объектов`)
+    // TODO: заменить на toast notification
+    console.warn(`[UI] Удалено ${data.deleted} объектов`)
     fetchItems()
   } catch (e: any) {
-    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     clearing.value = false
   }
@@ -1323,7 +1325,8 @@ async function recalculateScore() {
     await fetchFocusItems()
   } catch (e: any) {
     console.error('Score recalculation failed:', e)
-    alert('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     scoringLoading.value = false
   }
@@ -1357,7 +1360,8 @@ async function exportCSV() {
     generateCSV(rows)
   } catch (e: any) {
     console.error('CSV export failed:', e)
-    alert('Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
@@ -1414,7 +1418,8 @@ async function bulkSetStatus(status: string) {
     focusSelected.clear()
     await fetchFocusItems()
   } catch (e: any) {
-    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
