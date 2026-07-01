@@ -67,6 +67,10 @@ trap rollback ERR
 log "Git pull..."
 ROLLBACK_SHA=$(git rev-parse HEAD)
 log "Rollback SHA: ${ROLLBACK_SHA:0:8}"
+if [ "$CI_MODE" = "true" ]; then
+  # CI mode: discard local changes (version bump & changelog are committed by CI)
+  git reset --hard HEAD 2>/dev/null || true
+fi
 git pull origin main
 
 # === Step 1.5: Bump patch version (local only) ===

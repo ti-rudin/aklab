@@ -154,6 +154,12 @@
       "relation": "oneToMany",
       "target": "api::property-event.property-event",
       "mappedBy": "property"
+    },
+    "latitude": {
+      "type": "decimal"
+    },
+    "longitude": {
+      "type": "decimal"
     }
   }
 }

@@ -103,6 +103,8 @@ export async function createProperty(props: {
   description?: string;
   contacts?: string;
   photo_urls?: string[];
+  latitude?: number;
+  longitude?: number;
 }): Promise<any> {
   if (!isCommercialProperty(props)) {
     logger.warn(`Skipping non-commercial: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);

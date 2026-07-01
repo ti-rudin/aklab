@@ -73,6 +73,18 @@
           <span v-else class="text-sm" style="color: var(--text-muted)">Ссылка на источник недоступна</span>
         </div>
 
+        <!-- Посмотреть соседей на CIAN -->
+        <div class="mb-4">
+          <a v-if="cianUrl" :href="cianUrl" target="_blank" rel="noopener"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80"
+            style="background: #1a73e8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Посмотреть соседей на ЦИАН
+          </a>
+          <span v-else-if="geocoding" class="text-sm" style="color: var(--text-muted)">⏳ Определяем координаты…</span>
+          <span v-else-if="!property.address" class="text-sm" style="color: var(--text-muted)">Адрес не указан — невозможно определить координаты</span>
+        </div>
+
         <!-- Описание -->
         <div v-if="property.description" class="mb-4">
           <span class="block text-xs mb-1" style="color: var(--text-muted)">Описание</span>
@@ -179,7 +191,7 @@
 
 <script setup lang="ts">
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
 
@@ -208,6 +220,8 @@ interface Property {
   photos?: string[]
   photos_downloaded?: boolean
   photo_urls?: string[]
+  latitude?: number | null
+  longitude?: number | null
 }
 
 interface Comment {
@@ -269,6 +283,40 @@ function nextPhoto() {
 }
 function prevPhoto() {
   if (lightbox.idx > 0) lightbox.idx--
+}
+
+const geocoding = ref(false)
+
+const cianUrl = computed(() => {
+  if (!property.value?.latitude || !property.value?.longitude) return null
+  const lat = property.value.latitude
+  const lng = property.value.longitude
+  return `https://www.cian.ru/map/?center=${lat}%2C${lng}&deal_type=sale&engine_version=2&object_type[0]=3&offer_type=suburban&zoom=16`
+})
+
+async function geocodeAddress() {
+  if (!property.value?.address || property.value.latitude) return
+  geocoding.value = true
+  try {
+    const query = encodeURIComponent(property.value.address)
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
+      headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' }
+    })
+    const results = await resp.json()
+    if (results.length > 0) {
+      const lat = parseFloat(results[0].lat)
+      const lng = parseFloat(results[0].lon)
+      property.value.latitude = lat
+      property.value.longitude = lng
+      // Cache to Strapi
+      try {
+        await api.put(`/properties/${property.value.documentId}`, {
+          data: { latitude: lat, longitude: lng }
+        })
+      } catch { /* non-critical */ }
+    }
+  } catch { /* geocode failed — button won't show */ }
+  finally { geocoding.value = false }
 }
 
 async function fetchProperty() {
@@ -369,5 +417,6 @@ async function addComment() {
 onMounted(async () => {
   await fetchProperty()
   await fetchEvents()
+  geocodeAddress() // fire-and-forget
 })
 </script>
