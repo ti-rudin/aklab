@@ -266,9 +266,14 @@ cp "$CHANGELOG_JSON" "$PROJECT_ROOT/app/dist/changelog.json" 2>/dev/null && log 
 # === Step 10: Git commit ===
 VERSION=$(node -e "console.log(require('./package.json').version)")
 log "Version: $VERSION"
+
+# Ensure git identity for CI environments
+git config user.email "deploy@aklab.tirobots.ru" 2>/dev/null || true
+git config user.name "AKLAB Deploy" 2>/dev/null || true
+
 git add package.json api/package.json app/package.json app/public/changelog.json
-git commit -m "[release] v${VERSION} -- Deploy production" --allow-empty 2>/dev/null || true
-git push origin main 2>/dev/null || warn "Git push не удался (проверьте права)"
+git commit -m "[release] v${VERSION} -- Deploy production" || warn "Git commit не удался"
+git push origin main || warn "Git push не удался (проверьте права)"
 
 # === Done ===
 log "Deploy завершён успешно!"
