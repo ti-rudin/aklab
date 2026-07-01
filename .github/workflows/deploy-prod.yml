@@ -31,8 +31,71 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     environment: production
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50  # Need history for changelog generation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bump version & generate changelog
+        id: prep
+        run: |
+          # Bump patch version
+          CURRENT=$(node -p "require('./package.json').version")
+          NEW=$(node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            const parts = pkg.version.split('.').map(Number);
+            parts[2]++;
+            pkg.version = parts.join('.');
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log(pkg.version);
+          ")
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $CURRENT → $NEW"
+
+          # Generate changelog items (AI first, fallback to rule-based)
+          ITEMS=$(node scripts/generate-changelog-ai.js "$NEW" 2>/tmp/changelog-ai.log || echo '')
+          if [ -z "$ITEMS" ] || [ "$ITEMS" = '[]' ]; then
+            echo "AI changelog empty — fallback to rule-based"
+            ITEMS=$(node scripts/generate-changelog.js "$NEW" 2>/tmp/changelog-gen.log || echo '')
+          fi
+
+          # Update changelog.json
+          if [ -n "$ITEMS" ] && [ "$ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
+            node -e "
+              const fs = require('fs');
+              const items = JSON.parse(process.argv[1]);
+              const changelog = JSON.parse(fs.readFileSync('app/public/changelog.json', 'utf8'));
+              // Deduplicate: remove any existing entry with same version
+              const filtered = changelog.filter(e => e.version !== 'v$NEW');
+              const d = new Date();
+              const msk = new Date(d.toLocaleString('en-US', {timeZone:'Europe/Moscow'}));
+              const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+              const date = msk.getDate() + ' ' + months[msk.getMonth()] + ' ' + msk.getFullYear();
+              const time = String(msk.getHours()).padStart(2,'0') + ':' + String(msk.getMinutes()).padStart(2,'0');
+              filtered.unshift({ version: 'v$NEW', date, time, items });
+              fs.writeFileSync('app/public/changelog.json', JSON.stringify(filtered, null, 2) + '\n');
+              console.log('changelog.json updated: v$NEW (' + items.length + ' items)');
+            " "$ITEMS"
+          else
+            echo "No changelog items generated"
+          fi
+
+      - name: Commit & push [release]
+        run: |
+          VERSION="${{ steps.prep.outputs.version }}"
+          git config user.email "deploy@aklab.tirobots.ru"
+          git config user.name "AKLAB Deploy"
+          git add package.json app/public/changelog.json
+          git commit -m "[release] v${VERSION} -- Deploy production" || echo "Nothing to commit"
+          git push origin main
 
       - name: Deploy via deploy-prod.sh
         id: deploy
