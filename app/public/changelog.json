@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.51",
+    "date": "1 июля 2026",
+    "time": "23:50",
+    "items": [
+      {
+        "text": "TS 6.0 compat — status fallback, admin.ts cast, threshold null, ignoreDeprecations для _shared и analyzer",
+        "type": "fix"
+      },
+      {
+        "text": "Обновить TypeScript 6.0, Vite 8.1, vue-tsc 3.3 + ignoreDeprecations",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.50",
     "date": "1 июля 2026",
     "time": "23:43",
