@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.47",
+    "date": "1 июля 2026",
+    "time": "20:46",
+    "items": [
+      {
+        "text": "OG теги, a11y, legacy CSS cleanup, health check port, pm2-logrotate docs",
+        "type": "improvement"
+      },
+      {
+        "text": "Batch DB ops в focusEngine, composite index, MarketReference кэш",
+        "type": "improvement"
+      },
+      {
+        "text": "Unit тесты для QueueService и cron registration",
+        "type": "improvement"
+      },
+      {
+        "text": "Batch DB ops в focusEngine, composite index, MarketReference кэш",
+        "type": "improvement"
+      },
+      {
+        "text": "Check-env расширен, rollback rebuild, Telegram log safety, engines",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.46",
     "date": "1 июля 2026",
     "time": "20:39",
