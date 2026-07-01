@@ -241,27 +241,21 @@ export async function scorePropertiesBatch(options?: {
 
     if (!properties || properties.length === 0) break;
 
+    // Собираем все updates и events в массивы
+    const updates: Array<{ id: number; score: number; tags: string[] }> = [];
+    const allEvents: Array<{ event_type: string; old_value?: string; new_value?: string; property_id: number }> = [];
+
     for (const prop of properties) {
       const result = scoreProperty(prop, rules);
 
-      // Обновляем объект
-      await s.db.query('api::property.property').update({
-        where: { id: prop.id },
-        data: {
-          focus_score: result.score,
-          tags: result.tags,
-        },
-      });
+      updates.push({ id: prop.id, score: result.score, tags: result.tags });
 
-      // Записываем события
       for (const evt of result.events) {
-        await s.entityService.create('api::property-event.property-event', {
-          data: {
-            event_type: evt.event_type,
-            old_value: evt.old_value || null,
-            new_value: evt.new_value || null,
-            property: prop.id,
-          },
+        allEvents.push({
+          event_type: evt.event_type,
+          old_value: evt.old_value || undefined,
+          new_value: evt.new_value || undefined,
+          property_id: prop.id,
         });
       }
 
@@ -272,6 +266,37 @@ export async function scorePropertiesBatch(options?: {
       for (const tag of result.tags) {
         byTag[tag] = (byTag[tag] || 0) + 1;
       }
+    }
+
+    // Batch update focus_score + tags через raw SQL
+    if (updates.length > 0) {
+      const ids = updates.map(u => u.id);
+      const scoreCases = updates.map(u =>
+        `WHEN ${u.id} THEN ${u.score}`
+      ).join(' ');
+      const tagCases = updates.map(u =>
+        `WHEN ${u.id} THEN '${JSON.stringify(u.tags).replace(/'/g, "''")}'`
+      ).join(' ');
+
+      await s.db.connection.raw(`
+        UPDATE properties
+        SET focus_score = CASE id ${scoreCases} ELSE focus_score END,
+            tags = CASE id ${tagCases} ELSE tags END
+        WHERE id IN (${ids.join(',')})
+      `);
+    }
+
+    // Batch insert events через raw SQL
+    if (allEvents.length > 0) {
+      const now = new Date().toISOString();
+      const values = allEvents.map(e =>
+        `('${e.event_type}', ${e.old_value ? `'${e.old_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.new_value ? `'${e.new_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.property_id}, '${now}', '${now}')`
+      ).join(', ');
+
+      await s.db.connection.raw(`
+        INSERT INTO property_events (event_type, old_value, new_value, property_id, created_at, updated_at)
+        VALUES ${values}
+      `);
     }
 
     if (properties.length < BATCH) break;

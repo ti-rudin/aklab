@@ -3,6 +3,22 @@ import { SqliteQueue } from '@aklab/sqlite-queue';
 import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 
+// In-memory кэш для MarketReference (очищается в начале каждого batch-запуска)
+const mrCache = new Map<string, any>();
+
+function getCacheKey(city: string, propertyType: string) {
+  return `${city}:${propertyType}`;
+}
+
+async function findCachedMarketReference(city: string, propertyType: string) {
+  const key = getCacheKey(city, propertyType);
+  if (mrCache.has(key)) return mrCache.get(key);
+
+  const mr = await findActiveMarketReference(city, propertyType);
+  mrCache.set(key, mr);
+  return mr;
+}
+
 export interface AnalyzeRequest {
   documentId: string;
   threshold?: number; // override from frontend filters
@@ -33,7 +49,7 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       return { analyzed: false, undervalued: false };
     }
 
-    const ref = await findActiveMarketReference(property.city, property.property_type);
+    const ref = await findCachedMarketReference(property.city, property.property_type);
     if (!ref) {
       logger.info(`No active MarketReference for ${property.city}/${property.property_type}`, { correlationId: corrId });
       return { analyzed: false, undervalued: false };

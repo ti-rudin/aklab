@@ -34,6 +34,14 @@
     {
       "name": "properties_focus_score_idx",
       "columns": ["focus_score"]
+    },
+    {
+      "name": "properties_focus_composite_idx",
+      "columns": ["focus_score", "city", "property_type"]
+    },
+    {
+      "name": "properties_created_at_idx",
+      "columns": ["created_at"]
     }
   ],
   "pluginOptions": {},
