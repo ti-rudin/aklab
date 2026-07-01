@@ -160,11 +160,21 @@ fi
 if [ "$NEED_INSTALL" = "true" ]; then
   log "npm install (root + workspaces)..."
   npm install --include=dev 2>&1 | tail -5
+  log "npm install api/..."
+  (cd api && npm install --include=dev 2>&1 | tail -3)
+  log "npm install app/..."
+  (cd app && npm install 2>&1 | tail -3)
   log "Install Playwright system deps + chromium..."
   npx playwright install-deps chromium 2>&1 | tail -3 || true
   npx playwright install chromium 2>&1 | tail -3
 else
   log "package-lock.json не изменился — пропускаем npm install"
+  # app/ и api/ не в workspaces — проверяем их node_modules отдельно
+  if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ]; then
+    log "node_modules отсутствует в api/ или app/ — install обязателен"
+    (cd api && npm install --include=dev 2>&1 | tail -3)
+    (cd app && npm install 2>&1 | tail -3)
+  fi
 fi
 
 # === Step 5: VITE env extraction ===
