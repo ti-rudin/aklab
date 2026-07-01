@@ -279,10 +279,10 @@ else
 fi
 
 # === Step 10: Git commit (local only — CI handles this) ===
-if [ "$CI_MODE" != "true" ]; then
 VERSION=$(node -e "console.log(require('./package.json').version)")
 log "Version: $VERSION"
 
+if [ "$CI_MODE" != "true" ]; then
 # Ensure git identity for CI environments
 git config user.email "deploy@aklab.tirobots.ru" 2>/dev/null || true
 git config user.name "AKLAB Deploy" 2>/dev/null || true
@@ -296,6 +296,8 @@ fi
 
 # === Done ===
 log "Deploy завершён успешно!"
+
+CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
 
 if [ "$CI_MODE" = "true" ]; then
   # В CI-режиме — email вместо Telegram
