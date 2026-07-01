@@ -8,7 +8,7 @@ export default factories.createCoreController('api::source.source', ({ strapi })
     const { id } = ctx.params;
 
     try {
-      const source = await strapi.entityService.findOne('api::source.source', id);
+      const source = await strapi.db.query('api::source.source').findOne({ where: { documentId: id } });
       if (!source) return ctx.notFound('Source not found');
       if (!(source as any).health_port) {
         return ctx.badRequest('No health_port configured');

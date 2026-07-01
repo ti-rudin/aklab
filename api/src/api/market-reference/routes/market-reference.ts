@@ -1,8 +1,9 @@
-/**
- * market-reference router
- *
- * Фаза 1: стандартные CRUD-маршруты через factories.createCoreRouter.
- */
-import { factories } from '@strapi/strapi';
-
-export default factories.createCoreRouter('api::market-reference.market-reference');
+export default {
+  routes: [
+    { method: 'GET', path: '/market-references', handler: 'market-reference.find', config: { auth: {} } },
+    { method: 'GET', path: '/market-references/:id', handler: 'market-reference.findOne', config: { auth: {} } },
+    { method: 'POST', path: '/market-references', handler: 'market-reference.create', config: { auth: {} } },
+    { method: 'PUT', path: '/market-references/:id', handler: 'market-reference.update', config: { auth: {} } },
+    { method: 'DELETE', path: '/market-references/:id', handler: 'market-reference.delete', config: { auth: {} } },
+  ],
+};

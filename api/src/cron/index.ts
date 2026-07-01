@@ -174,7 +174,7 @@ export function registerCrons(strapi: Core.Strapi): void {
         });
         batchDeleted = 0;
         for (const prop of old || []) {
-          await (strapi as any).entityService.delete('api::property.property', prop.id);
+          await (strapi as any).entityService.delete('api::property.property', prop.documentId);
           deleted++;
           batchDeleted++;
         }
