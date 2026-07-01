@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "module": "CommonJS",
     "moduleResolution": "Node",
     "target": "ES2019",
@@ -15,7 +16,6 @@
     "declaration": false,
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
-    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src/**/*.ts"

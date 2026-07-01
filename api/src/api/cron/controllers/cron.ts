@@ -179,13 +179,13 @@ export default {
         city: cityFilter || undefined,
         priceFrom: priceFrom != null && !isNaN(priceFrom) ? priceFrom : undefined,
         priceTo: priceTo != null && !isNaN(priceTo) ? priceTo : undefined,
-        threshold,
+        threshold: threshold ?? undefined,
       });
 
       ctx.body = {
         ok: true,
         ...result,
-        threshold,
+        threshold: threshold ?? undefined,
         filters: { city: cityFilter, priceFrom, priceTo },
       };
     } catch (err: any) {
