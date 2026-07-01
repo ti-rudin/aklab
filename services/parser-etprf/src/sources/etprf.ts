@@ -134,18 +134,22 @@ export class EtprfParser implements SourceParser {
           const price = parsePrice(row.price_text);
           const area = extractArea(row.subject);
           const detailUrl = row.detail_url.startsWith('http') ? row.detail_url : `${BASE_URL}${row.detail_url}`;
+          const fullText = `${row.notification} ${row.subject}`;
+          const addrMatch = fullText.match(/(?:адрес|ул\.|г\.|пр\.)[^,]*(?:,[^,]+){0,2}/i);
+          const address = addrMatch ? addrMatch[0].trim() : '';
 
           allProperties.push({
             external_id: `etprf-${row.lot_id}`,
             url: detailUrl,
             title: row.subject || row.notification,
-            address: '',
+            address,
             city: detectCity(row.subject),
             area_sqm: area,
             price,
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
             property_type: classifyPropertyType(row.subject),
             auction_type: 'bankruptcy',
+            description: row.subject.length > 20 ? row.subject : undefined,
           });
         }
 

@@ -106,15 +106,19 @@ export class SberbankAstParser implements SourceParser {
 
         for (const lot of lots) {
           const price = parsePrice(lot.price_text);
+          const addrMatch = lot.title.match(/(?:по\s+адресу|адрес|ул\.|г\.)\s*([^,]+(?:,[^,]+){0,2})/i);
+          const address = addrMatch ? addrMatch[1].trim() : '';
           allProperties.push({
             external_id: `sberbank-ast-${lot.purchase_id || lot.title.slice(0, 50)}`,
             url: lot.detail_url.startsWith('http') ? lot.detail_url : `${BASE_URL}${lot.detail_url}`,
             title: lot.title,
-            address: '',
+            address,
             city: detectCity(lot.title),
             property_type: classifyPropertyType(lot.title),
             auction_type: 'bankruptcy',
             price,
+            description: lot.title.length > 20 ? lot.title : undefined,
+            contacts: lot.organizer || undefined,
           });
         }
 

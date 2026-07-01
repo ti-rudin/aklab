@@ -154,6 +154,7 @@ export class AggregatorBankrotParser implements SourceParser {
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
             property_type: classifyPropertyType(card.title + ' ' + card.excerpt),
             auction_type: 'bankruptcy',
+            description: card.excerpt.length > 20 ? card.excerpt.slice(0, 500) : undefined,
           });
           pageNewCount++;
         }

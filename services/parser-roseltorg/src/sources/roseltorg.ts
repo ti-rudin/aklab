@@ -105,18 +105,22 @@ export class RoseltorgParser implements SourceParser {
         const area = extractArea(card.title + ' ' + card.excerpt);
         const price = parsePrice(card.price_text);
         const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
+        const excerpt = card.excerpt || '';
+        const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
+        const address = addrMatch ? addrMatch[0].trim() : '';
 
         allProperties.push({
           external_id: `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
           url: fullLink,
           title: card.title,
-          address: '',
-          city: detectCity(card.title + ' ' + card.excerpt),
+          address,
+          city: detectCity(card.title + ' ' + excerpt),
           area_sqm: area,
           price,
           price_per_sqm: price && area ? Math.round(price / area) : undefined,
           property_type: classifyPropertyType(card.title),
           auction_type: 'marketplace',
+          description: excerpt.length > 20 ? excerpt.slice(0, 500) : undefined,
         });
       }
 

@@ -50,6 +50,8 @@ export function createParseHandler(parser: SourceParser) {
             published_at_source: prop.published_at,
             description: prop.description,
             contacts: prop.contacts,
+            latitude: prop.latitude,
+            longitude: prop.longitude,
           });
           if (result) created++;
           else filtered++; // null = не коммерция или нет цены

@@ -116,19 +116,24 @@ export class MetsParser implements SourceParser {
         const area = extractArea(card.title + ' ' + card.excerpt);
         const price = parsePrice(card.price_text);
         const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
+        const excerptText = card.excerpt || '';
+        const addressMatch = excerptText.match(/(?:адрес|ул\.|ул\s|город|г\.|пр\.|просп|шоссе|пер\.)[^,]*(?:,[^,]+){0,2}/i);
+        const address = addressMatch ? addressMatch[0].trim() : '';
+        const description = excerptText.length > 20 ? excerptText.slice(0, 500) : undefined;
 
         allProperties.push({
           external_id: `m-ets-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
           url: fullLink,
           title: card.title,
-          address: '',
-          city: detectCity(card.title + ' ' + card.excerpt),
+          address,
+          city: detectCity(card.title + ' ' + excerptText),
           area_sqm: area,
           price,
           minimum_price: parsePrice(card.min_price_text),
           price_per_sqm: price && area ? Math.round(price / area) : undefined,
           property_type: classifyPropertyType(card.title),
           auction_type: 'marketplace',
+          description,
         });
       }
 
