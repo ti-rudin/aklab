@@ -18,6 +18,8 @@ export interface ParsedProperty {
   description?: string;
   contacts?: string;
   photo_urls?: string[];
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface SourceParser {
