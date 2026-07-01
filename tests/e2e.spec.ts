@@ -61,8 +61,12 @@ test.describe('1. Авторизация', () => {
   });
 
   test('1.2 Успешный логин → редирект на /properties', async ({ page }) => {
-    await login(page);
-    await expect(page).toHaveURL(/\/(properties|$)/);
+    await page.goto('/auth');
+    await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#email').fill(EMAIL);
+    await page.locator('#password').fill(PASS);
+    await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/properties/, { timeout: 15000 });
   });
 
   test('1.3 Неверные credentials → показ ошибки', async ({ page }) => {
@@ -82,7 +86,13 @@ test.describe('1. Авторизация', () => {
   });
 
   test('1.5 Кнопка "Выйти" → редирект на /auth', async ({ page }) => {
-    await login(page);
+    // Login via UI first
+    await page.goto('/auth');
+    await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#email').fill(EMAIL);
+    await page.locator('#password').fill(PASS);
+    await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/properties/, { timeout: 15000 });
     // Кнопка Выйти видна на desktop
     const logoutBtn = page.locator('button:has-text("Выйти")').first();
     await expect(logoutBtn).toBeVisible({ timeout: 5000 });
