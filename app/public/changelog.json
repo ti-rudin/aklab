@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.52",
+    "date": "1 июля 2026",
+    "time": "23:58",
+    "items": [
+      {
+        "text": "Formatters принимают undefined + deploy npm install для api/app",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.51",
     "date": "1 июля 2026",
     "time": "23:50",
