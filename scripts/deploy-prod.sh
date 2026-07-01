@@ -49,6 +49,15 @@ rollback() {
   if [ -n "$ROLLBACK_SHA" ]; then
     err "Rollback на ${ROLLBACK_SHA:0:8}..."
     git checkout "$ROLLBACK_SHA" -- .
+    # Rebuild после rollback (dist/ может содержать новую версию)
+    log "Rebuild на rollback SHA..."
+    (cd lib/sqlite-queue && npm run build 2>&1 | tail -3) || true
+    (cd services/_shared && npm run build 2>&1 | tail -3) || true
+    (cd api && npm run build 2>&1 | tail -3) || true
+    (cd app && npm run build 2>&1 | tail -3) || true
+    for svc in parser-fabrikant parser-torgi-gov parser-aggregator-bankrot parser-alfalot parser-etprf parser-sberbank-ast parser-invest-mosreg parser-investmoscow parser-roseltorg parser-m-ets analyzer digest photo-fetcher; do
+      (cd "services/$svc" && npm run build 2>&1 | tail -3) || true
+    done
     if [ -f "api/.tmp/data.db.bak" ]; then
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
