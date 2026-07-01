@@ -94,7 +94,7 @@ jobs:
           git config user.email "deploy@aklab.tirobots.ru"
           git config user.name "AKLAB Deploy"
           git add package.json app/public/changelog.json
-          git commit -m "[release] v${VERSION} -- Deploy production" || echo "Nothing to commit"
+          git commit -m "[release] v${VERSION} -- Deploy production [skip ci]" || echo "Nothing to commit"
           git push origin main
 
       - name: Deploy via deploy-prod.sh
