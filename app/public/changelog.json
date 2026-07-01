@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.44",
+    "date": "1 июля 2026",
+    "time": "13:53",
+    "items": [
+      {
+        "text": "VERSION outside CI check + [skip ci] on release commit",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.41",
     "date": "1 июля 2026",
     "time": "13:27",
