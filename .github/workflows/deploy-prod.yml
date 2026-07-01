@@ -41,7 +41,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Bump version & generate changelog
         id: prep
@@ -93,7 +93,7 @@ jobs:
           VERSION="${{ steps.prep.outputs.version }}"
           git config user.email "deploy@aklab.tirobots.ru"
           git config user.name "AKLAB Deploy"
-          git add package.json app/public/changelog.json
+          git add package.json api/package.json app/package.json app/public/changelog.json
           git commit -m "[release] v${VERSION} -- Deploy production [skip ci]" || echo "Nothing to commit"
           git push origin main
 

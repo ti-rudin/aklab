@@ -2,14 +2,18 @@
 
 /**
  * Health check для AKLAB сервисов
- * Usage: node scripts/health-check.js
+ * Usage: node scripts/health-check.js [port]
+ *   port — порт App (preview), по умолчанию 4173
+ *   Также можно задать через HEALTH_CHECK_PORT env
  */
 
 const http = require('http');
 
+const port = process.argv[2] || process.env.HEALTH_CHECK_PORT || '4173';
+
 const SERVICES = [
   { name: 'Strapi API', url: 'http://localhost:1338/_health' },
-  { name: 'App (preview)', url: 'http://localhost:5174/' },
+  { name: 'App (preview)', url: `http://localhost:${port}/` },
 ];
 
 function checkService(service) {

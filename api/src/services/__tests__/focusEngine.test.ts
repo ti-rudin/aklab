@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // We need to mock the strapi global for scoreAllProperties
 const mockQueryFindMany = vi.fn();
 const mockQueryUpdate = vi.fn();
+const mockConnectionRaw = vi.fn().mockResolvedValue([]);
 const mockStrapi = {
   log: { warn: vi.fn(), info: vi.fn() },
   entityService: {
@@ -14,6 +15,9 @@ const mockStrapi = {
       findMany: mockQueryFindMany,
       update: mockQueryUpdate,
     }),
+    connection: {
+      raw: mockConnectionRaw,
+    },
   },
 };
 
@@ -376,6 +380,7 @@ describe('scoreAllProperties', () => {
       findMany: mockQueryFindMany,
       update: mockQueryUpdate,
     });
+    mockConnectionRaw.mockResolvedValue([]);
   });
 
   it('should return zeros when no active rules exist', async () => {
@@ -419,16 +424,12 @@ describe('scoreAllProperties', () => {
     expect(result.in_focus).toBe(3); // all properties have score >= 0 (default threshold)
     expect(result.by_tag).toEqual({ moscow_mo: 2 });
 
-    // Verify property updates were called
-    expect(mockQueryUpdate).toHaveBeenCalledTimes(3);
-    expect(mockQueryUpdate).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { focus_score: 10, tags: ['moscow_mo'] },
-    });
-    expect(mockQueryUpdate).toHaveBeenCalledWith({
-      where: { id: 2 },
-      data: { focus_score: 0, tags: [] },
-    });
+    // Verify batch update was called (raw SQL)
+    expect(mockConnectionRaw).toHaveBeenCalledTimes(2); // 1 UPDATE + 1 INSERT
+    const updateCall = mockConnectionRaw.mock.calls[0][0] as string;
+    expect(updateCall).toContain('UPDATE properties');
+    expect(updateCall).toContain('WHEN 1 THEN 10');
+    expect(updateCall).toContain('WHEN 2 THEN 0');
   });
 
   it('should handle batch pagination (multiple batches)', async () => {
@@ -481,30 +482,13 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // Should create events: score_changed + entered_focus
-    expect(mockStrapi.entityService.create).toHaveBeenCalledTimes(2);
-    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
-      'api::property-event.property-event',
-      {
-        data: {
-          event_type: 'score_changed',
-          old_value: '0',
-          new_value: '20',
-          property: 1,
-        },
-      },
-    );
-    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
-      'api::property-event.property-event',
-      {
-        data: {
-          event_type: 'entered_focus',
-          old_value: null,
-          new_value: 'high_value',
-          property: 1,
-        },
-      },
-    );
+    // Should create events: score_changed + entered_focus via raw SQL INSERT
+    expect(mockConnectionRaw).toHaveBeenCalledTimes(2); // 1 UPDATE + 1 INSERT
+    const insertCall = mockConnectionRaw.mock.calls[1][0] as string;
+    expect(insertCall).toContain('INSERT INTO property_events');
+    expect(insertCall).toContain('score_changed');
+    expect(insertCall).toContain('entered_focus');
+    expect(insertCall).toContain('high_value');
   });
 
   it('should create events for tag changes', async () => {
@@ -522,19 +506,15 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // Should emit entered_focus for moscow_mo and left_focus for old_tag
-    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
-      'api::property-event.property-event',
-      expect.objectContaining({
-        data: expect.objectContaining({ event_type: 'entered_focus', new_value: 'moscow_mo' }),
-      }),
+    // Should emit entered_focus for moscow_mo and left_focus for old_tag via raw SQL
+    const insertCall = mockConnectionRaw.mock.calls.find((call: any[]) =>
+      typeof call[0] === 'string' && call[0].includes('INSERT INTO property_events')
     );
-    expect(mockStrapi.entityService.create).toHaveBeenCalledWith(
-      'api::property-event.property-event',
-      expect.objectContaining({
-        data: expect.objectContaining({ event_type: 'left_focus', old_value: 'old_tag' }),
-      }),
-    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall![0]).toContain('entered_focus');
+    expect(insertCall![0]).toContain('moscow_mo');
+    expect(insertCall![0]).toContain('left_focus');
+    expect(insertCall![0]).toContain('old_tag');
   });
 
   it('should not create events when nothing changed', async () => {
@@ -550,8 +530,11 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // No events created
-    expect(mockStrapi.entityService.create).not.toHaveBeenCalled();
+    // No events created — only UPDATE called, no INSERT
+    const insertCalls = mockConnectionRaw.mock.calls.filter((call: any[]) =>
+      typeof call[0] === 'string' && call[0].includes('INSERT INTO property_events')
+    );
+    expect(insertCalls.length).toBe(0);
   });
 
   it('should aggregate by_tag correctly', async () => {
@@ -614,7 +597,7 @@ describe('scoreAllProperties', () => {
     const result = await scoreAllProperties();
 
     expect(result).toEqual({ scored: 0, in_focus: 0, by_tag: {} });
-    expect(mockQueryUpdate).not.toHaveBeenCalled();
+    expect(mockConnectionRaw).not.toHaveBeenCalled();
   });
 
   it('should query with status=new filter', async () => {

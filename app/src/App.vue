@@ -1,5 +1,10 @@
 <template>
   <div class="flex flex-col min-h-screen">
+    <!-- Skip to content (a11y) -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded">
+      Перейти к содержимому
+    </a>
+
     <!-- Header -->
     <nav
       class="sticky top-0 z-50 glass border-b"
@@ -136,13 +141,16 @@
     </transition>
 
     <!-- Main content -->
-    <main class="flex-grow">
+    <main id="main-content" tabindex="-1" class="flex-grow">
       <router-view v-slot="{ Component, route }">
         <transition name="page" mode="out-in">
           <component :is="Component" :key="route.path" />
         </transition>
       </router-view>
     </main>
+
+    <!-- Screen reader announcements -->
+    <div aria-live="polite" class="sr-only"></div>
 
     <!-- Footer -->
     <Footer />

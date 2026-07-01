@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold" style="color: var(--text)">Источники парсинга</h1>
+      <h1 class="text-2xl font-bold" style="color: var(--text-main)">Источники парсинга</h1>
       <!-- Кнопка "Добавить" скрыта — источники управляются через seeders -->
     </div>
 
@@ -9,31 +9,31 @@
     <div
       v-if="showAddForm"
       class="rounded-xl p-6 mb-6"
-      style="background: var(--card-bg); border: 1px solid var(--border-subtle)"
+      style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)"
     >
-      <h3 class="text-lg font-semibold mb-4" style="color: var(--text)">Новый источник</h3>
+      <h3 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Новый источник</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Название</label>
-          <input v-model="form.name" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="Фабрикант" />
+          <input v-model="form.name" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="Фабрикант" />
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Slug</label>
-          <input v-model="form.slug" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="fabrikant" />
+          <input v-model="form.slug" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="fabrikant" />
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">URL</label>
-          <input v-model="form.url" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="https://..." />
+          <input v-model="form.url" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="https://..." />
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Парсер</label>
-          <select v-model="form.parser" @change="onParserChange" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)">
+          <select v-model="form.parser" @change="onParserChange" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)">
             <option v-for="p in availableParsers" :key="p.slug" :value="p.slug">{{ p.slug }}</option>
           </select>
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Тип торгов</label>
-          <select v-model="form.auction_type" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)">
+          <select v-model="form.auction_type" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)">
             <option value="bankruptcy">Банкротство</option>
             <option value="privatization">Приватизация</option>
             <option value="marketplace">Маркетплейс</option>
@@ -41,16 +41,16 @@
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Регион</label>
-          <input v-model="form.region" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="Москва и МО" />
+          <input v-model="form.region" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="Москва и МО" />
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Расписание (cron)</label>
-          <input v-model="form.schedule" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="0 3 * * *" />
+          <input v-model="form.schedule" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="0 3 * * *" />
           <span class="text-xs mt-1 block" style="color: var(--text-muted)">{{ describeCron(form.schedule) }}</span>
         </div>
         <div>
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Health порт</label>
-          <input v-model.number="form.health_port" type="number" class="w-full rounded-lg px-3 py-2" style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)" placeholder="1345" />
+          <input v-model.number="form.health_port" type="number" class="w-full rounded-lg px-3 py-2" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)" placeholder="1345" />
         </div>
       </div>
       <div class="mt-4 flex gap-2">
@@ -85,13 +85,13 @@
         v-for="src in sources"
         :key="src.id"
         class="rounded-xl p-4 sm:p-5 transition-all hover:shadow-lg"
-        style="background: var(--card-bg); border: 1px solid var(--border-subtle)"
+        style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)"
       >
         <div class="flex flex-col sm:flex-row items-start justify-between gap-4">
           <!-- Левая часть: инфо -->
           <div class="flex-1 min-w-0 w-full sm:w-auto">
             <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-              <h3 class="text-base sm:text-lg font-semibold truncate" style="color: var(--text)">{{ src.name }}</h3>
+              <h3 class="text-base sm:text-lg font-semibold truncate" style="color: var(--text-main)">{{ src.name }}</h3>
               <!-- Health badge -->
               <span
                 class="px-2 py-0.5 rounded-full text-xs font-medium"
@@ -105,7 +105,7 @@
               <span
                 class="px-2 py-0.5 rounded-full text-xs font-medium"
                 :style="{
-                  background: src.is_active ? 'var(--accent-soft)' : 'var(--bg)',
+                  background: src.is_active ? 'var(--accent-soft)' : 'var(--bg-main)',
                   color: src.is_active ? 'var(--accent)' : 'var(--text-muted)'
                 }"
               >
@@ -144,7 +144,7 @@
               <input
                 v-model="scheduleEdit"
                 class="w-32 rounded px-2 py-1 text-xs"
-                style="background: var(--bg); color: var(--text); border: 1px solid var(--border-subtle)"
+                style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-subtle)"
                 placeholder="0 3 * * *"
               />
               <span class="text-xs" style="color: var(--text-muted)">{{ describeCron(scheduleEdit) }}</span>
@@ -171,7 +171,7 @@
             <div class="flex gap-3 sm:gap-4">
               <div class="text-center sm:text-right">
                 <div class="text-xs sm:text-sm" style="color: var(--text-muted)">Найдено</div>
-                <div class="text-lg sm:text-xl font-bold" style="color: var(--text)">{{ src.total_found }}</div>
+                <div class="text-lg sm:text-xl font-bold" style="color: var(--text-main)">{{ src.total_found }}</div>
               </div>
               <div class="text-center sm:text-right">
                 <div class="text-xs sm:text-sm" style="color: var(--text-muted)">Создано</div>
@@ -179,7 +179,7 @@
               </div>
               <div class="text-center sm:text-right">
                 <div class="text-xs sm:text-sm" style="color: var(--text-muted)">Запусков</div>
-                <div class="text-lg sm:text-xl font-bold" style="color: var(--text)">{{ src.parse_count }}</div>
+                <div class="text-lg sm:text-xl font-bold" style="color: var(--text-main)">{{ src.parse_count }}</div>
               </div>
             </div>
 
@@ -189,7 +189,7 @@
                 @click="toggleActive(src)"
                 class="px-3 py-1 rounded text-xs font-medium transition-colors"
                 :style="{
-                  background: src.is_active ? 'var(--bg)' : 'var(--accent-soft)',
+                  background: src.is_active ? 'var(--bg-main)' : 'var(--accent-soft)',
                   color: src.is_active ? 'var(--text-muted)' : 'var(--accent)',
                   border: '1px solid var(--border-subtle)'
                 }"
@@ -384,7 +384,7 @@ async function saveSchedule(src: Source) {
 
 function healthColor(src: Source) {
   const h = healthStatuses.value[src.id]
-  if (!src.health_port) return { bg: 'var(--bg)', text: 'var(--text-muted)' }
+  if (!src.health_port) return { bg: 'var(--bg-main)', text: 'var(--text-muted)' }
   if (!h) return { bg: 'rgba(251, 191, 36, 0.15)', text: '#f59e0b' } // loading — жёлтый
   if (h.status === 'ok') return { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981' }
   return { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444' }
@@ -403,7 +403,7 @@ function statusColor(status: string) {
     case 'success': return { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981' }
     case 'error': return { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444' }
     case 'running': return { bg: 'rgba(79, 140, 255, 0.15)', text: '#4f8cff' }
-    default: return { bg: 'var(--bg)', text: 'var(--text-muted)' }
+    default: return { bg: 'var(--bg-main)', text: 'var(--text-muted)' }
   }
 }
 

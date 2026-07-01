@@ -25,6 +25,12 @@
   --transition-fast: 0.2s ease-out;
   --transition-med: 0.3s ease-out;
   --content-max: 1280px;
+
+  /* Aliases for compatibility */
+  --text-primary: var(--text-main);
+  --text-secondary: var(--text-muted);
+  --error-bg: #fee2e2;
+  --success-bg: #dcfce7;
 }
 
 /* Light theme */

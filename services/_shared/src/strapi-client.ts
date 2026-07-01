@@ -247,18 +247,3 @@ export async function updateProperty(documentId: string, fields: Record<string, 
     throw new Error(`updateProperty failed (${res.status}): ${body}`);
   }
 }
-
-/**
- * Получить недооценённые объекты за последние 12 часов (для digest).
- */
-export async function fetchUndervaluedProperties(regions?: string[]): Promise<any[]> {
-  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-  let url = `${BASE}/properties?filters[is_undervalued][$eq]=true&filters[status][$ne]=rejected&filters[createdAt][$gte]=${since}&sort=deviation_percent:desc&pagination[limit]=50`;
-  if (regions && regions.length > 0) {
-    url += `&filters[city][$in]=${regions.join('&filters[city][$in]=')}`;
-  }
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) return [];
-  const data = (await res.json()) as StrapiResponse<any[]>;
-  return data.data || [];
-}

@@ -40,7 +40,6 @@ import {
   findActiveMarketReference,
   fetchSetting,
   updateProperty,
-  fetchUndervaluedProperties,
 } from '../src/strapi-client';
 
 const BASE = 'http://localhost:1338/api';
@@ -494,49 +493,5 @@ describe('updateProperty()', () => {
     await expect(
       updateProperty('doc-1', { bad_field: true })
     ).rejects.toThrow('updateProperty failed (422)');
-  });
-});
-
-// ─── fetchUndervaluedProperties ──────────────────────────────────────────────
-
-describe('fetchUndervaluedProperties()', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test('fetches undervalued properties with correct filters', async () => {
-    const props = [{ id: 1 }, { id: 2 }];
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: props })
-    );
-
-    const result = await fetchUndervaluedProperties();
-    expect(result).toEqual(props);
-
-    const url = (globalThis.fetch as any).mock.calls[0][0] as string;
-    expect(url).toContain('is_undervalued][$eq]=true');
-    expect(url).toContain('status][$ne]=rejected');
-    expect(url).toContain('sort=deviation_percent:desc');
-  });
-
-  test('adds region filters when specified', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: [] })
-    );
-
-    await fetchUndervaluedProperties(['moscow', 'mo']);
-
-    const url = (globalThis.fetch as any).mock.calls[0][0] as string;
-    expect(url).toContain('city][$in]=moscow');
-    expect(url).toContain('city][$in]=mo');
-  });
-
-  test('returns empty array on fetch error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ error: 'err' }, 500)
-    );
-
-    const result = await fetchUndervaluedProperties();
-    expect(result).toEqual([]);
   });
 });

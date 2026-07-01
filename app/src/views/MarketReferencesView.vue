@@ -182,6 +182,7 @@
 import SkeletonTable from '@/components/SkeletonTable.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/api/strapi'
+import { cityLabel, typeLabel } from '@/utils/formatters'
 
 interface MarketReference {
   id: number
@@ -214,12 +215,6 @@ const form = reactive({
 const isFormValid = computed(() =>
   form.name || (form.city && form.property_type && form.price_per_sqm && form.price_per_sqm > 0 && form.effective_from)
 )
-
-const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
-const typeLabel = (v: string) => ({
-  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
-  production: 'Производство', free_purpose: 'Свободного назначения', other: 'Другое'
-})[v] || v
 
 const formatDate = (d: string) => {
   if (!d) return '—'

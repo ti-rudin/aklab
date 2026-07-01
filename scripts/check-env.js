@@ -13,6 +13,16 @@ const requiredVars = [
   'ADMIN_JWT_SECRET',
   'API_TOKEN_SALT',
   'TRANSFER_TOKEN_SALT',
+  'STRAPI_API_TOKEN',
+  'DATABASE_FILENAME',
+];
+
+const recommendedVars = [
+  'EMAIL_SMTP_HOST',
+  'EMAIL_SMTP_USER',
+  'EMAIL_SMTP_PASS',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_CHAT_ID',
 ];
 
 const missing = requiredVars.filter(v => !process.env[v]);
@@ -20,6 +30,12 @@ if (missing.length > 0) {
   console.error('❌ Отсутствуют критические env переменные:');
   missing.forEach(v => console.error(`   - ${v}`));
   process.exit(1);
+}
+
+const missingRecommended = recommendedVars.filter(v => !process.env[v]);
+if (missingRecommended.length > 0) {
+  console.warn('⚠️  Отсутствуют рекомендуемые env переменные:');
+  missingRecommended.forEach(v => console.warn(`   - ${v}`));
 }
 
 // Проверка placeholder-значений

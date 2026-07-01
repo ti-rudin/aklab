@@ -18,6 +18,9 @@
     "setup:local": "cp .env.template .env && echo 'Edit .env with your values'",
     "build:lib": "npm -w @aklab/sqlite-queue run build"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "author": "",
   "license": "ISC",
   "description": "AKLAB — мониторинг коммерческой недвижимости (торги по банкротству)",

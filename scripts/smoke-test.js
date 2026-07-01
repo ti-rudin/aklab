@@ -17,8 +17,12 @@ const API_URL = process.argv.includes('--local')
   ? 'http://localhost:1338'
   : 'https://api-aklab.tirobots.ru';
 
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.ti-soft.ru';
-const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || 'test123456';
+const TEST_EMAIL = process.env.TEST_USER_EMAIL;
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD;
+if (!TEST_EMAIL || !TEST_PASSWORD) {
+  console.error('TEST_USER_EMAIL and TEST_USER_PASSWORD must be set');
+  process.exit(1);
+}
 
 let passed = 0;
 let failed = 0;

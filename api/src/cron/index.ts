@@ -15,6 +15,7 @@ import type { Core } from '@strapi/strapi';
 import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
 import { scoreAllProperties } from "../services/focusEngine";
+import type { StrapiInstance } from '../types/strapi';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
 
@@ -23,11 +24,13 @@ const activeCronJobs = new Map<string, cron.ScheduledTask>();
 
 async function getSetting(strapi: Core.Strapi): Promise<any> {
   // db.query вместо entityService — надёжнее для singleton (gotcha #17)
-  return await (strapi as any).db.query('api::setting.setting').findOne({});
+  const s = strapi as unknown as StrapiInstance;
+  return await s.db.query('api::setting.setting').findOne({});
 }
 
 async function getActiveSources(strapi: Core.Strapi): Promise<any[]> {
-  return (strapi as any).entityService.findMany('api::source.source', {
+  const s = strapi as unknown as StrapiInstance;
+  return s.entityService.findMany('api::source.source', {
     filters: { is_active: true },
     limit: 50,
   });
@@ -96,7 +99,8 @@ export function registerCrons(strapi: Core.Strapi): void {
     const corrId = `cron-analyze-${Date.now()}`;
     strapi.log.info(`[cron] analyze:properties triggered (${corrId})`);
     try {
-      const properties = await (strapi as any).entityService.findMany('api::property.property', {
+      const s = strapi as unknown as StrapiInstance;
+      const properties = await s.entityService.findMany('api::property.property', {
         filters: { status: 'new', is_undervalued: { $null: true } },
         limit: 50,
       });
@@ -165,23 +169,29 @@ export function registerCrons(strapi: Core.Strapi): void {
       cutoff.setMonth(cutoff.getMonth() - retentionMonths);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-      let deleted = 0;
-      let batchDeleted: number;
-      do {
-        const old = await (strapi as any).entityService.findMany('api::property.property', {
-          filters: { createdAt: { $lt: cutoffStr } },
-          limit: 100,
-        });
-        batchDeleted = 0;
-        for (const prop of old || []) {
-          await (strapi as any).entityService.delete('api::property.property', prop.id);
-          deleted++;
-          batchDeleted++;
-        }
-      } while (batchDeleted === 100);
+      // Batch delete с safety guard
+      const BATCH = 100;
+      let totalDeleted = 0;
+      let maxBatches = 50; // safety guard
 
-      if (deleted > 0) {
-        strapi.log.info(`[cron] cleanup:old deleted ${deleted} properties older than ${cutoffStr}`);
+      while (maxBatches > 0) {
+        const s = strapi as unknown as StrapiInstance;
+        const old = await s.db.query('api::property.property').findMany({
+          where: { createdAt: { $lt: cutoff } },
+          limit: BATCH,
+        });
+        if (!old || old.length === 0) break;
+
+        const ids = old.map((p: any) => p.id);
+        await s.db.query('api::property.property').deleteMany({
+          where: { id: { $in: ids } },
+        });
+        totalDeleted += ids.length;
+        maxBatches--;
+      }
+
+      if (totalDeleted > 0) {
+        strapi.log.info(`[cron] cleanup:old deleted ${totalDeleted} properties older than ${cutoffStr}`);
       }
     } catch (err: any) {
       strapi.log.error(`[cron] cleanup:old error: ${err.message}`);

@@ -1,0 +1,50 @@
+http:
+  routers:
+    http-aklab:
+      rule: "Host(`aklab.tirobots.ru`)"
+      entryPoints:
+        - web
+      service: aklab
+      middlewares:
+        - https-redirect
+
+    https-aklab:
+      rule: "Host(`aklab.tirobots.ru`)"
+      entryPoints:
+        - websecure
+      service: aklab
+      tls:
+        certResolver: myresolver
+
+    http-api-aklab:
+      rule: "Host(`api-aklab.tirobots.ru`)"
+      entryPoints:
+        - web
+      service: api-aklab
+      middlewares:
+        - https-redirect
+
+    https-api-aklab:
+      rule: "Host(`api-aklab.tirobots.ru`)"
+      entryPoints:
+        - websecure
+      service: api-aklab
+      tls:
+        certResolver: myresolver
+
+  middlewares:
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    aklab:
+      loadBalancer:
+        servers:
+          - url: http://192.168.31.147:5174
+
+    api-aklab:
+      loadBalancer:
+        servers:
+          - url: http://192.168.31.147:1338

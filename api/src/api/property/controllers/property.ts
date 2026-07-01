@@ -7,6 +7,7 @@
 import { factories } from "@strapi/strapi";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { StrapiInstance } from '../../../../types/strapi';
 
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**
@@ -57,6 +58,7 @@ export default factories.createCoreController("api::property.property", ({ strap
    * Список объектов с focus_score >= threshold, с фильтрацией, сортировкой, пагинацией.
    */
   async getFocus(ctx) {
+    const s = strapi as unknown as StrapiInstance;
     const query = ctx.query || {};
 
     const threshold = Number(query.threshold) || 20;
@@ -120,14 +122,14 @@ export default factories.createCoreController("api::property.property", ({ strap
     const offset = (page - 1) * pageSize;
 
     // Считаем total
-    const countResult = await (strapi as any).db.connection.raw(
+    const countResult = await s.db.connection.raw(
       "SELECT COUNT(*) as total FROM properties WHERE " + where,
       params
     );
     const total = countResult?.rows?.[0]?.total || countResult?.[0]?.total || 0;
 
     // Получаем данные
-    const rows = await (strapi as any).db.connection.raw(
+    const rows = await s.db.connection.raw(
       "SELECT * FROM properties WHERE " + where + " ORDER BY " + sortField + " " + sortDir + " LIMIT ? OFFSET ?",
       [...params, pageSize, offset]
     );

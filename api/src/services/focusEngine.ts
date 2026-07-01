@@ -3,7 +3,10 @@
  *
  * scoreProperty(property, rules) → { score, tags, events[] }
  * scoreAllProperties(threshold?) → статистика по всем status='new'
+ * scorePropertiesBatch(options?) → scoreAllProperties + фильтры (city/price)
  */
+
+import type { StrapiInstance } from '../types/strapi';
 
 interface FocusRule {
   id: number;
@@ -20,6 +23,36 @@ interface ScoreResult {
   score: number;
   tags: string[];
   events: Array<{ event_type: string; old_value?: string; new_value?: string }>;
+}
+
+/**
+ * Безопасная оценка выражений — только арифметика и сравнения.
+ * НЕ использует eval() или new Function().
+ */
+function safeEval(expression: string, vars: Record<string, any>): boolean {
+  // Whitelist допустимых токенов: числа, операторы, скобки, имена переменных
+  const allowedVars = new Set(Object.keys(vars));
+  
+  // Подставляем переменные
+  let expr = expression;
+  for (const [name, value] of Object.entries(vars)) {
+    const numVal = typeof value === 'number' ? value : (typeof value === 'string' ? parseFloat(value) || 0 : 0);
+    // Заменяем только целые слова-переменные (не подстроки)
+    expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), String(numVal));
+  }
+  
+  // Проверяем что остались только безопасные токены: числа, операторы, скобки, пробелы
+  if (/[a-zA-Z_$]/.test(expr)) {
+    throw new Error(`Unsafe expression: unknown variables remain after substitution`);
+  }
+  
+  // Проверяем что нет опасных конструкций
+  if (/[;{}[\]\\`]/.test(expr)) {
+    throw new Error(`Unsafe expression: forbidden characters`);
+  }
+  
+  // Вычисляем через Function (теперь безопасно — только числа и операторы)
+  return new Function(`return (${expr})`)();
 }
 
 /**
@@ -79,17 +112,18 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 
       case 'custom': {
         try {
-          // Безопасная оценка: fields as variables
-          const fields = ['area_sqm', 'price', 'price_per_sqm', 'deviation_percent',
-            'focus_score', 'minimum_price', 'property_type', 'city', 'status',
-            'auction_type', 'source'];
-          const values = fields.map(f => property[f]);
-          const fn = new Function(...fields, `return (${rule.condition_value})`);
-          if (fn(...values)) {
+          const vars: Record<string, any> = {
+            area_sqm: property.area_sqm,
+            price: property.price,
+            price_per_sqm: property.price_per_sqm,
+            deviation_percent: property.deviation_percent,
+            focus_score: property.focus_score,
+            minimum_price: property.minimum_price,
+          };
+          if (safeEval(rule.condition_value || '', vars)) {
             matched = true;
           }
         } catch (err: any) {
-          // Невалидное выражение — пропускаем
           strapi.log.warn(`[focusEngine] custom rule '${rule.name}' eval error: ${err.message}`);
         }
         break;
@@ -154,15 +188,18 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 }
 
 /**
- * Оценить все объекты со status='new', опционально с порогом.
- * Возвращает статистику.
+ * Оценить все объекты со status='new', опционально с фильтрами.
+ * Объединяет логику scoreAllProperties + фильтры из cron controller.
  */
-export async function scoreAllProperties(threshold?: number): Promise<{
-  scored: number;
-  in_focus: number;
-  by_tag: Record<string, number>;
-}> {
-  const rules: FocusRule[] = await (strapi as any).entityService.findMany('api::focus-rule.focus-rule', {
+export async function scorePropertiesBatch(options?: {
+  city?: string[];
+  priceFrom?: number;
+  priceTo?: number;
+  threshold?: number;
+}): Promise<{ scored: number; in_focus: number; by_tag: Record<string, number> }> {
+  const s = strapi as unknown as StrapiInstance;
+
+  const rules: FocusRule[] = await s.entityService.findMany('api::focus-rule.focus-rule', {
     filters: { is_active: true },
     sort: { priority: 'asc' },
     limit: 100,
@@ -173,7 +210,19 @@ export async function scoreAllProperties(threshold?: number): Promise<{
     return { scored: 0, in_focus: 0, by_tag: {} };
   }
 
-  const minScore = threshold || 0;
+  const minScore = options?.threshold || 0;
+
+  // Строим WHERE с опциональными фильтрами
+  const where: any = { status: 'new' };
+  if (options?.city && Array.isArray(options.city) && options.city.length > 0) {
+    where.city = { $in: options.city };
+  }
+  if (options?.priceFrom != null && !isNaN(options.priceFrom)) {
+    where.price = { ...(where.price || {}), $gte: options.priceFrom };
+  }
+  if (options?.priceTo != null && !isNaN(options.priceTo)) {
+    where.price = { ...(where.price || {}), $lte: options.priceTo };
+  }
 
   // Пагинация: обрабатываем батчами
   const BATCH = 200;
@@ -183,8 +232,8 @@ export async function scoreAllProperties(threshold?: number): Promise<{
   const byTag: Record<string, number> = {};
 
   while (true) {
-    const properties = await (strapi as any).db.query('api::property.property').findMany({
-      where: { status: 'new' },
+    const properties = await s.db.query('api::property.property').findMany({
+      where,
       orderBy: { id: 'asc' },
       limit: BATCH,
       offset,
@@ -192,27 +241,21 @@ export async function scoreAllProperties(threshold?: number): Promise<{
 
     if (!properties || properties.length === 0) break;
 
+    // Собираем все updates и events в массивы
+    const updates: Array<{ id: number; score: number; tags: string[] }> = [];
+    const allEvents: Array<{ event_type: string; old_value?: string; new_value?: string; property_id: number }> = [];
+
     for (const prop of properties) {
       const result = scoreProperty(prop, rules);
 
-      // Обновляем объект
-      await (strapi as any).db.query('api::property.property').update({
-        where: { id: prop.id },
-        data: {
-          focus_score: result.score,
-          tags: result.tags,
-        },
-      });
+      updates.push({ id: prop.id, score: result.score, tags: result.tags });
 
-      // Записываем события
       for (const evt of result.events) {
-        await (strapi as any).entityService.create('api::property-event.property-event', {
-          data: {
-            event_type: evt.event_type,
-            old_value: evt.old_value || null,
-            new_value: evt.new_value || null,
-            property: prop.id,
-          },
+        allEvents.push({
+          event_type: evt.event_type,
+          old_value: evt.old_value || undefined,
+          new_value: evt.new_value || undefined,
+          property_id: prop.id,
         });
       }
 
@@ -225,9 +268,47 @@ export async function scoreAllProperties(threshold?: number): Promise<{
       }
     }
 
+    // Batch update focus_score + tags через raw SQL
+    if (updates.length > 0) {
+      const ids = updates.map(u => u.id);
+      const scoreCases = updates.map(u =>
+        `WHEN ${u.id} THEN ${u.score}`
+      ).join(' ');
+      const tagCases = updates.map(u =>
+        `WHEN ${u.id} THEN '${JSON.stringify(u.tags).replace(/'/g, "''")}'`
+      ).join(' ');
+
+      await s.db.connection.raw(`
+        UPDATE properties
+        SET focus_score = CASE id ${scoreCases} ELSE focus_score END,
+            tags = CASE id ${tagCases} ELSE tags END
+        WHERE id IN (${ids.join(',')})
+      `);
+    }
+
+    // Batch insert events через raw SQL
+    if (allEvents.length > 0) {
+      const now = new Date().toISOString();
+      const values = allEvents.map(e =>
+        `('${e.event_type}', ${e.old_value ? `'${e.old_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.new_value ? `'${e.new_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.property_id}, '${now}', '${now}')`
+      ).join(', ');
+
+      await s.db.connection.raw(`
+        INSERT INTO property_events (event_type, old_value, new_value, property_id, created_at, updated_at)
+        VALUES ${values}
+      `);
+    }
+
     if (properties.length < BATCH) break;
     offset += BATCH;
   }
 
   return { scored, in_focus: inFocus, by_tag: byTag };
+}
+
+/**
+ * Обёртка для обратной совместимости — scoreAllProperties(threshold).
+ */
+export async function scoreAllProperties(threshold?: number) {
+  return scorePropertiesBatch({ threshold });
 }

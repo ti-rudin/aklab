@@ -140,9 +140,6 @@ build
 .strapi-updater.json
 .strapi-cloud.json.venv/
 .cursor/
-package-lock.json
-api/package-lock.json
-app/package-lock.json
 .playwright-mcp/
 # Strapi auto-generated documentation at dev/start time
 api/src/extensions/documentation/documentation/*/full_documentation.json

@@ -684,63 +684,56 @@ import SkeletonTable from '@/components/SkeletonTable.vue'
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
+import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
+import { usePropertyData, type Property } from '@/composables/usePropertyData'
+import { useFocusTab } from '@/composables/useFocusTab'
 
 const router = useRouter()
 
 // ========================
-// Табы
+// Data composable
 // ========================
-const activeTab = ref<'all' | 'focus'>('all')
-
-// ========================
-// Common helpers
-// ========================
-const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
-const typeLabel = (v: string) => ({
-  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
-  production: 'Производство', free_purpose: 'Св. назн.', other: 'Другое'
-})[v] || v
-const statusLabel = (v: string) => ({
-  new: 'Новый', in_progress: 'В работе', viewed: 'Просмотрен', rejected: 'Отклонён'
-})[v] || v
-
-const statusStyle = (s: string) => ({
-  new: { background: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
-  in_progress: { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
-  viewed: { background: 'rgba(16,185,129,0.15)', color: '#10b981' },
-  rejected: { background: 'rgba(239,68,68,0.15)', color: '#ef4444' },
-})[s] || {}
-
-const formatPrice = (v: string | number) => Number(v).toLocaleString('ru-RU')
+const {
+  properties: items,
+  focusProperties: focusItems,
+  loading,
+  focusLoading,
+  error,
+  total,
+  focusTotal,
+  focusAvgScore,
+  fetchProperties,
+  fetchFocusProperties,
+} = usePropertyData()
 
 // ========================
-// ВСЕ ОБЪЕКТЫ (existing code)
+// Focus tab composable
 // ========================
-interface Property {
-  id: number
-  documentId: string
-  title: string
-  address: string | null
-  city: string
-  property_type: string
-  area_sqm: string | null
-  price: string | null
-  price_per_sqm: string | null
-  status: string
-  is_undervalued: boolean | null
-  deviation_percent: string | null
-  source: string
-  focus_score?: number | null
-  tags?: string[]
-  has_minimum_price?: boolean
-}
+let doFetchFocus: () => void = () => {}
 
-const items = ref<Property[]>([])
-const loading = ref(true)
-const total = ref(0)
-const page = ref(1)
-const pageSize = 25
+const {
+  activeTab,
+  focusSort,
+  toggleFocusSort,
+  focusFilters,
+  resetFocusFilters,
+  availableTags,
+  focusPage,
+  focusPageSize,
+  focusTotalPages,
+  focusSelected,
+  allFocusChecked,
+  toggleFocusSelect,
+  toggleAllFocus,
+  tagStyle,
+  tagLabel,
+  deviationStyle,
+  switchToFocus,
+} = useFocusTab(() => doFetchFocus(), focusTotal, focusItems)
 
+// ========================
+// ВСЕ ОБЪЕКТЫ — state
+// ========================
 const sources = ['fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow', 'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf', 'sberbank-ast', 'm-ets']
 
 const sort = reactive({
@@ -811,49 +804,47 @@ function resetLaunchFilters() {
   launchFilters.threshold = 20
 }
 
+// ========================
+// ВСЕ ОБЪЕКТЫ — pagination
+// ========================
+const pageSize = 25
+const page = ref(1)
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
 const visiblePages = computed(() => {
-  const total = totalPages.value
+  const t = totalPages.value
   const current = page.value
   const pages: (number | string)[] = []
-  if (total <= 7) {
-    for (let i = 1; i <= total; i++) pages.push(i)
+  if (t <= 7) {
+    for (let i = 1; i <= t; i++) pages.push(i)
     return pages
   }
   pages.push(1)
   if (current > 3) pages.push('...')
   const start = Math.max(2, current - 1)
-  const end = Math.min(total - 1, current + 1)
+  const end = Math.min(t - 1, current + 1)
   for (let i = start; i <= end; i++) pages.push(i)
-  if (current < total - 2) pages.push('...')
-  pages.push(total)
+  if (current < t - 2) pages.push('...')
+  pages.push(t)
   return pages
 })
 
+// ========================
+// ВСЕ ОБЪЕКТЫ — fetch
+// ========================
 async function fetchItems() {
-  loading.value = true
-  try {
-    const params: any = {
-      sort: `${sort.field}:${sort.direction}`,
-      pagination: { page: page.value, pageSize },
-    }
-    const f: any = {}
-    if (filters.city) f.city = { $eq: filters.city }
-    if (filters.status) f.status = { $eq: filters.status }
-    if (filters.source) f.source = { $eq: filters.source }
-    if (filters.property_type) f.property_type = { $eq: filters.property_type }
-    if (filters.undervalued) f.is_undervalued = { $eq: true }
-    if (Object.keys(f).length) params.filters = f
-
-    const { data } = await api.get('/properties', { params })
-    items.value = data.data
-    total.value = data.meta?.pagination?.total || 0
-  } catch (e: any) {
-    console.error('Failed to fetch properties:', e)
-  } finally {
-    loading.value = false
+  const params: any = {
+    sort: `${sort.field}:${sort.direction}`,
+    pagination: { page: page.value, pageSize },
   }
+  const f: any = {}
+  if (filters.city) f.city = { $eq: filters.city }
+  if (filters.status) f.status = { $eq: filters.status }
+  if (filters.source) f.source = { $eq: filters.source }
+  if (filters.property_type) f.property_type = { $eq: filters.property_type }
+  if (filters.undervalued) f.is_undervalued = { $eq: true }
+  if (Object.keys(f).length) params.filters = f
+  await fetchProperties(params)
 }
 
 function resetFilters() {
@@ -879,7 +870,37 @@ watch([filters, page, sort], ([, newPage], [, oldPage]) => {
   fetchItems()
 }, { deep: true })
 
+// ========================
+// Focus data fetch
+// ========================
+function fetchFocusItems() {
+  const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
+
+  const cityList: string[] = []
+  if (focusFilters.cities.moscow) cityList.push('moscow')
+  if (focusFilters.cities.mo) cityList.push('mo')
+  if (focusFilters.cities.other) cityList.push('other')
+
+  const params: any = {
+    threshold: focusFilters.threshold,
+    sort: sortParam,
+    page: focusPage.value,
+    pageSize: focusPageSize,
+  }
+  if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
+  if (focusFilters.property_type) params.type = focusFilters.property_type
+  if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
+  if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
+  if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
+
+  fetchFocusProperties(params)
+}
+
+doFetchFocus = fetchFocusItems
+
+// ========================
 // Pipeline state
+// ========================
 type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
 const pipelineStage = ref<PipelineStage>('idle')
 const parseSourcesTotal = ref(0)
@@ -1108,201 +1129,20 @@ async function executeClearNew() {
   clearing.value = true
   try {
     const { data } = await api.post('/properties/clear-new')
-    alert(`Удалено ${data.deleted} объектов`)
+    // TODO: заменить на toast notification
+    console.warn(`[UI] Удалено ${data.deleted} объектов`)
     fetchItems()
   } catch (e: any) {
-    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     clearing.value = false
   }
 }
 
 // ========================
-// В ФОКУСЕ
-// ========================
-
-interface FocusProperty {
-  id: number
-  documentId: string
-  title: string
-  address: string | null
-  city: string
-  property_type: string
-  area_sqm: string | null
-  price: string | null
-  price_per_sqm: string | null
-  focus_score: number | null
-  deviation_percent: string | null
-  tags: string[]
-  has_minimum_price: boolean
-}
-
-const focusItems = ref<FocusProperty[]>([])
-const focusLoading = ref(false)
-const focusTotal = ref(0)
-const focusAvgScore = ref<number | null>(null)
-const focusPage = ref(1)
-const focusPageSize = 20
-const focusTotalPages = computed(() => Math.ceil(focusTotal.value / focusPageSize))
-
-const focusSort = reactive({
-  field: 'focus_score' as string,
-  direction: 'desc' as 'asc' | 'desc',
-})
-
-function toggleFocusSort(field: string) {
-  if (focusSort.field === field) {
-    focusSort.direction = focusSort.direction === 'asc' ? 'desc' : 'asc'
-  } else {
-    focusSort.field = field
-    focusSort.direction = 'desc'
-  }
-}
-
-const focusFilters = reactive({
-  threshold: 20,
-  cities: { moscow: true, mo: true, other: true },
-  property_type: '',
-  tags: [] as string[],
-  priceFrom: '',
-  priceTo: '',
-})
-
-// Available tags for multiselect
-const availableTags = [
-  { value: 'undervalued', label: 'Недооценён', bgColor: 'rgba(251,191,36,0.15)', textColor: '#f59e0b' },
-  { value: 'has_minimum_price', label: 'Торги', bgColor: 'rgba(79,140,255,0.15)', textColor: '#4f8cff' },
-  { value: 'new', label: 'Новый', bgColor: 'rgba(16,185,129,0.15)', textColor: '#10b981' },
-  { value: 'large_area', label: 'Большая пл.', bgColor: 'rgba(168,85,247,0.15)', textColor: '#a855f7' },
-  { value: 'moscow_mo', label: 'МСК/МО', bgColor: 'rgba(20,184,166,0.15)', textColor: '#14b8a6' },
-]
-
-// Load focus filters from localStorage
-try {
-  const saved = localStorage.getItem('aklab-focus-filters')
-  if (saved) {
-    const parsed = JSON.parse(saved)
-    if (parsed.threshold != null) focusFilters.threshold = parsed.threshold
-    if (parsed.cities) Object.assign(focusFilters.cities, parsed.cities)
-    if (parsed.property_type) focusFilters.property_type = parsed.property_type
-    if (parsed.tags) focusFilters.tags = parsed.tags
-    if (parsed.priceFrom) focusFilters.priceFrom = parsed.priceFrom
-    if (parsed.priceTo) focusFilters.priceTo = parsed.priceTo
-  }
-} catch {}
-
-// Save focus filters to localStorage on change
-watch(focusFilters, (val) => {
-  try {
-    localStorage.setItem('aklab-focus-filters', JSON.stringify(val))
-  } catch {}
-}, { deep: true })
-
-function resetFocusFilters() {
-  focusFilters.threshold = 20
-  focusFilters.cities.moscow = true
-  focusFilters.cities.mo = true
-  focusFilters.cities.other = true
-  focusFilters.property_type = ''
-  focusFilters.tags = []
-  focusFilters.priceFrom = ''
-  focusFilters.priceTo = ''
-}
-
-// Selection
-const focusSelected = reactive(new Set<number>())
-const allFocusChecked = computed(() => {
-  if (focusItems.value.length === 0) return false
-  return focusItems.value.every(item => focusSelected.has(item.id))
-})
-
-function toggleFocusSelect(id: number) {
-  if (focusSelected.has(id)) {
-    focusSelected.delete(id)
-  } else {
-    focusSelected.add(id)
-  }
-}
-
-function toggleAllFocus() {
-  if (allFocusChecked.value) {
-    focusSelected.clear()
-  } else {
-    focusItems.value.forEach(item => focusSelected.add(item.id))
-  }
-}
-
-// Tag styling
-function tagStyle(tag: string) {
-  const map: Record<string, { bg: string; color: string }> = {
-    undervalued: { bg: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
-    has_minimum_price: { bg: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
-    new: { bg: 'rgba(16,185,129,0.15)', color: '#10b981' },
-    large_area: { bg: 'rgba(168,85,247,0.15)', color: '#a855f7' },
-    moscow_mo: { bg: 'rgba(20,184,166,0.15)', color: '#14b8a6' },
-  }
-  const m = map[tag] || { bg: 'rgba(107,114,128,0.15)', color: '#6b7280' }
-  return { background: m.bg, color: m.color }
-}
-
-function tagLabel(tag: string) {
-  const map: Record<string, string> = {
-    undervalued: 'Недооценён',
-    has_minimum_price: 'Торги',
-    new: 'Новый',
-    large_area: 'Большая пл.',
-    moscow_mo: 'МСК/МО',
-  }
-  return map[tag] || tag
-}
-
-// Deviation color coding
-function deviationStyle(pct: number) {
-  if (pct <= -50) return { background: 'rgba(239,68,68,0.15)', color: '#ef4444' }
-  if (pct <= -30) return { background: 'rgba(249,115,22,0.15)', color: '#f97316' }
-  if (pct <= -20) return { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' }
-  return { background: 'rgba(107,114,128,0.15)', color: '#6b7280' }
-}
-
-// Fetch focus data
-async function fetchFocusItems() {
-  focusLoading.value = true
-  try {
-    const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
-
-    // Build city filter
-    const cityList: string[] = []
-    if (focusFilters.cities.moscow) cityList.push('moscow')
-    if (focusFilters.cities.mo) cityList.push('mo')
-    if (focusFilters.cities.other) cityList.push('other')
-
-    const params: any = {
-      threshold: focusFilters.threshold,
-      sort: sortParam,
-      page: focusPage.value,
-      pageSize: focusPageSize,
-    }
-    if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-    if (focusFilters.property_type) params.type = focusFilters.property_type
-    if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
-    if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
-    if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
-
-    const { data } = await api.get('/properties/focus', { params })
-    focusItems.value = data.data || []
-    focusTotal.value = data.meta?.total || 0
-    focusAvgScore.value = data.meta?.avgScore ?? null
-  } catch (e: any) {
-    console.error('Failed to fetch focus items:', e)
-    focusItems.value = []
-    focusTotal.value = 0
-    focusAvgScore.value = null
-  } finally {
-    focusLoading.value = false
-  }
-}
-
 // Recalculate scoring
+// ========================
 const scoringLoading = ref(false)
 
 async function recalculateScore() {
@@ -1323,13 +1163,16 @@ async function recalculateScore() {
     await fetchFocusItems()
   } catch (e: any) {
     console.error('Score recalculation failed:', e)
-    alert('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     scoringLoading.value = false
   }
 }
 
+// ========================
 // CSV Export
+// ========================
 async function exportCSV() {
   try {
     const cityList: string[] = []
@@ -1357,7 +1200,8 @@ async function exportCSV() {
     generateCSV(rows)
   } catch (e: any) {
     console.error('CSV export failed:', e)
-    alert('Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
@@ -1402,7 +1246,9 @@ function escapeCSV(val: string): string {
   return val
 }
 
-// Bulk status change
+// ========================
+// Bulk actions
+// ========================
 async function bulkSetStatus(status: string) {
   const ids = Array.from(focusSelected)
   try {
@@ -1414,46 +1260,20 @@ async function bulkSetStatus(status: string) {
     focusSelected.clear()
     await fetchFocusItems()
   } catch (e: any) {
-    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    // TODO: заменить на toast notification
+    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
-// Bulk CSV export (only selected)
 async function bulkExportCSV() {
   const ids = Array.from(focusSelected)
   const rows = focusItems.value.filter(i => ids.includes(i.id))
   generateCSV(rows)
 }
 
-// Switch to focus tab
-function switchToFocus() {
-  activeTab.value = 'focus'
-  focusPage.value = 1
-  fetchFocusItems()
-}
-
-// Watch focus filters/sort/page for auto-refresh
-watch([() => focusFilters.threshold, () => focusFilters.cities, () => focusFilters.property_type, () => focusFilters.tags, () => focusFilters.priceFrom, () => focusFilters.priceTo], () => {
-  if (activeTab.value === 'focus') {
-    focusPage.value = 1
-    fetchFocusItems()
-  }
-}, { deep: true })
-
-watch(focusSort, () => {
-  if (activeTab.value === 'focus') {
-    focusPage.value = 1
-    fetchFocusItems()
-  }
-})
-
-watch(focusPage, () => {
-  if (activeTab.value === 'focus') {
-    fetchFocusItems()
-  }
-})
-
+// ========================
 // Lifecycle
+// ========================
 onUnmounted(() => {
   stopPolling()
 })
