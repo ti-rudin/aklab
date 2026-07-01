@@ -18,7 +18,8 @@ import { test, expect } from '@playwright/test';
  *  12. Регрессия — фильтр city (comma-separated values)
  */
 
-const FRONTEND = process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru';
+// API for direct calls — prefer localhost (works inside server), fallback to external
+const API = process.env.API_URL_INTERNAL || process.env.API_URL || 'https://api-aklab-dev.tirobots.ru';
 const EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru';
 const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
 
