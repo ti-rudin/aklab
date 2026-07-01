@@ -3,7 +3,7 @@
 # Деплой AKLAB в production
 # Usage: ./scripts/deploy-prod.sh [--force] [--ci]
 
-set -e
+set -euo pipefail
 
 # NVM PATH
 export NVM_DIR="$HOME/.nvm"
