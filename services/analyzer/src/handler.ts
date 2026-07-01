@@ -6,6 +6,10 @@ import { logger } from './utils/logger';
 // In-memory кэш для MarketReference (очищается в начале каждого batch-запуска)
 const mrCache = new Map<string, any>();
 
+export function clearMrCache() {
+  mrCache.clear();
+}
+
 function getCacheKey(city: string, propertyType: string) {
   return `${city}:${propertyType}`;
 }

@@ -36,7 +36,7 @@ vi.mock('../src/utils/logger', () => ({
   },
 }));
 
-import { handleAnalyzeJob } from '../src/handler';
+import { handleAnalyzeJob, clearMrCache } from '../src/handler';
 import {
   fetchProperty,
   findActiveMarketReference,
@@ -62,6 +62,7 @@ function makeJob(data: any) {
 describe('handleAnalyzeJob', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearMrCache();
   });
 
   it('should return analyzed=false if property not found', async () => {
