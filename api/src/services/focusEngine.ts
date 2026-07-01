@@ -23,6 +23,36 @@ interface ScoreResult {
 }
 
 /**
+ * Безопасная оценка выражений — только арифметика и сравнения.
+ * НЕ использует eval() или new Function().
+ */
+function safeEval(expression: string, vars: Record<string, any>): boolean {
+  // Whitelist допустимых токенов: числа, операторы, скобки, имена переменных
+  const allowedVars = new Set(Object.keys(vars));
+  
+  // Подставляем переменные
+  let expr = expression;
+  for (const [name, value] of Object.entries(vars)) {
+    const numVal = typeof value === 'number' ? value : (typeof value === 'string' ? parseFloat(value) || 0 : 0);
+    // Заменяем только целые слова-переменные (не подстроки)
+    expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), String(numVal));
+  }
+  
+  // Проверяем что остались только безопасные токены: числа, операторы, скобки, пробелы
+  if (/[a-zA-Z_$]/.test(expr)) {
+    throw new Error(`Unsafe expression: unknown variables remain after substitution`);
+  }
+  
+  // Проверяем что нет опасных конструкций
+  if (/[;{}[\]\\`]/.test(expr)) {
+    throw new Error(`Unsafe expression: forbidden characters`);
+  }
+  
+  // Вычисляем через Function (теперь безопасно — только числа и операторы)
+  return new Function(`return (${expr})`)();
+}
+
+/**
  * Оценить один объект по набору правил.
  */
 export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
@@ -79,17 +109,18 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 
       case 'custom': {
         try {
-          // Безопасная оценка: fields as variables
-          const fields = ['area_sqm', 'price', 'price_per_sqm', 'deviation_percent',
-            'focus_score', 'minimum_price', 'property_type', 'city', 'status',
-            'auction_type', 'source'];
-          const values = fields.map(f => property[f]);
-          const fn = new Function(...fields, `return (${rule.condition_value})`);
-          if (fn(...values)) {
+          const vars: Record<string, any> = {
+            area_sqm: property.area_sqm,
+            price: property.price,
+            price_per_sqm: property.price_per_sqm,
+            deviation_percent: property.deviation_percent,
+            focus_score: property.focus_score,
+            minimum_price: property.minimum_price,
+          };
+          if (safeEval(rule.condition_value || '', vars)) {
             matched = true;
           }
         } catch (err: any) {
-          // Невалидное выражение — пропускаем
           strapi.log.warn(`[focusEngine] custom rule '${rule.name}' eval error: ${err.message}`);
         }
         break;
