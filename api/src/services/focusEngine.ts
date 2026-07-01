@@ -3,7 +3,10 @@
  *
  * scoreProperty(property, rules) → { score, tags, events[] }
  * scoreAllProperties(threshold?) → статистика по всем status='new'
+ * scorePropertiesBatch(options?) → scoreAllProperties + фильтры (city/price)
  */
+
+import type { StrapiInstance } from '../types/strapi';
 
 interface FocusRule {
   id: number;
@@ -185,15 +188,18 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 }
 
 /**
- * Оценить все объекты со status='new', опционально с порогом.
- * Возвращает статистику.
+ * Оценить все объекты со status='new', опционально с фильтрами.
+ * Объединяет логику scoreAllProperties + фильтры из cron controller.
  */
-export async function scoreAllProperties(threshold?: number): Promise<{
-  scored: number;
-  in_focus: number;
-  by_tag: Record<string, number>;
-}> {
-  const rules: FocusRule[] = await (strapi as any).entityService.findMany('api::focus-rule.focus-rule', {
+export async function scorePropertiesBatch(options?: {
+  city?: string[];
+  priceFrom?: number;
+  priceTo?: number;
+  threshold?: number;
+}): Promise<{ scored: number; in_focus: number; by_tag: Record<string, number> }> {
+  const s = strapi as unknown as StrapiInstance;
+
+  const rules: FocusRule[] = await s.entityService.findMany('api::focus-rule.focus-rule', {
     filters: { is_active: true },
     sort: { priority: 'asc' },
     limit: 100,
@@ -204,7 +210,19 @@ export async function scoreAllProperties(threshold?: number): Promise<{
     return { scored: 0, in_focus: 0, by_tag: {} };
   }
 
-  const minScore = threshold || 0;
+  const minScore = options?.threshold || 0;
+
+  // Строим WHERE с опциональными фильтрами
+  const where: any = { status: 'new' };
+  if (options?.city && Array.isArray(options.city) && options.city.length > 0) {
+    where.city = { $in: options.city };
+  }
+  if (options?.priceFrom != null && !isNaN(options.priceFrom)) {
+    where.price = { ...(where.price || {}), $gte: options.priceFrom };
+  }
+  if (options?.priceTo != null && !isNaN(options.priceTo)) {
+    where.price = { ...(where.price || {}), $lte: options.priceTo };
+  }
 
   // Пагинация: обрабатываем батчами
   const BATCH = 200;
@@ -214,8 +232,8 @@ export async function scoreAllProperties(threshold?: number): Promise<{
   const byTag: Record<string, number> = {};
 
   while (true) {
-    const properties = await (strapi as any).db.query('api::property.property').findMany({
-      where: { status: 'new' },
+    const properties = await s.db.query('api::property.property').findMany({
+      where,
       orderBy: { id: 'asc' },
       limit: BATCH,
       offset,
@@ -227,7 +245,7 @@ export async function scoreAllProperties(threshold?: number): Promise<{
       const result = scoreProperty(prop, rules);
 
       // Обновляем объект
-      await (strapi as any).db.query('api::property.property').update({
+      await s.db.query('api::property.property').update({
         where: { id: prop.id },
         data: {
           focus_score: result.score,
@@ -237,7 +255,7 @@ export async function scoreAllProperties(threshold?: number): Promise<{
 
       // Записываем события
       for (const evt of result.events) {
-        await (strapi as any).entityService.create('api::property-event.property-event', {
+        await s.entityService.create('api::property-event.property-event', {
           data: {
             event_type: evt.event_type,
             old_value: evt.old_value || null,
@@ -261,4 +279,11 @@ export async function scoreAllProperties(threshold?: number): Promise<{
   }
 
   return { scored, in_focus: inFocus, by_tag: byTag };
+}
+
+/**
+ * Обёртка для обратной совместимости — scoreAllProperties(threshold).
+ */
+export async function scoreAllProperties(threshold?: number) {
+  return scorePropertiesBatch({ threshold });
 }

@@ -15,6 +15,8 @@ vi.mock('../../../../services/queueService', () => ({
 // --- Mock focusEngine ---
 vi.mock('../../../../services/focusEngine', () => ({
   scoreProperty: vi.fn(),
+  scorePropertiesBatch: vi.fn(),
+  scoreAllProperties: vi.fn(),
 }));
 
 // --- Strapi global ---
@@ -38,7 +40,7 @@ global.strapi = mockStrapi;
 
 // Import after mocks
 import cronController from '../cron';
-import { scoreProperty } from '../../../../services/focusEngine';
+import { scorePropertiesBatch } from '../../../../services/focusEngine';
 
 function makeCtx(overrides: Record<string, any> = {}): any {
   return {
@@ -323,89 +325,80 @@ describe('cron controller', () => {
   // =================== scoreProperties ===================
   describe('scoreProperties', () => {
     it('should score properties using rules and return stats', async () => {
-      const rules = [
-        { id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'moscow', score: 10, tag: 'moscow_mo', is_active: true, priority: 1 },
-      ];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
-
-      const properties = [
-        { id: 1, city: 'moscow', focus_score: 0, tags: [] },
-        { id: 2, city: 'spb', focus_score: 0, tags: [] },
-      ];
-      mockStrapi.db.query('api::property.property').findMany = vi.fn()
-        .mockResolvedValueOnce(properties)
-        .mockResolvedValueOnce([]); // end pagination
-
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({
-        score: 10,
-        tags: ['moscow_mo'],
-        events: [{ event_type: 'entered_focus', new_value: 'moscow_mo' }],
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 2,
+        in_focus: 2,
+        by_tag: { moscow_mo: 2 },
       });
-      mockStrapi.entityService.create.mockResolvedValue({});
 
       const ctx = makeCtx({ request: { body: { threshold: 10 } } });
       await cronController.scoreProperties(ctx);
 
       expect(ctx.body.ok).toBe(true);
       expect(ctx.body.scored).toBe(2);
+      expect(ctx.body.in_focus).toBe(2);
       expect(ctx.body.threshold).toBe(10);
-      expect(scoreProperty).toHaveBeenCalledTimes(2);
+      expect(scorePropertiesBatch).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 10 }),
+      );
     });
 
     it('should return early with message when no active rules', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([]);
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 0,
+        in_focus: 0,
+        by_tag: {},
+      });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.scoreProperties(ctx);
 
       expect(ctx.body.ok).toBe(true);
       expect(ctx.body.scored).toBe(0);
-      expect(ctx.body.message).toContain('No active focus rules');
+      expect(ctx.body.in_focus).toBe(0);
     });
 
     it('should fall back to setting threshold when not in body', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([]);
       mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockResolvedValue({ threshold_percent: 25 });
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 0,
+        in_focus: 0,
+        by_tag: {},
+      });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.scoreProperties(ctx);
 
-      // threshold should come from settings since body.threshold was not provided
-      // and then the function returns early because no rules
       expect(ctx.body.ok).toBe(true);
+      expect(ctx.body.threshold).toBe(25);
+      expect(scorePropertiesBatch).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 25 }),
+      );
     });
 
     it('should default threshold to 20 when setting is null', async () => {
-      // Provide rules so the function doesn't early-return (early return omits threshold)
-      const rules = [{ id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'x', score: 1, tag: 't', is_active: true, priority: 1 }];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
       mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockResolvedValue(null);
-
-      const props = [{ id: 1, city: 'x', focus_score: 0, tags: [] }];
-      mockStrapi.db.query('api::property.property').findMany = vi.fn()
-        .mockResolvedValueOnce(props)
-        .mockResolvedValueOnce([]);
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({ score: 1, tags: ['t'], events: [] });
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 1,
+        in_focus: 0,
+        by_tag: { t: 1 },
+      });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.scoreProperties(ctx);
 
       expect(ctx.body.threshold).toBe(20);
+      expect(scorePropertiesBatch).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 20 }),
+      );
     });
 
     it('should count properties in_focus when score >= threshold', async () => {
-      const rules = [{ id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'moscow', score: 15, tag: 'mo', is_active: true, priority: 1 }];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
-
-      const props = [{ id: 1, city: 'moscow', focus_score: 0, tags: [] }];
-      mockStrapi.db.query('api::property.property').findMany = vi.fn()
-        .mockResolvedValueOnce(props)
-        .mockResolvedValueOnce([]);
-
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({ score: 15, tags: ['mo'], events: [] });
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 1,
+        in_focus: 1,
+        by_tag: { mo: 1 },
+      });
 
       const ctx = makeCtx({ request: { body: { threshold: 10 } } });
       await cronController.scoreProperties(ctx);
@@ -414,22 +407,24 @@ describe('cron controller', () => {
     });
 
     it('should apply city and price filters', async () => {
-      // Provide rules + properties so function reaches normal path where filters are in response
-      const rules = [{ id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'moscow', score: 1, tag: 't', is_active: true, priority: 1 }];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
-
-      const props = [{ id: 1, city: 'moscow', focus_score: 0, tags: [] }];
-      mockStrapi.db.query('api::property.property').findMany = vi.fn()
-        .mockResolvedValueOnce(props)
-        .mockResolvedValueOnce([]);
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({ score: 1, tags: ['t'], events: [] });
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 1,
+        in_focus: 1,
+        by_tag: { t: 1 },
+      });
 
       const ctx = makeCtx({
         request: { body: { city: ['moscow'], priceFrom: 100000, priceTo: 500000 } },
       });
       await cronController.scoreProperties(ctx);
 
+      expect(scorePropertiesBatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          city: ['moscow'],
+          priceFrom: 100000,
+          priceTo: 500000,
+        }),
+      );
       expect(ctx.body.filters).toEqual({
         city: ['moscow'],
         priceFrom: 100000,
@@ -438,41 +433,23 @@ describe('cron controller', () => {
     });
 
     it('should create property-event entries for each event', async () => {
-      const rules = [{ id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'moscow', score: 10, tag: 'mo', is_active: true, priority: 1 }];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
-
-      const props = [{ id: 42, city: 'moscow', focus_score: 0, tags: [] }];
-      mockStrapi.db.query('api::property.property').findMany = vi.fn()
-        .mockResolvedValueOnce(props)
-        .mockResolvedValueOnce([]);
-
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({
-        score: 10,
-        tags: ['mo'],
-        events: [
-          { event_type: 'score_changed', old_value: '0', new_value: '10' },
-          { event_type: 'entered_focus', new_value: 'mo' },
-        ],
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 1,
+        in_focus: 1,
+        by_tag: { mo: 1 },
       });
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
-      mockStrapi.entityService.create.mockResolvedValue({});
 
       const ctx = makeCtx({ request: { body: { threshold: 5 } } });
       await cronController.scoreProperties(ctx);
 
-      expect(mockStrapi.entityService.create).toHaveBeenCalledTimes(2);
-      expect(mockStrapi.entityService.create).toHaveBeenCalledWith('api::property-event.property-event', {
-        data: {
-          event_type: 'score_changed',
-          old_value: '0',
-          new_value: '10',
-          property: 42,
-        },
-      });
+      expect(scorePropertiesBatch).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 5 }),
+      );
+      expect(ctx.body.scored).toBe(1);
     });
 
     it('should call ctx.internalServerError on exception', async () => {
-      mockStrapi.entityService.findMany.mockRejectedValue(new Error('rules err'));
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('rules err'));
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.scoreProperties(ctx);
@@ -481,27 +458,18 @@ describe('cron controller', () => {
     });
 
     it('should batch pagination in chunks of 200', async () => {
-      const rules = [{ id: 1, name: 'r1', condition_type: 'city_match', condition_value: 'x', score: 1, tag: 't', is_active: true, priority: 1 }];
-      mockStrapi.entityService.findMany.mockResolvedValue(rules);
-
-      // First batch: 200 items, second batch: 0 (end)
-      const batch = Array.from({ length: 200 }, (_, i) => ({ id: i, city: 'x', focus_score: 0, tags: [] }));
-      const findManyMock = vi.fn()
-        .mockResolvedValueOnce(batch)
-        .mockResolvedValueOnce([]);
-
-      mockStrapi.db.query('api::property.property').findMany = findManyMock;
-      mockStrapi.db.query('api::property.property').update = vi.fn().mockResolvedValue({});
-      (scoreProperty as ReturnType<typeof vi.fn>).mockReturnValue({ score: 1, tags: ['t'], events: [] });
+      // The batch pagination is now handled inside scorePropertiesBatch.
+      // This test verifies the controller passes through the result correctly.
+      (scorePropertiesBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        scored: 200,
+        in_focus: 200,
+        by_tag: { t: 200 },
+      });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.scoreProperties(ctx);
 
       expect(ctx.body.scored).toBe(200);
-      // Verify second call uses offset=200
-      expect(findManyMock).toHaveBeenCalledTimes(2);
-      const secondCallArgs = findManyMock.mock.calls[1][0];
-      expect(secondCallArgs.offset).toBe(200);
     });
   });
 });

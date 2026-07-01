@@ -15,6 +15,7 @@ import type { Core } from '@strapi/strapi';
 import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
 import { scoreAllProperties } from "../services/focusEngine";
+import type { StrapiInstance } from '../types/strapi';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
 
@@ -23,11 +24,13 @@ const activeCronJobs = new Map<string, cron.ScheduledTask>();
 
 async function getSetting(strapi: Core.Strapi): Promise<any> {
   // db.query вместо entityService — надёжнее для singleton (gotcha #17)
-  return await (strapi as any).db.query('api::setting.setting').findOne({});
+  const s = strapi as unknown as StrapiInstance;
+  return await s.db.query('api::setting.setting').findOne({});
 }
 
 async function getActiveSources(strapi: Core.Strapi): Promise<any[]> {
-  return (strapi as any).entityService.findMany('api::source.source', {
+  const s = strapi as unknown as StrapiInstance;
+  return s.entityService.findMany('api::source.source', {
     filters: { is_active: true },
     limit: 50,
   });
@@ -96,7 +99,8 @@ export function registerCrons(strapi: Core.Strapi): void {
     const corrId = `cron-analyze-${Date.now()}`;
     strapi.log.info(`[cron] analyze:properties triggered (${corrId})`);
     try {
-      const properties = await (strapi as any).entityService.findMany('api::property.property', {
+      const s = strapi as unknown as StrapiInstance;
+      const properties = await s.entityService.findMany('api::property.property', {
         filters: { status: 'new', is_undervalued: { $null: true } },
         limit: 50,
       });
@@ -171,14 +175,15 @@ export function registerCrons(strapi: Core.Strapi): void {
       let maxBatches = 50; // safety guard
 
       while (maxBatches > 0) {
-        const old = await (strapi as any).db.query('api::property.property').findMany({
+        const s = strapi as unknown as StrapiInstance;
+        const old = await s.db.query('api::property.property').findMany({
           where: { createdAt: { $lt: cutoff } },
           limit: BATCH,
         });
         if (!old || old.length === 0) break;
 
         const ids = old.map((p: any) => p.id);
-        await (strapi as any).db.query('api::property.property').deleteMany({
+        await s.db.query('api::property.property').deleteMany({
           where: { id: { $in: ids } },
         });
         totalDeleted += ids.length;

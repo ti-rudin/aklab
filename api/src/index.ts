@@ -2,6 +2,7 @@ import type { Core } from '@strapi/strapi';
 import { runSeeders } from './seeders';
 import { getQueueService } from './services/queueService';
 import { registerCrons } from './cron';
+import type { StrapiInstance } from './types/strapi';
 
 export default {
   /**
@@ -34,13 +35,13 @@ export default {
     }
 
     try {
-      await runSeeders(strapi as any);
+      await runSeeders(strapi as unknown as StrapiInstance);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] runSeeders failed: ${err.message}`);
     }
 
     try {
-      registerCrons(strapi as any);
+      registerCrons(strapi as unknown as StrapiInstance);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] registerCrons failed: ${err.message}`);
     }
