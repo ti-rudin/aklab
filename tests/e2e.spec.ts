@@ -50,7 +50,7 @@ async function loginAPI(request: import('@playwright/test').APIRequestContext) {
 // ═══════════════════════════════════════════════════════════════════════
 
 test.describe('1. Авторизация', () => {
-  test.use({ storageState: undefined }); // Auth tests need unauthenticated state
+  test.use({ storageState: { cookies: [], origins: [] } }); // Auth tests need fully unauthenticated state
 
   test('1.1 Страница логина загружается', async ({ page }) => {
     await page.goto('/auth');
@@ -807,8 +807,20 @@ test.describe('11. Граничные случаи', () => {
     await expect(page.locator('text=/Не найден|404|not found/i').first()).toBeVisible({ timeout: 10000 });
   });
 
+  test('11.5 Detail с несуществующим documentId → "не найден"', async ({ page }) => {
+    await login(page);
+    await page.goto('/properties/nonexistent-id-12345');
+    await page.waitForTimeout(3000);
+    // Должно быть "не найден" или ошибка
+    const notFound = page.locator('text=/не найден|not found|Ошибка/i').first();
+    await expect(notFound).toBeVisible({ timeout: 10000 });
+  });
+});
+
+test.describe('11б. Редирект без auth', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
   test('11.2 Прямой переход на /properties без auth → редирект', async ({ page }) => {
-    // Без login
     await page.goto('/properties');
     await expect(page).toHaveURL(/\/auth/, { timeout: 10000 });
   });
@@ -821,15 +833,6 @@ test.describe('11. Граничные случаи', () => {
   test('11.4 Прямой переход на /settings без auth → редирект', async ({ page }) => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/auth/, { timeout: 10000 });
-  });
-
-  test('11.5 Detail с несуществующим documentId → "не найден"', async ({ page }) => {
-    await login(page);
-    await page.goto('/properties/nonexistent-id-12345');
-    await page.waitForTimeout(3000);
-    // Должно быть "не найден" или ошибка
-    const notFound = page.locator('text=/не найден|not found|Ошибка/i').first();
-    await expect(notFound).toBeVisible({ timeout: 10000 });
   });
 });
 
@@ -1206,7 +1209,7 @@ test.describe('18. Рыночные эталоны — доп. фичи', () => 
 
   test('18.1 Таблица эталонов видна с данными или пустым состоянием', async ({ page }) => {
     const table = page.locator('table tbody tr');
-    const emptyState = page.locator('text=/Нет эталонов|Пусто|Нет данных/i').first();
+    const emptyState = page.locator('text=/Нет эталонов|Пусто|Нет данных|Эталоны не добавлены/i').first();
     await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
   });
 
