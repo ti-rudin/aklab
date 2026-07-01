@@ -1,5 +1,96 @@
 [
   {
+    "version": "v1.0.47",
+    "date": "1 июля 2026",
+    "time": "20:46",
+    "items": [
+      {
+        "text": "OG теги, a11y, legacy CSS cleanup, health check port, pm2-logrotate docs",
+        "type": "improvement"
+      },
+      {
+        "text": "Batch DB ops в focusEngine, composite index, MarketReference кэш",
+        "type": "improvement"
+      },
+      {
+        "text": "Unit тесты для QueueService и cron registration",
+        "type": "improvement"
+      },
+      {
+        "text": "Batch DB ops в focusEngine, composite index, MarketReference кэш",
+        "type": "improvement"
+      },
+      {
+        "text": "Check-env расширен, rollback rebuild, Telegram log safety, engines",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.0.46",
+    "date": "1 июля 2026",
+    "time": "20:39",
+    "items": [
+      {
+        "text": "объект",
+        "type": "new"
+      }
+    ]
+  },
+  {
+    "version": "v1.0.44",
+    "date": "1 июля 2026",
+    "time": "13:53",
+    "items": [
+      {
+        "text": "VERSION outside CI check + [skip ci] on release commit",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.0.41",
+    "date": "1 июля 2026",
+    "time": "13:27",
+    "items": [
+      {
+        "text": "«Посмотреть соседей на ЦИАН» button with Nominatim geocoding",
+        "type": "new"
+      },
+      {
+        "text": "Git reset --hard before pull in CI mode",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.0.39",
+    "date": "1 июля 2026",
+    "time": "13:10",
+    "items": [
+      {
+        "text": "Move changelog + version bump + git push into CI workflow",
+        "type": "fix"
+      },
+      {
+        "text": "Unskip 4 API smoke tests (9.3, 9.6, 9.8, 9.9)",
+        "type": "fix"
+      },
+      {
+        "text": "Скрипт деплоя",
+        "type": "fix"
+      },
+      {
+        "text": "Auth tests 1.2 and 1.5 login via UI instead of storageState",
+        "type": "fix"
+      },
+      {
+        "text": "Auth tests use empty storageState, fix 18.1 empty text",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.43",
     "date": "1 июля 2026",
     "time": "12:37",
