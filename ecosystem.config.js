@@ -8,6 +8,8 @@ module.exports = {
       script: 'node',
       args: 'node_modules/@strapi/strapi/bin/strapi.js start',
       interpreter: 'none',
+      max_memory_restart: '768M',
+      exp_backoff_restart_delay: 100,
       health_check: {
         url: 'http://localhost:1338/_health',
         interval: 15000,
@@ -38,6 +40,8 @@ module.exports = {
       script: 'npm',
       args: 'run preview -- --host',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -54,6 +58,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -72,6 +78,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -90,6 +98,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -105,6 +115,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -125,6 +137,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -141,6 +155,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -159,6 +175,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -177,6 +195,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -195,6 +215,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -213,6 +235,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -231,6 +255,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -249,6 +275,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',
@@ -267,6 +295,8 @@ module.exports = {
       script: 'node',
       args: 'dist/index.js',
       interpreter: 'none',
+      max_memory_restart: '512M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         NVM_DIR: '/home/rudin/.nvm',

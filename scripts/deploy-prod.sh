@@ -123,6 +123,11 @@ if [ -f "api/.tmp/data.db" ]; then
   ls -t "$BACKUP_DIR"/data-*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 fi
 
+if [ -f "queue.db" ]; then
+  cp queue.db "$BACKUP_DIR/queue-${TIMESTAMP}.db" 2>/dev/null || true
+  log "Backup: queue.db → $BACKUP_DIR/queue-${TIMESTAMP}.db"
+fi
+
 # === Step 4: Smart npm install ===
 NEED_INSTALL=false
 
