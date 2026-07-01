@@ -35,13 +35,13 @@ export default {
     }
 
     try {
-      await runSeeders(strapi as unknown as StrapiInstance);
+      await runSeeders(strapi as any);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] runSeeders failed: ${err.message}`);
     }
 
     try {
-      registerCrons(strapi as unknown as StrapiInstance);
+      registerCrons(strapi as any);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] registerCrons failed: ${err.message}`);
     }

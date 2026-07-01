@@ -7,7 +7,7 @@
 import { factories } from "@strapi/strapi";
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { StrapiInstance } from '../../../../types/strapi';
+import type { StrapiInstance } from '../../../types/strapi';
 
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**

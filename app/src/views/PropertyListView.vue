@@ -326,7 +326,7 @@
               <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
               <td class="px-3 py-2 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
               <td class="px-3 py-2 text-center">
-                <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
               </td>
               <td class="px-3 py-2 text-center">
                 <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
@@ -352,7 +352,7 @@
           <div class="flex items-start justify-between gap-2 mb-2">
             <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
             <div class="flex items-center gap-1.5 shrink-0">
-              <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status)">{{ statusLabel(item.status) }}</span>
+              <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
               <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">
                 ⚠ {{ item.deviation_percent }}%
               </span>
