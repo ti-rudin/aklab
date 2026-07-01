@@ -97,10 +97,15 @@ describe('Cron Registration', () => {
       );
     });
 
-    // Должны быть вызваны schedule для fabrikant и torgi-gov
+    // Даём microtask queue завершить IIFE
+    await new Promise(r => setTimeout(r, 10));
+
+    // Должны быть вызваны schedule для fabrikant и torgi-gov + 4 системных cron
     const scheduleCalls = mockCronSchedule.mock.calls.map(c => c[0]);
     expect(scheduleCalls).toContain('0 3 * * *'); // fabrikant
     expect(scheduleCalls).toContain('0 4 * * *'); // torgi-gov
+    // Общее: 2 source + analyze + score + digest + cleanup = 6
+    expect(scheduleCalls.length).toBeGreaterThanOrEqual(6);
   });
 
   // ─── 2. Неактивные sources не регистрируются ────────────────────

@@ -6,6 +6,7 @@ export default defineConfig({
       'lib/**/__tests__/**/*.test.ts',
       'services/**/__tests__/**/*.test.ts',
       'api/src/services/**/__tests__/**/*.test.ts',
+      'api/src/cron/**/__tests__/**/*.test.ts',
       'api/src/api/**/__tests__/**/*.test.ts',
     ],
     exclude: [
