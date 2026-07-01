@@ -241,6 +241,7 @@ import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
+import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
 
 const route = useRoute()
 
@@ -298,26 +299,9 @@ const statuses = [
   { value: 'rejected', label: 'Отклонено', color: '#ef4444' },
 ]
 
-const cityLabel = (v: string) => ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v] || v
-const typeLabel = (v: string) => ({
-  office: 'Офис', warehouse: 'Склад', retail: 'Торговля',
-  production: 'Производство', free_purpose: 'Свободного назначения', other: 'Другое'
-})[v] || v
-const statusLabel = (v: string) => ({
-  new: 'Новый', in_progress: 'В работе', viewed: 'Просмотрен', rejected: 'Отклонён'
-})[v] || v
 const auctionLabel = (v: string) => ({
   bankruptcy: 'Банкротство', privatization: 'Приватизация', marketplace: 'Торговая площадка'
 })[v] || v
-
-const statusStyle = (s: string) => ({
-  new: { background: 'rgba(79,140,255,0.15)', color: '#4f8cff' },
-  in_progress: { background: 'rgba(251,191,36,0.15)', color: '#f59e0b' },
-  viewed: { background: 'rgba(16,185,129,0.15)', color: '#10b981' },
-  rejected: { background: 'rgba(239,68,68,0.15)', color: '#ef4444' },
-})[s] || {}
-
-const formatPrice = (v: string | number) => Number(v).toLocaleString('ru-RU')
 const formatDate = (d: string) => new Date(d).toLocaleString('ru-RU')
 
 // Photo gallery
