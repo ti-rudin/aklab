@@ -1,0 +1,25 @@
+api:
+  insecure: true
+  dashboard: true
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+certificatesResolvers:
+  myresolver:
+    acme:
+      email: ${ACME_EMAIL}
+      httpChallenge:
+        entryPoint: web
+      storage: /etc/traefik/acme.json
+
+serverTransport:
+  insecureSkipVerify: true
