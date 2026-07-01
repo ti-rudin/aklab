@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.48",
+    "date": "1 июля 2026",
+    "time": "20:54",
+    "items": [
+      {
+        "text": "Закоммитить package-lock.json для reproducible builds",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.47",
     "date": "1 июля 2026",
     "time": "20:46",
