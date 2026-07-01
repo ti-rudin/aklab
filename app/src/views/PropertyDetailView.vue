@@ -50,6 +50,10 @@
             <span class="font-mono" style="color: var(--text-main)">{{ property.price ? `${formatPrice(property.price)} ₽` : '—' }}</span>
           </div>
           <div>
+            <span class="block text-xs" style="color: var(--text-muted)">Начальная цена</span>
+            <span class="font-mono" style="color: var(--text-main)">{{ property.minimum_price ? `${formatPrice(property.minimum_price)} ₽` : '—' }}</span>
+          </div>
+          <div>
             <span class="block text-xs" style="color: var(--text-muted)">Цена за м²</span>
             <span class="font-mono" style="color: var(--text-main)">{{ property.price_per_sqm ? `${formatPrice(property.price_per_sqm)} ₽/м²` : '—' }}</span>
           </div>
@@ -60,6 +64,18 @@
           <div>
             <span class="block text-xs" style="color: var(--text-muted)">Тип торгов</span>
             <span style="color: var(--text-main)">{{ auctionLabel(property.auction_type) }}</span>
+          </div>
+          <div v-if="property.published_at_source">
+            <span class="block text-xs" style="color: var(--text-muted)">Дата публикации</span>
+            <span style="color: var(--text-main)">{{ formatDate(property.published_at_source) }}</span>
+          </div>
+          <div v-if="property.first_seen_at">
+            <span class="block text-xs" style="color: var(--text-muted)">Обнаружен</span>
+            <span style="color: var(--text-main)">{{ formatDate(property.first_seen_at) }}</span>
+          </div>
+          <div v-if="property.focus_score">
+            <span class="block text-xs" style="color: var(--text-muted)">Focus Score</span>
+            <span class="font-mono" style="color: var(--text-main)">{{ property.focus_score }}</span>
           </div>
           <div v-if="property.is_undervalued && property.manual_price_per_sqm">
             <span class="block text-xs" style="color: var(--text-muted)">Эталон ₽/м²</span>
@@ -85,10 +101,41 @@
           <span v-else-if="!property.address" class="text-sm" style="color: var(--text-muted)">Адрес не указан — невозможно определить координаты</span>
         </div>
 
+        <!-- Информация о торгах -->
+        <div v-if="property.auction_type || property.minimum_price" class="mb-4 p-4 rounded-lg" style="background: var(--bg-main)">
+          <h3 class="text-sm font-semibold mb-3" style="color: var(--text-main)">📋 Информация о торгах</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <span class="block text-xs" style="color: var(--text-muted)">Тип торгов</span>
+              <span class="text-sm font-medium" style="color: var(--text-main)">{{ auctionLabel(property.auction_type) }}</span>
+            </div>
+            <div v-if="property.minimum_price">
+              <span class="block text-xs" style="color: var(--text-muted)">Начальная цена</span>
+              <span class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPrice(property.minimum_price) }} ₽</span>
+            </div>
+            <div v-if="property.price">
+              <span class="block text-xs" style="color: var(--text-muted)">Текущая цена</span>
+              <span class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPrice(property.price) }} ₽</span>
+            </div>
+            <div v-if="property.published_at_source">
+              <span class="block text-xs" style="color: var(--text-muted)">Дата размещения</span>
+              <span class="text-sm" style="color: var(--text-main)">{{ formatDate(property.published_at_source) }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Описание -->
         <div v-if="property.description" class="mb-4">
           <span class="block text-xs mb-1" style="color: var(--text-muted)">Описание</span>
-          <p class="text-sm whitespace-pre-wrap" style="color: var(--text-main)">{{ property.description }}</p>
+          <p class="text-sm whitespace-pre-wrap leading-relaxed" style="color: var(--text-main)"
+            :class="{ 'line-clamp-4': !showFullDesc && property.description.length > 300 }">
+            {{ property.description }}
+          </p>
+          <button v-if="property.description.length > 300"
+            @click="showFullDesc = !showFullDesc"
+            class="text-xs mt-1 hover:underline" style="color: var(--accent)">
+            {{ showFullDesc ? 'Свернуть' : 'Показать полностью' }}
+          </button>
         </div>
 
         <!-- Контакты -->
@@ -206,6 +253,7 @@ interface Property {
   property_type: string
   area_sqm: string | null
   price: string | null
+  minimum_price: string | null
   price_per_sqm: string | null
   status: string
   is_undervalued: boolean | null
@@ -216,6 +264,10 @@ interface Property {
   url: string | null
   description: string | null
   contacts: string | null
+  published_at_source: string | null
+  first_seen_at: string | null
+  focus_score: number | null
+  tags: string[] | null
   comments?: Comment[]
   photos?: string[]
   photos_downloaded?: boolean
@@ -237,6 +289,7 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const comment = ref('')
+const showFullDesc = ref(false)
 
 const statuses = [
   { value: 'new', label: 'Новый', color: '#4f8cff' },
@@ -420,3 +473,12 @@ onMounted(async () => {
   geocodeAddress() // fire-and-forget
 })
 </script>
+
+<style scoped>
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+</style>

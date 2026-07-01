@@ -171,6 +171,13 @@ export class FabrikantParser implements SourceParser {
           const area = extractArea(p.title);
           const pricePerSqm = price && area ? Math.round(price / area) : undefined;
 
+          // published_at из date_text (DD.MM.YYYY → ISO)
+          let publishedAt: string | undefined;
+          if (p.date_text) {
+            const dm = p.date_text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+            if (dm) publishedAt = `${dm[3]}-${dm[2]}-${dm[1]}T00:00:00Z`;
+          }
+
           allProperties.push({
             external_id: `fabrikant-${p.lot_id}`,
             url: p.link_href || `${BASE_URL}/procedure/search/sales`,
@@ -182,6 +189,8 @@ export class FabrikantParser implements SourceParser {
             price_per_sqm: pricePerSqm,
             property_type: classifyPropertyType(p.title),
             auction_type: 'bankruptcy',
+            description: p.title.length > 20 ? p.title : undefined,
+            published_at: publishedAt,
           });
         }
 

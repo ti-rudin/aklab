@@ -171,6 +171,8 @@ export class TorgiGovParser implements SourceParser {
           price_per_sqm: price && area ? Math.round(price / area) : undefined,
           property_type: classifyPropertyType(fullText),
           auction_type: item.biddType?.name?.includes('продаж') ? 'marketplace' : 'privatization',
+          description: description.length > 20 ? description.slice(0, 1000) : undefined,
+          published_at: item.createDate || undefined,
         });
         pageNewCount++;
       }

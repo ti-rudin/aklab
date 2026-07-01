@@ -130,6 +130,7 @@ export class AlfalotParser implements SourceParser {
           const price = parsePrice(card.price_text);
           const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
 
+          const parts = [card.title, card.object_type, card.lot_number].filter(Boolean);
           allProperties.push({
             external_id: `alfalot-${card.lot_id}`,
             url: fullLink,
@@ -141,6 +142,7 @@ export class AlfalotParser implements SourceParser {
             price_per_sqm: price && area && area > 0 ? Math.round(price / area) : undefined,
             property_type: classifyPropertyType(card.title + ' ' + card.object_type),
             auction_type: 'bankruptcy',
+            description: parts.join(' | '),
           });
         }
 
