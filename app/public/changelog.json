@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.39",
+    "date": "1 июля 2026",
+    "time": "13:10",
+    "items": [
+      {
+        "text": "Move changelog + version bump + git push into CI workflow",
+        "type": "fix"
+      },
+      {
+        "text": "Unskip 4 API smoke tests (9.3, 9.6, 9.8, 9.9)",
+        "type": "fix"
+      },
+      {
+        "text": "Скрипт деплоя",
+        "type": "fix"
+      },
+      {
+        "text": "Auth tests 1.2 and 1.5 login via UI instead of storageState",
+        "type": "fix"
+      },
+      {
+        "text": "Auth tests use empty storageState, fix 18.1 empty text",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.43",
     "date": "1 июля 2026",
     "time": "12:37",
