@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.0.43",
+    "date": "1 июля 2026",
+    "time": "12:37",
+    "items": [
+      {
+        "text": "Node v20.20.2 в ecosystem.config.js + исправлен notify-deploy.sh quoting",
+        "type": "fix"
+      },
+      {
+        "text": "Обновление compact-doc.md — CI/CD, исправлены устаревшие данные",
+        "type": "improvement"
+      },
+      {
+        "text": "План модернизации «В фокусе» — scoring, теги, правила, dashboard",
+        "type": "improvement"
+      },
+      {
+        "text": "CI/CD — GitHub Actions workflows, AI changelog, email-уведомления, backup",
+        "type": "new"
+      },
+      {
+        "text": "Откат auth:true (Strapi 5 требует объект) + .gitignore для data/photos/test-results",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.38",
     "date": "26 июня 2026",
     "time": "09:00",
