@@ -47,6 +47,12 @@
           <template v-else-if="pipelineStage === 'done'">Готово — запустить ещё раз</template>
           <template v-else>Выполняется...</template>
         </button>
+        <div class="flex items-center gap-2">
+          <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
+          <input v-model.number="parseDepth" type="number" min="1" max="500"
+            class="w-20 px-2 py-1.5 rounded-lg border text-sm text-center"
+            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+        </div>
         <button
           @click="confirmClearNew"
           :disabled="clearing"
@@ -226,7 +232,7 @@
 
         <!-- Done -->
         <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-          ✓ Пайплайн завершён · Парсинг: {{ pipelineResults.parseTotal }} объектов · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
+          ✓ Пайплайн завершён · Новых объектов: {{ pipelineResults.parseTotal }} · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
         </div>
 
         <!-- Error -->
@@ -903,6 +909,7 @@ doFetchFocus = fetchFocusItems
 // ========================
 type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
 const pipelineStage = ref<PipelineStage>('idle')
+const parseDepth = ref(50)
 const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const parseDone = ref(false)
@@ -990,7 +997,7 @@ async function runPipeline() {
     parseSourcesTotal.value = sources.length
 
     await Promise.all(
-      sources.map((s: any) => api.post(`/cron/parse/${s.slug}`).catch(() => null))
+      sources.map((s: any) => api.post(`/cron/parse/${s.slug}`, { depth: parseDepth.value }).catch(() => null))
     )
 
     await new Promise<void>((resolve, reject) => {
