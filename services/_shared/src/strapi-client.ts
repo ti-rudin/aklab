@@ -44,7 +44,7 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
   }
 
   // Если парсер уже классифицировал как коммерческий тип — доверяем парсеру
-  const COMMERCIAL_TYPES = ['office', 'warehouse', 'retail', 'production', 'free_purpose'];
+  const COMMERCIAL_TYPES = ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'apartment'];
   if (COMMERCIAL_TYPES.includes(props.property_type)) {
     return true;
   }
@@ -53,9 +53,9 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
 
   // Ключевые слова, по которым объект точно НЕ коммерческий
   const nonCommercialPatterns = [
-    // Жильё
+    // Жильё (кроме квартир — они разрешены)
     'жилой', 'жилого', 'жилых', 'жилом',
-    'квартир', 'комната', 'комнаты', 'комнат',
+    'комната', 'комнаты', 'комнат',
     ' дом,', ' дом ', 'дома,', 'жилой дом',
     'коттедж', 'таунхаус', 'дача', 'ижс',
     // Транспорт (бренды + общие)
