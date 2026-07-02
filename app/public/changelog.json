@@ -1,5 +1,40 @@
 [
   {
+    "version": "v1.0.72",
+    "date": "3 июля 2026",
+    "time": "01:02",
+    "items": [
+      {
+        "text": "Разрешён доступ к эндпоинту clear-new без авторизации",
+        "type": "fix"
+      },
+      {
+        "text": "Исправлена работа парсеров investmoscow, invest-mosreg, m-ets и sberbank-ast",
+        "type": "fix"
+      },
+      {
+        "text": "Исправлено извлечение цены на torgi-gov и XML-парсинг в sberbank-ast",
+        "type": "fix"
+      },
+      {
+        "text": "Добавлена поддержка типа «квартира» на площадках etprf, alfalot, sberbank-ast, torgi-gov и fabrikant",
+        "type": "new"
+      },
+      {
+        "text": "Добавлена фильтрация автомобилей и бытовых товаров в aggregator-bankrot",
+        "type": "improvement"
+      },
+      {
+        "text": "Ужесточены фильтры недвижимости на fabrikant",
+        "type": "improvement"
+      },
+      {
+        "text": "Добавлена постраничная навигация на torgi-gov",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.71",
     "date": "3 июля 2026",
     "time": "00:58",
