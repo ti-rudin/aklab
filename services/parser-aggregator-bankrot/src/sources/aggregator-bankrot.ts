@@ -7,11 +7,10 @@
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
-const MAX_PAGES = 10;
 const MAX_AGE_HOURS = 24;
 
 function classifyPropertyType(text: string): string {
@@ -68,7 +67,7 @@ function extractArea(text: string): number | undefined {
 export class AggregatorBankrotParser implements SourceParser {
   name = 'aggregator-bankrot';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
 
     logger.info('[aggregator-bankrot] Starting Playwright browser...');
@@ -78,25 +77,25 @@ export class AggregatorBankrotParser implements SourceParser {
     });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
       const cutoff = Date.now() - MAX_AGE_HOURS * 3600 * 1000;
 
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      const ITEMS_PER_PAGE = 27;
+      const DEFAULT_MAX_PAGES = 10;
+      const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : DEFAULT_MAX_PAGES;
+
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}&page=${pageNum}`;
         logger.info(`[aggregator-bankrot] Loading page ${pageNum}: ${url}`);
 
         // Пауза между страницами
         if (pageNum > 1) {
-          const delay = 2000 + Math.random() * 3000;
-          await new Promise(r => setTimeout(r, delay));
+          await randomDelay(2000, 5000);
         }
 
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await retryGoto(page, url, 3);
         await page.waitForTimeout(3000);
 
         const cards = await page.evaluate(() => {

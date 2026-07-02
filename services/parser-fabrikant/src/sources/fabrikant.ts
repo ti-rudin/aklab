@@ -14,11 +14,12 @@
  */
 
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
 const MAX_PAGES = 10; // 10 карточек на страницу, 10 стр = 100 items
+const ITEMS_PER_PAGE = 10;
 
 // Ключевые слова недвижимости — фильтруем нерелевантные лоты
 const PROPERTY_KEYWORDS = [
@@ -63,9 +64,10 @@ function detectCity(address: string): string {
 export class FabrikantParser implements SourceParser {
   name = 'fabrikant';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
 
+    const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
     logger.info('[fabrikant] Starting Playwright browser...');
     const browser = await chromium.launch({
       headless: true,
@@ -73,24 +75,20 @@ export class FabrikantParser implements SourceParser {
     });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}?page=${pageNum}`;
         logger.info(`[fabrikant] Loading page ${pageNum}: ${url}`);
 
         // Пауза между страницами (имитация человека, 3-6 сек)
         if (pageNum > 1) {
-          const delay = 3000 + Math.random() * 3000;
-          await new Promise(r => setTimeout(r, delay));
+          await randomDelay(3000, 6000);
         }
 
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await retryGoto(page, url, 3);
         await page.waitForTimeout(3000);
 
         const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {

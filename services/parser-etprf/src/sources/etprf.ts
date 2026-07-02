@@ -7,7 +7,7 @@
  * Площадь из детальной страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://sale.etprf.ru';
 const SEARCH_URL = `${BASE_URL}/Notification`;
@@ -53,7 +53,7 @@ function extractArea(text: string): number | undefined {
 export class EtprfParser implements SourceParser {
   name = 'etprf';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
 
     logger.info('[etprf] Starting Playwright browser...');
@@ -63,15 +63,12 @@ export class EtprfParser implements SourceParser {
     });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
       // Загружаем страницу
-      await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await retryGoto(page, SEARCH_URL, 3);
       await page.waitForTimeout(3000);
 
       // Применяем фильтр по категории "Коммерческая недвижимость" если доступен
@@ -89,7 +86,9 @@ export class EtprfParser implements SourceParser {
         // Фильтр может не быть — продолжаем без него
       }
 
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      const ITEMS_PER_PAGE = 20;
+      const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         logger.info(`[etprf] Parsing page ${pageNum}`);
 
         const rows = await page.evaluate(() => {
@@ -157,8 +156,7 @@ export class EtprfParser implements SourceParser {
         const nextBtn = page.locator('.pager-button-next');
         if (await nextBtn.count() > 0 && !(await nextBtn.getAttribute('disabled'))) {
           await nextBtn.click();
-          const delay = 2000 + Math.random() * 3000;
-          await new Promise(r => setTimeout(r, delay));
+          await randomDelay(2000, 5000);
           await page.waitForTimeout(2000);
         } else {
           break;

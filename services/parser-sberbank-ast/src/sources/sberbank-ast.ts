@@ -6,14 +6,12 @@
  * ~6600 лотов, ~332 страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
-const MAX_AGE_HOURS = 24;
-const GOTO_TIMEOUT = 60000;
-const MAX_RETRIES = 3;
+const ITEMS_PER_PAGE = 10;
 
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
@@ -44,38 +42,24 @@ function parsePrice(text: string): number | undefined {
 export class SberbankAstParser implements SourceParser {
   name = 'sberbank-ast';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
+
+    const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
     logger.info('[sberbank-ast] Starting Playwright browser...');
     const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
       // Retry при таймауте (сайт不稳定)
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          logger.info(`[sberbank-ast] Loading page (attempt ${attempt}/${MAX_RETRIES})...`);
-          await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
-          await page.waitForTimeout(5000);
-          break;
-        } catch (err: any) {
-          if (attempt < MAX_RETRIES && err.message?.includes('Timeout')) {
-            const delay = 5000 + Math.random() * 5000;
-            logger.warn(`[sberbank-ast] Timeout on attempt ${attempt}, retrying in ${Math.round(delay / 1000)}s...`);
-            await new Promise(r => setTimeout(r, delay));
-          } else {
-            throw err;
-          }
-        }
-      }
+      logger.info('[sberbank-ast] Loading page...');
+      await retryGoto(page, SEARCH_URL, 3);
+      await page.waitForTimeout(5000);
 
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         logger.info(`[sberbank-ast] Parsing page ${pageNum}`);
 
         const lots = await page.evaluate(() => {
@@ -127,8 +111,7 @@ export class SberbankAstParser implements SourceParser {
         if (await nextBtn.count() > 0) {
           try {
             await nextBtn.click();
-            const delay = 2000 + Math.random() * 3000;
-            await new Promise(r => setTimeout(r, delay));
+            await randomDelay(2000, 5000);
             await page.waitForTimeout(3000);
           } catch { break; }
         } else {

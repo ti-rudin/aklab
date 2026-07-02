@@ -15,6 +15,7 @@ export default {
     try {
       const s = strapi as unknown as StrapiInstance;
       const { slug } = ctx.params;
+      const depth = ctx.request.body?.depth ?? 50;
       const qs = getQueue();
       const corrId = `manual-parse-${Date.now()}`;
 
@@ -38,6 +39,7 @@ export default {
         source: slug,
         sourceId: source.id,
         documentId: source.documentId,
+        depth,
       }, { correlationId: corrId });
 
       ctx.body = {
