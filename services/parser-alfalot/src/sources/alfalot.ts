@@ -7,7 +7,7 @@
  * Площадь из badges: title="Площадь: 112.00"
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://ecosystem.alfalot.ru';
 const SEARCH_URL = `${BASE_URL}/showcase/list?categories=1`;
@@ -43,7 +43,7 @@ function parsePrice(text: string): number | undefined {
 export class AlfalotParser implements SourceParser {
   name = 'alfalot';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
 
     logger.info('[alfalot] Starting Playwright browser...');
@@ -53,23 +53,21 @@ export class AlfalotParser implements SourceParser {
     });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      const ITEMS_PER_PAGE = 12;
+      const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}&page=${pageNum}`;
         logger.info(`[alfalot] Loading page ${pageNum}: ${url}`);
 
         if (pageNum > 1) {
-          const delay = 2000 + Math.random() * 3000;
-          await new Promise(r => setTimeout(r, delay));
+          await randomDelay(2000, 5000);
         }
 
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        await retryGoto(page, url, 3);
         await page.waitForTimeout(2000);
 
         const cards = await page.evaluate(() => {

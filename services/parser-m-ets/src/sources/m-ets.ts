@@ -4,7 +4,7 @@
  * Playwright, HTML scraping.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
 const MAX_PAGES = 5;
@@ -47,16 +47,13 @@ function detectCity(text: string): string {
 export class MetsParser implements SourceParser {
   name = 'm-ets';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
     logger.info('[m-ets] Starting Playwright browser...');
     const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 
     try {
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-      });
+      const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
@@ -70,8 +67,9 @@ export class MetsParser implements SourceParser {
       let workingUrl = BASE_URL;
       for (const url of searchUrls) {
         try {
-          const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-          if (resp && resp.ok()) { workingUrl = url; break; }
+          await retryGoto(page, url, 1);
+          workingUrl = url;
+          break;
         } catch { continue; }
       }
 
