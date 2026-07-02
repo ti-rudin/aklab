@@ -32,6 +32,27 @@ log()  { echo -e "${GREEN}[deploy]${NC} $1"; }
 warn() { echo -e "${YELLOW}[deploy]${NC} $1"; }
 err()  { echo -e "${RED}[deploy]${NC} $1"; }
 
+# === PM2 daemon Node version check ===
+CURRENT_NODE_VER=$(node -v 2>/dev/null | sed 's/^v//')
+PM2_DAEMON_NODE=$(pm2 report 2>/dev/null | grep "node version" | awk '{print $NF}' || echo "unknown")
+if [ "$PM2_DAEMON_NODE" != "unknown" ] && [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
+  warn "PM2 daemon Node v${PM2_DAEMON_NODE} ≠ текущая v${CURRENT_NODE_VER}"
+  warn "Daemon перезапускается с правильным окружением..."
+  pm2 update 2>/dev/null || warn "pm2 update не удался — проверьте вручную"
+  log "PM2 daemon обновлён до Node v${CURRENT_NODE_VER}"
+  # Обновить systemd-сервис чтобы при перезагрузке использовалась правильная Node
+  PM2_SERVICE="/etc/systemd/system/pm2-rudin.service"
+  if [ -f "$PM2_SERVICE" ] && [ -w "$PM2_SERVICE" ]; then
+    NODE_BIN=$(which node)
+    NODE_DIR=$(dirname "$NODE_BIN")
+    if ! grep -q "$NODE_DIR" "$PM2_SERVICE"; then
+      sed -i "s|Environment=PATH=.*|Environment=PATH=$NODE_DIR:/usr/local/bin:/usr/bin:/bin|" "$PM2_SERVICE"
+      systemctl daemon-reload 2>/dev/null || true
+      log "systemd pm2-rudin.service обновлён: PATH → $NODE_DIR"
+    fi
+  fi
+fi
+
 # Telegram notification
 notify() {
   local msg="$1"
@@ -51,6 +72,8 @@ rollback() {
     git reset --hard "$ROLLBACK_SHA"
     # Rebuild после rollback (dist/ может содержать новую версию)
     log "Rebuild на rollback SHA..."
+    npm rebuild better-sqlite3 2>&1 | tail -3 || true
+    (cd api && npm rebuild better-sqlite3 2>&1 | tail -3) || true
     (cd lib/sqlite-queue && npm run build 2>&1 | tail -3) || true
     (cd services/_shared && npm run build 2>&1 | tail -3) || true
     (cd api && npm run build 2>&1 | tail -3) || true
@@ -71,6 +94,18 @@ rollback() {
   fi
 }
 trap rollback ERR
+
+# === Step 0.5: Critical env vars sync check ===
+if [ -f ".env" ]; then
+  ENV_SALT=$(grep -E "^API_TOKEN_SALT=" .env 2>/dev/null | cut -d= -f2 || echo "")
+  PM2_SALT=$(pm2 jlist 2>/dev/null | node -e "try{const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));const e=a.find(x=>x.name==='aklab-api');console.log((e&&e.pm2_env&&e.pm2_env.API_TOKEN_SALT)||'')}catch{console.log('')}" 2>/dev/null || echo "")
+  if [ -n "$ENV_SALT" ] && [ -n "$PM2_SALT" ] && [ "$ENV_SALT" != "$PM2_SALT" ]; then
+    warn ".env API_TOKEN_SALT ≠ PM2 daemon env — обновляю .env из PM2"
+    # PM2 daemon env — source of truth (так как он используется при запуске)
+    sed -i "s|^API_TOKEN_SALT=.*|API_TOKEN_SALT=${PM2_SALT}|" .env
+    log ".env API_TOKEN_SALT синхронизирован с PM2 daemon"
+  fi
+fi
 
 # === Step 1: Git pull ===
 log "Git pull..."
@@ -176,6 +211,17 @@ else
     (cd app && npm install 2>&1 | tail -3)
   fi
 fi
+
+# === Step 4.5: Rebuild native modules for current Node ===
+log "Rebuild native modules (better-sqlite3)..."
+npm rebuild better-sqlite3 2>&1 | tail -3 || true
+(cd api && npm rebuild better-sqlite3 2>&1 | tail -3) || true
+# Services with better-sqlite3 (analyzer, digest, photo-fetcher use it via sqlite-queue)
+for svc in analyzer digest photo-fetcher; do
+  if [ -d "services/$svc/node_modules/better-sqlite3" ]; then
+    (cd "services/$svc" && npm rebuild better-sqlite3 2>&1 | tail -3) || true
+  fi
+done
 
 # === Step 5: VITE env extraction ===
 log "Extract VITE_ vars → app/.env.local..."
