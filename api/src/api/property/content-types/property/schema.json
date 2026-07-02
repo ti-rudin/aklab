@@ -13,35 +13,54 @@
     {
       "name": "properties_source_external_id_unique",
       "unique": true,
-      "columns": ["source", "external_id"]
+      "columns": [
+        "source",
+        "external_id"
+      ]
     },
     {
       "name": "properties_status_idx",
-      "columns": ["status"]
+      "columns": [
+        "status"
+      ]
     },
     {
       "name": "properties_city_idx",
-      "columns": ["city"]
+      "columns": [
+        "city"
+      ]
     },
     {
       "name": "properties_is_undervalued_idx",
-      "columns": ["is_undervalued"]
+      "columns": [
+        "is_undervalued"
+      ]
     },
     {
       "name": "properties_property_type_idx",
-      "columns": ["property_type"]
+      "columns": [
+        "property_type"
+      ]
     },
     {
       "name": "properties_focus_score_idx",
-      "columns": ["focus_score"]
+      "columns": [
+        "focus_score"
+      ]
     },
     {
       "name": "properties_focus_composite_idx",
-      "columns": ["focus_score", "city", "property_type"]
+      "columns": [
+        "focus_score",
+        "city",
+        "property_type"
+      ]
     },
     {
       "name": "properties_created_at_idx",
-      "columns": ["created_at"]
+      "columns": [
+        "created_at"
+      ]
     }
   ],
   "pluginOptions": {},
@@ -79,7 +98,11 @@
     },
     "city": {
       "type": "enumeration",
-      "enum": ["moscow", "mo", "other"],
+      "enum": [
+        "moscow",
+        "mo",
+        "other"
+      ],
       "default": "moscow"
     },
     "area_sqm": {
@@ -93,17 +116,34 @@
     },
     "property_type": {
       "type": "enumeration",
-      "enum": ["office", "warehouse", "retail", "production", "free_purpose", "other"],
+      "enum": [
+        "office",
+        "warehouse",
+        "retail",
+        "production",
+        "free_purpose",
+        "apartment",
+        "other"
+      ],
       "default": "other"
     },
     "auction_type": {
       "type": "enumeration",
-      "enum": ["bankruptcy", "privatization", "marketplace"],
+      "enum": [
+        "bankruptcy",
+        "privatization",
+        "marketplace"
+      ],
       "default": "bankruptcy"
     },
     "status": {
       "type": "enumeration",
-      "enum": ["new", "in_progress", "viewed", "rejected"],
+      "enum": [
+        "new",
+        "in_progress",
+        "viewed",
+        "rejected"
+      ],
       "default": "new",
       "required": true
     },
