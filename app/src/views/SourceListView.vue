@@ -316,7 +316,7 @@ async function fetchHealth() {
   for (const src of sources.value) {
     if (!src.health_port) continue
     try {
-      const res = await api.get(`/sources/${src.id}/health`)
+      const res = await api.get(`/sources/${src.documentId}/health`)
       healthStatuses.value[src.id] = res.data?.data || { status: 'offline' }
     } catch {
       healthStatuses.value[src.id] = { status: 'offline' }
