@@ -205,9 +205,9 @@ export function createParseHandler(parser: SourceParser) {
 **Frontend polling** (как сейчас, через `/api/cron/queue-stats`):
 ```json
 {
-  "fabrikant": { "created": 5, "duplicates": 12, "filtered": 3, "status": "done" },
-  "m-ets": { "created": 0, "duplicates": 63, "filtered": 0, "status": "done" },
-  "torgi-gov": { "created": 12, "duplicates": 0, "filtered": 8, "status": "running" }
+  "fabrikant": { "created": 5, "filtered": 3, "status": "done" },
+  "m-ets": { "created": 0, "filtered": 0, "status": "done" },
+  "torgi-gov": { "created": 12, "filtered": 8, "status": "running" }
 }
 ```
 
@@ -215,13 +215,13 @@ export function createParseHandler(parser: SourceParser) {
 ```
 Парсинг завершено за 4м 32с
 
-Источник       Новых   Дублей   Отфильтровано
-Фабрикант      5       12       3
-М-ЕТС          0       63       0
-ГИС Торги      12      0        8
-Alfalot        3       59       1
-─────────────────────────────────
-Итого:         20      134      12
+Источник       Новых   Отфильтровано
+Фабрикант      5       3
+ГИС Торги      12      8
+Alfalot        3       1
+М-ЕТС          0       0
+─────────────────────────
+Итого:         20      12
 ```
 
 ---
