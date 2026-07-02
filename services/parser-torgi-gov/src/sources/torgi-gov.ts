@@ -25,6 +25,7 @@ function classifyPropertyType(text: string): string {
   if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
   if (lower.includes('производствен') || lower.includes('промышлен') || lower.includes('цех')) return 'production';
   if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ')) return 'free_purpose';
+  if (lower.includes('квартир')) return 'apartment';
   return 'other';
 }
 
@@ -85,6 +86,7 @@ export class TorgiGovParser implements SourceParser {
         size: '10', // API всегда отдаёт 10, параметр формальный
         sort: 'firstVersionPublicationDate,desc',
         withFacets: 'false',
+        page: String(page),
       });
 
       const url = `${API_URL}?${params}`;
