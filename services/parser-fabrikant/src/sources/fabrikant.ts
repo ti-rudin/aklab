@@ -192,7 +192,7 @@ export class FabrikantParser implements SourceParser {
           });
         }
 
-        if (pageProperties.length < 10) break;
+        if (pageProperties.length === 0) break;
       }
 
       logger.info(`[fabrikant] Total: ${allProperties.length} properties`);

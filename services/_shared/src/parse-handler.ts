@@ -23,7 +23,7 @@ export interface ParseRequest {
 }
 
 /** Порог последовательных дубликатов для smart stop. */
-const SMART_STOP_THRESHOLD = 3;
+const SMART_STOP_THRESHOLD = 10;
 
 /**
  * Создаёт generic handler для парсера.

@@ -68,7 +68,13 @@ export class AlfalotParser implements SourceParser {
         }
 
         await retryGoto(page, url, 3);
-        await page.waitForTimeout(2000);
+        // SPA: ждём появления карточек вместо фиксированного таймаута
+        try {
+          await page.waitForSelector('.lot-card', { timeout: 10000 });
+        } catch {
+          // Если карточки не появились — пробуем подождать ещё
+          await page.waitForTimeout(5000);
+        }
 
         const cards = await page.evaluate(() => {
           const results: Array<{
@@ -144,7 +150,7 @@ export class AlfalotParser implements SourceParser {
           });
         }
 
-        if (cards.length < 10) break;
+        if (cards.length === 0) break; // последняя страница
       }
 
       logger.info(`[alfalot] Total: ${allProperties.length} properties`);

@@ -158,7 +158,7 @@ export class AggregatorBankrotParser implements SourceParser {
           pageNewCount++;
         }
 
-        if (cards.length < 20) break; // меньше 27 — последняя страница
+        if (cards.length === 0) break;
       }
 
       logger.info(`[aggregator-bankrot] Total: ${allProperties.length} properties`);
