@@ -22,6 +22,7 @@ function classifyPropertyType(text: string): string {
   if (lower.includes('производствен') || lower.includes('промышленн')) return 'production';
   if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
       lower.includes('гараж') || lower.includes('земельн')) return 'free_purpose';
+  if (lower.includes('квартир')) return 'apartment';
   return 'other';
 }
 

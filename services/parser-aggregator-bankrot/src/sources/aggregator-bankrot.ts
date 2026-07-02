@@ -11,7 +11,24 @@ import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/ser
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
-const MAX_AGE_HOURS = 24;
+
+// Марки автомобилей — фильтруем транспорт из выдачи "коммерческой недвижимости"
+const CAR_BRANDS = [
+  'ваз', 'lada', 'vaz', 'toyota', 'ford', 'bmw', 'mercedes', 'hyundai',
+  'kia', 'nissan', 'renault', 'mazda', 'skoda', 'chevrolet', 'jac',
+  'geely', 'lexus', 'honda', 'baic', 'chery', 'haval', 'great wall',
+  'opel', 'volkswagen', 'peugeot', 'citroen', 'volvo', 'suzuki',
+  'mitsubishi', 'subaru', 'infiniti', 'acura', 'datsun', 'uaz',
+  'gaz', 'kamaz', 'маз', 'газ', 'камаз',
+];
+
+// Триггеры не-недвижимости в заголовке
+const TITLE_EXCLUDE_PATTERNS = [
+  'л.с.', 'л.с,', 'л.с ', 'лошадин', // мощность двигателя
+  'объем двигател', 'объём двигател', 'vin:', 'vin ', // автомобильные
+  'палета', 'гель для стирки', 'бытовая химия', 'стиральн', // бытовые
+  'авточасти', 'запчаст', 'шина', 'диск колесн', // автозапчасти
+];
 
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
@@ -21,6 +38,7 @@ function classifyPropertyType(text: string): string {
   if (lower.includes('производствен') || lower.includes('промышленн') || lower.includes('цех')) return 'production';
   if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
       lower.includes('гараж') || lower.includes('бокс')) return 'free_purpose';
+  if (lower.includes('квартир')) return 'apartment';
   return 'other';
 }
 
@@ -80,7 +98,6 @@ export class AggregatorBankrotParser implements SourceParser {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
-      const cutoff = Date.now() - MAX_AGE_HOURS * 3600 * 1000;
 
       const ITEMS_PER_PAGE = 27;
       const DEFAULT_MAX_PAGES = 10;
@@ -137,6 +154,15 @@ export class AggregatorBankrotParser implements SourceParser {
 
         let pageNewCount = 0;
         for (const card of cards) {
+          // Ранняя фильтрация: пропускаем автомобили, бытовые товары и прочее не-недвижимое
+          const titleLower = card.title.toLowerCase();
+          const isCar = CAR_BRANDS.some(brand => titleLower.includes(brand));
+          const hasExcludePattern = TITLE_EXCLUDE_PATTERNS.some(pat => titleLower.includes(pat));
+          if (isCar || hasExcludePattern) {
+            logger.debug(`[aggregator-bankrot] Skipping non-realty: ${card.title.slice(0, 60)}`);
+            continue;
+          }
+
           // Приоритет: title (там "9484 кв.м"), потом excerpt (может быть площадь отдельного помещения)
           const area = extractArea(card.title) || extractArea(card.excerpt);
           const price = parsePrice(card.price_text);
