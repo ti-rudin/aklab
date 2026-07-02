@@ -9,12 +9,12 @@
  */
 
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay } from '@aklab/service-shared';
 
 const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
 const BASE_URL = 'https://torgi.gov.ru/new/public/lots/reg';
 const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
-const MAX_AGE_HOURS = 24; // только объекты за последние N часов
+const ITEMS_PER_PAGE = 10;
 
 const MOSCOW_REGIONS = new Set(['77', '50']);
 
@@ -39,7 +39,7 @@ function extractAddress(item: any): string {
 export class TorgiGovParser implements SourceParser {
   name = 'torgi-gov';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     logger.info('[torgi-gov] Starting parse...');
     const allProperties: ParsedProperty[] = [];
 
@@ -53,14 +53,13 @@ export class TorgiGovParser implements SourceParser {
 
     for (const query of searchQueries) {
       try {
-        const properties = await this.searchQuery(query);
+        const properties = await this.searchQuery(query, depth);
         allProperties.push(...properties);
       } catch (err: any) {
         logger.warn(`[torgi-gov] Search "${query}" failed: ${err.message}`);
       }
       // Пауза между поисковыми запросами (3-6 сек)
-      const delay = 3000 + Math.random() * 3000;
-      await new Promise(r => setTimeout(r, delay));
+      await randomDelay(3000, 6000);
     }
 
     const seen = new Set<string>();
@@ -74,12 +73,12 @@ export class TorgiGovParser implements SourceParser {
     return unique;
   }
 
-  private async searchQuery(query: string): Promise<ParsedProperty[]> {
+  private async searchQuery(query: string, depth?: number): Promise<ParsedProperty[]> {
     const results: ParsedProperty[] = [];
-    const cutoff = new Date(Date.now() - MAX_AGE_HOURS * 3600 * 1000);
+    const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
     let consecutiveOld = 0; // счётчик страниц без свежих объектов
 
-    for (let page = 0; page < MAX_PAGES; page++) {
+    for (let page = 0; page < maxPages; page++) {
       const params = new URLSearchParams({
         lotStatus: 'PUBLISHED,APPLICATIONS_SUBMISSION',
         text: query,
@@ -93,8 +92,7 @@ export class TorgiGovParser implements SourceParser {
 
       // Пауза между запросами (имитация человека, 2-5 сек)
       if (page > 0) {
-        const delay = 2000 + Math.random() * 3000;
-        await new Promise(r => setTimeout(r, delay));
+        await randomDelay(2000, 5000);
       }
 
       const response = await fetch(url, {
@@ -117,10 +115,6 @@ export class TorgiGovParser implements SourceParser {
       let pageNewCount = 0;
 
       for (const item of items) {
-        // Фильтр по дате — только объекты за последние MAX_AGE_HOURS
-        const createDate = item.createDate ? new Date(item.createDate) : null;
-        if (createDate && createDate < cutoff) continue;
-
         const regionCode = String(item.subjectRFCode || '');
         if (!MOSCOW_REGIONS.has(regionCode)) continue;
 
