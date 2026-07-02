@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.54",
+    "date": "2 июля 2026",
+    "time": "17:36",
+    "items": [
+      {
+        "text": "Обновить compact-doc — hotfix 2026-07-02 + deploy hardening",
+        "type": "improvement"
+      },
+      {
+        "text": "Защита от расинхрона Node/PM2/env при деплое",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.53",
     "date": "2 июля 2026",
     "time": "14:56",
