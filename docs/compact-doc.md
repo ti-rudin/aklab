@@ -7,7 +7,7 @@
 
 Сервис мониторинга коммерческой недвижимости. Автоматически находит
 объекты (офисы, склады, торговые помещения), цена которых на 20%+ ниже
-рыночной. Парсит 10 источников (Fabrikant, ГИС Торги, Алфалот, ЕТПРФ, Сбербанк-АСТ, Росэлторг, М-ЕТС и др.), считает
+рыночной. Парсит 8 активных источников (Алфалот, Инвест Москва, Сбербанк-АСТ, М-ЕТС, Агрегатор Банкрот, ЕТПРФ, ГИС Торги, Инвест МО), считает
 "рыночную" цену через похожие объекты в радиусе X км, шлёт алерты в
 Telegram (мгновенно) и утренний дайджест на email.
 
@@ -223,20 +223,20 @@ deploy-prod.sh + бамп версии).
   - **Dev:** 192.168.11.151 (rudin), бывший prod
   - **Traefik prod:** Docker на 213.184.136.221 (`/opt/traefik/`)
   - **Traefik dev:** Docker на 192.168.11.131 (редактировать `/home/rudin/home-traefik/traefik-config.yml`)
-- **11 источников парсинга** (10 активных, fedresurs OFF):
-  - `services/parser-fabrikant/` — Playwright, порт 1345, очередь `parse-fabrikant`
-  - `services/parser-torgi-gov/` — JSON API, порт 1346, очередь `parse-torgi-gov`
-  - `services/parser-aggregator-bankrot/` — Playwright HTML, порт 1348
+- **11 источников парсинга** (8 активных, 3 отключены: fedresurs, fabrikant, roseltorg):
   - `services/parser-alfalot/` — Playwright SPA (ecosystem.alfalot.ru), порт 1349
+  - `services/parser-investmoscow/` — fetch + Nuxt SSR (__NUXT_DATA__), порт 1353
+  - `services/parser-sberbank-ast/` — Playwright AJAX + XML (input#xmlData), порт 1351
+  - `services/parser-m-ets/` — Playwright SPA, порт 1355
+  - `services/parser-aggregator-bankrot/` — fetch JSON API, порт 1348
   - `services/parser-etprf/` — Playwright AJAX (sale.etprf.ru), порт 1350
-  - `services/parser-sberbank-ast/` — Playwright AJAX (utp.sberbank-ast.ru), порт 1351
-  - `services/parser-invest-mosreg/` — Playwright generic, порт 1352
-  - `services/parser-investmoscow/` — Playwright generic, порт 1353
-  - `services/parser-roseltorg/` — Playwright generic, порт 1354
-  - `services/parser-m-ets/` — Playwright generic, порт 1355
-  - `services/parser-bankruptcy/` — УДАЛЁН (legacy монолит)
+  - `services/parser-torgi-gov/` — fetch JSON API (/new/api/public/lotcards), порт 1346
+  - `services/parser-invest-mosreg/` — fetch JSON API (/aapi/map/places), порт 1352
+  - ~~`services/parser-fabrikant/`~~ — **ОТКЛЮЧЁН** (сайт не содержит коммерческую недвижимость)
+  - ~~`services/parser-roseltorg/`~~ — **ОТКЛЮЧЁН** (WAF блокирует IP сервера)
+  - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
 - **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
-- **Cron расписание**: fabrikant/torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, roseltorg/m-ets → 06:00
+- **Cron расписание**: torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, m-ets → 06:00
 - **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
 - **Telegram alerts**: УДАЛЕНЫ из плана
 - **Health badges** на `/sources` — 🟢 Online / 🔴 Offline (polling каждые 30с)
@@ -252,29 +252,19 @@ deploy-prod.sh + бамп версии).
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
 - **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 6 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
-- **Парсеры** (обновлено 01.07.2026):
-  - **Все 10 парсеров обогащены**: description, address, published_at, contacts (organizer) извлекаются из существующих данных (excerpt, title, date_text, organizer). parse-handler передаёт latitude/longitude в Strapi для CIAN-геокодинга.
-  - `fabrikant` — Playwright, HTML scraping `/procedure/search/sales`
-    (data-slot selectors: `[data-slot="card"][data-id]`, title from
-    `[data-slot="anchor"]`, price from RUB in text slots). Пагинация
-    ?page=N, max 5 pages. Фильтр: keywords + exclude (жильё/транспорт).
-    description из excerpt, published_at из date_text.
-  - `torgi-gov` — **чистый JSON API** (`/new/api/public/lotcards/search`),
-    без Playwright. Фильтрация Москвы/МО в коде (subjectRFCode).
-    Площадь из characteristics.totalAreaRealty + fallback из title.
-    Цены обычно нет (аренда). 5 запросов по разным keywords.
-    description из lotDescription, published_at из createDate.
-  - `m-ets` — Playwright. Два layout карточек: compact (`.cost-info`) и
-    expanded (`.comp-cost-block` с price.current + price.min).
-    address/description из excerpt.
-  - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). description из excerpt.
-  - `sberbank-ast` — Playwright AJAX. address/description/contacts из organizer.
-  - `etprf` — Playwright AJAX (sale.etprf.ru). address/description.
-  - `aggregator-bankrot` — Playwright HTML. description.
-  - `invest-mosreg` — Playwright generic. address/description из excerpt.
-  - `investmoscow` — Playwright generic. address/description.
-  - `roseltorg` — Playwright generic. address/description.
-  - `fedresurs` — **ОТКЛЮЧЁН** (Qrator 403 anti-bot). Source.is_active=false.
+- **Парсеры** (обновлено 02.07.2026):
+  - **8 активных парсеров**, 3 отключены (fedresurs, fabrikant, roseltorg).
+  - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 44 объекта за запуск.
+  - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
+  - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). 19 объектов.
+  - `m-ets` — Playwright SPA. 14 объектов.
+  - `aggregator-bankrot` — fetch JSON API. 11 объектов. Фильтр: авто, бытовая химия.
+  - `etprf` — Playwright AJAX (sale.etprf.ru). 11 объектов.
+  - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). 10 объектов. `priceMin`/`priceMax`.
+  - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов.
+  - `fabrikant` — **ОТКЛЮЧЁН** (сайт отдаёт гвозди/стройматериалы вместо недвижимости).
+  - `roseltorg` — **ОТКЛЮЧЁН** (WAF блокирует IP сервера).
+  - `fedresurs` — **ОТКЛЮЧЁН** (Qrator anti-bot).
 - Содержимое:
   - **api/src/api/** — 7 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
@@ -398,10 +388,10 @@ deploy-prod.sh + бамп версии).
     date параметры тоже игнорируются. Решение: увеличить MAX_PAGES,
     фильтровать в коде по `createDate` и `subjectRFCode`.
 19. **Generic parsers** — invest-mosreg, investmoscow, roseltorg, m-ets
-    используют универсальные CSS-селекторы (`.card`, `[class*="card"]`).
-    Работают, но могут давать мало результатов. При проблемах —
-    уточнить селекторы через browser research на конкретном сайте.
-
+    использовали универсальные CSS-селекторы (`.card`, `[class*="card"]`).
+    **Обновлено (02.07.2026):** investmoscow переписан на Nuxt SSR (__NUXT_DATA__),
+    invest-mosreg на JSON API (/aapi/map/places), m-ets на SPA scraping.
+    roseltorg отключён (WAF).
 20. **Analyzer numeric id → documentId** — `analyzeAll` в cron controller
     отправлял `property_id: prop.id` (numeric) в очередь, а analyzer
     делал `GET /api/properties/${numericId}` → 404 (REST v5 принимает
@@ -434,6 +424,19 @@ deploy-prod.sh + бамп версии).
     `ALTER TABLE property_events ADD COLUMN property_id INTEGER` +
     индекс. Без этого raw SQL INSERT в focusEngine падает с
     "table has no column named property_id".
+26. **torgi-gov API v2 price fields** — `priceMin`/`priceMax` на верхнем
+    уровне объекта, НЕ в `priceInfo.startPrice`. API v2 изменил структуру.
+27. **sberbank-ast XML structure** — Playwright загружает динамический XML
+    в `input#xmlData` с корнем `<datarow><hits><_source>`. Теги:
+    `purchName`, `purchAmount`, `GeoDataAddress`, `Latitude`, `Longitude`,
+    `bidHrefTerm`, `BranchNameNew`. НЕ `PurchaseName`/`Amount`/`row`.
+28. **investmoscow Nuxt SSR** — `__NUXT_DATA__` массив с обратными ссылками.
+    Tender-объекты имеют `startPrice`, `objectArea`, `address` как числовые
+    индексы. `coords` может быть невалидным — проверять `Array.isArray`
+    и `typeof coords[0] === 'number'`.
+29. **isCommercialProperty — доверять парсеру** — если `property_type` уже
+    офис/склад/ритейл/производство/free_purpose/apartment → pass, не
+    фильтровать по ключевым словам в title.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -472,7 +475,17 @@ deploy-prod.sh + бамп версии).
 - ✅ **deploy-prod.sh hardened** — 4 новых проверки: PM2 daemon Node version (→ `pm2 update` + systemd), .env ↔ PM2 env sync, `npm rebuild better-sqlite3` (root + api + services), rebuild в rollback-блоке.
 - ✅ **Sources health fix** — фронтенд отправлял числовой `id` вместо `documentId` → 400 ошибка. Пересобран frontend на проде.
 
-**Сделано в сессии 2 июля 2026 (рефакторинг парсинга — planpars2.md):**
+**Сделано в сессии 2 июля 2026 (починка парсеров — 8/10 рабочих):**
+- ✅ **apartment enum** — добавлен `apartment` в Strapi property_type schema. Квартиры парсятся.
+- ✅ **isCommercialProperty** — COMMERCIAL_TYPES (office, warehouse, retail, production, free_purpose) → доверять парсеру.
+- ✅ **torgi-gov price fix** — `priceMin`/`priceMax` (API v2) вместо `priceInfo.startPrice`.
+- ✅ **sberbank-ast XML fix** — `_source` теги вместо `row`, `purchName`/`purchAmount`/`GeoDataAddress`/`Latitude`/`Longitude`.
+- ✅ **investmoscow Nuxt fix** — coords валидация (Array.isArray + typeof number), `__NUXT_DATA__` парсинг объектов с startPrice+objectArea+address.
+- ✅ **m-ets, invest-mosreg, investmoscow** — переписаны парсеры с нуля (JSON API / fetch / Nuxt SSR).
+- ✅ **fabrikant/roseltorg ОТКЛЮЧЕНЫ** — fabrikant не содержит коммерческую недвижимость, roseltorg WAF блокирует.
+- ✅ **Smart stop 3→10** — увеличен порог дублей подряд.
+- ✅ **apartment в classifyPropertyType** — все 8 парсеров классифицируют квартиры.
+- ✅ **БД очищена**, счётчики сброшены. 8 активных источников.
 - ✅ **Anti-ban модуль** (`_shared/src/anti-ban.ts`) — `randomDelay(min, max)`, `getRandomUA()`, `createStealthContext(browser)` (рандомный UA, ru-RU locale), `retryGoto(page, url, maxAttempts)` с exponential backoff.
 - ✅ **Глубина парсинга UI** — input «Глубина парсинга» (default 50, min 1, max 500) рядом с кнопкой «Ручной запуск» на `/settings`. Параметр `depth` передаётся в `POST /cron/parse/:slug`.
 - ✅ **parse-handler рефактор** — `ParseOptions`/`ParseResult` типы, `createParseHandler(parser)` принимает `depth` из `job.data`, smart stop (3+ дубля подряд → break), depth limit (`created >= depth → break`), `randomDelay(500, 1500)` между `propertyExists` проверками.
@@ -502,12 +515,11 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Деплой рефакторинга парсинга** — 7 коммитов (anti-ban, depth, smart stop, 10 парсеров). Проверить работу на проде после деплоя.
-2. **Установить реальные эталоны** — текущие 18 market references с тестовыми ценами. Земельные участки и гаражи дают ложные срабатывания. Нужны реальные рыночные цены по городам и типам.
-3. **investmoscow/roseltorg/invest-mosreg** — селекторы не матчат карточки (хватает мусор: телефоны, "База знаний"). Нужно обновить CSS-селекторы через browser research.
-4. **sberbank-ast** — фильтрует как некоммерцию (аренда вместо продажи). Проверить `isCommercialProperty()`.
-5. **m-ets дубли** — каждый объект x2 (внешние ID совпадают?). Проверить `external_id` генерацию.
-6. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
+1. **Запустить пайплайн на проде** — БД пуста, счётчики сброшены. Запустить парсинг 8 источников через `/settings` → «Ручной запуск».
+2. **Установить реальные эталоны** — текущие market references с тестовыми ценами. Нужны реальные рыночные цены по городам и типам.
+3. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
+4. **fabrikant** — если появятся коммерческие лоты, можно включить обратно
+5. **roseltorg** — нужен прокси для обхода WAF
 
 **Локальное состояние (25.06.2026):**
 - `~/github.nosync/aklab` — ветка `main`, последний коммит `11fc709` (Merge PR #1: dev → main)
