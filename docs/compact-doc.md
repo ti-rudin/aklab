@@ -464,12 +464,20 @@ deploy-prod.sh + бамп версии).
 - Seeder отработал при первом старте: admin@aklab.ti-soft.ru, 11 sources, 1 test user
 - SQLite quoting в SSH+paramiko — проблема с экранированием, использовать Python-скрипт на сервере
 
-**Сделано в сессии 2 июля 2026 (v1.0.47 — hotfix prod + deploy hardening):**
+**Сделано в сессии 2 июля 2026 (v1.0.53 — hotfix prod + deploy hardening):**
 - ✅ **better-sqlite3 rebuild** — PM2 daemon работал на Node 20.20.2, приложения на Node 22.20.0. `npm rebuild better-sqlite3` на проде + перезапуск всех 15 процессов.
 - ✅ **property_events.property_id** — колонка отсутствовала в SQLite (Strapi 5 manyToOne не создаёт FK автоматически). `ALTER TABLE` + индекс. Score endpoint заработал: 178 объектов, 23 в фокусе, 124 события.
 - ✅ **PUT permission для authenticated** — добавлена `api::property.property.update` в `up_permissions` + link к роли authenticated (id=1).
 - ✅ **API_TOKEN_SALT sync** — `.env` содержал соль `ElTI...`, PM2 daemon env — `EYJG...` (старое окружение). `access_key` в БД пересчитан через HMAC-SHA512. Strapi 5: hash = `crypto.createHmac('sha512', salt).update(token).digest('hex')`.
 - ✅ **deploy-prod.sh hardened** — 4 новых проверки: PM2 daemon Node version (→ `pm2 update` + systemd), .env ↔ PM2 env sync, `npm rebuild better-sqlite3` (root + api + services), rebuild в rollback-блоке.
+- ✅ **Sources health fix** — фронтенд отправлял числовой `id` вместо `documentId` → 400 ошибка. Пересобран frontend на проде.
+
+**Сделано в сессии 2 июля 2026 (рефакторинг парсинга — planpars2.md):**
+- ✅ **Anti-ban модуль** (`_shared/src/anti-ban.ts`) — `randomDelay(min, max)`, `getRandomUA()`, `createStealthContext(browser)` (рандомный UA, ru-RU locale), `retryGoto(page, url, maxAttempts)` с exponential backoff.
+- ✅ **Глубина парсинга UI** — input «Глубина парсинга» (default 50, min 1, max 500) рядом с кнопкой «Ручной запуск» на `/settings`. Параметр `depth` передаётся в `POST /cron/parse/:slug`.
+- ✅ **parse-handler рефактор** — `ParseOptions`/`ParseResult` типы, `createParseHandler(parser)` принимает `depth` из `job.data`, smart stop (3+ дубля подряд → break), depth limit (`created >= depth → break`), `randomDelay(500, 1500)` между `propertyExists` проверками.
+- ✅ **10/10 парсеров рефакторены** — все принимают `parse(depth?: number)`, используют `createStealthContext`, `randomDelay`, `retryGoto`. Пагинация ограничена depth (`maxPages = Math.ceil(depth / ITEMS_PER_PAGE)`).
+- ✅ **234/234 тестов** зелёные, `tsc --noEmit` чистый во всех 12+ сервисах.
 
 **Сделано в сессии 11 июня 2026 (v1.0.36):**
 - ✅ **Photo-fetcher cwd mismatch (v1.0.36)** — photo-fetcher писал фото в свой `data/photos/`, API читал из своего → 404. Фикс: handler.ts пишет в `../../api/data/photos/` (env override `PHOTOS_BASE_DIR`). 28 папок с фото перенесены на проде вручную.
@@ -494,10 +502,10 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Установить реальные эталоны** — текущие 18 market references с тестовыми ценами. Земельные участки и гаражи дают ложные срабатывания. Нужны реальные рыночные цены по городам и типам.
-2. **investmoscow/roseltorg/invest-mosreg** — селекторы не матчат карточки (хватает мусор: телефоны, "База знаний"). Нужно обновить CSS-селекторы через browser research.
-3. **sberbank-ast** — фильтрует как некоммерцию (аренда вместо продажи). Проверить `isCommercialProperty()`.
-4. **torgi-gov** — 0 результатов (нет коммерческих лотов по фильтру). Нормальное поведение.
+1. **Деплой рефакторинга парсинга** — 7 коммитов (anti-ban, depth, smart stop, 10 парсеров). Проверить работу на проде после деплоя.
+2. **Установить реальные эталоны** — текущие 18 market references с тестовыми ценами. Земельные участки и гаражи дают ложные срабатывания. Нужны реальные рыночные цены по городам и типам.
+3. **investmoscow/roseltorg/invest-mosreg** — селекторы не матчат карточки (хватает мусор: телефоны, "База знаний"). Нужно обновить CSS-селекторы через browser research.
+4. **sberbank-ast** — фильтрует как некоммерцию (аренда вместо продажи). Проверить `isCommercialProperty()`.
 5. **m-ets дубли** — каждый объект x2 (внешние ID совпадают?). Проверить `external_id` генерацию.
 6. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 
