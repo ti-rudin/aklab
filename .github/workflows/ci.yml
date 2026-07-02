@@ -22,8 +22,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install dependencies (root + workspaces)
         run: npm ci
+
+      - name: Install dependencies (api)
+        run: cd api && npm ci
+
+      - name: Install dependencies (app)
+        run: cd app && npm ci
 
       - name: Build shared libs
         run: |
