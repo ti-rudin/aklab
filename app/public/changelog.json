@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.0.71",
+    "date": "3 июля 2026",
+    "time": "00:58",
+    "items": [
+      {
+        "text": "Убрать дублирующиеся пункты между версиями",
+        "type": "fix"
+      },
+      {
+        "text": "Исправить дублирование — брать коммиты от последнего release до HEAD",
+        "type": "fix"
+      },
+      {
+        "text": "Установить зависимости api и app перед билдом",
+        "type": "fix"
+      },
+      {
+        "text": "Разрешить доступ к clear-new без авторизации",
+        "type": "fix"
+      },
+      {
+        "text": "Обновить compact-doc — 8 парсеров, apartment, новые gotchas",
+        "type": "improvement"
+      },
+      {
+        "text": "Исправить XML парсинг и coords валидацию",
+        "type": "fix"
+      },
+      {
+        "text": "Исправить извлечение цены — priceMin/priceMax вместо priceInfo",
+        "type": "fix"
+      },
+      {
+        "text": "Добавить apartment в property_type enum (Strapi schema)",
+        "type": "fix"
+      },
+      {
+        "text": "Переписан парсер на SSR Nuxt.js данные",
+        "type": "fix"
+      },
+      {
+        "text": "Переписан парсер на JSON API /aapi/map/places/",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.70",
     "date": "3 июля 2026",
     "time": "00:48",
