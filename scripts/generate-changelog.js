@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Генерация changelog на основе git коммитов между [release] тегами.
+ * Генерация changelog на основе git коммитов и PR-описаний.
  *
- * Использование: node scripts/generate-changelog.js <version>
+ * Usage: node scripts/generate-changelog.js <version>
  * Выход: JSON массив items [{text, type}] в stdout
  *
- * Логика: находит коммиты между последним [release] и предыдущим,
- * конвертирует их в пользовательский формат.
- *
- * Формат коммитов: type(scope): description
- * Типы: feat → new, fix → fix, refactor/docs/chore → improvement
+ * Источники:
+ * 1. PR-описания (gh pr view для мерж-коммитов)
+ * 2. Commit bodies (%B — полное описание коммита)
+ * 3. Commit subjects (%s — заголовок)
  */
 
 const { execSync } = require('child_process');
@@ -25,38 +24,93 @@ const FALLBACK_ITEMS = JSON.stringify([
   { text: 'Улучшения стабильности и производительности', type: 'improvement' }
 ]);
 
+const MAX_ITEMS = 10;
+
 /**
- * Получить коммиты между двумя последними [release] коммитами.
+ * Получить хеши двух последних [release] коммитов.
  */
-function getCommitsSinceLastRelease() {
+function getReleaseHashes() {
   try {
-    // Найти хеши двух последних release-коммитов
-    const releaseHashes = execSync(
-      'git log --grep="^\\\\[release\\\\]" -n 2 --format="%H"',
-      { encoding: 'utf8' }
-    ).trim().split('\n');
-
-    if (releaseHashes.length < 2) {
-      // Первый релиз — берём все коммиты до него
-      return execSync(
-        `git log ${releaseHashes[0]} --oneline --no-merges --format="%s"`,
-        { encoding: 'utf8' }
-      ).trim();
-    }
-
-    // Коммиты между предыдущим и текущим release
-    const commits = execSync(
-      `git log ${releaseHashes[1]}..${releaseHashes[0]} --oneline --no-merges --format="%s"`,
+    const log = execSync(
+      'git log --grep="^\\\\\\\\[release\\\\\\\\]" -n 2 --format="%H"',
       { encoding: 'utf8' }
     ).trim();
-
-    return commits;
+    return log.split('\n').filter(Boolean);
   } catch {
+    return [];
+  }
+}
+
+/**
+ * Получить коммиты между двумя релизами (subject + body).
+ */
+function getCommitsBetweenReleases() {
+  const hashes = getReleaseHashes();
+  if (hashes.length < 2) {
+    // Первый рилиз — берём последние 30 коммитов
     try {
-      return execSync('git log -10 --format="%s"', { encoding: 'utf8' }).trim();
+      return execSync(
+        'git log --no-merges --format="%s%n%b%n---COMMIT_END---" -30',
+        { encoding: 'utf8' }
+      ).trim();
     } catch {
       return '';
     }
+  }
+
+  try {
+    return execSync(
+      `git log ${hashes[1]}..${hashes[0]} --no-merges --format="%s%n%b%n---COMMIT_END---"`,
+      { encoding: 'utf8' }
+    ).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Получить PR-описания для мерж-коммитов между релизами.
+ */
+function getPRDescriptions() {
+  const hashes = getReleaseHashes();
+  if (hashes.length < 2) return [];
+
+  try {
+    // Найти мерж-коммиты (Merge pull request #N)
+    const mergeLog = execSync(
+      `git log ${hashes[1]}..${hashes[0]} --merges --format="%s" 2>/dev/null || true`,
+      { encoding: 'utf8' }
+    ).trim();
+
+    if (!mergeLog) return [];
+
+    const prNumbers = [];
+    for (const line of mergeLog.split('\n')) {
+      const match = line.match(/Merge pull request #(\d+)/);
+      if (match) prNumbers.push(match[1]);
+    }
+
+    if (prNumbers.length === 0) return [];
+
+    // Получить описания PR через gh
+    const descriptions = [];
+    for (const prNum of prNumbers.slice(0, 5)) {
+      try {
+        const prBody = execSync(
+          `gh pr view ${prNum} --json body,title --jq '.title + "\\n" + (.body // "")' 2>/dev/null`,
+          { encoding: 'utf8', timeout: 10000 }
+        ).trim();
+        if (prBody && prBody.length > 20) {
+          descriptions.push(prBody);
+        }
+      } catch {
+        // gh может не быть на CI или PR не найден
+      }
+    }
+
+    return descriptions;
+  } catch {
+    return [];
   }
 }
 
@@ -64,8 +118,7 @@ function getCommitsSinceLastRelease() {
  * Конвертировать conventional commit в changelog item
  */
 function commitToItem(commitMsg) {
-  // Пропускаем release-коммиты
-  if (commitMsg.includes('[release]')) return null;
+  if (!commitMsg || commitMsg.includes('[release]') || commitMsg.length < 10) return null;
 
   // Парсим conventional commit: type(scope): description
   const match = commitMsg.match(/^(feat|fix|refactor|chore|docs|style|perf|test|deploy)(?:\(.+?\))?!?:\s*(.+)/i);
@@ -83,13 +136,55 @@ function commitToItem(commitMsg) {
     return { text: translateDesc(desc), type: itemType };
   }
 
-  // Не conventional commit — пропускаем (обычно это release-коммиты)
   return null;
 }
 
 /**
+ * Извлечь пункты из PR-описания.
+ * Ищем markdown списки (- или *) и заголовки (##).
+ */
+function extractItemsFromPR(prText) {
+  const items = [];
+  const lines = prText.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Markdown list items: "- description" or "* description"
+    const listMatch = trimmed.match(/^[-*]\s+\*\*(.+?)\*\*\s*[—–-]\s*(.+)/);
+    if (listMatch) {
+      const text = translateDesc(listMatch[2].trim());
+      if (text.length > 10 && text.length < 200) {
+        items.push({ text, type: guessTypeFromText(text) });
+        continue;
+      }
+    }
+
+    // Simpler list items: "- description"
+    const simpleListMatch = trimmed.match(/^[-*]\s+(.+)/);
+    if (simpleListMatch) {
+      const text = translateDesc(simpleListMatch[1].trim());
+      if (text.length > 15 && text.length < 200 && !text.startsWith('#')) {
+        items.push({ text, type: guessTypeFromText(text) });
+      }
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Угадать тип по тексту описания.
+ */
+function guessTypeFromText(text) {
+  const lower = text.toLowerCase();
+  if (/исправлен|фикс|fix|баг|ошибк|пофиксен/.test(lower)) return 'fix';
+  if (/добавлен|нов|создан|реализован|feat/.test(lower)) return 'new';
+  return 'improvement';
+}
+
+/**
  * Перевод описания коммита на русский.
- * Сначала проверяем словарь, потом — fallback на capitalizeFirst.
  */
 function isRussian(text) {
   return /[а-яА-ЯёЁ]/.test(text);
@@ -97,15 +192,11 @@ function isRussian(text) {
 
 function translateDesc(desc) {
   if (!desc) return desc;
-
-  // Если уже на русском — возвращаем как есть
   if (isRussian(desc)) return capitalizeFirst(desc);
 
-  // Точное совпадение
   const exact = TRANSLATIONS[desc.toLowerCase().trim()];
   if (exact) return exact;
 
-  // Частичное совпадение — ищем ключ как подстроку
   for (const [en, ru] of Object.entries(TRANSLATIONS)) {
     if (desc.toLowerCase().includes(en.toLowerCase())) {
       return ru;
@@ -115,7 +206,6 @@ function translateDesc(desc) {
   return capitalizeFirst(desc);
 }
 
-// Словарь: английское описание → русское
 const TRANSLATIONS = {
   'sources microservices': 'Микросервисы парсеров',
   'health badges': 'Health badges на странице Источники',
@@ -167,6 +257,14 @@ const TRANSLATIONS = {
   'area': 'площадь',
   'frontend': 'фронтенд',
   'backend': 'бэкенд',
+  'anti-ban': 'антибан',
+  'smart stop': 'умная остановка парсинга',
+  'depth': 'глубина парсинга',
+  'parse-handler': 'обработчик парсинга',
+  'stealth': 'стелс-режим',
+  'random delay': 'рандомная задержка',
+  'ua rotation': 'ротация User-Agent',
+  'retry': 'повторные попытки',
   'fix:': 'Исправлено:',
   'feat:': 'Новая функция:',
   'docs:': 'Документация:',
@@ -178,26 +276,57 @@ function capitalizeFirst(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function deduplicate(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = item.text.toLowerCase().slice(0, 50);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function main() {
-  const commitsText = getCommitsSinceLastRelease();
+  const allItems = [];
 
-  if (!commitsText) {
+  // 1. Коммиты (subject + body)
+  const commitsText = getCommitsBetweenReleases();
+  if (commitsText) {
+    const lines = commitsText.split('\n');
+    let currentSubject = '';
+
+    for (const line of lines) {
+      if (line === '---COMMIT_END---') {
+        currentSubject = '';
+        continue;
+      }
+
+      if (!currentSubject && line.trim()) {
+        // Это subject
+        currentSubject = line.trim();
+        const item = commitToItem(currentSubject);
+        if (item) allItems.push(item);
+      }
+      // Body игнорируем для коммитов (слишком технический)
+    }
+  }
+
+  // 2. PR-описания (более содержательные)
+  const prDescriptions = getPRDescriptions();
+  for (const prText of prDescriptions) {
+    const prItems = extractItemsFromPR(prText);
+    allItems.push(...prItems);
+  }
+
+  // 3. Дедупликация и лимит
+  const unique = deduplicate(allItems).slice(0, MAX_ITEMS);
+
+  if (unique.length === 0) {
     process.stdout.write(FALLBACK_ITEMS);
     return;
   }
 
-  const commits = commitsText.split('\n').filter(Boolean);
-  const items = commits
-    .map(commitToItem)
-    .filter(Boolean)
-    .slice(0, 5); // Максимум 5 пунктов
-
-  if (items.length === 0) {
-    process.stdout.write(FALLBACK_ITEMS);
-    return;
-  }
-
-  process.stdout.write(JSON.stringify(items));
+  process.stdout.write(JSON.stringify(unique));
 }
 
 main();
