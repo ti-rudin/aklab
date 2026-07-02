@@ -132,8 +132,8 @@ export class TorgiGovParser implements SourceParser {
           'административн', 'производствен'].some(kw => fullText.includes(kw));
         if (!isProperty) continue;
 
-        const priceInfo = item.priceInfo || {};
-        const price = priceInfo.startPrice || priceInfo.currentPrice || priceInfo.price;
+        // API v2: priceMin/priceMax на верхнем уровне (не в priceInfo)
+        const price = item.priceMin || item.priceMax || item.priceInfo?.startPrice || item.priceInfo?.currentPrice;
 
         let area: number | undefined;
         const chars = item.characteristics || [];
