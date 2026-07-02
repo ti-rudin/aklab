@@ -1,16 +1,39 @@
 /**
  * М-ЕТС (m-ets.ru) — парсер коммерческой недвижимости.
  *
- * Playwright, HTML scraping.
+ * Использует внутренний JSON API: /ajax/api/search?category=...&page=N
+ * Возвращает HTML-карточки лотов, парсим через DOMParser в контексте браузера.
+ *
+ * Playwright, stealth context, anti-ban.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
-const MAX_PAGES = 5;
+
+/**
+ * Категории недвижимости на m-ets.ru:
+ *   34 = Жилой дом
+ *   35 = (резерв)
+ *   36 = Квартира
+ *   37 = Нежилое помещение
+ *   38 = Нежилое здание
+ *   39 = Прочие постройки
+ *   40 = Земельный участок
+ *   41 = Иные сооружения
+ */
+const NEDVIZH_CATEGORIES = '34,35,36,37,38,39,40,41';
+
+/** API endpoint для поиска. */
+function searchApiUrl(page: number): string {
+  return `${BASE_URL}/ajax/api/search?category=${NEDVIZH_CATEGORIES}&page=${page}`;
+}
+
+// ─── Классификация типа недвижимости ────────────────────────────────────────
 
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
+  if (lower.includes('квартир')) return 'apartment';
   if (lower.includes('офис') || lower.includes('административн')) return 'office';
   if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
   if (lower.includes('магазин') || lower.includes('торгов')) return 'retail';
@@ -20,14 +43,21 @@ function classifyPropertyType(text: string): string {
   return 'other';
 }
 
+// ─── Парсинг цены ──────────────────────────────────────────────────────────
+
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
+  // Убираем всё кроме цифр, пробелов и запятых
   const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
   const num = parseFloat(cleaned);
   return !isNaN(num) && num > 0 ? num : undefined;
 }
 
+// ─── Извлечение площади ────────────────────────────────────────────────────
+
 function extractArea(text: string): number | undefined {
+  if (!text) return undefined;
+  // 54.2 кв.м | 70,7 кв.м | 54,2 кв. м | 13.3 м²
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
   if (match) {
     const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
@@ -37,6 +67,8 @@ function extractArea(text: string): number | undefined {
   return undefined;
 }
 
+// ─── Определение города / региона ──────────────────────────────────────────
+
 function detectCity(text: string): string {
   const lower = text.toLowerCase();
   if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
@@ -44,101 +76,200 @@ function detectCity(text: string): string {
   return 'other';
 }
 
+// ─── Парсер ────────────────────────────────────────────────────────────────
+
 export class MetsParser implements SourceParser {
   name = 'm-ets';
 
   async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
-    logger.info('[m-ets] Starting Playwright browser...');
-    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    logger.info('[m-ets] Запуск Playwright...');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
 
     try {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
+
+      // Сначала заходим на главную, чтобы получить cookies / sid
+      await retryGoto(page, BASE_URL, 2);
+      await page.waitForTimeout(2000);
+
       const allProperties: ParsedProperty[] = [];
+      const maxPages = depth ? Math.ceil(depth / 20) : 5; // 20 лотов на страницу
+      const maxItems = depth ?? 100;
 
-      const searchUrls = [
-        `${BASE_URL}/lots`,
-        `${BASE_URL}/search`,
-        `${BASE_URL}/trades`,
-        BASE_URL,
-      ];
+      for (let pageNum = 1; pageNum <= maxPages && allProperties.length < maxItems; pageNum++) {
+        const url = searchApiUrl(pageNum);
+        logger.info(`[m-ets] Загрузка страницы ${pageNum}: ${url}`);
 
-      let workingUrl = BASE_URL;
-      for (const url of searchUrls) {
         try {
-          await retryGoto(page, url, 1);
-          workingUrl = url;
-          break;
-        } catch { continue; }
+          await randomDelay(1500, 3500);
+
+          // Загружаем API через page.goto — передаём cookies автоматически
+          const response = await page.evaluate(async (apiUrl: string) => {
+            const resp = await fetch(apiUrl);
+            return resp.json();
+          }, url);
+
+          if (!response || response.code !== 200 || !response.data?.length) {
+            logger.info(`[m-ets] Страница ${pageNum}: нет данных (code=${response?.code})`);
+            break;
+          }
+
+          const meta = response.meta;
+          logger.info(
+            `[m-ets] Страница ${pageNum}/${meta?.pages}: ${response.data.length} лотов (всего: ${meta?.total})`,
+          );
+
+          // Парсим HTML-карточки в контексте браузера
+          const cards = await page.evaluate((items: Array<{ lot_id: number; data: string }>) => {
+            const parser = new DOMParser();
+            return items.map((item) => {
+              const doc = parser.parseFromString(item.data, 'text/html');
+              const card = doc.querySelector('.card-so');
+              if (!card) {
+                return {
+                  lot_id: item.lot_id,
+                  error: 'no .card-so found',
+                };
+              }
+
+              // Ссылка на лот
+              const linkEl = card.querySelector('a[href]');
+              const href = linkEl?.getAttribute('href') || '';
+
+              // Название лота
+              const titleEl =
+                card.querySelector('.comp-title') ||
+                card.querySelector('.info .title') ||
+                card.querySelector('[itemprop="name"]');
+              const title = titleEl?.textContent?.trim() || '';
+
+              // Номер торгов
+              const regNumEl = card.querySelector('.comp-regnumber');
+              const regNumber = regNumEl?.textContent?.trim() || '';
+
+              // Регион (из карточки)
+              const regionEl = card.querySelector('.search-item-location span');
+              const region = regionEl?.textContent?.trim() || '';
+
+              // Цена (из блока cost-block)
+              const costEl = card.querySelector('.cost-info .cost span');
+              const costText = costEl?.textContent?.trim() || '';
+
+              // Тип цены (Начальная / Текущая)
+              const costTypeEl = card.querySelector('.cost-info .title');
+              const costType = costTypeEl?.textContent?.trim() || '';
+
+              // Описание
+              const descEl = card.querySelector('.description');
+              const description = descEl?.textContent?.trim() || '';
+
+              // Тип объявления (Торги по банкротству. Объявленные торги)
+              const typeEl = card.querySelector('.comp-type');
+              const auctionType = typeEl?.textContent?.trim() || '';
+
+              // Минимальная цена (красная)
+              const minPriceEl = card.querySelector('.price.min span, .price.min');
+              const minPriceText = minPriceEl?.textContent?.trim() || '';
+
+              // Текущая цена
+              const currentPriceEl = card.querySelector('.price.current span, .price.current');
+              const currentPriceText = currentPriceEl?.textContent?.trim() || '';
+
+              // Дата окончания
+              const dateEl = card.querySelector('.comp-dates .value');
+              const endDate = dateEl?.textContent?.trim() || '';
+
+              return {
+                lot_id: item.lot_id,
+                href,
+                title,
+                regNumber,
+                region,
+                costText,
+                costType,
+                minPriceText,
+                currentPriceText,
+                description,
+                auctionType,
+                endDate,
+              };
+            });
+          }, response.data);
+
+          // Обрабатываем результаты
+          for (const card of cards) {
+            if ((card as any).error) continue;
+
+            const { href, title, region, costText, description, regNumber } = card as any;
+            if (!title || title.length < 3) continue;
+
+            const fullLink = href.startsWith('http')
+              ? href
+              : href.startsWith('/')
+                ? `${BASE_URL}${href}`
+                : `${BASE_URL}/${href}`;
+
+            // Цена: извлекаем из текста карточки
+            const priceText = (card as any).currentPriceText || costText || '';
+            const price = parsePrice(priceText);
+
+            // Минимальная цена
+            const minimumPrice = parsePrice((card as any).minPriceText || '');
+
+            // Площадь из описания + заголовка
+            const fullText = title + ' ' + description;
+            const area = extractArea(fullText);
+
+            // Адрес из описания
+            const addressMatch = description.match(
+              /(?:адрес(?:у)?:?\s*|расположенн[аыя]?\s+по\s+адресу:\s*|местонахождение:?\s*)([^\n]+)/i,
+            );
+            const address = addressMatch ? addressMatch[1].trim() : region;
+
+            // Город
+            const city = detectCity(title + ' ' + region + ' ' + description);
+
+            // external_id: используем lot_id если есть, иначе из href
+            const externalId = (card as any).lot_id
+              ? `m-ets-${(card as any).lot_id}`
+              : `m-ets-${href.split('/').pop() || title.slice(0, 30)}`;
+
+            allProperties.push({
+              external_id: externalId,
+              url: fullLink,
+              title: title.slice(0, 300),
+              address,
+              city,
+              area_sqm: area,
+              price,
+              minimum_price: minimumPrice,
+              price_per_sqm: price && area ? Math.round(price / area) : undefined,
+              property_type: classifyPropertyType(title + ' ' + description),
+              auction_type: 'marketplace',
+              description: description.slice(0, 1000) || undefined,
+            });
+          }
+
+          // Проверяем, есть ли ещё страницы
+          if (pageNum >= (meta?.pages || 1)) {
+            logger.info('[m-ets] Достигнута последняя страница');
+            break;
+          }
+        } catch (err: any) {
+          logger.warn(`[m-ets] Ошибка на странице ${pageNum}: ${err.message}`);
+          // Продолжаем со следующей страницы
+        }
       }
 
-      await page.waitForTimeout(5000);
-
-      const cards = await page.evaluate(() => {
-        const results: Array<{ title: string; link: string; price_text: string; min_price_text: string; excerpt: string }> = [];
-        const selectors = [
-          '.card', '.lot-card', '.trade-card', '.search-result',
-          '.list-item', 'article', 'tr', '[class*="card"]', '[class*="lot"]',
-        ];
-        let found: Element[] = [];
-        for (const sel of selectors) {
-          found = Array.from(document.querySelectorAll(sel));
-          if (found.length > 2) break;
-        }
-        for (const card of found.slice(0, 50)) {
-          const el = card as HTMLElement;
-          const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
-          const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"]');
-          // .cost = чистый price span; НЕ [class*="cost"] — матчит .cost-block с лишним текстом ("Осталось: N дней")
-          // .cost = чистый price span; НЕ [class*='.cost'] — матчит .cost-block с лишним текстом
-          const priceEl = el.querySelector('.cost, .price.current, .bid__value');
-          // minimum_price из .price.min (красный цвет на m-ets.ru)
-          const minPriceEl = el.querySelector('.price.min');
-          const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
-          if (!title || title.length < 5) continue;
-          results.push({
-            title: title.slice(0, 200),
-            link: linkEl?.href || '',
-            price_text: priceEl?.textContent?.trim() || '',
-            min_price_text: minPriceEl?.textContent?.trim() || '',
-            excerpt: el.textContent?.trim().slice(0, 500) || '',
-          });
-        }
-        return results;
-      });
-
-      logger.info(`[m-ets] Found ${cards.length} cards at ${workingUrl}`);
-
-      for (const card of cards) {
-        const area = extractArea(card.title + ' ' + card.excerpt);
-        const price = parsePrice(card.price_text);
-        const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
-        const excerptText = card.excerpt || '';
-        const addressMatch = excerptText.match(/(?:адрес|ул\.|ул\s|город|г\.|пр\.|просп|шоссе|пер\.)[^,]*(?:,[^,]+){0,2}/i);
-        const address = addressMatch ? addressMatch[0].trim() : '';
-        const description = excerptText.length > 20 ? excerptText.slice(0, 500) : undefined;
-
-        allProperties.push({
-          external_id: `m-ets-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
-          url: fullLink,
-          title: card.title,
-          address,
-          city: detectCity(card.title + ' ' + excerptText),
-          area_sqm: area,
-          price,
-          minimum_price: parsePrice(card.min_price_text),
-          price_per_sqm: price && area ? Math.round(price / area) : undefined,
-          property_type: classifyPropertyType(card.title),
-          auction_type: 'marketplace',
-          description,
-        });
-      }
-
-      logger.info(`[m-ets] Total: ${allProperties.length} properties`);
+      logger.info(`[m-ets] Итого: ${allProperties.length} объектов недвижимости`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[m-ets] Parse error: ${err.message}`);
+      logger.error(`[m-ets] Ошибка парсинга: ${err.message}`);
       throw err;
     } finally {
       await browser.close();
