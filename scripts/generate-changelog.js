@@ -46,7 +46,7 @@ function getReleaseHashes() {
  */
 function getCommitsBetweenReleases() {
   const hashes = getReleaseHashes();
-  if (hashes.length < 2) {
+  if (hashes.length < 1) {
     // Первый рилиз — берём последние 30 коммитов
     try {
       return execSync(
@@ -59,8 +59,9 @@ function getCommitsBetweenReleases() {
   }
 
   try {
+    // Коммиты от последнего [release] до HEAD
     return execSync(
-      `git log ${hashes[1]}..${hashes[0]} --no-merges --format="%s%n%b%n---COMMIT_END---"`,
+      `git log ${hashes[0]}..HEAD --no-merges --format="%s%n%b%n---COMMIT_END---"`,
       { encoding: 'utf8' }
     ).trim();
   } catch {
@@ -73,12 +74,12 @@ function getCommitsBetweenReleases() {
  */
 function getPRDescriptions() {
   const hashes = getReleaseHashes();
-  if (hashes.length < 2) return [];
+  if (hashes.length < 1) return [];
 
   try {
     // Найти мерж-коммиты (Merge pull request #N)
     const mergeLog = execSync(
-      `git log ${hashes[1]}..${hashes[0]} --merges --format="%s" 2>/dev/null || true`,
+      `git log ${hashes[0]}..HEAD --merges --format="%s" 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 

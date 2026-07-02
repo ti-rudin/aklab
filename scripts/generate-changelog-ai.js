@@ -38,13 +38,14 @@ function getReleaseHashes() {
 function getCommits() {
   const tags = getReleaseHashes();
 
-  if (tags.length < 2) {
+  if (tags.length < 1) {
     return execSync('git log --oneline --no-merges --format="%s" -30', {
       encoding: 'utf-8',
     }).trim().split('\n').filter(Boolean);
   }
 
-  return execSync(`git log --no-merges --format="%s" ${tags[1]}..${tags[0]}`, {
+  // Коммиты от последнего [release] до HEAD (исключая сам release-коммит)
+  return execSync(`git log --no-merges --format="%s" ${tags[0]}..HEAD`, {
     encoding: 'utf-8',
   }).trim().split('\n').filter(Boolean);
 }
@@ -53,11 +54,11 @@ function getCommits() {
 
 function getPRDescriptions() {
   const tags = getReleaseHashes();
-  if (tags.length < 2) return [];
+  if (tags.length < 1) return [];
 
   try {
     const mergeLog = execSync(
-      `git log ${tags[1]}..${tags[0]} --merges --format="%s" 2>/dev/null || true`,
+      `git log ${tags[0]}..HEAD --merges --format="%s" 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 
