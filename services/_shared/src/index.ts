@@ -9,4 +9,4 @@ export { startQueueWorker, stopQueueWorker, gracefulStopQueueWorker } from './qu
 export { propertyExists, createProperty, updateSourceStats, logCron, fetchProperty, findActiveMarketReference, fetchSetting, updateProperty } from './strapi-client';
 export { createParseHandler } from './parse-handler';
 export { randomDelay, USER_AGENTS, getRandomUA, retryGoto, createStealthContext } from './anti-ban';
-export type { ParsedProperty, SourceParser } from './types';
+export type { ParsedProperty, SourceParser, ParseOptions, ParseResult } from './types';

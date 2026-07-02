@@ -24,5 +24,18 @@ export interface ParsedProperty {
 
 export interface SourceParser {
   name: string;
-  parse(): Promise<ParsedProperty[]>;
+  parse(depth?: number): Promise<ParsedProperty[]>;
+}
+
+/** Опции для запуска парсинга. */
+export interface ParseOptions {
+  /** Максимум объектов для создания за один запуск. */
+  depth?: number;
+}
+
+/** Результат работы parse-handler. */
+export interface ParseResult {
+  created: number;
+  filtered: number;
+  total: number;
 }

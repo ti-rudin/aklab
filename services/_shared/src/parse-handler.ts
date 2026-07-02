@@ -1,11 +1,17 @@
 /**
  * Generic parse handler — используется всеми парсерами.
  * Устраняет дупликацию handler.ts (800+ строк идентичного кода).
+ *
+ * Поддерживает:
+ *  — depth: ограничение кол-ва создаваемых объектов
+ *  — smart stop: остановка при 3+ последовательных дубликатах
+ *  — двухфазный парсинг: depth передаётся в parser.parse()
  */
 
 import type { Job } from '@aklab/sqlite-queue';
-import type { SourceParser } from './types';
+import type { SourceParser, ParseResult } from './types';
 import { propertyExists, createProperty, logCron, updateSourceStats } from './strapi-client';
+import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 
 export interface ParseRequest {
@@ -13,27 +19,59 @@ export interface ParseRequest {
   sourceId?: number;
   documentId?: string;
   correlationId?: string;
+  depth?: number;
 }
+
+/** Порог последовательных дубликатов для smart stop. */
+const SMART_STOP_THRESHOLD = 3;
 
 /**
  * Создаёт generic handler для парсера.
  * Каждый парсер передаёт свой экземпляр SourceParser.
  */
 export function createParseHandler(parser: SourceParser) {
-  return async function handleParseJob(job: Job): Promise<{ processed: number; created: number; skipped: number; filtered: number }> {
+  return async function handleParseJob(job: Job): Promise<ParseResult> {
     const req = job.data as ParseRequest;
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
+    const depth = req.depth ?? 50;
     const startedAt = new Date().toISOString();
-    let processed = 0, created = 0, skipped = 0, filtered = 0, errorMsg: string | undefined;
+    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0;
+    let errorMsg: string | undefined;
 
     try {
-      const properties = await parser.parse();
-      processed = properties.length;
-      logger.info(`Parsed ${processed} from ${req.source}`, { correlationId: corrId });
+      // Фаза 1: парсинг — передаём depth, чтобы парсер мог ограничить кол-во страниц
+      const properties = await parser.parse(depth);
+      total = properties.length;
+      logger.info(`Parsed ${total} from ${req.source} (depth=${depth})`, { correlationId: corrId });
 
+      // Фаза 2: проверка и создание
       for (const prop of properties) {
+        // Depth limit: достигли лимита — стоп
+        if (created >= depth) {
+          logger.info(`Depth limit reached (${created}/${depth}), stopping`, { correlationId: corrId });
+          break;
+        }
+
         try {
-          if (await propertyExists(req.source, prop.external_id)) { skipped++; continue; }
+          // Anti-ban: небольшая задержка между проверками
+          await randomDelay(500, 1500);
+
+          if (await propertyExists(req.source, prop.external_id)) {
+            consecutiveDuplicates++;
+            // Smart stop: 3+ дубликата подряд → скорее всего всё уже спарсено
+            if (consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
+              logger.info(
+                `Smart stop: ${consecutiveDuplicates} consecutive duplicates, stopping early`,
+                { correlationId: corrId },
+              );
+              break;
+            }
+            continue;
+          }
+
+          // Сброс счётчика дубликатов при нахождении нового объекта
+          consecutiveDuplicates = 0;
+
           const result = await createProperty({
             source: req.source,
             external_id: prop.external_id,
@@ -85,7 +123,7 @@ export function createParseHandler(parser: SourceParser) {
         last_parse_status: 'success',
         last_parse_error: undefined,
         last_parsed_at: new Date().toISOString(),
-        total_found: processed,
+        total_found: total,
         total_created: created,
         parse_count: 1,
       }).catch((err: any) => {
@@ -93,7 +131,10 @@ export function createParseHandler(parser: SourceParser) {
       });
     }
 
-    logger.info(`Done: ${created} created, ${skipped} skipped, ${filtered} filtered, ${processed} total`, { correlationId: corrId });
-    return { processed, created, skipped, filtered };
+    logger.info(
+      `Done: ${created} created, ${filtered} filtered, ${total} total (depth=${depth})`,
+      { correlationId: corrId },
+    );
+    return { created, filtered, total };
   };
 }
