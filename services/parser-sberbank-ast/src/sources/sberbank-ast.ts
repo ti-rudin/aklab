@@ -1,8 +1,9 @@
 /**
  * Сбербанк-АСТ (utp.sberbank-ast.ru) — парсер коммерческой недвижимости.
  *
- * Таблица с AJAX-пагинацией, Playwright.
- * URL: /Property/List/BidListComReal
+ * Данные встроены в HTML в скрытом input#xmlData в формате XML.
+ * Парсим XML напрямую, без ожидания JS-рендеринга таблицы.
+ *
  * ~6600 лотов, ~332 страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
@@ -11,7 +12,7 @@ import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/ser
 const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 20;
 
 function classifyPropertyType(text: string): string {
   const lower = text.toLowerCase();
@@ -40,6 +41,22 @@ function parsePrice(text: string): number | undefined {
   return !isNaN(num) && num > 0 ? num : undefined;
 }
 
+function extractAddress(title: string): string {
+  // Try "по адресу: ..." pattern
+  let match = title.match(/по\s+адресу[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
+  if (match) return match[1].trim();
+
+  // Try "расположенн..." pattern
+  match = title.match(/расположенн\w*\s+(?:по\s+адресу[:\s]*)?([^,]+(?:,\s*[^,]+){0,3})/i);
+  if (match) return match[1].trim();
+
+  // Try "адрес:" pattern
+  match = title.match(/адрес[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
+  if (match) return match[1].trim();
+
+  return '';
+}
+
 export class SberbankAstParser implements SourceParser {
   name = 'sberbank-ast';
 
@@ -55,7 +72,7 @@ export class SberbankAstParser implements SourceParser {
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
-      // Retry при таймауте (сайт不稳定)
+      // Retry при таймауте
       logger.info('[sberbank-ast] Loading page...');
       await retryGoto(page, SEARCH_URL, 3);
       await page.waitForTimeout(5000);
@@ -63,27 +80,52 @@ export class SberbankAstParser implements SourceParser {
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         logger.info(`[sberbank-ast] Parsing page ${pageNum}`);
 
+        // Извлекаем данные из скрытого input#xmlData
         const lots = await page.evaluate(() => {
           const results: Array<{
             purchase_id: string; title: string; price_text: string;
             status: string; detail_url: string; organizer: string;
+            address: string; amount: string;
           }> = [];
-          const rows = document.querySelectorAll('#resultTbl > tbody > tr');
+
+          const xmlDataInput = document.getElementById('xmlData') as HTMLInputElement;
+          if (!xmlDataInput) return results;
+
+          const xmlStr = xmlDataInput.value;
+          if (!xmlStr) return results;
+
+          // Парсим XML
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+          const rows = xmlDoc.querySelectorAll('row');
+
           for (const row of Array.from(rows)) {
-            const priceCell = row.querySelector('td:nth-child(1)');
-            const infoCell = row.querySelector('td:nth-child(2)');
-            if (!infoCell) continue;
+            const purchaseId = row.querySelector('PurchaseId')?.textContent?.trim() || '';
+            const purchaseName = row.querySelector('PurchaseName')?.textContent?.trim() || '';
+            const bidName = row.querySelector('BidName')?.textContent?.trim() || '';
+            const amount = row.querySelector('Amount')?.textContent?.trim() || '';
+            const currentAmount = row.querySelector('CurrentAmount')?.textContent?.trim() || '';
+            const purchaseState = row.querySelector('PurchaseState')?.textContent?.trim() || '';
+            const orgName = row.querySelector('OrgName')?.textContent?.trim() || '';
+            const purchaseCode = row.querySelector('PurchaseCode')?.textContent?.trim() || '';
 
-            const price = priceCell?.querySelector('[content="leaf:purchAmount"]')?.textContent?.trim() || '';
-            const status = priceCell?.querySelector('[content="leaf:BidStatusName"]')?.textContent?.trim() || '';
-            const title = infoCell?.querySelector('[content="leaf:purchName"]')?.textContent?.trim() || '';
-            const purchaseId = (infoCell?.querySelector('input[content="leaf:PurchaseId"]') as HTMLInputElement)?.value || '';
-            const detailHref = (infoCell?.querySelector('input[content="leaf:objectHrefTerm"]') as HTMLInputElement)?.value || '';
-            const organizer = infoCell?.querySelector('[content="leaf:OrgNameD"]')?.textContent?.trim() || '';
+            if (!purchaseName) continue;
 
-            if (!title) continue;
-            results.push({ purchase_id: purchaseId, title, price_text: price, status, detail_url: detailHref, organizer });
+            const title = purchaseName;
+            const detailUrl = `${window.location.origin}/Property/View/ComLot/${purchaseId}`;
+
+            results.push({
+              purchase_id: purchaseId,
+              title,
+              price_text: currentAmount || amount,
+              status: purchaseState,
+              detail_url: detailUrl,
+              organizer: orgName,
+              address: '',
+              amount: currentAmount || amount,
+            });
           }
+
           return results;
         });
 
@@ -91,14 +133,13 @@ export class SberbankAstParser implements SourceParser {
 
         for (const lot of lots) {
           const price = parsePrice(lot.price_text);
-          const addrMatch = lot.title.match(/(?:по\s+адресу|адрес|ул\.|г\.)\s*([^,]+(?:,[^,]+){0,2})/i);
-          const address = addrMatch ? addrMatch[1].trim() : '';
+          const address = extractAddress(lot.title);
           allProperties.push({
             external_id: `sberbank-ast-${lot.purchase_id || lot.title.slice(0, 50)}`,
             url: lot.detail_url.startsWith('http') ? lot.detail_url : `${BASE_URL}${lot.detail_url}`,
             title: lot.title,
             address,
-            city: detectCity(lot.title),
+            city: detectCity(address || lot.title),
             property_type: classifyPropertyType(lot.title),
             auction_type: 'bankruptcy',
             price,

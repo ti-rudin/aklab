@@ -78,7 +78,7 @@ function resolveNuxtRef(data: unknown[], idx: number, depth = 0): unknown {
   return val;
 }
 
-/** Извлекает массив сущностей торгов из Nuxt payload по ключу. */
+/** Извлекает массив сущностей торгов из Nuxt payload. */
 function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] {
   const match = html.match(/id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!match) return [];
@@ -93,43 +93,21 @@ function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] 
   if (!Array.isArray(data)) return [];
 
   const tenders: Record<string, unknown>[] = [];
+  const TENDER_KEYS = ['startPrice', 'objectArea', 'address'];
 
-  // Ищем ключи вида "fetchTenders-XXXX" и извлекаем массив entities
+  // Сканируем весь массив и ищем объекты-тендеры (имеют ключи startPrice, objectArea, address)
   for (let i = 0; i < data.length; i++) {
-    const key = data[i];
-    if (typeof key !== 'string' || !key.startsWith('fetchTenders-')) continue;
+    const item = data[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
 
-    // Следующий элемент — объект с filteredCount, entities, totalCount
-    const meta = data[i + 1];
-    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) continue;
+    const objKeys = Object.keys(item as Record<string, unknown>);
+    const isTender = TENDER_KEYS.every(k => objKeys.includes(k));
+    if (!isTender) continue;
 
-    const metaObj = meta as Record<string, unknown>;
-    const entitiesIdx = metaObj.entities as number;
-    if (typeof entitiesIdx !== 'number') continue;
-
-    const entitiesList = data[entitiesIdx];
-    if (!Array.isArray(entitiesList)) continue;
-
-    // Каждый элемент entitiesList — это индекс на группу объектов
-    for (const groupIdx of entitiesList) {
-      if (typeof groupIdx !== 'number') continue;
-      const group = resolveNuxtRef(data, groupIdx) as Record<string, unknown>;
-      if (!group || typeof group !== 'object') continue;
-
-      // Группа содержит tenders (массив индексов тендеров)
-      const tendersList = group.tenders as unknown[];
-      if (!Array.isArray(tendersList)) continue;
-
-      for (const tenderRef of tendersList) {
-        if (typeof tenderRef === 'number') {
-          const tender = resolveNuxtRef(data, tenderRef) as Record<string, unknown>;
-          if (tender && typeof tender === 'object' && tender.id) {
-            tenders.push(tender);
-          }
-        } else if (typeof tenderRef === 'object' && tenderRef !== null) {
-          tenders.push(tenderRef as Record<string, unknown>);
-        }
-      }
+    // Разрешаем ссылки на значения
+    const resolved = resolveNuxtRef(data, i) as Record<string, unknown>;
+    if (resolved && typeof resolved === 'object' && resolved.id) {
+      tenders.push(resolved);
     }
   }
 
