@@ -86,7 +86,7 @@ describe('cron controller', () => {
       });
       expect(mockQueue.addToQueue).toHaveBeenCalledWith(
         'parse-tender',
-        { source: 'tender', sourceId: 1, documentId: 'doc1' },
+        { source: 'tender', sourceId: 1, documentId: 'doc1', depth: 50 },
         expect.objectContaining({ correlationId: expect.stringContaining('manual-parse-') }),
       );
       expect(ctx.body.ok).toBe(true);
