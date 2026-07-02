@@ -43,6 +43,12 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
     return true;
   }
 
+  // Если парсер уже классифицировал как коммерческий тип — доверяем парсеру
+  const COMMERCIAL_TYPES = ['office', 'warehouse', 'retail', 'production', 'free_purpose'];
+  if (COMMERCIAL_TYPES.includes(props.property_type)) {
+    return true;
+  }
+
   const title = props.title.toLowerCase();
 
   // Ключевые слова, по которым объект точно НЕ коммерческий
