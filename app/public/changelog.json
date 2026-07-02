@@ -126,42 +126,6 @@
     "time": "23:08",
     "items": [
       {
-        "text": "Исправить XML парсинг и coords валидацию",
-        "type": "fix"
-      },
-      {
-        "text": "Исправить извлечение цены — priceMin/priceMax вместо priceInfo",
-        "type": "fix"
-      },
-      {
-        "text": "Добавить apartment в property_type enum (Strapi schema)",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на SSR Nuxt.js данные",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на JSON API /aapi/map/places/",
-        "type": "fix"
-      },
-      {
-        "text": "Переписать парсер — поиск по недвижимости, правильные селекторы",
-        "type": "fix"
-      },
-      {
-        "text": "Квартиры — добавить apartment в типы, убрать из фильтра",
-        "type": "new"
-      },
-      {
-        "text": "Smart stop 3→10, пагинация без early exit, alfalot waitForSelector",
-        "type": "fix"
-      },
-      {
-        "text": "IsCommercialProperty доверяет парсеру если property_type коммерческий",
-        "type": "fix"
-      },
-      {
         "text": "Cron endpoints auth:false — ручной запуск из фронта",
         "type": "fix"
       }
@@ -172,42 +136,6 @@
     "date": "2 июля 2026",
     "time": "22:51",
     "items": [
-      {
-        "text": "Исправить извлечение цены — priceMin/priceMax вместо priceInfo",
-        "type": "fix"
-      },
-      {
-        "text": "Добавить apartment в property_type enum (Strapi schema)",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на SSR Nuxt.js данные",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на JSON API /aapi/map/places/",
-        "type": "fix"
-      },
-      {
-        "text": "Переписать парсер — поиск по недвижимости, правильные селекторы",
-        "type": "fix"
-      },
-      {
-        "text": "Квартиры — добавить apartment в типы, убрать из фильтра",
-        "type": "new"
-      },
-      {
-        "text": "Smart stop 3→10, пагинация без early exit, alfalot waitForSelector",
-        "type": "fix"
-      },
-      {
-        "text": "IsCommercialProperty доверяет парсеру если property_type коммерческий",
-        "type": "fix"
-      },
-      {
-        "text": "Cron endpoints auth:false — ручной запуск из фронта",
-        "type": "fix"
-      },
       {
         "text": "AI через Token Plan + PR-описания в промпте + merge с fallback",
         "type": "fix"
@@ -262,10 +190,6 @@
     "date": "2 июля 2026",
     "time": "22:27",
     "items": [
-      {
-        "text": "Добавлена поддержка квартир как отдельного типа недвижимости во всех парсерах",
-        "type": "new"
-      },
       {
         "text": "Добавлена возможность ручного запуска парсеров из интерфейса",
         "type": "new"
@@ -345,10 +269,6 @@
     "time": "21:47",
     "items": [
       {
-        "text": "Добавлена поддержка квартир как отдельного типа недвижимости",
-        "type": "new"
-      },
-      {
         "text": "Антибан-защита парсеров: ротация User-Agent, случайные задержки, автоматические повторы при ошибках",
         "type": "new"
       },
@@ -359,10 +279,6 @@
       {
         "text": "Улучшена стабильность парсинга: двухфазная обработка, корректная пагинация и автоматическая остановка при отсутствии новых данных",
         "type": "improvement"
-      },
-      {
-        "text": "Исправлено определение коммерческой недвижимости",
-        "type": "fix"
       },
       {
         "text": "Исправлен ручной запуск парсинга из фронтенда и проверка состояния документов",
@@ -389,10 +305,6 @@
       },
       {
         "text": "Оптимизирован механизм остановки парсинга — увеличен порог smart stop, исправлена работа пагинации",
-        "type": "fix"
-      },
-      {
-        "text": "Исправлено определение коммерческой недвижимости — теперь доверяет парсеру при коммерческом типе объекта",
         "type": "fix"
       },
       {
@@ -449,14 +361,6 @@
     "date": "2 июля 2026",
     "time": "19:05",
     "items": [
-      {
-        "text": "Cron endpoints auth:false — ручной запуск из фронта",
-        "type": "fix"
-      },
-      {
-        "text": "AI через Token Plan + PR-описания в промпте + merge с fallback",
-        "type": "fix"
-      },
       {
         "text": "PR-описания + commit bodies + лимит 10 + env в CI",
         "type": "fix"
@@ -528,71 +432,12 @@
     "time": "18:43",
     "items": [
       {
-        "text": "PR-описания + commit bodies + лимит 10 + env в CI",
-        "type": "fix"
-      },
-      {
-        "text": "Bump version 1.0.54",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновить compact-doc — рефакторинг парсинга (anti-ban, depth, smart stop)",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для m-ets, roseltorg, alfalot, etprf",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для aggregator-bankrot, invest-mosreg, investmoscow",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для fabrikant, torgi-gov, sberbank-ast",
-        "type": "improvement"
-      },
-      {
-        "text": "Parse-handler — depth, smart stop, двухфазный парсинг",
-        "type": "improvement"
-      },
-      {
-        "text": "Глубина парсинга — input рядом с Ручной запуск",
-        "type": "new"
-      },
-      {
         "text": "Anti-ban модуль — randomDelay, UA ротация, retryGoto",
         "type": "new"
       },
       {
         "text": "Параметр depth в POST /cron/parse/:slug",
         "type": "new"
-      }
-    ]
-  },
-  {
-    "version": "v1.0.56",
-    "date": "2 июля 2026",
-    "time": "18:37",
-    "items": [
-      {
-        "text": "Обновить compact-doc — рефакторинг парсинга (anti-ban, depth, smart stop)",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для m-ets, roseltorg, alfalot, etprf",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для aggregator-bankrot, invest-mosreg, investmoscow",
-        "type": "improvement"
-      },
-      {
-        "text": "Anti-ban + depth для fabrikant, torgi-gov, sberbank-ast",
-        "type": "improvement"
-      },
-      {
-        "text": "Parse-handler — depth, smart stop, двухфазный парсинг",
-        "type": "improvement"
       }
     ]
   },
@@ -682,17 +527,6 @@
     ]
   },
   {
-    "version": "v1.0.48",
-    "date": "1 июля 2026",
-    "time": "20:54",
-    "items": [
-      {
-        "text": "Закоммитить package-lock.json для reproducible builds",
-        "type": "fix"
-      }
-    ]
-  },
-  {
     "version": "v1.0.47",
     "date": "1 июля 2026",
     "time": "20:46",
@@ -707,10 +541,6 @@
       },
       {
         "text": "Unit тесты для QueueService и cron registration",
-        "type": "improvement"
-      },
-      {
-        "text": "Batch DB ops в focusEngine, composite index, MarketReference кэш",
         "type": "improvement"
       },
       {
@@ -874,10 +704,6 @@
         "type": "fix"
       },
       {
-        "text": "объект",
-        "type": "fix"
-      },
-      {
         "text": "GetDetailedStats + threshold type",
         "type": "fix"
       }
@@ -935,10 +761,6 @@
       {
         "text": "Alfalot area extraction — title-first priority",
         "type": "fix"
-      },
-      {
-        "text": "Обновление документации",
-        "type": "improvement"
       }
     ]
   },
@@ -993,10 +815,6 @@
     "time": "09:54",
     "items": [
       {
-        "text": "Обновление документации",
-        "type": "improvement"
-      },
-      {
         "text": "Code quality overhaul (11 fixes)",
         "type": "improvement"
       },
@@ -1015,10 +833,6 @@
     "date": "10 июня 2026",
     "time": "09:05",
     "items": [
-      {
-        "text": "Обновление документации",
-        "type": "improvement"
-      },
       {
         "text": "Design audit fixes - Geist font, OG tags, skeletons, 404, hover states, remove dead CSS",
         "type": "new"
@@ -1067,10 +881,6 @@
       {
         "text": "Seeder Setting singleton + smtp_to default + docs update",
         "type": "fix"
-      },
-      {
-        "text": "Обновление документации",
-        "type": "improvement"
       }
     ]
   },
@@ -1119,10 +929,6 @@
       {
         "text": "Changelog Russian dates, Moscow time, translation dict",
         "type": "fix"
-      },
-      {
-        "text": "Маршруты источников",
-        "type": "fix"
       }
     ]
   },
@@ -1160,10 +966,6 @@
     "items": [
       {
         "text": "Исправлен health endpoint — отдельный route файл (auth: false)",
-        "type": "fix"
-      },
-      {
-        "text": "createCoreRouter восстановлен для CRUD маршрутов",
         "type": "fix"
       },
       {
