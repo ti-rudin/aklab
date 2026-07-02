@@ -1,6 +1,6 @@
 {
   "name": "aklab",
-  "version": "1.0.66",
+  "version": "1.0.67",
   "main": "ecosystem-local.config.js",
   "workspaces": [
     "lib/*",
