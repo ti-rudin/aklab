@@ -418,6 +418,22 @@ deploy-prod.sh + бамп версии).
     (tirobots@yandex.ru) вместо `Setting.smtp_to` (a@rudin.ru).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
+23. **PM2 daemon Node version mismatch** — PM2 daemon хранит окружение
+    от момента `pm2 start`. Если Node обновлён через nvm (напр. v20→v22),
+    daemon продолжает использовать старую. `pm2 update` перезапускает
+    daemon с текущим окружением. **Deploy-prod.sh** теперь проверяет
+    автоматически и обновляет systemd-сервис. Симптом: `better-sqlite3`
+    NODE_MODULE_VERSION mismatch при рестарте.
+24. **API_TOKEN_SALT: .env ≠ PM2 daemon** — `access_key` в
+    `strapi_api_tokens` = `HMAC-SHA512(plain_token, API_TOKEN_SALT)`.
+    Если соль в `.env` отличается от PM2 daemon env — все сервисы
+    получают 401. **НЕ** менять `.env` API_TOKEN_SALT вручную —
+    PM2 daemon env = source of truth. Deploy-prod.sh синхронизирует.
+25. **property_events.property_id** — в Strapi 5 manyToOne relation
+    создаёт FK-колонку НЕ автоматически при миграции schema. Нужен
+    `ALTER TABLE property_events ADD COLUMN property_id INTEGER` +
+    индекс. Без этого raw SQL INSERT в focusEngine падает с
+    "table has no column named property_id".
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -447,6 +463,13 @@ deploy-prod.sh + бамп версии).
 - `ecosystem.config.js` содержит PATH с версией Node — при смене версии обновить v20.20.2
 - Seeder отработал при первом старте: admin@aklab.ti-soft.ru, 11 sources, 1 test user
 - SQLite quoting в SSH+paramiko — проблема с экранированием, использовать Python-скрипт на сервере
+
+**Сделано в сессии 2 июля 2026 (v1.0.47 — hotfix prod + deploy hardening):**
+- ✅ **better-sqlite3 rebuild** — PM2 daemon работал на Node 20.20.2, приложения на Node 22.20.0. `npm rebuild better-sqlite3` на проде + перезапуск всех 15 процессов.
+- ✅ **property_events.property_id** — колонка отсутствовала в SQLite (Strapi 5 manyToOne не создаёт FK автоматически). `ALTER TABLE` + индекс. Score endpoint заработал: 178 объектов, 23 в фокусе, 124 события.
+- ✅ **PUT permission для authenticated** — добавлена `api::property.property.update` в `up_permissions` + link к роли authenticated (id=1).
+- ✅ **API_TOKEN_SALT sync** — `.env` содержал соль `ElTI...`, PM2 daemon env — `EYJG...` (старое окружение). `access_key` в БД пересчитан через HMAC-SHA512. Strapi 5: hash = `crypto.createHmac('sha512', salt).update(token).digest('hex')`.
+- ✅ **deploy-prod.sh hardened** — 4 новых проверки: PM2 daemon Node version (→ `pm2 update` + systemd), .env ↔ PM2 env sync, `npm rebuild better-sqlite3` (root + api + services), rebuild в rollback-блоке.
 
 **Сделано в сессии 11 июня 2026 (v1.0.36):**
 - ✅ **Photo-fetcher cwd mismatch (v1.0.36)** — photo-fetcher писал фото в свой `data/photos/`, API читал из своего → 404. Фикс: handler.ts пишет в `../../api/data/photos/` (env override `PHOTOS_BASE_DIR`). 28 папок с фото перенесены на проде вручную.
