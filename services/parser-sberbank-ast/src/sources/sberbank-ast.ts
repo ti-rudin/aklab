@@ -41,6 +41,16 @@ function parsePrice(text: string): number | undefined {
   return !isNaN(num) && num > 0 ? num : undefined;
 }
 
+function extractArea(text: string): number | undefined {
+  const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
+  if (match) {
+    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  return undefined;
+}
+
 function extractAddress(title: string): string {
   // Try "по адресу: ..." pattern
   let match = title.match(/по\s+адресу[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
@@ -86,6 +96,7 @@ export class SberbankAstParser implements SourceParser {
             purchase_id: string; title: string; price_text: string;
             status: string; detail_url: string; organizer: string;
             address: string; amount: string;
+            lat?: number; lng?: number; branch?: string;
           }> = [];
 
           const xmlDataInput = document.getElementById('xmlData') as HTMLInputElement;
@@ -94,25 +105,30 @@ export class SberbankAstParser implements SourceParser {
           const xmlStr = xmlDataInput.value;
           if (!xmlStr) return results;
 
-          // Парсим XML
+          // Парсим XML — структура: <datarow><hits><_source>
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
-          const rows = xmlDoc.querySelectorAll('row');
+          const rows = xmlDoc.querySelectorAll('_source');
 
           for (const row of Array.from(rows)) {
             const purchaseId = row.querySelector('PurchaseId')?.textContent?.trim() || '';
-            const purchaseName = row.querySelector('PurchaseName')?.textContent?.trim() || '';
+            const purchaseName = row.querySelector('purchName')?.textContent?.trim() || '';
             const bidName = row.querySelector('BidName')?.textContent?.trim() || '';
-            const amount = row.querySelector('Amount')?.textContent?.trim() || '';
+            const amount = row.querySelector('purchAmount')?.textContent?.trim() || '';
             const currentAmount = row.querySelector('CurrentAmount')?.textContent?.trim() || '';
-            const purchaseState = row.querySelector('PurchaseState')?.textContent?.trim() || '';
+            const purchaseState = row.querySelector('purchStateName')?.textContent?.trim() || '';
             const orgName = row.querySelector('OrgName')?.textContent?.trim() || '';
-            const purchaseCode = row.querySelector('PurchaseCode')?.textContent?.trim() || '';
+            const purchaseCode = row.querySelector('purchCode')?.textContent?.trim() || '';
+            const geoAddress = row.querySelector('GeoDataAddress')?.textContent?.trim() || '';
+            const detailHref = row.querySelector('bidHrefTerm')?.textContent?.trim() || '';
+            const latStr = row.querySelector('Latitude')?.textContent?.trim();
+            const lngStr = row.querySelector('Longitude')?.textContent?.trim();
+            const branchName = row.querySelector('BranchNameNew')?.textContent?.trim() || '';
 
-            if (!purchaseName) continue;
+            if (!purchaseName && !bidName) continue;
 
-            const title = purchaseName;
-            const detailUrl = `${window.location.origin}/Property/View/ComLot/${purchaseId}`;
+            const title = purchaseName || bidName;
+            const detailUrl = detailHref || `${window.location.origin}/Property/NBT/PurchaseView/43/0/0/${purchaseId}`;
 
             results.push({
               purchase_id: purchaseId,
@@ -121,8 +137,11 @@ export class SberbankAstParser implements SourceParser {
               status: purchaseState,
               detail_url: detailUrl,
               organizer: orgName,
-              address: '',
+              address: geoAddress,
               amount: currentAmount || amount,
+              lat: latStr ? parseFloat(latStr) : undefined,
+              lng: lngStr ? parseFloat(lngStr) : undefined,
+              branch: branchName,
             });
           }
 
@@ -133,16 +152,19 @@ export class SberbankAstParser implements SourceParser {
 
         for (const lot of lots) {
           const price = parsePrice(lot.price_text);
-          const address = extractAddress(lot.title);
+          const address = lot.address || extractAddress(lot.title);
           allProperties.push({
             external_id: `sberbank-ast-${lot.purchase_id || lot.title.slice(0, 50)}`,
             url: lot.detail_url.startsWith('http') ? lot.detail_url : `${BASE_URL}${lot.detail_url}`,
             title: lot.title,
             address,
             city: detectCity(address || lot.title),
-            property_type: classifyPropertyType(lot.title),
+            property_type: classifyPropertyType(`${lot.title} ${lot.branch || ''}`),
             auction_type: 'bankruptcy',
             price,
+            area_sqm: extractArea(lot.title),
+            latitude: lot.lat,
+            longitude: lot.lng,
             description: lot.title.length > 20 ? lot.title : undefined,
             contacts: lot.organizer || undefined,
           });

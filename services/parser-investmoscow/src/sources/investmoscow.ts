@@ -125,7 +125,8 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
   const region = String(tender.regionName ?? '');
   const district = String(tender.districtName ?? '');
   const objectType = String(tender.objectTypeName ?? '');
-  const coords = tender.coords as number[] | undefined;
+  const coords = Array.isArray(tender.coords) && tender.coords.length >= 2
+    && typeof tender.coords[0] === 'number' ? tender.coords as number[] : undefined;
 
   const titleText = name || objectType;
   const description = [
