@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.0.57",
+    "date": "2 июля 2026",
+    "time": "18:43",
+    "items": [
+      {
+        "text": "PR-описания + commit bodies + лимит 10 + env в CI",
+        "type": "fix"
+      },
+      {
+        "text": "Bump version 1.0.54",
+        "type": "improvement"
+      },
+      {
+        "text": "Обновить compact-doc — рефакторинг парсинга (anti-ban, depth, smart stop)",
+        "type": "improvement"
+      },
+      {
+        "text": "Anti-ban + depth для m-ets, roseltorg, alfalot, etprf",
+        "type": "improvement"
+      },
+      {
+        "text": "Anti-ban + depth для aggregator-bankrot, invest-mosreg, investmoscow",
+        "type": "improvement"
+      },
+      {
+        "text": "Anti-ban + depth для fabrikant, torgi-gov, sberbank-ast",
+        "type": "improvement"
+      },
+      {
+        "text": "Parse-handler — depth, smart stop, двухфазный парсинг",
+        "type": "improvement"
+      },
+      {
+        "text": "Глубина парсинга — input рядом с Ручной запуск",
+        "type": "new"
+      },
+      {
+        "text": "Anti-ban модуль — randomDelay, UA ротация, retryGoto",
+        "type": "new"
+      },
+      {
+        "text": "Параметр depth в POST /cron/parse/:slug",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.56",
     "date": "2 июля 2026",
     "time": "18:37",
