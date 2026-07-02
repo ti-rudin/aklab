@@ -4,7 +4,7 @@
  * Playwright, HTML scraping.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger } from '@aklab/service-shared';
+import { logger, randomDelay, getRandomUA, retryGoto } from '@aklab/service-shared';
 
 const BASE_URL = 'https://investmoscow.ru';
 const MAX_PAGES = 5;
@@ -40,7 +40,7 @@ function extractArea(text: string): number | undefined {
 export class InvestmoscowParser implements SourceParser {
   name = 'investmoscow';
 
-  async parse(): Promise<ParsedProperty[]> {
+  async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
     logger.info('[investmoscow] Starting Playwright browser...');
     const browser = await chromium.launch({
@@ -49,10 +49,18 @@ export class InvestmoscowParser implements SourceParser {
     });
 
     try {
+      // Stealth context + ignoreHTTPSErrors (сайт с SSL-проблемами)
       const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        userAgent: getRandomUA(),
         locale: 'ru-RU',
+        timezoneId: 'Europe/Moscow',
         ignoreHTTPSErrors: true,
+        extraHTTPHeaders: {
+          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+          'sec-ch-ua': '"Chromium";v="125", "Google Chrome";v="125"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+        },
       });
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
@@ -67,8 +75,9 @@ export class InvestmoscowParser implements SourceParser {
       let workingUrl = BASE_URL;
       for (const url of searchUrls) {
         try {
-          const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-          if (resp && resp.ok()) { workingUrl = url; break; }
+          await retryGoto(page, url, 3);
+          workingUrl = url;
+          break;
         } catch { continue; }
       }
 
