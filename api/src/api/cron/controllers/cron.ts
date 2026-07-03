@@ -15,7 +15,7 @@ export default {
     try {
       const s = strapi as unknown as StrapiInstance;
       const { slug } = ctx.params;
-      const depth = ctx.request.body?.depth ?? 50;
+      const depth = ctx.request.body?.depth ?? 20;
       const qs = getQueue();
       const corrId = `manual-parse-${Date.now()}`;
 

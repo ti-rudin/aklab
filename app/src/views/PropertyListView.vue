@@ -909,7 +909,7 @@ doFetchFocus = fetchFocusItems
 // ========================
 type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
 const pipelineStage = ref<PipelineStage>('idle')
-const parseDepth = ref(50)
+const parseDepth = ref(20)
 const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const parseDone = ref(false)

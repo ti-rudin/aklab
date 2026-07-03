@@ -33,7 +33,7 @@ export function createParseHandler(parser: SourceParser) {
   return async function handleParseJob(job: Job): Promise<ParseResult> {
     const req = job.data as ParseRequest;
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
-    const depth = req.depth ?? 50;
+    const depth = req.depth ?? 20;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0, detailsFetched = 0;
     let errorMsg: string | undefined;
