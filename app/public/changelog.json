@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.0.80",
+    "date": "3 июля 2026",
+    "time": "14:48",
+    "items": [
+      {
+        "text": "Настройка глубины парсинга по расписанию (Setting.parse_depth, UI, cron)",
+        "type": "new"
+      },
+      {
+        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
+        "type": "improvement"
+      },
+      {
+        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
+        "type": "fix"
+      },
+      {
+        "text": "X/Y детальных — сброс при запуске, live-прогресс",
+        "type": "new"
+      },
+      {
+        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
+        "type": "fix"
+      },
+      {
+        "text": "Queue-stats двойная вложенность — pipeline мгновенно показывал «Готово»",
+        "type": "fix"
+      },
+      {
+        "text": "Прогресс fetchDetails в pipeline UI",
+        "type": "new"
+      },
+      {
+        "text": "Кнопка «Очистить список» — Forbidden interceptor + feedback",
+        "type": "fix"
+      },
+      {
+        "text": "FetchDetails через XML парсинг #xmlData",
+        "type": "fix"
+      },
+      {
+        "text": "Точные селекторы fetchDetails — itemprop, data-initData, info-type_N",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.79",
     "date": "3 июля 2026",
     "time": "14:24",
