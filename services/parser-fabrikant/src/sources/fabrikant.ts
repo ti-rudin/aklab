@@ -14,7 +14,7 @@
  */
 
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
@@ -54,16 +54,6 @@ function classifyPropertyType(text: string): string {
   return 'other';
 }
 
-function detectCity(address: string): string {
-  const lower = address.toLowerCase();
-  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
-  if (lower.includes('московская область') || lower.includes('московская обл') ||
-      lower.includes('подольск') || lower.includes('химки') || lower.includes('мытищи') ||
-      lower.includes('балашиха') || lower.includes('одинцово') || lower.includes('пушкино') ||
-      lower.includes('пушкин') || lower.includes('серпухов') || lower.includes('котельники') ||
-      lower.includes('луховицк') || lower.includes('домодедов') || lower.includes('люберц')) return 'mo';
-  return 'other';
-}
 
 export class FabrikantParser implements SourceParser {
   name = 'fabrikant';

@@ -4,7 +4,7 @@
  * Playwright, HTML scraping. Таймаут с Mac — проверяем с сервера.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
 
 const BASE_URL = 'https://roseltorg.ru';
 const MAX_PAGES = 5;
@@ -133,9 +133,4 @@ export class RoseltorgParser implements SourceParser {
   }
 }
 
-function detectCity(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
-  if (lower.includes('московская') || lower.includes('подольск') || lower.includes('химки')) return 'mo';
-  return 'other';
-}
+

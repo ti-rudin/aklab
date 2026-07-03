@@ -7,7 +7,7 @@
  * Playwright, stealth context, anti-ban.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
 
@@ -69,12 +69,6 @@ function extractArea(text: string): number | undefined {
 
 // ─── Определение города / региона ──────────────────────────────────────────
 
-function detectCity(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
-  if (lower.includes('московская') || lower.includes('подольск') || lower.includes('химки')) return 'mo';
-  return 'other';
-}
 
 // ─── Парсер ────────────────────────────────────────────────────────────────
 

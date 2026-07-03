@@ -7,7 +7,7 @@
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
@@ -42,13 +42,6 @@ function classifyPropertyType(text: string): string {
   return 'other';
 }
 
-function detectCity(address: string): string {
-  const lower = address.toLowerCase();
-  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
-  if (lower.includes('московская') || lower.includes('подольск') || lower.includes('химки') ||
-      lower.includes('мытищи') || lower.includes('балашиха') || lower.includes('одинцово')) return 'mo';
-  return 'other';
-}
 
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;

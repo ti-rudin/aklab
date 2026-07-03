@@ -7,7 +7,7 @@
  * Площадь из детальной страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
 
 const BASE_URL = 'https://sale.etprf.ru';
 const SEARCH_URL = `${BASE_URL}/Notification`;
@@ -26,13 +26,6 @@ function classifyPropertyType(text: string): string {
   return 'other';
 }
 
-function detectCity(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('москва') && !lower.includes('московская')) return 'moscow';
-  if (lower.includes('московская') || lower.includes('подольск') || lower.includes('химки') ||
-      lower.includes('мытищи') || lower.includes('балашиха')) return 'mo';
-  return 'other';
-}
 
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
