@@ -49,21 +49,17 @@ export function createParseHandler(parser: SourceParser) {
       total = properties.length;
       logger.info(`Parsed ${total} from ${req.source} (depth=${depth})`, { correlationId: corrId });
 
-      // Фаза 2: проверка и создание
+      // Фаза 2a: проверка existence — собираем только новые объекты
+      const newProperties: typeof properties = [];
       for (const prop of properties) {
-        // Depth limit: достигли лимита — стоп
-        if (created >= depth) {
-          logger.info(`Depth limit reached (${created}/${depth}), stopping`, { correlationId: corrId });
-          break;
-        }
+        // Depth limit
+        if (newProperties.length >= depth) break;
 
         try {
-          // Anti-ban: небольшая задержка между проверками
           await randomDelay(500, 1500);
 
           if (await propertyExists(req.source, prop.external_id)) {
             consecutiveDuplicates++;
-            // Smart stop: 10+ дубликата подряд → скорее всего всё уже спарсено
             if (consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
               logger.info(
                 `Smart stop: ${consecutiveDuplicates} consecutive duplicates, stopping early`,
@@ -74,25 +70,36 @@ export function createParseHandler(parser: SourceParser) {
             continue;
           }
 
-          // Сброс счётчика дубликатов при нахождении нового объекта
           consecutiveDuplicates = 0;
+          newProperties.push(prop);
+        } catch (err: any) {
+          logger.warn(`Existence check failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
+        }
+      }
 
+      // Считаем сколько детальных нужно (все новые объекты с fetchDetails)
+      if (parser.fetchDetails) {
+        detailsNeeded = newProperties.length;
+        if (req.documentId) {
+          await updateSourceStats(req.documentId, {
+            total_details_needed: detailsNeeded,
+          }).catch(() => {});
+        }
+        logger.info(`Details needed: ${detailsNeeded} new objects for ${req.source}`, { correlationId: corrId });
+      }
+
+      // Фаза 2b: обработка новых объектов (fetchDetails + createProperty)
+      for (const prop of newProperties) {
+        try {
           // Фаза 2.5: загрузка детальной страницы (если парсер поддерживает)
           if (parser.fetchDetails) {
-            detailsNeeded++;
-            // Обновление needed для UI
-            if (req.documentId) {
-              updateSourceStats(req.documentId, {
-                total_details_needed: 1,
-              }).catch(() => {});
-            }
             try {
               const details = await parser.fetchDetails(prop.url);
               if (details && Object.keys(details).length > 0) {
                 Object.assign(prop, details);
                 detailsFetched++;
                 logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
-                // Обновление stats для UI (каждый fetchDetails)
+                // Обновление fetched для UI (каждый fetchDetails)
                 if (req.documentId) {
                   updateSourceStats(req.documentId, {
                     total_details_fetched: 1,
@@ -127,7 +134,7 @@ export function createParseHandler(parser: SourceParser) {
             longitude: prop.longitude,
           });
           if (result) created++;
-          else filtered++; // null = не коммерция или нет цены
+          else filtered++;
         } catch (err: any) {
           logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
         }
