@@ -1014,12 +1014,12 @@ async function runPipeline() {
 
     await new Promise<void>((resolve, reject) => {
       let attempts = 0
-      const maxAttempts = 120
+      const maxAttempts = 2000 // ~100 мин при poll 3 сек
       pollTimer = setInterval(async () => {
         attempts++
         if (attempts > maxAttempts) {
           stopPolling()
-          reject(new Error('Парсинг превысил таймаут (6 мин)'))
+          reject(new Error('Парсинг превысил таймаут (100 мин)'))
           return
         }
 
