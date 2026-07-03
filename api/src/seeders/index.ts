@@ -127,7 +127,13 @@ async function seedTestUser(strapi: StrapiInstance): Promise<void> {
       .findOne({ where: { email: TEST_ENV.toLowerCase() } });
 
     if (existingUser) {
-      strapi.log.info(`[seed] Test user ${TEST_ENV} уже существует — skip`);
+      // Обновляем пароль на случай если TEST_USER_PASSWORD изменился в .env
+      await strapi.entityService.update(
+        'plugin::users-permissions.user',
+        existingUser.id,
+        { data: { password: TEST_PWD_ENV } }
+      );
+      strapi.log.info(`[seed] Test user ${TEST_ENV} уже существует — пароль обновлён`);
       return;
     }
 
