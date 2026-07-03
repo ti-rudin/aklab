@@ -49,7 +49,7 @@
           v-model.number="form.parse_depth"
           type="number"
           min="1"
-          max="500"
+          max="5000"
           class="w-full px-3 py-2 rounded-lg border text-sm"
           style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
         />
