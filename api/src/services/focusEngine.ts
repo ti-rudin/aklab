@@ -286,17 +286,18 @@ export async function scorePropertiesBatch(options?: {
       `);
     }
 
-    // Batch insert events через raw SQL
+    // Batch insert events через Strapi ORM (чтобы создавались document_id и relation)
     if (allEvents.length > 0) {
-      const now = new Date().toISOString();
-      const values = allEvents.map(e =>
-        `('${e.event_type}', ${e.old_value ? `'${e.old_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.new_value ? `'${e.new_value.replace(/'/g, "''")}'` : 'NULL'}, ${e.property_id}, '${now}', '${now}')`
-      ).join(', ');
-
-      await s.db.connection.raw(`
-        INSERT INTO property_events (event_type, old_value, new_value, property_id, created_at, updated_at)
-        VALUES ${values}
-      `);
+      for (const evt of allEvents) {
+        await s.entityService.create('api::property-event.property-event', {
+          data: {
+            event_type: evt.event_type,
+            old_value: evt.old_value || null,
+            new_value: evt.new_value || null,
+            property: evt.property_id,
+          },
+        });
+      }
     }
 
     if (properties.length < BATCH) break;

@@ -424,8 +424,8 @@ describe('scoreAllProperties', () => {
     expect(result.in_focus).toBe(3); // all properties have score >= 0 (default threshold)
     expect(result.by_tag).toEqual({ moscow_mo: 2 });
 
-    // Verify batch update was called (raw SQL)
-    expect(mockConnectionRaw).toHaveBeenCalledTimes(2); // 1 UPDATE + 1 INSERT
+    // Verify batch update was called (raw SQL for UPDATE only — events via entityService)
+    expect(mockConnectionRaw).toHaveBeenCalledTimes(1); // 1 UPDATE only
     const updateCall = mockConnectionRaw.mock.calls[0][0] as string;
     expect(updateCall).toContain('UPDATE properties');
     expect(updateCall).toContain('WHEN 1 THEN 10');
@@ -482,13 +482,14 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // Should create events: score_changed + entered_focus via raw SQL INSERT
-    expect(mockConnectionRaw).toHaveBeenCalledTimes(2); // 1 UPDATE + 1 INSERT
-    const insertCall = mockConnectionRaw.mock.calls[1][0] as string;
-    expect(insertCall).toContain('INSERT INTO property_events');
-    expect(insertCall).toContain('score_changed');
-    expect(insertCall).toContain('entered_focus');
-    expect(insertCall).toContain('high_value');
+    // Should create events: score_changed + entered_focus via entityService.create
+    expect(mockStrapi.entityService.create).toHaveBeenCalledTimes(2);
+    const createCalls = mockStrapi.entityService.create.mock.calls;
+    expect(createCalls[0][0]).toBe('api::property-event.property-event');
+    expect(createCalls[0][1].data.event_type).toBe('score_changed');
+    expect(createCalls[0][1].data.new_value).toBe('20');
+    expect(createCalls[1][1].data.event_type).toBe('entered_focus');
+    expect(createCalls[1][1].data.new_value).toBe('high_value');
   });
 
   it('should create events for tag changes', async () => {
@@ -506,15 +507,14 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // Should emit entered_focus for moscow_mo and left_focus for old_tag via raw SQL
-    const insertCall = mockConnectionRaw.mock.calls.find((call: any[]) =>
-      typeof call[0] === 'string' && call[0].includes('INSERT INTO property_events')
-    );
-    expect(insertCall).toBeDefined();
-    expect(insertCall![0]).toContain('entered_focus');
-    expect(insertCall![0]).toContain('moscow_mo');
-    expect(insertCall![0]).toContain('left_focus');
-    expect(insertCall![0]).toContain('old_tag');
+    // Should emit entered_focus for moscow_mo and left_focus for old_tag via entityService.create
+    const createCalls = mockStrapi.entityService.create.mock.calls;
+    const eventTypes = createCalls.map((c: any[]) => c[1].data.event_type);
+    const eventValues = createCalls.map((c: any[]) => c[1].data.new_value || c[1].data.old_value);
+    expect(eventTypes).toContain('entered_focus');
+    expect(eventValues).toContain('moscow_mo');
+    expect(eventTypes).toContain('left_focus');
+    expect(eventValues).toContain('old_tag');
   });
 
   it('should not create events when nothing changed', async () => {
@@ -530,11 +530,11 @@ describe('scoreAllProperties', () => {
 
     await scoreAllProperties();
 
-    // No events created — only UPDATE called, no INSERT
-    const insertCalls = mockConnectionRaw.mock.calls.filter((call: any[]) =>
-      typeof call[0] === 'string' && call[0].includes('INSERT INTO property_events')
+    // No events created — entityService.create not called for property-event
+    const eventCreates = mockStrapi.entityService.create.mock.calls.filter(
+      (c: any[]) => c[0] === 'api::property-event.property-event'
     );
-    expect(insertCalls.length).toBe(0);
+    expect(eventCreates.length).toBe(0);
   });
 
   it('should aggregate by_tag correctly', async () => {
