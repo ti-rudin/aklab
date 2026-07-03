@@ -80,6 +80,12 @@ export function createParseHandler(parser: SourceParser) {
                 Object.assign(prop, details);
                 detailsFetched++;
                 logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
+                // Обновление stats для UI (каждый fetchDetails)
+                if (req.documentId) {
+                  updateSourceStats(req.documentId, {
+                    total_details_fetched: 1,
+                  }).catch(() => {});
+                }
               }
             } catch (err: any) {
               logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
@@ -142,7 +148,6 @@ export function createParseHandler(parser: SourceParser) {
         last_parsed_at: new Date().toISOString(),
         total_found: total,
         total_created: created,
-        total_details_fetched: detailsFetched,
         parse_count: 1,
       }).catch((err: any) => {
         logger.warn(`Stats update failed: ${err.message}`, { correlationId: corrId });
