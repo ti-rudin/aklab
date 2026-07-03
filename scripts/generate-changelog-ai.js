@@ -106,7 +106,7 @@ async function generateChangelog(commits, prDescriptions) {
 - Убирай технические детали (ветки, коммиты, CI/CD)
 - Группируй связанные изменения
 - Пропускай release-коммиты, bump version, обновление документации
-- Минимум 3 пункта, максимум 10
+- Столько пунктов, сколько реальных изменений (не больше 10, но не выдумывай лишние)
 
 `;
 
@@ -219,33 +219,9 @@ async function main() {
   // Пробуем AI (с PR-описаниями)
   const aiItems = await generateChangelog(commits, prDescriptions);
 
-  if (aiItems && aiItems.length >= 3) {
+  if (aiItems && aiItems.length > 0) {
     console.log(JSON.stringify(aiItems));
     return;
-  }
-
-  // AI дал мало пунктов — пробуем fallback
-  if (aiItems && aiItems.length > 0 && aiItems.length < 3) {
-    console.error(`AI returned only ${aiItems.length} items — merging with fallback`);
-    try {
-      const fallbackItems = JSON.parse(fallbackGenerate());
-      // Объединяем: AI-пункты первыми, потом fallback (дедупликация по text)
-      const seen = new Set(aiItems.map(i => i.text.toLowerCase().slice(0, 50)));
-      const merged = [...aiItems];
-      for (const item of fallbackItems) {
-        const key = item.text.toLowerCase().slice(0, 50);
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(item);
-        }
-      }
-      console.log(JSON.stringify(merged.slice(0, 10)));
-      return;
-    } catch {
-      // Fallback тоже сломался — возвращаем что есть от AI
-      console.log(JSON.stringify(aiItems));
-      return;
-    }
   }
 
   // Fallback

@@ -13,35 +13,11 @@
         "type": "fix"
       },
       {
-        "text": "Таймаут парсинга 6 мин → 100 мин (2000 poll attempts)",
+        "text": "История событий на странице объекта — events создаются через ORM (с document_id и relation)",
         "type": "fix"
       },
       {
-        "text": "Setting.update + property.update permissions для authenticated в seeder",
-        "type": "fix"
-      },
-      {
-        "text": "Глубина парсинга max 500→5000",
-        "type": "fix"
-      },
-      {
-        "text": "Настройка глубины парсинга по расписанию (Setting.parse_depth, UI, cron)",
-        "type": "new"
-      },
-      {
-        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
-        "type": "improvement"
-      },
-      {
-        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
-        "type": "fix"
-      },
-      {
-        "text": "X/Y детальных — сброс при запуске, live-прогресс",
-        "type": "new"
-      },
-      {
-        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
+        "text": "Seeder обновляет пароль test user при каждом запуске Strapi",
         "type": "fix"
       }
     ]
@@ -99,42 +75,6 @@
     "time": "15:11",
     "items": [
       {
-        "text": "Setting.update + property.update permissions для authenticated в seeder",
-        "type": "fix"
-      },
-      {
-        "text": "Глубина парсинга max 500→5000",
-        "type": "fix"
-      },
-      {
-        "text": "Настройка глубины парсинга по расписанию (Setting.parse_depth, UI, cron)",
-        "type": "new"
-      },
-      {
-        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
-        "type": "improvement"
-      },
-      {
-        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
-        "type": "fix"
-      },
-      {
-        "text": "X/Y детальных — сброс при запуске, live-прогресс",
-        "type": "new"
-      },
-      {
-        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
-        "type": "fix"
-      },
-      {
-        "text": "Queue-stats двойная вложенность — pipeline мгновенно показывал «Готово»",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс fetchDetails в pipeline UI",
-        "type": "new"
-      },
-      {
         "text": "Кнопка «Очистить список» — Forbidden interceptor + feedback",
         "type": "fix"
       }
@@ -145,42 +85,6 @@
     "date": "3 июля 2026",
     "time": "14:52",
     "items": [
-      {
-        "text": "Глубина парсинга max 500→5000",
-        "type": "fix"
-      },
-      {
-        "text": "Настройка глубины парсинга по расписанию (Setting.parse_depth, UI, cron)",
-        "type": "new"
-      },
-      {
-        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
-        "type": "improvement"
-      },
-      {
-        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
-        "type": "fix"
-      },
-      {
-        "text": "X/Y детальных — сброс при запуске, live-прогресс",
-        "type": "new"
-      },
-      {
-        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
-        "type": "fix"
-      },
-      {
-        "text": "Queue-stats двойная вложенность — pipeline мгновенно показывал «Готово»",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс fetchDetails в pipeline UI",
-        "type": "new"
-      },
-      {
-        "text": "Кнопка «Очистить список» — Forbidden interceptor + feedback",
-        "type": "fix"
-      },
       {
         "text": "FetchDetails через XML парсинг #xmlData",
         "type": "fix"
@@ -193,42 +97,6 @@
     "time": "14:48",
     "items": [
       {
-        "text": "Настройка глубины парсинга по расписанию (Setting.parse_depth, UI, cron)",
-        "type": "new"
-      },
-      {
-        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
-        "type": "improvement"
-      },
-      {
-        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
-        "type": "fix"
-      },
-      {
-        "text": "X/Y детальных — сброс при запуске, live-прогресс",
-        "type": "new"
-      },
-      {
-        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
-        "type": "fix"
-      },
-      {
-        "text": "Queue-stats двойная вложенность — pipeline мгновенно показывал «Готово»",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс fetchDetails в pipeline UI",
-        "type": "new"
-      },
-      {
-        "text": "Кнопка «Очистить список» — Forbidden interceptor + feedback",
-        "type": "fix"
-      },
-      {
-        "text": "FetchDetails через XML парсинг #xmlData",
-        "type": "fix"
-      },
-      {
         "text": "Точные селекторы fetchDetails — itemprop, data-initData, info-type_N",
         "type": "fix"
       }
@@ -239,42 +107,6 @@
     "date": "3 июля 2026",
     "time": "14:24",
     "items": [
-      {
-        "text": "Обновление compact-doc — 3-фазный парсинг, fetchDetails progress, JWT fix, session handoff v1.0.76",
-        "type": "improvement"
-      },
-      {
-        "text": "Needed вычисляется один раз перед fetchDetails, не растёт во время обработки",
-        "type": "fix"
-      },
-      {
-        "text": "X/Y детальных — сброс при запуске, live-прогресс",
-        "type": "new"
-      },
-      {
-        "text": "Live-прогресс fetchDetails — обновление stats после каждого detail",
-        "type": "fix"
-      },
-      {
-        "text": "Queue-stats двойная вложенность — pipeline мгновенно показывал «Готово»",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс fetchDetails в pipeline UI",
-        "type": "new"
-      },
-      {
-        "text": "Кнопка «Очистить список» — Forbidden interceptor + feedback",
-        "type": "fix"
-      },
-      {
-        "text": "FetchDetails через XML парсинг #xmlData",
-        "type": "fix"
-      },
-      {
-        "text": "Точные селекторы fetchDetails — itemprop, data-initData, info-type_N",
-        "type": "fix"
-      },
       {
         "text": "Точные селекторы fetchDetails для alfalot и aggregator-bankrot",
         "type": "fix"
@@ -387,10 +219,6 @@
       {
         "text": "Очистка очереди доступна без авторизации",
         "type": "fix"
-      },
-      {
-        "text": "Значение глубины парсинга по умолчанию увеличено до 20",
-        "type": "improvement"
       }
     ]
   },
@@ -406,10 +234,6 @@
       {
         "text": "Отображение прогресса обработки детальных страниц в интерфейсе парсинга",
         "type": "new"
-      },
-      {
-        "text": "Глубина парсинга по умолчанию увеличена до 20 страниц",
-        "type": "improvement"
       },
       {
         "text": "Добавлен тип недвижимости «Квартира» (apartment) в фильтрах",
@@ -513,10 +337,6 @@
     "time": "01:02",
     "items": [
       {
-        "text": "Разрешён доступ к эндпоинту clear-new без авторизации",
-        "type": "fix"
-      },
-      {
         "text": "Исправлена работа парсеров investmoscow, invest-mosreg, m-ets и sberbank-ast",
         "type": "fix"
       },
@@ -599,10 +419,6 @@
         "type": "new"
       },
       {
-        "text": "Переписаны парсеры investmoscow, invest-mosreg и m-ets на новые источники данных для повышения стабильности",
-        "type": "fix"
-      },
-      {
         "text": "Исправлены парсеры sberbank-ast, investmoscow и fabrikant — корректный XML-парсинг и валидация координат",
         "type": "fix"
       },
@@ -612,10 +428,6 @@
       },
       {
         "text": "Улучшена фильтрация объявлений на aggregator-bankrot — отсеивание автомобилей и бытовых товаров",
-        "type": "improvement"
-      },
-      {
-        "text": "Ужесточены фильтры недвижимости на fabrikant",
         "type": "improvement"
       },
       {
@@ -636,10 +448,6 @@
       {
         "text": "Добавлена поддержка квартир как нового типа недвижимости во всех парсерах",
         "type": "new"
-      },
-      {
-        "text": "Переписаны парсеры investmoscow, invest-mosreg и m-ets на новые источники данных",
-        "type": "improvement"
       },
       {
         "text": "Улучшена фильтрация в aggregator-bankrot: исключены автомобили и бытовые товары",
@@ -668,30 +476,6 @@
     "date": "2 июля 2026",
     "time": "23:22",
     "items": [
-      {
-        "text": "Обновить compact-doc — 8 парсеров, apartment, новые gotchas",
-        "type": "improvement"
-      },
-      {
-        "text": "Исправить XML парсинг и coords валидацию",
-        "type": "fix"
-      },
-      {
-        "text": "Исправить извлечение цены — priceMin/priceMax вместо priceInfo",
-        "type": "fix"
-      },
-      {
-        "text": "Добавить apartment в property_type enum (Strapi schema)",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на SSR Nuxt.js данные",
-        "type": "fix"
-      },
-      {
-        "text": "Переписан парсер на JSON API /aapi/map/places/",
-        "type": "fix"
-      },
       {
         "text": "Переписать парсер — поиск по недвижимости, правильные селекторы",
         "type": "fix"
