@@ -186,95 +186,108 @@ export class EtprfParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      try {
-        await page.waitForSelector('.lot-detail, .lot-info, .description, [class*="description"]', { timeout: 10000 });
-      } catch {
-        await page.waitForTimeout(3000);
-      }
+      // Ждём загрузки jQuery UI tabs и таблицы деталей
+      await page.waitForSelector('#Tabs13300, .details-table, #tabPage13301', { timeout: 15000 });
+      await page.waitForTimeout(1000);
 
       const details = await page.evaluate(() => {
-        const descSelectors = [
-          '.lot-description', '.lot-detail__description', '.description',
-          '[class*="description"]', '.lot-info__description',
-          '.card-detail', '.lot-detail'
-        ];
-        let description = '';
-        for (const sel of descSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 30) {
-            description = el.textContent.trim().slice(0, 2000);
-            break;
+        // Утилита: найти значение поля по labelText в контейнере .details-table
+        function getFieldValue(container: Element, labelText: string): string | undefined {
+          const rows = container.querySelectorAll('tr');
+          for (const row of Array.from(rows)) {
+            const label = row.querySelector('.td-label');
+            if (label && label.textContent?.trim().includes(labelText)) {
+              return row.querySelector('.td-value')?.textContent?.trim() || undefined;
+            }
+          }
+          return undefined;
+        }
+
+        // Утилита: найти email из mailto ссылки
+        function getFieldEmail(container: Element, labelText: string): string | undefined {
+          const rows = container.querySelectorAll('tr');
+          for (const row of Array.from(rows)) {
+            const label = row.querySelector('.td-label');
+            if (label && label.textContent?.trim().includes(labelText)) {
+              const mailtoLink = row.querySelector('.td-value a[href^="mailto:"]') as HTMLAnchorElement;
+              if (mailtoLink) {
+                return mailtoLink.getAttribute('href')?.replace('mailto:', '')?.trim() || undefined;
+              }
+              return row.querySelector('.td-value')?.textContent?.trim() || undefined;
+            }
+          }
+          return undefined;
+        }
+
+        const result: {
+          description?: string;
+          contacts?: string;
+          latitude?: number;
+          longitude?: number;
+          address?: string;
+          price?: number;
+          auctionStart?: string;
+          auctionEnd?: string;
+          deposit?: string;
+        } = {};
+
+        // === Вкладка 1: Основная информация (#tabPage13301) ===
+        const tab1 = document.querySelector('#tabPage13301');
+        if (tab1) {
+          // Организатор торгов
+          const organizer = getFieldValue(tab1, 'Организатор торгов');
+          // Email
+          const email = getFieldEmail(tab1, 'Адрес электронной почты');
+          // Телефон
+          const phone = getFieldValue(tab1, 'Номер контактного телефона');
+
+          const contactParts: string[] = [];
+          if (organizer) contactParts.push(organizer);
+          if (phone) contactParts.push(phone);
+          if (email) contactParts.push(email);
+          if (contactParts.length > 0) {
+            result.contacts = contactParts.join(', ');
           }
         }
 
-        const contactSelectors = [
-          '.lot-contacts', '.contacts', '[class*="contact"]',
-          '.organizer', '.seller', '.lot-info__contacts'
-        ];
-        let contacts = '';
-        for (const sel of contactSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            contacts = el.textContent.trim().slice(0, 500);
-            break;
+        // === Вкладка 2: Описание имущества (#tabPage13305) ===
+        const tab2 = document.querySelector('#tabPage13305');
+        if (tab2) {
+          // Краткие сведения об имуществе
+          const briefDesc = getFieldValue(tab2, 'Краткие сведения об имуществе');
+          // Сведения об имуществе (подробное описание)
+          const detailedDesc = getFieldValue(tab2, 'Сведения об имуществе');
+
+          // Приоритет: подробное описание, затем краткое
+          const desc = detailedDesc || briefDesc;
+          if (desc) {
+            result.description = desc.slice(0, 2000);
           }
-        }
 
-        if (!contacts) {
-          const bodyText = document.body.textContent || '';
-          const phoneMatch = bodyText.match(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/);
-          const emailMatch = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-          const parts = [];
-          if (phoneMatch) parts.push(phoneMatch[0]);
-          if (emailMatch) parts.push(emailMatch[0]);
-          contacts = parts.join(', ');
-        }
-
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        const mapEl = document.querySelector('[data-lat], [data-latitude], .map-container');
-        if (mapEl) {
-          const lat = mapEl.getAttribute('data-lat') || mapEl.getAttribute('data-latitude');
-          const lng = mapEl.getAttribute('data-lng') || mapEl.getAttribute('data-longitude');
-          if (lat && lng) {
-            latitude = parseFloat(lat);
-            longitude = parseFloat(lng);
-          }
-        }
-
-        if (!latitude) {
-          const scripts = document.querySelectorAll('script');
-          for (const script of Array.from(scripts)) {
-            const text = script.textContent || '';
-            const coordMatch = text.match(/(?:center|coordinates|coords)[:\s]*\[?(\d+\.\d+)[,\s]+(\d+\.\d+)/);
-            if (coordMatch) {
-              latitude = parseFloat(coordMatch[1]);
-              longitude = parseFloat(coordMatch[2]);
-              break;
+          // Начальная цена продажи
+          const priceText = getFieldValue(tab2, 'Начальная цена продажи');
+          if (priceText) {
+            const cleaned = priceText.replace(/[^\d,]/g, '').replace(',', '.');
+            const num = parseFloat(cleaned);
+            if (!isNaN(num) && num > 0) {
+              result.price = num;
             }
           }
         }
 
-        const addressSelectors = [
-          '.lot-address', '.address', '[class*="address"]',
-          '.lot-detail__address'
-        ];
-        let address = '';
-        for (const sel of addressSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            address = el.textContent.trim().slice(0, 300);
-            break;
-          }
+        // === Вкладка 3: Информация о торгах (#tabPage13303) ===
+        const tab3 = document.querySelector('#tabPage13303');
+        if (tab3) {
+          result.auctionStart = getFieldValue(tab3, 'Начало предоставления заявок');
+          result.auctionEnd = getFieldValue(tab3, 'Окончание предоставления заявок');
+          result.deposit = getFieldValue(tab3, 'Размер задатка');
         }
 
-        return {
-          description: description || undefined,
-          contacts: contacts || undefined,
-          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
-          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
-          address: address || undefined,
-        };
+        // Координаты: на etprf.ru НЕТ координат в карточках
+        result.latitude = undefined;
+        result.longitude = undefined;
+
+        return result;
       });
 
       return {
@@ -283,6 +296,7 @@ export class EtprfParser implements SourceParser {
         latitude: details.latitude,
         longitude: details.longitude,
         address: details.address,
+        price: details.price,
       };
     } catch (err: any) {
       logger.warn(`[etprf] fetchDetails error for ${url}: ${err.message}`);
