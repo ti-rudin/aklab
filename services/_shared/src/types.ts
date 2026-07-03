@@ -44,4 +44,5 @@ export interface ParseResult {
   created: number;
   filtered: number;
   total: number;
+  detailsFetched: number;
 }

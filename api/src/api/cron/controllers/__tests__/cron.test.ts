@@ -86,7 +86,7 @@ describe('cron controller', () => {
       });
       expect(mockQueue.addToQueue).toHaveBeenCalledWith(
         'parse-tender',
-        { source: 'tender', sourceId: 1, documentId: 'doc1', depth: 50 },
+        { source: 'tender', sourceId: 1, documentId: 'doc1', depth: 20 },
         expect.objectContaining({ correlationId: expect.stringContaining('manual-parse-') }),
       );
       expect(ctx.body.ok).toBe(true);
@@ -297,6 +297,7 @@ describe('cron controller', () => {
         last_parse_status: 'ok',
         last_parsed_at: '2026-01-01',
         total_created: 50,
+        total_details_fetched: 0,
         parse_count: 5,
       });
     });

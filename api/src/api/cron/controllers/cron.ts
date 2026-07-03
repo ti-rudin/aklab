@@ -148,6 +148,7 @@ export default {
           last_parse_status: src.last_parse_status,
           last_parsed_at: src.last_parsed_at,
           total_created: src.total_created,
+          total_details_fetched: src.total_details_fetched || 0,
           parse_count: src.parse_count,
         })),
       };

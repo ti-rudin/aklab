@@ -142,6 +142,7 @@ export function createParseHandler(parser: SourceParser) {
         last_parsed_at: new Date().toISOString(),
         total_found: total,
         total_created: created,
+        total_details_fetched: detailsFetched,
         parse_count: 1,
       }).catch((err: any) => {
         logger.warn(`Stats update failed: ${err.message}`, { correlationId: corrId });
@@ -152,6 +153,6 @@ export function createParseHandler(parser: SourceParser) {
       `Done: ${created} created, ${filtered} filtered, ${total} total, ${detailsFetched} details fetched (depth=${depth})`,
       { correlationId: corrId },
     );
-    return { created, filtered, total };
+    return { created, filtered, total, detailsFetched };
   };
 }

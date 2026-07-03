@@ -151,6 +151,7 @@ export async function updateSourceStats(documentId: string, data: {
   last_parsed_at?: string;
   total_found?: number;
   total_created?: number;
+  total_details_fetched?: number;
   parse_count?: number;
 }): Promise<void> {
   const updateData: any = {};
@@ -159,7 +160,7 @@ export async function updateSourceStats(documentId: string, data: {
   if (data.last_parse_error !== undefined) updateData.last_parse_error = data.last_parse_error;
   if (data.last_parsed_at) updateData.last_parsed_at = data.last_parsed_at;
 
-  if (data.parse_count || data.total_found || data.total_created) {
+  if (data.parse_count || data.total_found || data.total_created || data.total_details_fetched) {
     try {
       const res = await fetch(`${BASE}/sources/${documentId}`, { headers: HEADERS });
       if (res.ok) {
@@ -168,6 +169,7 @@ export async function updateSourceStats(documentId: string, data: {
         if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
         if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
         if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
+        if (data.total_details_fetched) updateData.total_details_fetched = (current?.total_details_fetched || 0) + data.total_details_fetched;
       } else {
         logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
       }

@@ -122,7 +122,7 @@ describe('createParseHandler()', () => {
     const job = makeJob({ source: 'tender', documentId: 'doc-src-1' });
     const result = await handler(job);
 
-    expect(result).toEqual({ created: 2, filtered: 0, total: 2 });
+    expect(result).toEqual({ created: 2, filtered: 0, total: 2, detailsFetched: 0 });
     expect(parser.parse).toHaveBeenCalledTimes(1);
     expect(propertyExists).toHaveBeenCalledTimes(2);
     expect(createProperty).toHaveBeenCalledTimes(2);
@@ -136,7 +136,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 2 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 2, detailsFetched: 0 });
     expect(createProperty).not.toHaveBeenCalled();
   });
 
@@ -149,7 +149,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 1, filtered: 1, total: 2 });
+    expect(result).toEqual({ created: 1, filtered: 1, total: 2, detailsFetched: 0 });
   });
 
   test('logs error and re-throws when parser.parse() fails', async () => {
@@ -278,7 +278,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0 });
     expect(propertyExists).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
