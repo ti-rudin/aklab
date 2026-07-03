@@ -132,7 +132,7 @@ export default {
     try {
       const s = strapi as unknown as StrapiInstance;
       const qs = getQueue();
-      const queues = qs.getDetailedStats();
+      const detailedStats = qs.getDetailedStats();
 
       // Also get source stats
       const sources = await s.entityService.findMany('api::source.source', {
@@ -141,7 +141,7 @@ export default {
 
       ctx.body = {
         ok: true,
-        queues,
+        queues: detailedStats.queues || detailedStats,
         sources: (sources || []).map((src: any) => ({
           slug: src.slug,
           is_active: src.is_active,
