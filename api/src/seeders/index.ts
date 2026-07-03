@@ -389,6 +389,8 @@ async function seedApiPermissions(strapi: StrapiInstance): Promise<void> {
       'api::property.property.findOne',
       'api::setting.setting.find',
       'api::setting.setting.findOne',
+      'api::setting.setting.update',
+      'api::property.property.update',
       'api::market-reference.market-reference.find',
       'api::market-reference.market-reference.findOne',
       'api::user-comment.user-comment.find',
