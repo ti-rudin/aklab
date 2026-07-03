@@ -10,7 +10,7 @@
 
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser, ParseResult } from './types';
-import { propertyExists, createProperty, logCron, updateSourceStats } from './strapi-client';
+import { propertyExists, createProperty, logCron, updateSourceStats, resetSourceDetailsCounters } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 
@@ -35,8 +35,13 @@ export function createParseHandler(parser: SourceParser) {
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 20;
     const startedAt = new Date().toISOString();
-    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0, detailsFetched = 0;
+    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0, detailsFetched = 0, detailsNeeded = 0;
     let errorMsg: string | undefined;
+
+    // Сброс счётчиков fetchDetails перед новым запуском
+    if (req.documentId) {
+      await resetSourceDetailsCounters(req.documentId);
+    }
 
     try {
       // Фаза 1: парсинг — передаём depth, чтобы парсер мог ограничить кол-во страниц
@@ -74,6 +79,13 @@ export function createParseHandler(parser: SourceParser) {
 
           // Фаза 2.5: загрузка детальной страницы (если парсер поддерживает)
           if (parser.fetchDetails) {
+            detailsNeeded++;
+            // Обновление needed для UI
+            if (req.documentId) {
+              updateSourceStats(req.documentId, {
+                total_details_needed: 1,
+              }).catch(() => {});
+            }
             try {
               const details = await parser.fetchDetails(prop.url);
               if (details && Object.keys(details).length > 0) {

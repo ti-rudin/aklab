@@ -298,6 +298,7 @@ describe('cron controller', () => {
         last_parsed_at: '2026-01-01',
         total_created: 50,
         total_details_fetched: 0,
+        total_details_needed: 0,
         parse_count: 5,
       });
     });

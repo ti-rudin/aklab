@@ -173,11 +173,11 @@
             <div class="text-xs" style="color: var(--text-muted)">
               <template v-if="pipelineStage === 'parsing'">
                 {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
-                <template v-if="detailsFetched > 0"> · {{ detailsFetched }} детальных</template>
+                <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
               </template>
               <template v-else-if="parseDone">
                 {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
-                <template v-if="pipelineResults.detailsFetched > 0"> · {{ pipelineResults.detailsFetched }} детальных</template>
+                <template v-if="pipelineResults.detailsNeeded > 0"> · {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }} детальных</template>
                 <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
               </template>
               <template v-else>Ожидание...</template>
@@ -235,7 +235,7 @@
         <!-- Done -->
         <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
           ✓ Пайплайн завершён · Новых объектов: {{ pipelineResults.parseTotal }}
-          <template v-if="pipelineResults.detailsFetched > 0"> · Детальных: {{ pipelineResults.detailsFetched }}</template>
+          <template v-if="pipelineResults.detailsNeeded > 0"> · Детальных: {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }}</template>
           · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
         </div>
 
@@ -918,6 +918,7 @@ const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const parseDone = ref(false)
 const detailsFetched = ref(0)
+const detailsNeeded = ref(0)
 const analyzeDone = ref(false)
 const analyzePending = ref(0)
 const digestDone = ref(false)
@@ -927,6 +928,7 @@ const pipelineResults = reactive({
   parseTotal: 0,
   parseErrors: 0,
   detailsFetched: 0,
+  detailsNeeded: 0,
   undervaluedTotal: 0,
   undervaluedByCity: {} as Record<string, number>,
   digestSent: false,
@@ -977,11 +979,14 @@ async function runPipeline() {
   analyzeDone.value = false
   digestDone.value = false
   parseSourcesDone.value = 0
+  detailsFetched.value = 0
+  detailsNeeded.value = 0
   analyzePending.value = 0
   pipelineError.value = ''
   pipelineResults.parseTotal = 0
   pipelineResults.parseErrors = 0
   pipelineResults.detailsFetched = 0
+  pipelineResults.detailsNeeded = 0
   pipelineResults.undervaluedTotal = 0
   pipelineResults.undervaluedByCity = {}
   pipelineResults.digestSent = false
@@ -1027,6 +1032,9 @@ async function runPipeline() {
         detailsFetched.value = (stats.sources || [])
           .filter((s: any) => parseSlugs.value.includes(s.slug))
           .reduce((sum: number, s: any) => sum + (s.total_details_fetched || 0), 0)
+        detailsNeeded.value = (stats.sources || [])
+          .filter((s: any) => parseSlugs.value.includes(s.slug))
+          .reduce((sum: number, s: any) => sum + (s.total_details_needed || 0), 0)
 
         const allParseDone = isQueueEmpty(stats.queues, 'parse-')
         if (allParseDone && parseSourcesDone.value >= parseSourcesTotal.value) {
@@ -1038,6 +1046,7 @@ async function runPipeline() {
             }
           }
           pipelineResults.detailsFetched = detailsFetched.value
+          pipelineResults.detailsNeeded = detailsNeeded.value
           parseDone.value = true
           pipelineStage.value = 'analyzing'
           resolve()

@@ -149,6 +149,7 @@ export default {
           last_parsed_at: src.last_parsed_at,
           total_created: src.total_created,
           total_details_fetched: src.total_details_fetched || 0,
+          total_details_needed: src.total_details_needed || 0,
           parse_count: src.parse_count,
         })),
       };

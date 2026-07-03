@@ -72,6 +72,11 @@
       "default": 0,
       "min": 0
     },
+    "total_details_needed": {
+      "type": "integer",
+      "default": 0,
+      "min": 0
+    },
     "parse_count": {
       "type": "integer",
       "default": 0,
