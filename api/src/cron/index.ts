@@ -61,12 +61,15 @@ function registerSourceCron(strapi: Core.Strapi, source: any): void {
     const corrId = `cron-parse-${slug}-${Date.now()}`;
     strapi.log.info(`[cron] parse:${slug} triggered (${corrId})`);
     try {
+      const setting = await getSetting(strapi);
+      const depth = setting?.parse_depth || 20;
       queueService.addToQueue(queueName, {
         source: slug,
         sourceId,
         documentId,
+        depth,
       }, { correlationId: corrId });
-      strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name}`);
+      strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name} (depth=${depth})`);
     } catch (err: any) {
       strapi.log.error(`[cron] parse:${slug} error: ${err.message}`);
     }

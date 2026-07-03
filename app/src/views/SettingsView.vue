@@ -37,6 +37,24 @@
         />
       </div>
 
+      <!-- Глубина парсинга (по расписанию) -->
+      <div>
+        <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
+          Глубина парсинга (по расписанию)
+        </label>
+        <p class="text-xs mb-2" style="color: var(--text-muted)">
+          Максимум новых объектов за один запуск парсинга по крону. По умолчанию 20.
+        </p>
+        <input
+          v-model.number="form.parse_depth"
+          type="number"
+          min="1"
+          max="500"
+          class="w-full px-3 py-2 rounded-lg border text-sm"
+          style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
+        />
+      </div>
+
       <!-- Время дайджеста -->
       <div>
         <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">
@@ -153,6 +171,7 @@ const documentId = ref('')
 
 const form = ref({
   threshold_percent: 20,
+  parse_depth: 20,
   digest_time: '09:00',
   smtp_to: '',
   monitored_regions: ['moscow', 'mo', 'other'] as string[],
@@ -183,6 +202,7 @@ onMounted(async () => {
       documentId.value = data.documentId
       form.value = {
         threshold_percent: data.threshold_percent ?? 20,
+        parse_depth: data.parse_depth ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
         monitored_regions: data.monitored_regions ?? ['moscow', 'mo', 'other'],

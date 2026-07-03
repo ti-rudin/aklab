@@ -40,6 +40,12 @@
     "monitored_regions": {
       "type": "json",
       "default": ["moscow", "mo"]
+    },
+    "parse_depth": {
+      "type": "integer",
+      "default": 20,
+      "min": 1,
+      "max": 500
     }
   }
 }
