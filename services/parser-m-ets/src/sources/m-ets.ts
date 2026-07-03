@@ -288,86 +288,107 @@ export class MetsParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
+      // Ждём основные блоки страницы лота
       try {
-        await page.waitForSelector('.lot-detail, .lot-info, .description, [class*="description"]', { timeout: 10000 });
+        await page.waitForSelector('h2.lot-title, .lot-info-block, [itemprop="description"]', { timeout: 15000 });
       } catch {
         await page.waitForTimeout(3000);
       }
 
       const details = await page.evaluate(() => {
-        const descSelectors = [
-          '.lot-description', '.lot-detail__description', '.description',
-          '[class*="description"]', '.lot-info__description',
-          '.card-detail', '.lot-detail'
-        ];
+        // ─── Описание: itemprop="description" внутри .lot-info-block.info-type_1 ───
         let description = '';
-        for (const sel of descSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 30) {
-            description = el.textContent.trim().slice(0, 2000);
-            break;
-          }
+        const descEl = document.querySelector('[itemprop="description"]');
+        if (descEl) {
+          description = (descEl.textContent || '').trim().slice(0, 2000);
         }
 
-        const contactSelectors = [
-          '.lot-contacts', '.contacts', '[class*="contact"]',
-          '.organizer', '.seller', '.lot-info__contacts'
-        ];
-        let contacts = '';
-        for (const sel of contactSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            contacts = el.textContent.trim().slice(0, 500);
-            break;
-          }
-        }
+        // ─── Контакты: .lot-info-block.info-type_4 → .lot-info-item ───
+        let organizerName = '';
+        let phone = '';
+        let email = '';
 
-        if (!contacts) {
-          const bodyText = document.body.textContent || '';
-          const phoneMatch = bodyText.match(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/);
-          const emailMatch = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-          const parts = [];
-          if (phoneMatch) parts.push(phoneMatch[0]);
-          if (emailMatch) parts.push(emailMatch[0]);
-          contacts = parts.join(', ');
-        }
+        const contactBlock = document.querySelector('.lot-info-block.info-type_4');
+        if (contactBlock) {
+          const items = contactBlock.querySelectorAll('.lot-info-item');
+          for (const item of Array.from(items)) {
+            const titleEl = item.querySelector('.title');
+            const titleText = (titleEl?.textContent || '').trim();
 
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        const mapEl = document.querySelector('[data-lat], [data-latitude], .map-container');
-        if (mapEl) {
-          const lat = mapEl.getAttribute('data-lat') || mapEl.getAttribute('data-latitude');
-          const lng = mapEl.getAttribute('data-lng') || mapEl.getAttribute('data-longitude');
-          if (lat && lng) {
-            latitude = parseFloat(lat);
-            longitude = parseFloat(lng);
-          }
-        }
-
-        if (!latitude) {
-          const scripts = document.querySelectorAll('script');
-          for (const script of Array.from(scripts)) {
-            const text = script.textContent || '';
-            const coordMatch = text.match(/(?:center|coordinates|coords)[:\s]*\[?(\d+\.\d+)[,\s]+(\d+\.\d+)/);
-            if (coordMatch) {
-              latitude = parseFloat(coordMatch[1]);
-              longitude = parseFloat(coordMatch[2]);
-              break;
+            if (titleText.includes('Наименование')) {
+              organizerName = (item.querySelector('.value')?.textContent || '').trim();
+            } else if (titleText.includes('Телефон')) {
+              const telLink = item.querySelector('a[href^="tel:"]');
+              phone = telLink
+                ? (telLink.getAttribute('href') || '').replace('tel:', '').trim()
+                : (item.querySelector('.value')?.textContent || '').trim();
+            } else if (titleText.includes('Адрес электронной почты') || titleText.includes('электронной почты')) {
+              email = (item.querySelector('.value')?.textContent || '').trim();
             }
           }
         }
 
-        const addressSelectors = [
-          '.lot-address', '.address', '[class*="address"]',
-          '.lot-detail__address'
-        ];
+        const contactParts: string[] = [];
+        if (organizerName) contactParts.push(organizerName);
+        if (phone) contactParts.push(phone);
+        if (email) contactParts.push(email);
+        const contacts = contactParts.join(', ');
+
+        // ─── Адрес: regex из текста описания ───
         let address = '';
-        for (const sel of addressSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            address = el.textContent.trim().slice(0, 300);
-            break;
+        const descHtml = descEl?.innerHTML || descEl?.textContent || '';
+        const addrMatch = descHtml.match(/расположенн(?:ое|ый|ая) по адресу: (.+?)(?:<|$)/i);
+        if (addrMatch) {
+          address = addrMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 300);
+        }
+
+        // ─── Координаты: [data-initData] → JSON.parse → [lat, lon] ───
+        let latitude: number | undefined;
+        let longitude: number | undefined;
+        const initDataEl = document.querySelector('[data-initData]');
+        if (initDataEl) {
+          try {
+            const raw = initDataEl.getAttribute('data-initData') || initDataEl.dataset.initData || '';
+            const parsed = JSON.parse(raw);
+            // Ожидаем массив [lat, lon] или объект с lat/lon
+            if (Array.isArray(parsed) && parsed.length >= 2) {
+              latitude = parseFloat(String(parsed[0]));
+              longitude = parseFloat(String(parsed[1]));
+            } else if (parsed && typeof parsed === 'object') {
+              if (parsed.lat != null) latitude = parseFloat(String(parsed.lat));
+              if (parsed.lon != null) longitude = parseFloat(String(parsed.lon));
+              if (parsed.latitude != null) latitude = parseFloat(String(parsed.latitude));
+              if (parsed.longitude != null) longitude = parseFloat(String(parsed.longitude));
+            }
+          } catch { /* не удалось распарсить initData */ }
+        }
+
+        // ─── Цена: .lot-cost-item.price .value или meta[itemprop='price'] ───
+        let priceText = '';
+        const priceEl = document.querySelector('.lot-cost-item.price .value');
+        if (priceEl) {
+          priceText = (priceEl.textContent || '').trim();
+        }
+        if (!priceText) {
+          const metaPrice = document.querySelector('meta[itemprop="price"]');
+          if (metaPrice) {
+            priceText = (metaPrice.getAttribute('content') || '').trim();
           }
+        }
+
+        // ─── Даты: .lot-cost-item.date .value ───
+        let dates: string[] = [];
+        const dateEls = document.querySelectorAll('.lot-cost-item.date .value');
+        for (const el of Array.from(dateEls)) {
+          const txt = (el.textContent || '').trim();
+          if (txt) dates.push(txt);
+        }
+
+        // ─── Задаток: .lot-cost-item.zadat .value ───
+        let depositText = '';
+        const depositEl = document.querySelector('.lot-cost-item.zadat .value');
+        if (depositEl) {
+          depositText = (depositEl.textContent || '').trim();
         }
 
         return {
@@ -376,6 +397,9 @@ export class MetsParser implements SourceParser {
           latitude: latitude && !isNaN(latitude) ? latitude : undefined,
           longitude: longitude && !isNaN(longitude) ? longitude : undefined,
           address: address || undefined,
+          priceText: priceText || undefined,
+          dates: dates.length ? dates : undefined,
+          depositText: depositText || undefined,
         };
       });
 
@@ -385,6 +409,8 @@ export class MetsParser implements SourceParser {
         latitude: details.latitude,
         longitude: details.longitude,
         address: details.address,
+        price: details.priceText ? parsePrice(details.priceText) : undefined,
+        deposit: details.depositText ? parsePrice(details.depositText) : undefined,
       };
     } catch (err: any) {
       logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);
