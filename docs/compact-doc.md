@@ -437,6 +437,22 @@ deploy-prod.sh + бамп версии).
 29. **isCommercialProperty — доверять парсеру** — если `property_type` уже
     офис/склад/ритейл/производство/free_purpose/apartment → pass, не
     фильтровать по ключевым словам в title.
+30. **3-фазный парсинг с fetchDetails** — parse-handler разбит на 3 фазы:
+    - Фаза 1: `parser.parse(depth)` → массив properties
+    - Фаза 2a: existence check → собираем `newProperties[]` (только новые)
+    - Фаза 2b: fetchDetails + createProperty для каждого нового объекта
+    `total_details_needed` вычисляется ОДИН РАЗ после phase 2a (= `newProperties.length`),
+    `total_details_fetched` инкрементируется после каждого успешного fetchDetails.
+    UI показывает `X/Y детальных` где Y фиксировано, X растёт.
+31. **resetSourceDetailsCounters** — вызывается в начале КАЖДОГО parse-handler
+    (для каждого источника). Обнуляет `total_details_fetched` и `total_details_needed`
+    в 0 через PUT `/api/sources/:documentId`. Без этого счётчики кумулятивные.
+32. **JWT_SECRET в .env на сервере** — если JWT_SECRET отсутствует в `api/.env`,
+    каждый restart API генерирует новую соль → все JWT инвалидируются → 500 Forbidden.
+    Symptom: frontend редиректит на /auth. Fix: добавить `JWT_SECRET=<random>` в `.env`.
+33. **Strapi 5 возвращает 500 вместо 401** — при невалидном JWT Strapi 5 может
+    вернуть 500 + "Forbidden" вместо 401. Response interceptor на фронте должен
+    ловить 500 + "Forbidden" и редиректить на /auth.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -588,6 +604,20 @@ cd ~/github.nosync/aklab && pm2 start ecosystem-local.config.js
 # БД на проде
 ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, email, firstname FROM admin_users;"'
 ```
+
+**Сделано в сессии 3 июля 2026 (v1.0.76 — fetchDetails progress + UI fixes):**
+- ✅ **3-фазный парсинг** — parse-handler переписан: parse → existence check (сбор новых) → fetchDetails + createProperty
+- ✅ **fetchDetails progress UI** — `X/Y детальных` на `/properties` во время и после парсинга
+- ✅ **resetSourceDetailsCounters** — счётчики обнуляются перед каждым запуском парсинга
+- ✅ **total_details_needed** вычисляется один раз (= число новых объектов), total_details_fetched растёт
+- ✅ **queue-stats fix** — убрана двойная вложенность `queues:{queues:{...}}` → плоская структура
+- ✅ **JWT_SECRET fix** — добавлен в `api/.env` на сервере (отсутствовал → 500 Forbidden)
+- ✅ **Response interceptor** — ловит 500 + "Forbidden" (Strapi 5 невалидный JWT)
+- ✅ **clearNew feedback** — `alert()` с результатом (N удалён / Нет объектов / Ошибка)
+- ✅ **Автодеплой отключён** — deploy-prod.yml только `workflow_dispatch` (ручной запуск)
+- ✅ **Глубина парсинга → 20** — PropertyListView.vue, cron controller, parse-handler
+- ✅ **Source.total_details_fetched** — новое поле в schema, queue-stats отдаёт
+- ✅ **234/234 тестов** зелёные
 
 ## Связанные документы
 
