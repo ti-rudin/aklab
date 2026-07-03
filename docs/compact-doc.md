@@ -215,9 +215,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июнь 2026)
+## Текущее состояние (июль 2026, v1.0.84)
 
-- Версия: 1.0.37
+- Версия: 1.0.84
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -250,9 +250,10 @@ deploy-prod.sh + бамп версии).
 - **Footer** — «История изменений» (was Changelog) + «Документация» (подробная архитектура)
 - **Frontend** — 10 страниц: `/` (Dashboard), `/properties`, `/properties/:id` (полная карточка), `/sources`, `/market-references`, `/settings`, `/changelog`, `/documentation`, `/auth` + 404 catch-all
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
-- **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 6 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
+- **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 100 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер), глубина парсинга (1–5000, дефолт 20). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
-- **Парсеры** (обновлено 02.07.2026):
+- **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
+- **Парсеры** (обновлено 03.07.2026):
   - **8 активных парсеров**, 3 отключены (fedresurs, fabrikant, roseltorg).
   - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 44 объекта за запуск.
   - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
@@ -271,7 +272,7 @@ deploy-prod.sh + бамп версии).
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
   - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions + seedTestUser + seedStrapiAdmin
-  - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types)
+  - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types, anti-ban, city-detect)
   - **services/parser-fabrikant/** — FabrikantParser (порт 1345, очередь `parse-fabrikant`)
   - **services/parser-torgi-gov/** — TorgiGovParser (порт 1346, очередь `parse-torgi-gov`)
   - **services/analyzer/** — сравнение Property с MarketReference
@@ -453,6 +454,22 @@ deploy-prod.sh + бамп версии).
 33. **Strapi 5 возвращает 500 вместо 401** — при невалидном JWT Strapi 5 может
     вернуть 500 + "Forbidden" вместо 401. Response interceptor на фронте должен
     ловить 500 + "Forbidden" и редиректить на /auth.
+34. **detectCity — общая функция** — вынесена в `_shared/src/city-detect.ts`,
+    используется всеми 7 парсерами. Раньше у каждого парсера была своя копия
+    с одинаковым багом. Экспортируется из `@aklab/service-shared`.
+35. **detectCity regex: «Москва-Кашира»** — `lower.includes('москва')` матчит
+    название дороги «Москва-Кашира» → false positive → `city=moscow` для
+    астраханского объекта. Фикс: regex `/(^|[\s,.])москва([\s,.)]|$)/i` —
+    дефис НЕ в character class, поэтому «москва-кашира» не матчится.
+    Баг: m-ets.ru показывает регион продавца (часто «г. Москва»), а не
+    объекта. detectCity теперь проверяет title + description, а не region.
+36. **Setting.parse_depth** — глубина парсинга по расписанию (cron). Дефолт 20,
+    макс 5000. Cron читает из Setting и передаёт `depth` в `addToQueue()`.
+    Поле в schema + UI на `/settings`. Отдельно от ручного запуска (свой ввод).
+37. **setting.update permission для authenticated** — seeder НЕ добавлял
+    `api::setting.setting.update` → PUT /api/setting возвращал 500 Forbidden
+    при сохранении настроек. Fix: добавить в seeder + вручную в БД через
+    `up_permissions` + `up_permissions_role_lnk`.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -605,18 +622,21 @@ cd ~/github.nosync/aklab && pm2 start ecosystem-local.config.js
 ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, email, firstname FROM admin_users;"'
 ```
 
-**Сделано в сессии 3 июля 2026 (v1.0.76 — fetchDetails progress + UI fixes):**
-- ✅ **3-фазный парсинг** — parse-handler переписан: parse → existence check (сбор новых) → fetchDetails + createProperty
-- ✅ **fetchDetails progress UI** — `X/Y детальных` на `/properties` во время и после парсинга
-- ✅ **resetSourceDetailsCounters** — счётчики обнуляются перед каждым запуском парсинга
-- ✅ **total_details_needed** вычисляется один раз (= число новых объектов), total_details_fetched растёт
-- ✅ **queue-stats fix** — убрана двойная вложенность `queues:{queues:{...}}` → плоская структура
-- ✅ **JWT_SECRET fix** — добавлен в `api/.env` на сервере (отсутствовал → 500 Forbidden)
-- ✅ **Response interceptor** — ловит 500 + "Forbidden" (Strapi 5 невалидный JWT)
-- ✅ **clearNew feedback** — `alert()` с результатом (N удалён / Нет объектов / Ошибка)
-- ✅ **Автодеплой отключён** — deploy-prod.yml только `workflow_dispatch` (ручной запуск)
-- ✅ **Глубина парсинга → 20** — PropertyListView.vue, cron controller, parse-handler
-- ✅ **Source.total_details_fetched** — новое поле в schema, queue-stats отдаёт
+**Сделано в сессии 3 июля 2026 (v1.0.76–v1.0.84 — fetchDetails, настройки, city detection):**
+- ✅ **3-фазный парсинг** — parse-handler переписан: parse → existence check → fetchDetails + createProperty
+- ✅ **fetchDetails progress UI** — `X/Y детальных` на `/properties`, needed=fixed, fetched=grows
+- ✅ **resetSourceDetailsCounters** — счётчики обнуляются перед каждым запуском
+- ✅ **queue-stats fix** — плоская структура (без двойной вложенности)
+- ✅ **JWT_SECRET fix** — добавлен в `api/.env` на сервере
+- ✅ **Response interceptor** — ловит 500 + "Forbidden" → редирект на /auth
+- ✅ **clearNew feedback** — `alert()` с результатом
+- ✅ **Автодеплой отключён** — workflow_dispatch only
+- ✅ **Setting.parse_depth** — глубина парсинга по крону (UI на /settings, дефолт 20, макс 5000)
+- ✅ **setting.update permission** — добавлено в seeder (authenticated роль)
+- ✅ **detectCity shared** — общая функция в `_shared/src/city-detect.ts`, regex fix для «Москва-Кашира»
+- ✅ **Таймаут парсинга 6→100 мин** — maxAttempts 120→2000
+- ✅ **БД пересканирована** — 29 объектов исправлено (city detection)
+- ✅ **depth=1000 тест** — 1961 объект, 3509 детальных, ~2.5 часа
 - ✅ **234/234 тестов** зелёные
 
 ## Связанные документы
