@@ -1,5 +1,48 @@
 [
   {
+    "version": "v1.0.73",
+    "date": "3 июля 2026",
+    "time": "11:22",
+    "items": [
+      {
+        "text": "Добавлен двухфазный парсинг: теперь парсеры загружают детальные страницы объявлений для сбора полной информации",
+        "type": "new"
+      },
+      {
+        "text": "Добавлена классификация «квартира» на площадках etprf, alfalot, sberbank-ast и fabrikant",
+        "type": "new"
+      },
+      {
+        "text": "Добавлен тип недвижимости «apartment» в систему классификации",
+        "type": "new"
+      },
+      {
+        "text": "Переписаны парсеры investmoscow, invest-mosreg и m-ets на новые источники данных — повышена стабильность",
+        "type": "improvement"
+      },
+      {
+        "text": "Ужесточены фильтры недвижимости на fabrikant, улучшена фильтрация автомобилей и бытовых товаров на aggregator-bankrot",
+        "type": "improvement"
+      },
+      {
+        "text": "Исправлено извлечение цены на torgi-gov",
+        "type": "fix"
+      },
+      {
+        "text": "Исправлен XML-парсинг и валидация координат на sberbank-ast и investmoscow",
+        "type": "fix"
+      },
+      {
+        "text": "Исправлена работа парсеров investmoscow, sberbank-ast и fabrikant",
+        "type": "fix"
+      },
+      {
+        "text": "Разрешён доступ к эндпоинту clear-new без авторизации",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.72",
     "date": "3 июля 2026",
     "time": "01:02",
