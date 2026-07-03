@@ -1136,12 +1136,14 @@ async function executeClearNew() {
   clearing.value = true
   try {
     const { data } = await api.post('/properties/clear-new')
-    // TODO: заменить на toast notification
-    console.warn(`[UI] Удалено ${data.deleted} объектов`)
+    if (data.deleted > 0) {
+      alert(`Удалено ${data.deleted} объектов`)
+    } else {
+      alert('Нет объектов со статусом «Новый»')
+    }
     fetchItems()
   } catch (e: any) {
-    // TODO: заменить на toast notification
-    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     clearing.value = false
   }

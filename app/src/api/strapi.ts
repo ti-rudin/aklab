@@ -20,11 +20,14 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor — обработка 401
+// Response interceptor — обработка 401 и Strapi Forbidden (500 с "Forbidden")
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    const msg = error.response?.data?.error?.message || ''
+    // Strapi может вернуть 500 с "Forbidden access" вместо 401 при невалидном JWT
+    if (status === 401 || (status === 500 && msg.toLowerCase().includes('forbidden'))) {
       localStorage.removeItem('user')
       localStorage.removeItem('jwt')
       localStorage.removeItem('lastAuthTime')
