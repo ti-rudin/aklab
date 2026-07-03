@@ -275,4 +275,122 @@ export class MetsParser implements SourceParser {
       await browser.close();
     }
   }
+
+  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const context = await createStealthContext(browser);
+      const page = await context.newPage();
+      await retryGoto(page, url, 3);
+
+      try {
+        await page.waitForSelector('.lot-detail, .lot-info, .description, [class*="description"]', { timeout: 10000 });
+      } catch {
+        await page.waitForTimeout(3000);
+      }
+
+      const details = await page.evaluate(() => {
+        const descSelectors = [
+          '.lot-description', '.lot-detail__description', '.description',
+          '[class*="description"]', '.lot-info__description',
+          '.card-detail', '.lot-detail'
+        ];
+        let description = '';
+        for (const sel of descSelectors) {
+          const el = document.querySelector(sel);
+          if (el && el.textContent && el.textContent.trim().length > 30) {
+            description = el.textContent.trim().slice(0, 2000);
+            break;
+          }
+        }
+
+        const contactSelectors = [
+          '.lot-contacts', '.contacts', '[class*="contact"]',
+          '.organizer', '.seller', '.lot-info__contacts'
+        ];
+        let contacts = '';
+        for (const sel of contactSelectors) {
+          const el = document.querySelector(sel);
+          if (el && el.textContent && el.textContent.trim().length > 5) {
+            contacts = el.textContent.trim().slice(0, 500);
+            break;
+          }
+        }
+
+        if (!contacts) {
+          const bodyText = document.body.textContent || '';
+          const phoneMatch = bodyText.match(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/);
+          const emailMatch = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          const parts = [];
+          if (phoneMatch) parts.push(phoneMatch[0]);
+          if (emailMatch) parts.push(emailMatch[0]);
+          contacts = parts.join(', ');
+        }
+
+        let latitude: number | undefined;
+        let longitude: number | undefined;
+        const mapEl = document.querySelector('[data-lat], [data-latitude], .map-container');
+        if (mapEl) {
+          const lat = mapEl.getAttribute('data-lat') || mapEl.getAttribute('data-latitude');
+          const lng = mapEl.getAttribute('data-lng') || mapEl.getAttribute('data-longitude');
+          if (lat && lng) {
+            latitude = parseFloat(lat);
+            longitude = parseFloat(lng);
+          }
+        }
+
+        if (!latitude) {
+          const scripts = document.querySelectorAll('script');
+          for (const script of Array.from(scripts)) {
+            const text = script.textContent || '';
+            const coordMatch = text.match(/(?:center|coordinates|coords)[:\s]*\[?(\d+\.\d+)[,\s]+(\d+\.\d+)/);
+            if (coordMatch) {
+              latitude = parseFloat(coordMatch[1]);
+              longitude = parseFloat(coordMatch[2]);
+              break;
+            }
+          }
+        }
+
+        const addressSelectors = [
+          '.lot-address', '.address', '[class*="address"]',
+          '.lot-detail__address'
+        ];
+        let address = '';
+        for (const sel of addressSelectors) {
+          const el = document.querySelector(sel);
+          if (el && el.textContent && el.textContent.trim().length > 5) {
+            address = el.textContent.trim().slice(0, 300);
+            break;
+          }
+        }
+
+        return {
+          description: description || undefined,
+          contacts: contacts || undefined,
+          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
+          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
+          address: address || undefined,
+        };
+      });
+
+      return {
+        description: details.description,
+        contacts: details.contacts,
+        latitude: details.latitude,
+        longitude: details.longitude,
+        address: details.address,
+      };
+    } catch (err: any) {
+      logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);
+      return {};
+    } finally {
+      await browser.close();
+    }
+  }
 }

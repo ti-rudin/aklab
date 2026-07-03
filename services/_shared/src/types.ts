@@ -25,6 +25,12 @@ export interface ParsedProperty {
 export interface SourceParser {
   name: string;
   parse(depth?: number): Promise<ParsedProperty[]>;
+  /**
+   * Загрузить детальную страницу объекта и извлечь расширенные данные.
+   * Вызывается для каждого НОВОГО объекта (не дубля) после parse().
+   * Опционально — парсеры без детальных страниц могут не реализовывать.
+   */
+  fetchDetails?(url: string, browser?: any): Promise<Partial<ParsedProperty>>;
 }
 
 /** Опции для запуска парсинга. */

@@ -35,7 +35,7 @@ export function createParseHandler(parser: SourceParser) {
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 50;
     const startedAt = new Date().toISOString();
-    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0;
+    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0, detailsFetched = 0;
     let errorMsg: string | undefined;
 
     try {
@@ -58,7 +58,7 @@ export function createParseHandler(parser: SourceParser) {
 
           if (await propertyExists(req.source, prop.external_id)) {
             consecutiveDuplicates++;
-            // Smart stop: 3+ дубликата подряд → скорее всего всё уже спарсено
+            // Smart stop: 10+ дубликата подряд → скорее всего всё уже спарсено
             if (consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
               logger.info(
                 `Smart stop: ${consecutiveDuplicates} consecutive duplicates, stopping early`,
@@ -71,6 +71,23 @@ export function createParseHandler(parser: SourceParser) {
 
           // Сброс счётчика дубликатов при нахождении нового объекта
           consecutiveDuplicates = 0;
+
+          // Фаза 2.5: загрузка детальной страницы (если парсер поддерживает)
+          if (parser.fetchDetails) {
+            try {
+              const details = await parser.fetchDetails(prop.url);
+              if (details && Object.keys(details).length > 0) {
+                Object.assign(prop, details);
+                detailsFetched++;
+                logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
+              }
+            } catch (err: any) {
+              logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
+              // Продолжаем с базовыми данными из списка
+            }
+            // Антибан: пауза между детальными страницами (2-5 сек)
+            await randomDelay(2000, 5000);
+          }
 
           const result = await createProperty({
             source: req.source,
@@ -132,7 +149,7 @@ export function createParseHandler(parser: SourceParser) {
     }
 
     logger.info(
-      `Done: ${created} created, ${filtered} filtered, ${total} total (depth=${depth})`,
+      `Done: ${created} created, ${filtered} filtered, ${total} total, ${detailsFetched} details fetched (depth=${depth})`,
       { correlationId: corrId },
     );
     return { created, filtered, total };
