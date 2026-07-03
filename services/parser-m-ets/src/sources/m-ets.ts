@@ -345,7 +345,7 @@ export class MetsParser implements SourceParser {
         // ─── Координаты: [data-initData] → JSON.parse → [lat, lon] ───
         let latitude: number | undefined;
         let longitude: number | undefined;
-        const initDataEl = document.querySelector('[data-initData]');
+        const initDataEl = document.querySelector('[data-initData]') as HTMLElement | null;
         if (initDataEl) {
           try {
             const raw = initDataEl.getAttribute('data-initData') || initDataEl.dataset.initData || '';
@@ -403,14 +403,20 @@ export class MetsParser implements SourceParser {
         };
       });
 
+      // Добавляем задаток к описанию, если найден
+      let desc = details.description;
+      if (details.depositText) {
+        const depositNote = `Задаток: ${details.depositText}`;
+        desc = desc ? `${desc}\n${depositNote}` : depositNote;
+      }
+
       return {
-        description: details.description,
+        description: desc,
         contacts: details.contacts,
         latitude: details.latitude,
         longitude: details.longitude,
         address: details.address,
         price: details.priceText ? parsePrice(details.priceText) : undefined,
-        deposit: details.depositText ? parsePrice(details.depositText) : undefined,
       };
     } catch (err: any) {
       logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);
