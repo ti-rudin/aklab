@@ -176,105 +176,97 @@ export class AlfalotParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки контента
+      // Ждём загрузки табов
       try {
-        await page.waitForSelector('.lot-detail, .lot-info, .description, [class*="description"]', { timeout: 10000 });
+        await page.waitForSelector('.tab-content[data-page="lot-info"], .lot-title', { timeout: 10000 });
       } catch {
         await page.waitForTimeout(3000);
       }
 
       const details = await page.evaluate(() => {
-        // Описание: ищем блоки с текстом описания
-        const descSelectors = [
-          '.lot-description', '.lot-detail__description', '.description',
-          '[class*="description"]', '.lot-info__description',
-          '.card-detail', '.lot-detail'
-        ];
+        // Описание: <p> после <h3>Описание</h3> в табе lot-info
+        const descH3 = document.querySelector('.tab-content[data-page="lot-info"] h3');
         let description = '';
-        for (const sel of descSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 30) {
-            description = el.textContent.trim().slice(0, 2000);
-            break;
+        if (descH3) {
+          const nextP = descH3.nextElementSibling;
+          if (nextP && nextP.tagName === 'P' && nextP.textContent && nextP.textContent.trim().length > 20) {
+            description = nextP.textContent.trim().slice(0, 2000);
           }
         }
 
-        // Контакты: телефон, email, организатор
-        const contactSelectors = [
-          '.lot-contacts', '.contacts', '[class*="contact"]',
-          '.organizer', '.seller', '.lot-info__contacts'
-        ];
-        let contacts = '';
-        for (const sel of contactSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            contacts = el.textContent.trim().slice(0, 500);
-            break;
+        // Контакты: таб organizer-info → ul li с label-value паттерном
+        const contactParts: string[] = [];
+        const organizerTab = document.querySelector('.tab-content[data-page="organizer-info"]');
+        if (organizerTab) {
+          // Имя организатора
+          const orgName = organizerTab.querySelector('.font-bold.text-xl');
+          if (orgName && orgName.textContent) {
+            contactParts.push('Организатор: ' + orgName.textContent.trim());
+          }
+
+          // Ищем телефон и email в li элементах
+          const items = organizerTab.querySelectorAll('ul li');
+          for (const li of Array.from(items)) {
+            const spans = li.querySelectorAll('span');
+            if (spans.length >= 2) {
+              const label = spans[0].textContent?.trim().toLowerCase() || '';
+              const value = spans[spans.length - 1].textContent?.trim() || '';
+              if (label.includes('телефон') && value) contactParts.push('Тел: ' + value);
+              if (label.includes('email') && value) contactParts.push('Email: ' + value);
+            }
           }
         }
+        const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Если контакты не найдены в блоках — ищем телефон/email в тексте
-        if (!contacts) {
-          const bodyText = document.body.textContent || '';
-          const phoneMatch = bodyText.match(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/);
-          const emailMatch = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-          const parts = [];
-          if (phoneMatch) parts.push(phoneMatch[0]);
-          if (emailMatch) parts.push(emailMatch[0]);
-          contacts = parts.join(', ');
+        // Адрес: элемент .address или из описания
+        const addressEl = document.querySelector('.address');
+        let address = addressEl?.textContent?.trim() || '';
+        if (!address || address.length < 5) {
+          // Парсим из описания
+          const addrMatch = description.match(/(?:адрес|расположенн?\s+по)[:\s]+([^.;]+)/i);
+          if (addrMatch) address = addrMatch[1].trim();
         }
 
-        // Координаты: ищем в data-атрибутах или скриптах
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        const mapEl = document.querySelector('[data-lat], [data-latitude], .map-container');
-        if (mapEl) {
-          const lat = mapEl.getAttribute('data-lat') || mapEl.getAttribute('data-latitude');
-          const lng = mapEl.getAttribute('data-lng') || mapEl.getAttribute('data-longitude');
-          if (lat && lng) {
-            latitude = parseFloat(lat);
-            longitude = parseFloat(lng);
-          }
-        }
+        // Аукцион: .start_price, .current_price, .bid_end_date, .auction_start_date
+        const startPrice = document.querySelector('.start_price')?.textContent?.trim();
+        const currentPrice = document.querySelector('.current_price')?.textContent?.trim();
+        const bidEndDate = document.querySelector('.bid_end_date')?.textContent?.trim();
+        const auctionStart = document.querySelector('.auction_start_date')?.textContent?.trim();
 
-        // Координаты из скриптов (Yandex/Google Maps)
-        if (!latitude) {
-          const scripts = document.querySelectorAll('script');
-          for (const script of Array.from(scripts)) {
-            const text = script.textContent || '';
-            const coordMatch = text.match(/(?:center|coordinates|coords)[:\s]*\[?(\d+\.\d+)[,\s]+(\d+\.\d+)/);
-            if (coordMatch) {
-              latitude = parseFloat(coordMatch[1]);
-              longitude = parseFloat(coordMatch[2]);
-              break;
+        const auctionParts: string[] = [];
+        if (startPrice) auctionParts.push('Начальная цена: ' + startPrice);
+        if (currentPrice) auctionParts.push('Текущая цена: ' + currentPrice);
+        if (bidEndDate) auctionParts.push('Окончание: ' + bidEndDate);
+        if (auctionStart) auctionParts.push('Начало торгов: ' + auctionStart);
+
+        // Задаток из таблицы цен
+        const priceTable = document.querySelector('.tab-content[data-page="lot-info"] table');
+        if (priceTable) {
+          const rows = priceTable.querySelectorAll('tbody tr');
+          for (const row of Array.from(rows)) {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 4) {
+              const deposit = cells[3]?.textContent?.trim();
+              if (deposit && deposit !== '—') auctionParts.push('Задаток: ' + deposit);
+              break; // берём только первую строку
             }
           }
         }
 
-        // Детали аукциона: даты, шаг, задаток
-        const auctionInfo: string[] = [];
-        const allText = document.body.textContent || '';
-        const dateMatch = allText.match(/(?:дата|начало|окончание|торги)[\s:]*(\d{2}\.\d{2}\.\d{4})/gi);
-        if (dateMatch) auctionInfo.push(...dateMatch.slice(0, 3));
-
-        const depositMatch = allText.match(/(?:задаток|гарантийный взнос)[\s:]*(\d[\d\s,.]*)(?:\s*руб|\s*₽)/i);
-        if (depositMatch) auctionInfo.push(depositMatch[0]);
-
-        const stepMatch = allText.match(/(?:шаг|шаг торгов)[\s:]*(\d[\d\s,.]*)(?:\s*руб|\s*₽)/i);
-        if (stepMatch) auctionInfo.push(stepMatch[0]);
-
         return {
           description: description || undefined,
-          contacts: contacts || undefined,
-          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
-          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
-          auctionDetails: auctionInfo.length > 0 ? auctionInfo.join(' | ') : undefined,
+          contacts,
+          address: address && address.length > 3 ? address : undefined,
+          latitude: undefined, // координаты не доступны на alfalot
+          longitude: undefined,
+          auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
         };
       });
 
       return {
         description: details.description,
         contacts: details.contacts,
+        address: details.address,
         latitude: details.latitude,
         longitude: details.longitude,
       };

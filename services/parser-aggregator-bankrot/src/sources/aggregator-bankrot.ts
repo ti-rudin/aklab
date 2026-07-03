@@ -209,123 +209,101 @@ export class AggregatorBankrotParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки контента
+      // Ждём загрузки панелей
       try {
-        await page.waitForSelector('.lot-detail, .trade-detail, .card-detail, [class*="detail"]', { timeout: 10000 });
+        await page.waitForSelector('.panel, article.lot-page, .lot-data__list', { timeout: 10000 });
       } catch {
         await page.waitForTimeout(3000);
       }
 
       const details = await page.evaluate(() => {
-        // Описание: ищем основной текст лота
-        const descSelectors = [
-          '.lot-description', '.trade-description', '.card__text',
-          '.lot-detail__description', '[class*="description"]',
-          '.card-detail', '.lot-detail', '.trade-detail'
-        ];
+        // Описание: #description .panel__wrapper p.js-share-search
         let description = '';
-        for (const sel of descSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 30) {
-            description = el.textContent.trim().slice(0, 2000);
-            break;
+        const descPanel = document.querySelector('#description .panel__wrapper p.js-share-search');
+        if (descPanel && descPanel.textContent && descPanel.textContent.trim().length > 20) {
+          description = descPanel.textContent.trim().slice(0, 2000);
+        }
+
+        // Контакты: #trade-organizer → label (span.text-grey) + value (span.js-share-search)
+        const contactParts: string[] = [];
+        const orgPanel = document.querySelector('#trade-organizer');
+        if (orgPanel) {
+          const paragraphs = orgPanel.querySelectorAll('.panel__wrapper p');
+          for (const p of Array.from(paragraphs)) {
+            const label = p.querySelector('span.text-grey')?.textContent?.trim().toLowerCase() || '';
+            const value = p.querySelector('span.js-share-search')?.textContent?.trim() || '';
+            if (!value) continue;
+            if (label.includes('наименование')) contactParts.push('Организатор: ' + value);
+            if (label.includes('e-mail') && !label.includes('контакт')) contactParts.push('Email: ' + value);
+            if (label.includes('телефон') && !label.includes('контакт')) contactParts.push('Тел: ' + value);
+            if (label.includes('фио контакт')) contactParts.push('Контактное лицо: ' + value);
+            if (label.includes('телефон контакт')) contactParts.push('Тел контакта: ' + value);
+            if (label.includes('e-mail контакт')) contactParts.push('Email контакта: ' + value);
           }
         }
+        const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Контакты: организатор торгов, телефон, email
-        const contactSelectors = [
-          '.lot-contacts', '.trade-contacts', '.contacts',
-          '[class*="contact"]', '.organizer', '.seller',
-          '.trade-detail__contacts', '.lot-detail__contacts'
-        ];
-        let contacts = '';
-        for (const sel of contactSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            contacts = el.textContent.trim().slice(0, 500);
-            break;
-          }
-        }
-
-        // Если контакты не найдены в блоках — ищем телефон/email в тексте
-        if (!contacts) {
-          const bodyText = document.body.textContent || '';
-          const phoneMatch = bodyText.match(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/);
-          const emailMatch = bodyText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-          const parts = [];
-          if (phoneMatch) parts.push(phoneMatch[0]);
-          if (emailMatch) parts.push(emailMatch[0]);
-          contacts = parts.join(', ');
-        }
-
-        // Координаты: ищем в data-атрибутах или скриптах
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        const mapEl = document.querySelector('[data-lat], [data-latitude], .map-container');
-        if (mapEl) {
-          const lat = mapEl.getAttribute('data-lat') || mapEl.getAttribute('data-latitude');
-          const lng = mapEl.getAttribute('data-lng') || mapEl.getAttribute('data-longitude');
-          if (lat && lng) {
-            latitude = parseFloat(lat);
-            longitude = parseFloat(lng);
-          }
-        }
-
-        // Координаты из скриптов (Yandex/Google Maps)
-        if (!latitude) {
-          const scripts = document.querySelectorAll('script');
-          for (const script of Array.from(scripts)) {
-            const text = script.textContent || '';
-            const coordMatch = text.match(/(?:center|coordinates|coords)[:\s]*\[?(\d+\.\d+)[,\s]+(\d+\.\d+)/);
-            if (coordMatch) {
-              latitude = parseFloat(coordMatch[1]);
-              longitude = parseFloat(coordMatch[2]);
-              break;
-            }
-          }
-        }
-
-        // Адрес: более точный из детальной страницы
-        const addressSelectors = [
-          '.lot-address', '.trade-address', '.address',
-          '[class*="address"]', '.lot-detail__address'
-        ];
+        // Адрес: из #info панели или из описания
         let address = '';
-        for (const sel of addressSelectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent && el.textContent.trim().length > 5) {
-            address = el.textContent.trim().slice(0, 300);
-            break;
+        const infoPanel = document.querySelector('#info');
+        if (infoPanel) {
+          const paragraphs = infoPanel.querySelectorAll('.panel__wrapper p');
+          for (const p of Array.from(paragraphs)) {
+            const text = p.textContent || '';
+            const addrMatch = text.match(/адрес\s+(?:местонахождения)?:\s*(.+?)(?:\.|$)/i);
+            if (addrMatch) { address = addrMatch[1].trim(); break; }
           }
         }
+        if (!address && description) {
+          const addrMatch = description.match(/адрес\s+(?:местонахождения)?:\s*(.+?)(?:\.|$)/i);
+          if (addrMatch) address = addrMatch[1].trim();
+        }
 
-        // Детали аукциона: даты, шаг, задаток
-        const auctionInfo: string[] = [];
-        const allText = document.body.textContent || '';
-        const dateMatch = allText.match(/(?:дата|начало|окончание|торги)[\s:]*(\d{2}\.\d{2}\.\d{4})/gi);
-        if (dateMatch) auctionInfo.push(...dateMatch.slice(0, 3));
+        // Цена и даты: sidebar .lot-data__list
+        const auctionParts: string[] = [];
+        const bidEl = document.querySelector('.lot-card__bids');
+        if (bidEl) {
+          const currentBid = bidEl.getAttribute('data-current-bid');
+          const startBid = bidEl.getAttribute('data-start-bid');
+          if (startBid) auctionParts.push('Начальная цена: ' + startBid);
+          if (currentBid && currentBid !== startBid) auctionParts.push('Текущая цена: ' + currentBid);
+        }
 
-        const depositMatch = allText.match(/(?:задаток|гарантийный взнос)[\s:]*(\d[\d\s,.]*)(?:\s*руб|\s*₽)/i);
-        if (depositMatch) auctionInfo.push(depositMatch[0]);
+        // Sidebar данные
+        const lotDataItems = document.querySelectorAll('.lot-data__item .lot-data__text');
+        for (const el of Array.from(lotDataItems)) {
+          const text = el.textContent?.trim() || '';
+          if (text.includes('Начало приема ценовых')) auctionParts.push('Начало приема ставок: ' + text.replace(/.*:\s*/, ''));
+          if (text.includes('Конец приема ценовых')) auctionParts.push('Конец приема ставок: ' + text.replace(/.*:\s*/, ''));
+        }
 
-        const stepMatch = allText.match(/(?:шаг|шаг торгов)[\s:]*(\d[\d\s,.]*)(?:\s*руб|\s*₽)/i);
-        if (stepMatch) auctionInfo.push(stepMatch[0]);
+        // Задаток из #info
+        if (infoPanel) {
+          const paragraphs = infoPanel.querySelectorAll('.panel__wrapper p');
+          for (const p of Array.from(paragraphs)) {
+            const label = p.querySelector('span.text-grey')?.textContent?.trim().toLowerCase() || '';
+            const value = p.querySelector('span.js-share-search')?.textContent?.trim() || '';
+            if (label.includes('задаток') && value) auctionParts.push('Задаток: ' + value);
+            if (label.includes('начальная стоимость') && value) auctionParts.push('Начальная стоимость: ' + value);
+          }
+        }
 
         return {
           description: description || undefined,
-          contacts: contacts || undefined,
-          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
-          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
-          address: address || undefined,
+          contacts,
+          address: address && address.length > 3 ? address : undefined,
+          latitude: undefined, // координаты не доступны на aggregator-bankrot
+          longitude: undefined,
+          auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
         };
       });
 
       return {
         description: details.description,
         contacts: details.contacts,
+        address: details.address,
         latitude: details.latitude,
         longitude: details.longitude,
-        address: details.address,
       };
     } catch (err: any) {
       logger.warn(`[aggregator-bankrot] fetchDetails error for ${url}: ${err.message}`);
