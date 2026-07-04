@@ -24,7 +24,7 @@
         </div>
         <div @click="router.push('/properties#focus')"
           class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <p class="text-sm" style="color: var(--text-muted)">В фокусе</p>
+          <p class="text-sm" style="color: var(--text-muted)">Добавленные в фокус</p>
           <p class="text-3xl font-bold mt-1" style="color: var(--accent)">{{ stats?.inFocus ?? '—' }}</p>
         </div>
         <div class="rounded-xl p-5 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
