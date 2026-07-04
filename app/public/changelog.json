@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.0.89",
+    "date": "4 июля 2026",
+    "time": "22:29",
+    "items": [
+      {
+        "text": "Прогресс анализа при пересчёте — polling + progress bar",
+        "type": "new"
+      },
+      {
+        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
+        "type": "fix"
+      },
+      {
+        "text": "Force reset через db.query — entityService не возвращал documentId",
+        "type": "fix"
+      },
+      {
+        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
+        "type": "fix"
+      },
+      {
+        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
+        "type": "fix"
+      },
+      {
+        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
+        "type": "improvement"
+      },
+      {
+        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
+        "type": "improvement"
+      },
+      {
+        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
+        "type": "improvement"
+      },
+      {
+        "text": "Релиз v1.0.85",
+        "type": "improvement"
+      },
+      {
+        "text": "Табы на /properties — Все объекты, В фокусе, В работе",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.88",
     "date": "4 июля 2026",
     "time": "22:11",
