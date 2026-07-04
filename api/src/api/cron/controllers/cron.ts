@@ -111,7 +111,7 @@ export default {
 
       const properties = await s.entityService.findMany('api::property.property', {
         filters,
-        limit: 500,
+        limit: -1,
       });
 
       for (const prop of properties || []) {
