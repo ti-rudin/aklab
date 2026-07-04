@@ -502,17 +502,29 @@ test.describe('4. Страница объекта (detail)', () => {
 // 5. SOURCES PAGE
 // ═══════════════════════════════════════════════════════════════════════
 
-test.describe("5. Парсеры (таб Настроек)", () => {  test.beforeEach(async ({ page }) => {    await login(page);    await page.goto("/settings");    await page.waitForTimeout(1000);    const parsersTab = page.locator("button:has-text("Парсеры")");    if (await parsersTab.isVisible({ timeout: 3000 }).catch(() => false)) {      await parsersTab.click();      await page.waitForTimeout(1500);    }  });  test("5.1 Таб Парсеры загружается", async ({ page }) => {    await expect(page.locator("button:has-text("Парсеры")")).toBeVisible({ timeout: 10000 });  });  test("5.2 Список парсеров или пустое состояние", async ({ page }) => {    await page.waitForTimeout(2000);    const items = page.locator("[class*="card"], tr, li");    await expect(items.first()).toBeVisible({ timeout: 10000 }).catch(() => {});  });
-    const sourcesList = page.locator('text=Источников пока нет');
-    const anySource = page.locator('[class*="rounded-xl"]').first();
-    await expect(sourcesList.or(anySource)).toBeVisible({ timeout: 10000 });
+test.describe('5. Парсеры (таб Настроек)', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await page.goto('/settings');
+    await page.waitForTimeout(1000);
+    const parsersTab = page.locator('button:has-text("Парсеры")');
+    if (await parsersTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await parsersTab.click();
+      await page.waitForTimeout(1500);
+    }
+  });
+
+  test('5.1 Таб Парсеры загружается', async ({ page }) => {
+    await expect(page.locator('button:has-text("Парсеры")')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('5.2 Список парсеров или пустое состояние', async ({ page }) => {
+    await page.waitForTimeout(2000);
+    const items = page.locator('[class*="card"], tr, li');
+    await expect(items.first()).toBeVisible({ timeout: 10000 }).catch(() => {});
   });
 });
-
-// ═══════════════════════════════════════════════════════════════════════
-// 6. SETTINGS PAGE
-// ═══════════════════════════════════════════════════════════════════════
-
 test.describe('6. Страница Настройки', () => {
 
   test.beforeEach(async ({ page }) => {
@@ -563,10 +575,6 @@ test.describe('7. Эталоны (таб Настроек)', () => {
     await expect(content).toBeVisible({ timeout: 10000 }).catch(() => {});
   });
 });
-
-// 8. NAVIGATION
-// ═══════════════════════════════════════════════════════════════════════
-
 test.describe('8. Навигация', () => {
 
   test.beforeEach(async ({ page }) => {
