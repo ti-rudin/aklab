@@ -345,6 +345,19 @@
         >
           {{ scoringLoading ? 'Пересчёт...' : '🔄 Пересчитать' }}
         </button>
+
+        <!-- Прогресс анализа -->
+        <div v-if="analyzeProgress && !analyzeProgress.done" class="flex items-center gap-3 text-sm" style="color: var(--text-muted)">
+          <div class="flex-1 max-w-xs h-2 rounded-full overflow-hidden" style="background: var(--bg-elevated)">
+            <div class="h-full rounded-full transition-all duration-500" style="background: #f59e0b"
+              :style="{ width: Math.round(analyzeProgress.analyzed / analyzeProgress.total * 100) + '%' }"></div>
+          </div>
+          <span class="font-mono whitespace-nowrap">{{ analyzeProgress.analyzed }} / {{ analyzeProgress.total }}</span>
+        </div>
+        <div v-if="analyzeProgress?.done" class="flex items-center gap-2 text-sm" style="color: #22c55e">
+          ✓ Проанализировано: {{ analyzeProgress.analyzed }}, недооценённых: {{ analyzeProgress.undervalued }}
+        </div>
+
         <button
           @click="exportCSV"
           class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
@@ -959,9 +972,11 @@ async function executeClearNew() {
 // Recalculate scoring
 // ========================
 const scoringLoading = ref(false)
+const analyzeProgress = ref<{ total: number; analyzed: number; remaining: number; undervalued: number; done: boolean } | null>(null)
 
 async function recalculateScore() {
   scoringLoading.value = true
+  analyzeProgress.value = null
   try {
     const cityList: string[] = []
     if (focusFilters.cities.moscow) cityList.push('moscow')
@@ -975,6 +990,16 @@ async function recalculateScore() {
     if (focusFilters.priceTo) analyzeBody.priceTo = Number(focusFilters.priceTo)
     if (focusFilters.threshold) analyzeBody.threshold = focusFilters.threshold
     await api.post('/cron/analyze', analyzeBody)
+
+    // Поллинг прогресса анализа
+    for (let i = 0; i < 120; i++) { // макс 2 мин (120 × 1с)
+      await new Promise(r => setTimeout(r, 1000))
+      try {
+        const { data } = await api.get('/cron/analyze-progress')
+        analyzeProgress.value = data
+        if (data.done) break
+      } catch { /* DB может быть занят — retry */ }
+    }
 
     // Шаг 2: Scoring (focus_score + tags)
     const scoreBody: any = { threshold: focusFilters.threshold }

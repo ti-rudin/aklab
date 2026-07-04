@@ -33,5 +33,11 @@ export default {
       handler: 'cron.scoreProperties',
       config: { auth: false, policies: [] },
     },
+    {
+      method: 'GET',
+      path: '/cron/analyze-progress',
+      handler: 'cron.analyzeProgress',
+      config: { auth: false, policies: [] },
+    },
   ],
 };

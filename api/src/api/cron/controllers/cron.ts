@@ -227,4 +227,33 @@ export default {
       ctx.internalServerError(err.message);
     }
   },
+
+  /**
+   * GET /api/cron/analyze-progress
+   * Прогресс анализа — сколько проанализировано / сколько всего.
+   */
+  async analyzeProgress(ctx: any) {
+    try {
+      const s = strapi as unknown as StrapiInstance;
+      const allNew = await s.db.query('api::property.property').findMany({
+        where: { status: 'new' },
+        select: ['is_undervalued'],
+      });
+      const total = allNew.length;
+      const analyzed = allNew.filter((p: any) => p.is_undervalued !== null).length;
+      const undervalued = allNew.filter((p: any) => p.is_undervalued === true).length;
+
+      ctx.body = {
+        ok: true,
+        total,
+        analyzed,
+        remaining: total - analyzed,
+        undervalued,
+        done: analyzed >= total,
+      };
+    } catch (err: any) {
+      strapi.log.error(`[cron] analyzeProgress error: ${err.message}`);
+      ctx.internalServerError(err.message);
+    }
+  },
 };
