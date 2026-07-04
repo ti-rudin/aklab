@@ -343,17 +343,18 @@ function prevPhoto() {
 }
 
 async function triggerPhotoFetch() {
-  if (!property.value || photoLoading.value) return
+  const pv = property.value
+  if (!pv || photoLoading.value) return
   photoLoading.value = true
   try {
-    await api.post(`/properties/${property.value.documentId}/fetch-photos`)
+    await api.post(`/properties/${pv.documentId}/fetch-photos`)
     // Poll until photos are downloaded (max 60s)
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 2000))
       try {
-        const { data } = await api.get(`/properties/${property.value.documentId}`)
-        if (data.data?.photos_downloaded) {
-          property.value = { ...property.value, ...data.data }
+        const { data: propData } = await api.get(`/properties/${pv.documentId}`)
+        if (propData.data?.photos_downloaded) {
+          property.value = { ...pv, ...propData.data }
           break
         }
       } catch { /* retry */ }
