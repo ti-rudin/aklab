@@ -180,9 +180,9 @@
           @click.self="lightbox.open = false">
           <button @click="lightbox.open = false" class="absolute top-4 right-4 text-white text-2xl">✕</button>
           <button @click="prevPhoto" class="absolute left-4 text-white text-3xl">‹</button>
-          <img v-if="property.photos[lightbox.idx]" :src="photoUrl(String(property.photos[lightbox.idx]))" class="max-h-[80vh] max-w-[90vw] object-contain" />
+          <img v-if="property.photos?.[lightbox.idx]" :src="photoUrl(String(property.photos?.[lightbox.idx]))" class="max-h-[80vh] max-w-[90vw] object-contain" />
           <button @click="nextPhoto" class="absolute right-4 text-white text-3xl">›</button>
-          <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos.length }}</div>
+          <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos?.length ?? 0 }}</div>
         </div>
       </div>
 
