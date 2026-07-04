@@ -107,7 +107,17 @@ if [ -f ".env" ]; then
   fi
 fi
 
-# === Step 1: Git pull ===
+# === Step 1: Checkout main and git pull ===
+log "Checkout main..."
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  # Stash local changes if any
+  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    log "Stashing local changes before checkout..."
+    git stash
+  fi
+  git checkout main
+fi
 log "Git pull..."
 ROLLBACK_SHA=$(git rev-parse HEAD)
 log "Rollback SHA: ${ROLLBACK_SHA:0:8}"
