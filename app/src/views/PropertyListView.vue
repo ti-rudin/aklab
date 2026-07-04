@@ -2,67 +2,60 @@
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold" style="color: var(--text-main)">Объекты</h1>
-      <span class="text-sm" style="color: var(--text-muted)">{{ activeTab === 'all' ? total : focusTotal }} шт.</span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm" style="color: var(--text-muted)">{{ activeTab === 'all' ? total : activeTab === 'focus' ? focusTotal : workTotal }} шт.</span>
+        <button v-if="activeTab === 'all'"
+          @click="confirmClearNew"
+          :disabled="clearing"
+          class="px-3 py-1.5 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+          style="background: #ef4444"
+        >
+          {{ clearing ? 'Удаление...' : 'Очистить' }}
+        </button>
+      </div>
     </div>
 
     <!-- Табы -->
-    <div class="flex gap-2 mb-6">
+    <div class="flex gap-1 mb-6 overflow-x-auto pb-1" style="border-bottom: 1px solid var(--border-subtle)">
       <button
-        @click="activeTab = 'all'"
-        class="px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
+        @click="activeTab = 'all'; if (workStatusApplied) { filters.status = ''; workStatusApplied = false }"
+        class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
         :style="{
-          background: activeTab === 'all' ? 'var(--accent)' : 'var(--bg-elevated)',
-          color: activeTab === 'all' ? '#fff' : 'var(--text-main)',
-          border: activeTab === 'all' ? 'none' : '1px solid var(--border-subtle)',
+          color: activeTab === 'all' ? 'var(--accent)' : 'var(--text-muted)',
+          opacity: activeTab === 'all' ? 1 : 0.7,
         }"
-      >Все объекты</button>
+      >
+        Все объекты
+        <div v-if="activeTab === 'all'" class="absolute bottom-0 left-0 right-0 h-0.5" style="background: var(--accent)" />
+      </button>
       <button
         @click="switchToFocus"
-        class="px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
+        class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
         :style="{
-          background: activeTab === 'focus' ? 'var(--accent)' : 'var(--bg-elevated)',
-          color: activeTab === 'focus' ? '#fff' : 'var(--text-main)',
-          border: activeTab === 'focus' ? 'none' : '1px solid var(--border-subtle)',
+          color: activeTab === 'focus' ? 'var(--accent)' : 'var(--text-muted)',
+          opacity: activeTab === 'focus' ? 1 : 0.7,
         }"
-      >В фокусе</button>
+      >
+        В фокусе
+        <div v-if="activeTab === 'focus'" class="absolute bottom-0 left-0 right-0 h-0.5" style="background: var(--accent)" />
+      </button>
+      <button
+        @click="switchToWork"
+        class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
+        :style="{
+          color: activeTab === 'work' ? 'var(--accent)' : 'var(--text-muted)',
+          opacity: activeTab === 'work' ? 1 : 0.7,
+        }"
+      >
+        В работе
+        <div v-if="activeTab === 'work'" class="absolute bottom-0 left-0 right-0 h-0.5" style="background: var(--accent)" />
+      </button>
     </div>
 
     <!-- ============================== -->
     <!-- ВСЕ ОБЪЕКТЫ (существующий UI) -->
     <!-- ============================== -->
-    <template v-if="activeTab === 'all'">
-      <!-- Кнопки действий -->
-      <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        <button
-          @click="runPipeline"
-          :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
-          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-          :style="{
-            background: pipelineStage === 'done' ? '#059669' : 'var(--bg-elevated)',
-            border: '1px solid var(--border-subtle)',
-            color: pipelineStage === 'done' ? '#fff' : 'var(--text-main)',
-          }"
-        >
-          <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">Ручной запуск</template>
-          <template v-else-if="pipelineStage === 'done'">Готово — запустить ещё раз</template>
-          <template v-else>Выполняется...</template>
-        </button>
-        <div class="flex items-center gap-2">
-          <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
-          <input v-model.number="parseDepth" type="number" min="1" max="500"
-            class="w-20 px-2 py-1.5 rounded-lg border text-sm text-center"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-        </div>
-        <button
-          @click="confirmClearNew"
-          :disabled="clearing"
-          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
-        >
-          {{ clearing ? 'Удаление...' : 'Очистить список' }}
-        </button>
-      </div>
-
+    <template v-if="activeTab === 'all' || activeTab === 'work'">
       <!-- Диалог подтверждения очистки -->
       <div v-if="showClearDialog"
         class="fixed inset-0 z-50 flex items-center justify-center"
@@ -88,13 +81,13 @@
         </div>
       </div>
 
-      <!-- Параметры запуска -->
-      <div class="mb-4">
+      <!-- Запуск парсинга -->
+      <div v-if="activeTab === 'all'" class="mb-4">
         <button @click="launchFiltersOpen = !launchFiltersOpen" 
           class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
           style="color: var(--text-muted)">
           <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
-          <span>Параметры запуска</span>
+          <span>Запуск парсинга</span>
           <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-xs rounded-full" 
             style="background: var(--accent); color: white">{{ activeFilterCount }}</span>
         </button>
@@ -150,11 +143,28 @@
           
           <!-- Actions -->
           <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-2 border-t" style="border-color: var(--border-subtle)">
-            <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
-              style="color: var(--text-muted)">Сбросить</button>
-            <span class="text-xs" style="color: var(--text-muted)">
-              Фильтры применяются к этапу анализа
-            </span>
+            <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
+                style="color: var(--text-muted)">Сбросить</button>
+              <div class="flex items-center gap-2">
+                <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
+                <input v-model.number="parseDepth" type="number" min="1" max="500"
+                  class="w-20 px-2 py-1.5 rounded-lg border text-sm text-center"
+                  style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+              </div>
+            </div>
+            <button
+              @click="runPipeline"
+              :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
+              class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+              :style="{
+                background: pipelineStage === 'done' ? '#059669' : 'var(--accent)',
+              }"
+            >
+              <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">▶ Ручной запуск</template>
+              <template v-else-if="pipelineStage === 'done'">Готово — ещё раз</template>
+              <template v-else>Выполняется...</template>
+            </button>
           </div>
         </div>
       </div>
@@ -256,7 +266,7 @@
             <option value="other">Другой</option>
           </select>
         </div>
-        <div>
+        <div v-if="activeTab !== 'work'">
           <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
           <select v-model="filters.status" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
             <option value="">Все</option>
@@ -740,6 +750,30 @@ const {
   deviationStyle,
   switchToFocus,
 } = useFocusTab(() => doFetchFocus(), focusTotal, focusItems)
+
+// ========================
+// В РАБОТЕ — state
+// ========================
+const workTotal = ref(0)
+const workStatusApplied = ref(false)
+
+async function fetchWorkTotal() {
+  try {
+    const res = await api.get('/properties', {
+      params: { 'filters[status][$eq]': 'in_progress', 'pagination[pageSize]': 1 },
+    })
+    workTotal.value = res.data?.meta?.pagination?.total || 0
+  } catch { workTotal.value = 0 }
+}
+
+function switchToWork() {
+  activeTab.value = 'work'
+  if (!workStatusApplied.value) {
+    filters.status = 'in_progress'
+    workStatusApplied.value = true
+  }
+  fetchWorkTotal()
+}
 
 // ========================
 // ВСЕ ОБЪЕКТЫ — state
@@ -1309,5 +1343,8 @@ onUnmounted(() => {
   stopPolling()
 })
 
-onMounted(fetchItems)
+onMounted(() => {
+  fetchItems()
+  fetchWorkTotal()
+})
 </script>

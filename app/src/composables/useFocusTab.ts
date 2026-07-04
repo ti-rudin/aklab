@@ -21,7 +21,7 @@ export function useFocusTab(
   // ========================
   // Tab state
   // ========================
-  const activeTab = ref<'all' | 'focus'>('all')
+  const activeTab = ref<'all' | 'focus' | 'work'>('all')
 
   // ========================
   // Sort
