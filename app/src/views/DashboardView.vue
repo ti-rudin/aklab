@@ -17,11 +17,13 @@
     <template v-else>
       <!-- Статистика -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <div class="rounded-xl p-5 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <div @click="router.push('/properties')"
+          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <p class="text-sm" style="color: var(--text-muted)">Всего объектов</p>
           <p class="text-3xl font-bold mt-1" style="color: var(--text-main)">{{ stats?.total ?? '—' }}</p>
         </div>
-        <div class="rounded-xl p-5 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <div @click="router.push('/properties#focus')"
+          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <p class="text-sm" style="color: var(--text-muted)">В фокусе</p>
           <p class="text-3xl font-bold mt-1" style="color: var(--accent)">{{ stats?.inFocus ?? '—' }}</p>
         </div>
@@ -31,18 +33,17 @@
         </div>
       </div>
 
-      <!-- Горячие объекты + Быстрые действия -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <!-- Топ-5 -->
-        <div class="lg:col-span-2 rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+      <!-- Горячие объекты -->
+      <div class="mb-8">
+        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">🔥 Горячие объекты</h2>
           <div v-if="topProperties.length === 0" class="text-sm" style="color: var(--text-muted)">Нет объектов в фокусе</div>
-          <div v-else class="space-y-3">
+          <div v-else class="space-y-2 sm:space-y-3">
             <div v-for="p in topProperties" :key="p.documentId"
               @click="$router.push(`/properties/${p.documentId}`)"
-              class="flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors hover:opacity-80"
+              class="flex items-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-colors hover:opacity-80"
               style="background: var(--bg-main); border: 1px solid var(--border-subtle)">
-              <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold"
+              <div class="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold"
                 :style="{ background: scoreColor(p.focus_score) + '20', color: scoreColor(p.focus_score) }">
                 {{ p.focus_score }}
               </div>
@@ -50,7 +51,7 @@
                 <p class="text-sm font-medium truncate" style="color: var(--text-main)">{{ p.title }}</p>
                 <p class="text-xs truncate" style="color: var(--text-muted)">{{ p.address || p.city }}</p>
               </div>
-              <div class="flex gap-1 flex-shrink-0">
+              <div class="hidden sm:flex gap-1 flex-shrink-0">
                 <span v-for="tag in (p.tags || []).slice(0, 3)" :key="tag"
                   class="text-xs px-1.5 py-0.5 rounded-full"
                   style="background: var(--accent-soft); color: var(--accent)">
@@ -60,57 +61,22 @@
             </div>
           </div>
         </div>
-
-        <!-- Быстрые действия -->
-        <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Действия</h2>
-          <div class="space-y-3">
-            <button @click="runParsing" :disabled="!!actionLoading"
-              class="w-full px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-              style="background: var(--accent)">
-              {{ actionLoading === 'parse' ? 'Запуск…' : '▶ Запустить парсинг' }}
-            </button>
-            <button @click="runScoring" :disabled="!!actionLoading"
-              class="w-full px-4 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style="background: var(--bg-main); border: 1px solid var(--border-subtle); color: var(--text-main)">
-              {{ actionLoading === 'score' ? 'Запуск…' : '🔄 Пересчитать выборку' }}
-            </button>
-          </div>
-          <p v-if="actionMsg" class="text-xs mt-3" style="color: var(--accent)">{{ actionMsg }}</p>
-        </div>
       </div>
 
-      <!-- Источники + Тренд -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Статус источников -->
-        <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Источники</h2>
-          <div v-if="sources.length === 0" class="text-sm" style="color: var(--text-muted)">Нет источников</div>
-          <div v-else class="space-y-2">
-            <div v-for="s in sources" :key="s.slug"
-              class="flex items-center gap-3 p-2 rounded-lg"
-              style="background: var(--bg-main)">
-              <span class="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                :style="{ background: s.is_active && s.last_parse_status === 'ok' ? '#10b981' : s.last_parse_status === 'error' ? '#ef4444' : '#6b7280' }" />
-              <span class="text-sm flex-1" style="color: var(--text-main)">{{ s.slug }}</span>
-              <span class="text-xs" style="color: var(--text-muted)">{{ formatTime(s.last_parsed_at) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 7-дневный тренд -->
-        <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+      <!-- Тренд -->
+      <div class="mb-8">
+        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📈 Тренд (7 дней)</h2>
           <div v-if="trend.length === 0" class="text-sm" style="color: var(--text-muted)">Нет данных</div>
           <div v-else class="space-y-2">
             <div v-for="t in trend" :key="t.date"
-              class="flex items-center gap-3">
-              <span class="text-xs w-20" style="color: var(--text-muted)">{{ formatDate(t.date) }}</span>
-              <div class="flex-1 h-6 rounded-lg overflow-hidden" style="background: var(--bg-main)">
+              class="flex items-center gap-2 sm:gap-3">
+              <span class="text-xs w-16 sm:w-20 flex-shrink-0" style="color: var(--text-muted)">{{ formatDate(t.date) }}</span>
+              <div class="flex-1 h-5 sm:h-6 rounded-lg overflow-hidden" style="background: var(--bg-main)">
                 <div class="h-full rounded-lg transition-all duration-500"
                   :style="{ width: trendBarWidth(t.count) + '%', background: 'var(--accent)' }" />
               </div>
-              <span class="text-sm font-mono w-8 text-right" style="color: var(--text-main)">{{ t.count }}</span>
+              <span class="text-sm font-mono w-6 sm:w-8 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
             </div>
           </div>
         </div>
@@ -124,7 +90,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
+
+const router = useRouter()
 
 interface DashboardStats {
   total: number
@@ -141,13 +110,6 @@ interface TopProperty {
   tags: string[]
 }
 
-interface Source {
-  slug: string
-  is_active: boolean
-  last_parse_status: string | null
-  last_parsed_at: string | null
-}
-
 interface TrendDay {
   date: string
   count: number
@@ -157,20 +119,12 @@ const loading = ref(true)
 const error = ref('')
 const stats = ref<DashboardStats | null>(null)
 const topProperties = ref<TopProperty[]>([])
-const sources = ref<Source[]>([])
 const trend = ref<TrendDay[]>([])
-const actionLoading = ref<string | false>(false)
-const actionMsg = ref('')
 
 const scoreColor = (score: number) => {
   if (score >= 70) return '#ef4444'
   if (score >= 50) return '#f59e0b'
   return '#4f8cff'
-}
-
-const formatTime = (d: string | null) => {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const formatDate = (d: string) => {
@@ -214,13 +168,6 @@ async function fetchTopProperties() {
   } catch { /* ignore */ }
 }
 
-async function fetchSources() {
-  try {
-    const { data } = await api.get('/cron/queue-stats')
-    sources.value = data.sources || []
-  } catch { /* ignore */ }
-}
-
 async function fetchTrend() {
   try {
     // Get events of type 'entered_focus' from last 7 days
@@ -250,39 +197,8 @@ async function fetchTrend() {
 async function refresh() {
   loading.value = true
   error.value = ''
-  await Promise.all([fetchStats(), fetchTopProperties(), fetchSources(), fetchTrend()])
+  await Promise.all([fetchStats(), fetchTopProperties(), fetchTrend()])
   loading.value = false
-}
-
-async function runParsing() {
-  actionLoading.value = 'parse'
-  actionMsg.value = ''
-  try {
-    // Parse all active sources
-    const { data } = await api.get('/sources', { params: { 'filters[is_active][$eq]': true, 'pagination[pageSize]': 50 } })
-    const activeSources = data.data || []
-    for (const s of activeSources) {
-      await api.post(`/cron/parse/${s.slug}`)
-    }
-    actionMsg.value = `Запущен парсинг ${activeSources.length} источников`
-  } catch (e: any) {
-    actionMsg.value = 'Ошибка: ' + (e.response?.data?.error?.message || e.message)
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function runScoring() {
-  actionLoading.value = 'score'
-  actionMsg.value = ''
-  try {
-    await api.post('/cron/score')
-    actionMsg.value = 'Скоринг запущен'
-  } catch (e: any) {
-    actionMsg.value = 'Ошибка: ' + (e.response?.data?.error?.message || e.message)
-  } finally {
-    actionLoading.value = false
-  }
 }
 
 onMounted(refresh)
