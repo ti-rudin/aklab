@@ -5,43 +5,7 @@
     "time": "23:57",
     "items": [
       {
-        "text": "Тренд — w-6→w-10 для 3-4 значных чисел + плашка инлайн-стили",
-        "type": "fix"
-      },
-      {
-        "text": "Плашка «Добавленные в фокус» — инлайн-стили, clamp для числа",
-        "type": "fix"
-      },
-      {
-        "text": "Плашка «Добавленные в фокус» — nowrap, число не переносится",
-        "type": "fix"
-      },
-      {
-        "text": "MaxLimit 100→10000 (тренд показывал 100 вместо реальных данных) + плашка «Добавленные в фокус»",
-        "type": "fix"
-      },
-      {
-        "text": "Тренд — лимит 5000 событий вместо 100 (scoring создаёт по событию на объект)",
-        "type": "fix"
-      },
-      {
-        "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
+        "text": "Тренд — контейнер чисел w-6→w-10 для 3-4 значных чисел",
         "type": "fix"
       }
     ]
@@ -54,42 +18,6 @@
       {
         "text": "Плашка «Добавленные в фокус» — инлайн-стили, clamp для числа",
         "type": "fix"
-      },
-      {
-        "text": "Плашка «Добавленные в фокус» — nowrap, число не переносится",
-        "type": "fix"
-      },
-      {
-        "text": "MaxLimit 100→10000 (тренд показывал 100 вместо реальных данных) + плашка «Добавленные в фокус»",
-        "type": "fix"
-      },
-      {
-        "text": "Тренд — лимит 5000 событий вместо 100 (scoring создаёт по событию на объект)",
-        "type": "fix"
-      },
-      {
-        "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
       }
     ]
   },
@@ -101,42 +29,6 @@
       {
         "text": "Плашка «Добавленные в фокус» — nowrap, число не переносится",
         "type": "fix"
-      },
-      {
-        "text": "MaxLimit 100→10000 (тренд показывал 100 вместо реальных данных) + плашка «Добавленные в фокус»",
-        "type": "fix"
-      },
-      {
-        "text": "Тренд — лимит 5000 событий вместо 100 (scoring создаёт по событию на объект)",
-        "type": "fix"
-      },
-      {
-        "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
       }
     ]
   },
@@ -146,44 +38,8 @@
     "time": "23:08",
     "items": [
       {
-        "text": "MaxLimit 100→10000 (тренд показывал 100 вместо реальных данных) + плашка «Добавленные в фокус»",
+        "text": "MaxLimit 100→10000 — тренд показывал 100 вместо реальных данных",
         "type": "fix"
-      },
-      {
-        "text": "Тренд — лимит 5000 событий вместо 100 (scoring создаёт по событию на объект)",
-        "type": "fix"
-      },
-      {
-        "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
       }
     ]
   },
@@ -195,42 +51,6 @@
       {
         "text": "Тренд — лимит 5000 событий вместо 100 (scoring создаёт по событию на объект)",
         "type": "fix"
-      },
-      {
-        "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
       }
     ]
   },
@@ -241,42 +61,6 @@
     "items": [
       {
         "text": "Дашборд — убраны Действия и Источники, плашки-ссылки, мобильный вид",
-        "type": "improvement"
-      },
-      {
-        "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
-        "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
         "type": "improvement"
       }
     ]
@@ -289,42 +73,6 @@
       {
         "text": "Scoring engine — deviation_percent >= threshold (анализатор хранит положительное значение)",
         "type": "fix"
-      },
-      {
-        "text": "Прогресс анализа при пересчёте — polling + progress bar",
-        "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
-        "type": "improvement"
-      },
-      {
-        "text": "Релиз v1.0.85",
-        "type": "improvement"
       }
     ]
   },
@@ -336,42 +84,6 @@
       {
         "text": "Прогресс анализа при пересчёте — polling + progress bar",
         "type": "new"
-      },
-      {
-        "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
-        "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
-        "type": "improvement"
-      },
-      {
-        "text": "Релиз v1.0.85",
-        "type": "improvement"
-      },
-      {
-        "text": "Табы на /properties — Все объекты, В фокусе, В работе",
-        "type": "improvement"
       }
     ]
   },
@@ -383,42 +95,6 @@
       {
         "text": "Убран лимит 500 в /cron/analyze — теперь все объекты за один вызов",
         "type": "fix"
-      },
-      {
-        "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
-        "type": "improvement"
-      },
-      {
-        "text": "Релиз v1.0.85",
-        "type": "improvement"
-      },
-      {
-        "text": "Табы на /properties — Все объекты, В фокусе, В работе",
-        "type": "improvement"
-      },
-      {
-        "text": "Настройки с табами — Дайджест, Правила, Парсеры, Эталоны",
-        "type": "improvement"
       }
     ]
   },
@@ -429,42 +105,6 @@
     "items": [
       {
         "text": "Force reset через db.query — entityService не возвращал documentId",
-        "type": "fix"
-      },
-      {
-        "text": "Пересчёт анализа — force сброс is_undervalued перед ручным запуском",
-        "type": "fix"
-      },
-      {
-        "text": "Checkout main перед git pull — предотвращает push rejected при деплое с dev",
-        "type": "fix"
-      },
-      {
-        "text": "Обновлена документация — 3 триггера пайплайна (парсинг, ручной запуск, пересчитать)",
-        "type": "improvement"
-      },
-      {
-        "text": "Разделение пайплайна — парсинг / анализ+дайджест / scoring",
-        "type": "improvement"
-      },
-      {
-        "text": "Обновлён compact-doc.md — табы в Settings и Properties, навигация, футер",
-        "type": "improvement"
-      },
-      {
-        "text": "Релиз v1.0.85",
-        "type": "improvement"
-      },
-      {
-        "text": "Табы на /properties — Все объекты, В фокусе, В работе",
-        "type": "improvement"
-      },
-      {
-        "text": "Настройки с табами — Дайджест, Правила, Парсеры, Эталоны",
-        "type": "improvement"
-      },
-      {
-        "text": "Changelog дублирование — AI prompt + дедупликация",
         "type": "fix"
       }
     ]

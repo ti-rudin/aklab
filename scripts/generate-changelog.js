@@ -32,7 +32,7 @@ const MAX_ITEMS = 10;
 function getReleaseHashes() {
   try {
     const log = execSync(
-      'git log --grep="^\\\\\\\\[release\\\\\\\\]" -n 2 --format="%H"',
+      'git log --grep="^\\\\[release\\\\]" -n 2 --format="%H"',
       { encoding: 'utf8' }
     ).trim();
     return log.split('\n').filter(Boolean);

@@ -26,7 +26,7 @@ if (!version) {
 
 function getReleaseHashes() {
   try {
-    const log = execSync('git log --grep="^\\\\\\\\[release\\\\\\\\]" -n 2 --format="%H"', {
+    const log = execSync('git log --grep="^\\\\[release\\\\]" -n 2 --format="%H"', {
       encoding: 'utf-8',
     }).trim();
     return log.split('\n').filter(Boolean);
