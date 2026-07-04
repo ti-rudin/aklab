@@ -11,18 +11,13 @@
           <h3 class="font-bold text-sm mb-3 uppercase tracking-wider" style="color: var(--text-muted)">Продукт</h3>
           <ul class="space-y-2">
             <li>
+              <router-link to="/" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+                Дашборд
+              </router-link>
+            </li>
+            <li>
               <router-link to="/properties" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
                 Объекты
-              </router-link>
-            </li>
-            <li>
-              <router-link to="/sources" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Парсеры
-              </router-link>
-            </li>
-            <li>
-              <router-link to="/market-references" class="text-sm hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
-                Рыночные эталоны
               </router-link>
             </li>
             <li>

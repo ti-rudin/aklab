@@ -29,21 +29,9 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/sources',
-      name: 'sources',
-      component: () => import('../views/SourceListView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
       path: '/settings',
       name: 'settings',
       component: () => import('../views/SettingsView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/market-references',
-      name: 'market-references',
-      component: () => import('../views/MarketReferencesView.vue'),
       meta: { requiresAuth: true },
     },
     {
@@ -56,12 +44,6 @@ const router = createRouter({
       path: '/documentation',
       name: 'documentation',
       component: () => import('../views/DocumentationView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/rules',
-      name: 'rules',
-      component: () => import('../views/RulesView.vue'),
       meta: { requiresAuth: true },
     },
     {

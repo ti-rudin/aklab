@@ -37,7 +37,7 @@
                 v-for="item in navItems"
                 :key="item.to"
                 :to="item.to"
-                :aria-label="item.ariaLabel || item.label"
+                :aria-label="item.label"
                 class="px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
                 :class="isActive(item.to) ? 'font-semibold' : 'hover:opacity-80'"
                 :style="{
@@ -118,7 +118,7 @@
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
-            :aria-label="item.ariaLabel || item.label"
+            :aria-label="item.label"
             @click="mobileMenuOpen = false"
             class="block px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
             :class="isActive(item.to) ? 'font-semibold' : 'hover:opacity-80'"
@@ -176,9 +176,6 @@ const mobileMenuOpen = ref(false)
 const navItems = [
   { to: '/', label: 'Дашборд' },
   { to: '/properties', label: 'Объекты' },
-  { to: '/rules', label: 'Правила' },
-  { to: '/sources', label: 'Парсеры', ariaLabel: 'Источники' },
-  { to: '/market-references', label: 'Эталоны' },
   { to: '/settings', label: 'Настройки' },
 ]
 
