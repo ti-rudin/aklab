@@ -968,13 +968,13 @@ async function recalculateScore() {
     if (focusFilters.cities.mo) cityList.push('mo')
     if (focusFilters.cities.other) cityList.push('other')
 
-    // Шаг 1: Анализ (deviation от эталонов)
-    const analyzeBody: any = {}
+    // Шаг 1: Анализ (deviation от эталонов) — force=true для пересчёта
+    const analyzeBody: any = { force: true }
     if (cityList.length > 0 && cityList.length < 3) analyzeBody.city = cityList
     if (focusFilters.priceFrom) analyzeBody.priceFrom = Number(focusFilters.priceFrom)
     if (focusFilters.priceTo) analyzeBody.priceTo = Number(focusFilters.priceTo)
     if (focusFilters.threshold) analyzeBody.threshold = focusFilters.threshold
-    await api.post('/cron/analyze', Object.keys(analyzeBody).length ? analyzeBody : undefined)
+    await api.post('/cron/analyze', analyzeBody)
 
     // Шаг 2: Scoring (focus_score + tags)
     const scoreBody: any = { threshold: focusFilters.threshold }

@@ -65,9 +65,39 @@ export default {
       const priceTo = body.priceTo ? Number(body.priceTo) : null;
       const cityFilter = body.city || null; // array of city codes
       const threshold = body.threshold ? Number(body.threshold) : null;
+      const force = body.force === true; // ручной пересчёт — сбросить и пересчитать
 
       // Build Strapi filters
       const filters: any = { status: 'new', is_undervalued: { $null: true } };
+
+      // Force mode: сбросить is_undervalued для пересчёта
+      if (force) {
+        const resetFilters: any = { status: 'new' };
+        if (priceFrom !== null && !isNaN(priceFrom)) {
+          resetFilters.price = { ...(resetFilters.price || {}), $gte: priceFrom };
+        }
+        if (priceTo !== null && !isNaN(priceTo)) {
+          resetFilters.price = { ...(resetFilters.price || {}), $lte: priceTo };
+        }
+        if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
+          resetFilters.city = { $in: cityFilter };
+        }
+
+        const toReset = await s.entityService.findMany('api::property.property', {
+          filters: resetFilters,
+          limit: 500,
+          fields: ['documentId'],
+        });
+
+        let resetCount = 0;
+        for (const prop of toReset || []) {
+          await s.entityService.update('api::property.property', prop.documentId, {
+            data: { is_undervalued: null, deviation: null, price_per_sqm_ref: null },
+          });
+          resetCount++;
+        }
+        strapi.log.info(`[cron] Force reset ${resetCount} properties (is_undervalued → null)`);
+      }
 
       if (priceFrom !== null && !isNaN(priceFrom)) {
         filters.price = { ...(filters.price || {}), $gte: priceFrom };
