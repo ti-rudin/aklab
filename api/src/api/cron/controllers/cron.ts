@@ -70,28 +70,28 @@ export default {
       // Build Strapi filters
       const filters: any = { status: 'new', is_undervalued: { $null: true } };
 
-      // Force mode: сбросить is_undervalued для пересчёта
+      // Force mode: сбросить is_undervalued для пересчёта через db.query
       if (force) {
-        const resetFilters: any = { status: 'new' };
+        const resetWhere: any = { status: 'new' };
         if (priceFrom !== null && !isNaN(priceFrom)) {
-          resetFilters.price = { ...(resetFilters.price || {}), $gte: priceFrom };
+          resetWhere.price = { ...(resetWhere.price || {}), $gte: priceFrom };
         }
         if (priceTo !== null && !isNaN(priceTo)) {
-          resetFilters.price = { ...(resetFilters.price || {}), $lte: priceTo };
+          resetWhere.price = { ...(resetWhere.price || {}), $lte: priceTo };
         }
         if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
-          resetFilters.city = { $in: cityFilter };
+          resetWhere.city = { $in: cityFilter };
         }
 
-        const toReset = await s.entityService.findMany('api::property.property', {
-          filters: resetFilters,
-          limit: 500,
-          fields: ['documentId'],
+        const toReset = await s.db.query('api::property.property').findMany({
+          where: resetWhere,
+          select: ['documentId'],
         });
 
         let resetCount = 0;
         for (const prop of toReset || []) {
-          await s.entityService.update('api::property.property', prop.documentId, {
+          await s.db.query('api::property.property').update({
+            where: { documentId: prop.documentId },
             data: { is_undervalued: null, deviation: null, price_per_sqm_ref: null },
           });
           resetCount++;
