@@ -74,9 +74,9 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 
     switch (rule.condition_type) {
       case 'deviation_threshold': {
-        const threshold = -Math.abs(Number(rule.condition_value));
+        const threshold = Math.abs(Number(rule.condition_value));
         const deviation = Number(property.deviation_percent);
-        if (!isNaN(deviation) && !isNaN(threshold) && deviation <= threshold) {
+        if (!isNaN(deviation) && !isNaN(threshold) && deviation >= threshold) {
           matched = true;
           matchingDeviation.push(rule);
         }
