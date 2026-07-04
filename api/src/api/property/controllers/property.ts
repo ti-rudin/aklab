@@ -8,6 +8,7 @@ import { factories } from "@strapi/strapi";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { StrapiInstance } from '../../../types/strapi';
+import { getQueueService } from '../../../services/queueService';
 
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**
@@ -168,5 +169,47 @@ export default factories.createCoreController("api::property.property", ({ strap
         filters: { city, property_type: propertyType, tags: tagsParam, sort: sortParam },
       },
     };
+  },
+
+  /**
+   * POST /api/properties/:id/fetch-photos
+   * Trigger lazy photo fetch for a property. Returns immediately.
+   */
+  async fetchPhotos(ctx) {
+    const { id } = ctx.params;
+
+    const property = await strapi.db.query('api::property.property').findOne({
+      where: { documentId: id },
+    });
+
+    if (!property) {
+      ctx.status = 404;
+      ctx.body = { error: 'Property not found' };
+      return;
+    }
+
+    if (property.photos_downloaded) {
+      ctx.body = { queued: false, reason: 'already_downloaded', photos: property.photos };
+      return;
+    }
+
+    if (!property.url) {
+      ctx.body = { queued: false, reason: 'no_url' };
+      return;
+    }
+
+    try {
+      const qs = getQueueService();
+      qs.addToQueue('fetch-photos', {
+        documentId: property.documentId,
+        url: property.url,
+        source: property.source,
+      }, { correlationId: `photo-lazy-${property.documentId}` });
+
+      ctx.body = { queued: true };
+    } catch (err: any) {
+      ctx.status = 500;
+      ctx.body = { error: 'Failed to queue photo fetch', details: err.message };
+    }
   },
 }));

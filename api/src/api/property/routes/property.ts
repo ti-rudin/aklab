@@ -26,6 +26,12 @@ export default {
       handler: 'property.getFocus',
       config: { auth: false, policies: [] },
     },
+    {
+      method: 'POST',
+      path: '/properties/:id/fetch-photos',
+      handler: 'property.fetchPhotos',
+      config: { auth: false, policies: [] },
+    },
     // Core CRUD routes
     {
       method: 'GET',

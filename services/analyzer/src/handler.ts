@@ -1,5 +1,4 @@
 import type { Job } from '@aklab/sqlite-queue';
-import { SqliteQueue } from '@aklab/sqlite-queue';
 import { fetchProperty, findActiveMarketReference, fetchSetting, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 
@@ -27,16 +26,6 @@ export interface AnalyzeRequest {
   documentId: string;
   threshold?: number; // override from frontend filters
   correlationId?: string;
-}
-
-let photoQueue: SqliteQueue | null = null;
-
-function getPhotoQueue(): SqliteQueue {
-  if (!photoQueue) {
-    const dbPath = process.env.QUEUE_DB_PATH || '../../queue.db';
-    photoQueue = new SqliteQueue(dbPath, { disableTimers: true });
-  }
-  return photoQueue;
 }
 
 export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; undervalued: boolean }> {
@@ -82,22 +71,6 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
       deviation_percent: isUndervalued ? Math.round(deviation * 10) / 10 : 0,
       manual_price_per_sqm: isUndervalued ? refPrice : null,
     });
-
-    // Enqueue photo fetch for undervalued properties
-    if (isUndervalued && property.url && !property.photos_downloaded) {
-      try {
-        const q = getPhotoQueue();
-        q.add('fetch-photos', {
-          documentId: property.documentId,
-          url: property.url,
-          source: property.source,
-          correlationId: corrId,
-        }, { correlationId: `photo-${property.documentId}` });
-        logger.info(`Enqueued photo fetch for ${property.documentId}`, { correlationId: corrId });
-      } catch (err: any) {
-        logger.warn(`Failed to enqueue photo fetch: ${err.message}`, { correlationId: corrId });
-      }
-    }
 
     logger.info(`Property ${property.documentId}: deviation=${deviation.toFixed(1)}%, threshold=${threshold}%, undervalued=${isUndervalued}`, { correlationId: corrId });
 

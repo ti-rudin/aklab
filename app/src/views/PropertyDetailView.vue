@@ -146,15 +146,34 @@
       </div>
 
       <!-- Фотогалерея (только для недооценённых) -->
-      <div v-if="property.is_undervalued && property.photos?.length" class="rounded-xl p-6 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+      <div v-if="property.is_undervalued" class="rounded-xl p-6 border mb-6" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📸 Фотографии</h2>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <!-- Photos loaded -->
+        <div v-if="property.photos_downloaded && property.photos?.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <div v-for="(photo, idx) in property.photos" :key="idx"
             class="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
             @click="openLightbox(idx)">
             <img :src="photoUrl(photo)" :alt="`Фото ${idx + 1}`"
               class="w-full h-full object-cover" />
           </div>
+        </div>
+        <!-- No photos after download -->
+        <div v-else-if="property.photos_downloaded && !property.photos?.length" class="text-sm" style="color: var(--text-muted)">
+          Фотографии не найдены
+        </div>
+        <!-- Loading -->
+        <div v-else-if="photoLoading" class="flex flex-col items-center gap-3 py-4">
+          <div class="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style="border-color: var(--accent); border-top-color: transparent"></div>
+          <span class="text-sm" style="color: var(--text-muted)">Загружаем фотографии…</span>
+        </div>
+        <!-- Not fetched yet -->
+        <div v-else class="flex flex-col items-center gap-3 py-4">
+          <span class="text-sm" style="color: var(--text-muted)">Фотографии ещё не загружены</span>
+          <button @click="triggerPhotoFetch"
+            class="px-4 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-80 transition-opacity"
+            style="background: var(--accent)">
+            Загрузить фотографии
+          </button>
         </div>
         <!-- Lightbox -->
         <div v-if="lightbox.open" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
@@ -291,6 +310,7 @@ const saving = ref(false)
 const error = ref('')
 const comment = ref('')
 const showFullDesc = ref(false)
+const photoLoading = ref(false)
 
 const statuses = [
   { value: 'new', label: 'Новый', color: '#4f8cff' },
@@ -320,6 +340,26 @@ function nextPhoto() {
 }
 function prevPhoto() {
   if (lightbox.idx > 0) lightbox.idx--
+}
+
+async function triggerPhotoFetch() {
+  if (!property.value || photoLoading.value) return
+  photoLoading.value = true
+  try {
+    await api.post(`/properties/${property.value.documentId}/fetch-photos`)
+    // Poll until photos are downloaded (max 60s)
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const { data } = await api.get(`/properties/${property.value.documentId}`)
+        if (data.data?.photos_downloaded) {
+          property.value = { ...property.value, ...data.data }
+          break
+        }
+      } catch { /* retry */ }
+    }
+  } catch { /* silent */ }
+  finally { photoLoading.value = false }
 }
 
 const geocoding = ref(false)
@@ -455,6 +495,10 @@ onMounted(async () => {
   await fetchProperty()
   await fetchEvents()
   geocodeAddress() // fire-and-forget
+  // Lazy photo fetch — trigger if undervalued and not yet downloaded
+  if (property.value?.is_undervalued && !property.value?.photos_downloaded) {
+    triggerPhotoFetch()
+  }
 })
 </script>
 
