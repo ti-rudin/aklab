@@ -172,12 +172,13 @@ async function fetchTrend() {
   try {
     // Get events of type 'entered_focus' from last 7 days
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    // Fetch up to 5000 events (scoring creates one per property)
     const { data } = await api.get('/property-events', {
       params: {
         'filters[event_type][$eq]': 'entered_focus',
         'filters[createdAt][$gte]': since,
         'sort': 'createdAt:desc',
-        'pagination[pageSize]': 100,
+        'pagination[pageSize]': 5000,
       }
     })
     // Group by date
