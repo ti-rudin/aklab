@@ -23,9 +23,10 @@
           <p class="text-3xl font-bold mt-1" style="color: var(--text-main)">{{ stats?.total ?? '—' }}</p>
         </div>
         <div @click="router.push('/properties#focus')"
-          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <p class="text-xs whitespace-nowrap truncate" style="color: var(--text-muted)">Добавленные в фокус</p>
-          <p class="text-2xl sm:text-3xl font-bold mt-1 whitespace-nowrap" style="color: var(--accent)">{{ stats?.inFocus ?? '—' }}</p>
+          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02] overflow-hidden"
+          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+          <p style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem;">Добавленные в фокус</p>
+          <p style="color: var(--accent); white-space: nowrap; font-weight: 700; margin-top: 0.25rem; font-size: clamp(1.2rem, 4vw, 1.875rem);">{{ stats?.inFocus ?? '—' }}</p>
         </div>
         <div class="rounded-xl p-5 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <p class="text-sm" style="color: var(--text-muted)">Средний скор</p>
