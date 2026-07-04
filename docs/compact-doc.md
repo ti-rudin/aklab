@@ -248,9 +248,9 @@ deploy-prod.sh + бамп версии).
   Public role: только login/register/forgot-password.
 - **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
 - **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
-- **Frontend** — 10 страниц: `/` (Dashboard), `/properties`, `/properties/:id` (полная карточка), `/sources`, `/market-references`, `/settings`, `/changelog`, `/documentation`, `/auth` + 404 catch-all
+- **Frontend** — 7 страниц: `/` (Dashboard), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
-- **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 100 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер), глубина парсинга (1–5000, дефолт 20). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
+- **Ручной запуск пайплайна** — на `/properties` collapsible «Запуск парсинга» (кнопки пересчёта и ручного запуска внутри): парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 100 мин, анализ 3 мин, дайджест 90 сек. Панель: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер), глубина парсинга (1–5000, дефолт 20). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
 - **Парсеры** (обновлено 03.07.2026):
@@ -278,8 +278,8 @@ deploy-prod.sh + бамп версии).
   - **services/analyzer/** — сравнение Property с MarketReference
   - **services/digest/** — утренний email через nodemailer
   - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
-  - **app/src/views/** — Auth, PropertyListView, PropertyDetailView,
-    SourceListView, MarketReferencesView, SettingsView, ChangelogView, NotFoundView
+  - **app/src/views/** — Auth, PropertyListView (3 таба), PropertyDetailView,
+    SettingsView (4 таба: Дайджест, Правила, Парсеры, Эталоны), ChangelogView, NotFoundView
   - **app/src/components/** — Footer, SkeletonLoader, SkeletonTable
   - **app/src/stores/** — auth.ts (Pinia)
   - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
@@ -548,8 +548,8 @@ deploy-prod.sh + бамп версии).
 - ❌ Не удалять routes файлы
 
 **Следующие шаги**:
-1. **Запустить пайплайн на проде** — БД пуста, счётчики сброшены. Запустить парсинг 8 источников через `/settings` → «Ручной запуск».
-2. **Установить реальные эталоны** — текущие market references с тестовыми ценами. Нужны реальные рыночные цены по городам и типам.
+1. **Запустить пайплайн на проде** — БД пуста, счётчики сброшены. Запустить парсинг 8 источников через `/settings` → таб Дайджест → «Запуск парсинга».
+2. **Проверить эталоны** — 18 записей market_references восстановлены на prod (с dev). Проверить актуальность цен.
 3. **fedresurs** — обход Qrator (прокси/резидентный IP) — по запросу
 4. **fabrikant** — если появятся коммерческие лоты, можно включить обратно
 5. **roseltorg** — нужен прокси для обхода WAF
