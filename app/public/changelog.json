@@ -1,5 +1,28 @@
 [
   {
+    "version": "v1.0.99",
+    "date": "5 июля 2026",
+    "time": "01:17",
+    "items": [
+      {
+        "text": "TS ошибка property.photos possibly undefined в lightbox",
+        "type": "fix"
+      },
+      {
+        "text": "TS ошибка в triggerPhotoFetch — null safety + переименование data",
+        "type": "fix"
+      },
+      {
+        "text": "Обновлены user stories и E2E тесты под текущий интерфейс",
+        "type": "improvement"
+      },
+      {
+        "text": "Ленивая загрузка фото — fetch on page visit, disk cache for repeat views",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.98",
     "date": "5 июля 2026",
     "time": "00:36",
