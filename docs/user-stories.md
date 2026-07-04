@@ -2,6 +2,7 @@
 
 > Comprehensive user stories based on all Vue view files, UI elements, and interactions.
 > Generated: 2026-06-30
+> Updated: 2026-07-05
 
 ---
 
@@ -107,11 +108,13 @@ UI elements: Footer with 6 router-links, description text, copyright
 As a **user**, I want to **see key statistics at a glance** so that **I can quickly understand the current state of monitored properties**.
 
 Acceptance criteria:
-- Three stat cards in a row: "Всего объектов", "В фокусе", "Средний скор"
+- Three stat cards in a row: "Всего объектов", "Добавленные в фокус", "Средний скор"
+- "Всего объектов" card is clickable — navigates to `/properties`
+- "Добавленные в фокус" card is clickable — navigates to `/properties#focus`
 - Skeleton loading placeholders while data loads
 - Error message on failure
 
-UI elements: 3 stat cards with label + large number
+UI elements: 3 stat cards with label + large number, 2 clickable cards with navigation
 
 ### US-3.2: See hot (top) properties
 As a **user**, I want to **see the top-5 highest-scored focus properties** so that **I can quickly identify the most promising opportunities**.
@@ -125,19 +128,7 @@ Acceptance criteria:
 
 UI elements: Property row cards with score badge, title, address, tag badges, clickable rows
 
-### US-3.3: Run manual parsing
-As a **user**, I want to **trigger parsing of all active sources** so that **I can fetch the latest property data on demand**.
-
-Acceptance criteria:
-- "▶ Запустить парсинг" button (accent color, full width)
-- Loading state: "Запуск…"
-- Disabled while any action is running
-- Success message: "Запущен парсинг N источников"
-- Error message on failure
-
-UI elements: "▶ Запустить парсинг" button, action message text
-
-### US-3.4: Run score recalculation
+### US-3.3: Run score recalculation
 As a **user**, I want to **trigger a recalculation of property scores** so that **focus scores reflect the latest market data**.
 
 Acceptance criteria:
@@ -148,34 +139,25 @@ Acceptance criteria:
 
 UI elements: "🔄 Пересчитать выборку" button
 
-### US-3.5: View source status
-As a **user**, I want to **see the status of all parsing sources** so that **I know which sources are healthy and when they last ran**.
-
-Acceptance criteria:
-- "Источники" section title
-- Each source shows: colored status dot (green=ok, red=error, grey=inactive), slug name, last parsed timestamp
-- "Нет источников" when empty
-
-UI elements: Source list rows with status dot, name, timestamp
-
-### US-3.6: View 7-day trend
+### US-3.4: View 7-day trend
 As a **user**, I want to **see a 7-day trend of properties entering focus** so that **I can track momentum over time**.
 
 Acceptance criteria:
 - "📈 Тренд (7 дней)" section title
 - Horizontal bar chart with date labels and count
 - Bar width proportional to max count
+- Data fetched with pageSize=5000 for comprehensive coverage
 - "Нет данных" when empty
 
 UI elements: Trend bar rows with date label, progress bar, count number
 
-### US-3.7: Refresh dashboard
+### US-3.5: Refresh dashboard
 As a **user**, I want to **refresh all dashboard data** so that **I can see the latest information**.
 
 Acceptance criteria:
 - "↻ Обновить" button in header
 - Disabled and shows "Загрузка…" while refreshing
-- Fetches stats, top properties, sources, and trend in parallel
+- Fetches stats, top properties, and trend in parallel
 
 UI elements: "↻ Обновить" button
 
@@ -268,12 +250,24 @@ UI elements: Collapsible panel, 2 number inputs, 3 checkboxes, range slider + nu
 As a **user**, I want to **delete all properties with "Новый" status** so that **I can clean up the list after reviewing new items**.
 
 Acceptance criteria:
-- "Очистить список" button
+- "Очистить" button
 - Confirmation dialog before deletion
 - Shows count of deleted items
 - Loading state: "Удаление..."
 
-UI elements: "Очистить список" button, confirm dialog, alert with count
+UI elements: "Очистить" button, confirm dialog, alert with count
+
+### US-4.8: View 'В работе' tab
+As a **user**, I want to **view properties that are currently in progress** so that **I can track properties I am actively working on**.
+
+Acceptance criteria:
+- "В работе" tab in the tab switcher alongside "Все объекты" and "В фокусе"
+- Filters properties by status=in_progress
+- Same table layout as "Все объекты" tab
+- Shows count of in-progress properties
+- "Нет объектов в работе" when empty
+
+UI elements: Tab button "В работе", filtered property table
 
 ---
 
@@ -283,7 +277,7 @@ UI elements: "Очистить список" button, confirm dialog, alert with 
 As a **user**, I want to **see properties in the "В фокусе" tab** so that **I can focus on the highest-priority opportunities**.
 
 Acceptance criteria:
-- Tab switcher: "Все объекты" | "В фокусе"
+- Tab switcher: "Все объекты" | "В фокусе" | "В работе"
 - Stats header: count of focus objects + average score
 - Desktop table columns: checkbox, Название, Адрес, Город, Тип, Площадь, ₽/м², Скор, Теги, Оценка
 - Mobile: card layout with checkbox, title, address, metrics, tags
@@ -363,6 +357,16 @@ Acceptance criteria:
 
 UI elements: Prev/Next pagination buttons, range text
 
+### US-5.8: Hash-based routing to focus tab
+As a **user**, I want to **automatically switch to the focus tab when the URL contains `#focus`** so that **I can share direct links to the focus view or navigate from dashboard stat cards**.
+
+Acceptance criteria:
+- URL hash `#focus` (e.g., `/properties#focus`) automatically activates the "В фокусе" tab on mount
+- Works when navigating from dashboard "Добавленные в фокус" stat card
+- Tab state reflects URL hash
+
+UI elements: Hash-based tab auto-switch logic
+
 ---
 
 ## 6. Property Detail
@@ -373,26 +377,31 @@ As a **user**, I want to **see full details of a property** so that **I can eval
 Acceptance criteria:
 - "← К списку объектов" back link
 - Title with status badge and undervalued badge
-- Property fields in grid: Адрес, Город, Тип недвижимости, Площадь, Цена, Цена за м², Источник, Тип торгов, Эталон ₽/м² (if undervalued)
+- Property fields in grid: Адрес, Город, Тип недвижимости, Площадь, Цена, Цена за м², Источник, Тип торгов, Эталон ₽/м² (if undervalued), Минимальная цена (if auction), Дата публикации на источнике, Дата первого обнаружения, Focus скор
 - Source link "Открыть на источнике →" (opens in new tab)
-- Description text (pre-formatted)
+- Description text (pre-formatted, with show more/less toggle)
 - Contacts text
 - Skeleton loading state
 - "Объект не найден" when missing
 
-UI elements: Back link, title, 2 badges, 8–9 field rows, external link, description block, contacts block
+UI elements: Back link, title, 2 badges, 12–14 field rows, external link, description block, contacts block
 
 ### US-6.2: View property photos
-As a **user**, I want to **view photos of undervalued properties** so that **I can visually assess the property**.
+As a **user**, I want to **view and load photos of properties** so that **I can visually assess the property**.
 
 Acceptance criteria:
-- Photo gallery (only for undervalued properties with photos)
+- **Lazy photo loading** for undervalued objects:
+  - `triggerPhotoFetch()` auto-called on component mount when `is_undervalued && !photos_downloaded`
+  - Spinner displayed while photos are being fetched
+  - Polls for completion every 2 seconds, up to 60 seconds max
+  - Manual "Загрузить фотографии" button shown for triggering fetch on demand
+- Photo gallery (only for properties with photos)
 - Grid layout: 2 cols mobile, 3 cols tablet, 4 cols desktop
 - Click photo to open lightbox
 - Lightbox: close button (✕), prev (‹), next (›), counter "N / M"
 - Click outside image to close lightbox
 
-UI elements: Photo grid, lightbox overlay with nav buttons and counter
+UI elements: Photo fetch trigger, loading spinner, manual fetch button, photo grid, lightbox overlay with nav buttons and counter
 
 ### US-6.3: Change property status
 As a **user**, I want to **change the status of a property** so that **I can track my review progress**.
@@ -429,6 +438,39 @@ Acceptance criteria:
 - Up to 50 events
 
 UI elements: Event timeline with colored dots, type labels, value badges, timestamps
+
+### US-6.6: View auction info
+As a **user**, I want to **see auction-specific information for a property** so that **I can evaluate auction-type listings separately from regular sales**.
+
+Acceptance criteria:
+- "📋 Информация о торгах" section
+- Displays auction-related fields: тип торгов, минимальная цена, дата торгов
+- Only shown for properties with auction type (Торги / minimum_price set)
+- Clear visual separation from main property details
+
+UI elements: Auction info section with labeled fields
+
+### US-6.7: Open CIAN listing with geocoding
+As a **user**, I want to **open the property listing on CIAN with pre-filled geocoded location** so that **I can cross-reference the property on Russia's largest real estate platform**.
+
+Acceptance criteria:
+- "🔗 Смотреть на CIAN" link button
+- URL constructed with property address as geocoded query parameter
+- Opens in new tab
+- Only shown when CIAN link is available
+
+UI elements: CIAN external link button
+
+### US-6.8: Toggle description 'show more'
+As a **user**, I want to **expand and collapse long property descriptions** so that **I can read the full description when needed without excessive scrolling**.
+
+Acceptance criteria:
+- Long descriptions truncated by default (e.g., first 300 characters)
+- "Показать полностью" / "Свернуть" toggle button
+- Smooth expand/collapse transition
+- Short descriptions shown in full without toggle
+
+UI elements: Description text block, show more/less toggle button
 
 ---
 
@@ -793,10 +835,10 @@ UI elements: `<transition>` wrapper on `<router-view>`
 |---------|-------------|---------------------|
 | Authentication | 1 | 3 (2 inputs, 1 button) |
 | App Layout & Navigation | 5 | 10 (nav links, theme toggle, hamburger, logout) |
-| Dashboard | 7 | 6 (refresh, parse, score, property cards) |
-| Property List — All | 7 | 16 (filters, pagination, pipeline, clear) |
-| Property List — Focus | 7 | 20 (filters, bulk actions, export, checkboxes) |
-| Property Detail | 5 | 12 (status buttons, comment, photos, links) |
+| Dashboard | 5 | 5 (refresh, score recalc, stat cards) |
+| Property List — All | 8 | 17 (filters, pagination, pipeline, clear, in-progress tab) |
+| Property List — Focus | 8 | 21 (filters, bulk actions, export, checkboxes, hash routing) |
+| Property Detail | 8 | 16 (status buttons, comment, photos, links, auction, CIAN, show more) |
 | Sources | 6 | 10 (toggle, run, schedule edit, health) |
 | Market References | 4 | 8 (form, edit, toggle) |
 | Settings | 7 | 8 (inputs, checkboxes, save, logout, link) |
@@ -805,7 +847,7 @@ UI elements: `<transition>` wrapper on `<router-view>`
 | Documentation | 1 | 8 (TOC links, section links) |
 | 404 Not Found | 1 | 1 (button) |
 | Routing & Guards | 2 | 0 (logic only) |
-| **Total** | **61** | **~114** |
+| **Total** | **64** | **~119** |
 
 ---
 
@@ -821,11 +863,9 @@ UI elements: `<transition>` wrapper on `<router-view>`
 | US-2.5 Footer links | — | ❌ |
 | US-3.1 Dashboard stats | 10.1, 10.2 | ✅ |
 | US-3.2 Hot properties | 10.3 | ✅ |
-| US-3.3 Run parsing | — | ❌ |
-| US-3.4 Run scoring | — | ❌ |
-| US-3.5 Source status | 10.4 | ✅ |
-| US-3.6 7-day trend | — | ❌ |
-| US-3.7 Refresh dashboard | 10.5 | ✅ |
+| US-3.3 Run scoring | — | ❌ |
+| US-3.4 7-day trend | — | ❌ |
+| US-3.5 Refresh dashboard | 10.5 | ✅ |
 | US-4.1 Properties table | 2.1–2.3 | ✅ |
 | US-4.2 Sort columns | 2.9 | ✅ |
 | US-4.3 Filter properties | 2.5–2.7 | ✅ |
@@ -833,6 +873,7 @@ UI elements: `<transition>` wrapper on `<router-view>`
 | US-4.5 Pipeline | 2.4 | ✅ |
 | US-4.6 Launch params | 2.10 | ✅ |
 | US-4.7 Clear new | — | ❌ |
+| US-4.8 В работе tab | — | ❌ |
 | US-5.1 Focus view | 3.1, 3.4 | ✅ |
 | US-5.2 Focus sort | 3.9 | ✅ |
 | US-5.3 Focus filters | 3.2, 3.3, 3.11–3.18 | ✅ |
@@ -840,11 +881,15 @@ UI elements: `<transition>` wrapper on `<router-view>`
 | US-5.5 CSV export | 3.6 | ✅ |
 | US-5.6 Bulk select | 3.8 | ✅ |
 | US-5.7 Focus pagination | — | ❌ |
+| US-5.8 Hash routing | — | ❌ |
 | US-6.1 Detail view | 4.1–4.3 | ✅ |
-| US-6.2 Photos | — | ❌ |
+| US-6.2 Photos (lazy load) | — | ❌ |
 | US-6.3 Status change | 4.4 | ✅ |
 | US-6.4 Comments | 4.5 | ✅ |
 | US-6.5 Event history | 10.10 | ✅ |
+| US-6.6 Auction info | — | ❌ |
+| US-6.7 CIAN link | — | ❌ |
+| US-6.8 Description toggle | — | ❌ |
 | US-7.1 Source list | 5.1, 5.2 | ✅ |
 | US-7.2 Toggle source | — | ❌ |
 | US-7.3 Run parser | — | ❌ |
@@ -874,4 +919,4 @@ UI elements: `<transition>` wrapper on `<router-view>`
 | US-14.1 Auth guard | 11.2–11.4 | ✅ |
 | US-14.2 Event log | 10.10 | ✅ |
 
-**Coverage: 34/61 user stories (56%) have E2E tests. 27 stories need tests.**
+**Coverage: 34/64 user stories (53%) have E2E tests. 30 stories need tests.**

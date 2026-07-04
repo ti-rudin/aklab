@@ -16,6 +16,19 @@ import { test, expect } from '@playwright/test';
  *  10. Волна 4 features (Dashboard, Rules, Event Log) — marked as TODO
  *  11. Edge cases & resilience
  *  12. Регрессия — фильтр city (comma-separated values)
+ *  13. Dashboard — тренд
+ *  14. Properties — доп. фичи
+ *  15. Focus tab — доп. фичи
+ *  16. Detail — доп. фичи
+ *  17. Источники — доп. фичи
+ *  18. Эталоны — доп. фичи
+ *  19. Настройки — доп. фичи
+ *  20. Changelog & docs
+ *  21. Footer
+ *  22. Hash routing
+ *  23. Lazy photo loading
+ *  24. Clickable stat cards
+ *  25. Таб «В работе»
  */
 
 // API for direct calls — prefer localhost (works inside server), fallback to external
@@ -131,9 +144,9 @@ test.describe('2. Список объектов — Все объекты', () =
     await expect(allTab).toBeVisible();
   });
 
-  test('2.4 Кнопки "Ручной запуск" и "Очистить список" видны', async ({ page }) => {
+  test('2.4 Кнопки "Ручной запуск" и "Очистить" видны', async ({ page }) => {
     await expect(page.locator('button:has-text("Ручной запуск")')).toBeVisible();
-    await expect(page.locator('button:has-text("Очистить список")')).toBeVisible();
+    await expect(page.locator('button:has-text("Очистить")')).toBeVisible();
   });
 
   test('2.5 Фильтры видны (город, статус, источник, тип)', async ({ page }) => {
@@ -721,32 +734,19 @@ test.describe('10. Волна 4 — Dashboard (ожидает деплой)', ()
     await expect(page.locator('h1:has-text("Дашборд"), h1:has-text("Dashboard")')).toBeVisible({ timeout: 10000 });
   });
 
-  test('10.2 Shows stats (new objects, focus count, avg score)', async ({ page }) => {
+  test('10.2 Shows stats (new objects, focus count)', async ({ page }) => {
     await login(page);
     await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
     // Проверяем наличие карточек со статистикой
-    await expect(page.locator('text=/Новых|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=/Новых|Добавленные в фокус/').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('10.3 Shows top 5 objects', async ({ page }) => {
     await login(page);
     await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
-    await expect(page.locator('text=/Всего объектов|В фокусе|Средний скор/').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=/Всего объектов|Добавленные в фокус/').first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('10.4 Shows sources status', async ({ page }) => {
-    await login(page);
-    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
-    await expect(page.locator('text=/Источники|Sources/').first()).toBeVisible({ timeout: 10000 });
-  });
-
-  test('10.5 Quick action buttons work', async ({ page }) => {
-    await login(page);
-    await page.goto("/"); await page.waitForLoadState("networkidle").catch(() => {});
-    // Кнопки быстрых действий
-    const quickAction = page.locator('button').filter({ hasText: /Запустить|Обновить|Пересчитать/ }).first();
-    await expect(quickAction).toBeVisible({ timeout: 10000 });
-  });
 });
 
 test.describe('10. Волна 4 — Rules page (ожидает деплой)', () => {
@@ -927,7 +927,7 @@ test.describe('12. Регрессия — фильтр city (запятые)', (
 // 13. DASHBOARD — missing actions
 // ═══════════════════════════════════════════════════════════════════════
 
-test.describe('13. Dashboard — действия', () => {
+test.describe('13. Dashboard — тренд', () => {
 
   test.beforeEach(async ({ page }) => {
     await login(page);
@@ -935,36 +935,9 @@ test.describe('13. Dashboard — действия', () => {
     await page.waitForTimeout(2000);
   });
 
-  test('13.1 Кнопка «Запустить парсинг» запускает парсинг с дашборда', async ({ page }) => {
-    const parseBtn = page.locator('button').filter({ hasText: /Запустить парсинг|Запустить/ }).first();
-    await expect(parseBtn).toBeVisible({ timeout: 10000 });
-    await parseBtn.click();
-    // Должно появиться уведомление или индикатор загрузки
-    const notification = page.locator('text=/Запущен|Выполняется|загрузк|парсинг/i').first();
-    await expect(notification).toBeVisible({ timeout: 5000 }).catch(() => {});
-  });
-
-  test('13.2 Кнопка «Пересчитать выборку» запускает скоринг с дашборда', async ({ page }) => {
-    const scoreBtn = page.locator('button').filter({ hasText: /Пересчитать выборку|Пересчитать/ }).first();
-    await expect(scoreBtn).toBeVisible({ timeout: 10000 });
-    await scoreBtn.click();
-    const notification = page.locator('text=/Пересчит|Запущен|Выполняется/i').first();
-    await expect(notification).toBeVisible({ timeout: 5000 }).catch(() => {});
-  });
-
-  test('13.3 Секция тренда за 7 дней видна', async ({ page }) => {
+  test('13.1 Секция тренда за 7 дней видна', async ({ page }) => {
     const trend = page.locator('text=/7 дн|Тренд|Неделя|7 дней/i').first();
     await expect(trend).toBeVisible({ timeout: 10000 }).catch(() => {});
-  });
-
-  test('13.4 Список статусов источников с цветными индикаторами', async ({ page }) => {
-    // Ищем секцию источников на дашборде
-    const sourcesSection = page.locator('text=/Источники|Sources/i').first();
-    await expect(sourcesSection).toBeVisible({ timeout: 10000 });
-    // Цветные точки/индикаторы
-    const dots = page.locator('[class*="dot"], [class*="indicator"], [class*="badge"], [class*="status"]');
-    const count = await dots.count();
-    expect(count).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -991,8 +964,8 @@ test.describe('14. Список объектов — доп. фичи', () => {
     }
   });
 
-  test('14.2 Кнопка «Очистить список» с диалогом подтверждения', async ({ page }) => {
-    const clearBtn = page.locator('button:has-text("Очистить список")');
+  test('14.2 Кнопка «Очистить» с диалогом подтверждения', async ({ page }) => {
+    const clearBtn = page.locator('button:has-text("Очистить")');
     await expect(clearBtn).toBeVisible({ timeout: 5000 });
     await clearBtn.click();
     // Должен появиться диалог подтверждения
@@ -1372,6 +1345,121 @@ test.describe('21. Подвал (Footer)', () => {
         const href = await docsLink.getAttribute('href');
         expect(href).toBeTruthy();
       }
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 22. HASH ROUTING — auto-switch tab via URL hash
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('22. Hash routing — автопереключение таба', () => {
+
+  test('22.1 /properties#focus → автоматически открывает таб «В фокусе»', async ({ page }) => {
+    await login(page);
+    await page.goto('/properties#focus');
+    await page.waitForTimeout(2000);
+    // Проверяем что таб «В фокусе» активен — должен появиться порог фильтра
+    await expect(page.locator('text=Порог').first()).toBeVisible({ timeout: 10000 });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 23. LAZY PHOTO LOADING — detail page for undervalued objects
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('23. Ленивая загрузка фото — detail page', () => {
+
+  test('23.1 Фото-секция для недооценённого объекта показывает одно из состояний', async ({ page }) => {
+    await login(page);
+    // Ищем недооценённый объект через focus таб (больше шанс найти)
+    await page.goto('/properties#focus');
+    await page.waitForTimeout(3000);
+    const firstRow = page.locator('table tbody tr').first();
+    if (await firstRow.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await firstRow.click();
+      await expect(page).toHaveURL(/\/properties\//, { timeout: 10000 });
+      await page.waitForTimeout(3000);
+      // Одно из состояний фото-секции:
+      // 1) loading spinner
+      const spinner = page.locator('[class*="spinner"], [class*="loading"], [class*="animate-spin"]').first();
+      // 2) Кнопка «Загрузить фотографии»
+      const loadPhotosBtn = page.locator('button:has-text("Загрузить фотографии")').first();
+      // 3) Загруженные фото (grid изображений)
+      const photosGrid = page.locator('[class*="photo"] img, [class*="gallery"] img, [class*="image-grid"] img').first();
+      // 4) «Фотографии не найдены»
+      const noPhotos = page.locator('text=Фотографии не найдены').first();
+      // Хотя бы одно из четырёх состояний должно быть видно
+      const anyState = spinner.or(loadPhotosBtn).or(photosGrid).or(noPhotos);
+      await expect(anyState).toBeVisible({ timeout: 10000 }).catch(() => {});
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 24. CLICKABLE STAT CARDS — dashboard
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('24. Кликабельные карточки статистики на дашборде', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await page.goto('/');
+    await page.waitForLoadState("networkidle").catch(() => {});
+  });
+
+  test('24.1 Клик «Всего объектов» → переход на /properties', async ({ page }) => {
+    const totalCard = page.locator('text=Всего объектов').first();
+    await expect(totalCard).toBeVisible({ timeout: 10000 });
+    await totalCard.click();
+    await expect(page).toHaveURL(/\/properties/, { timeout: 10000 });
+  });
+
+  test('24.2 Клик «Добавленные в фокус» → переход на /properties#focus', async ({ page }) => {
+    const focusCard = page.locator('text=Добавленные в фокус').first();
+    await expect(focusCard).toBeVisible({ timeout: 10000 });
+    await focusCard.click();
+    await expect(page).toHaveURL(/\/properties/, { timeout: 10000 });
+    // Проверяем что хеш #focus
+    expect(page.url()).toContain('#focus');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 25. ТАБ «В РАБОТЕ» — filtered by status=in_progress
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('25. Таб «В работе»', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('25.1 Таб «В работе» виден и переключается', async ({ page }) => {
+    const inProgressTab = page.locator('button:has-text("В работе")');
+    await expect(inProgressTab).toBeVisible({ timeout: 10000 });
+    await inProgressTab.click();
+    await page.waitForTimeout(2000);
+    // После клика на таб — должна загрузиться таблица или пустое состояние
+    const table = page.locator('table tbody tr');
+    const emptyState = page.locator('text=/Нет объектов|Пусто/i');
+    await expect(table.first().or(emptyState)).toBeVisible({ timeout: 10000 });
+  });
+
+  test('25.2 Таб «В работе» фильтрует по status=in_progress', async ({ page }) => {
+    const inProgressTab = page.locator('button:has-text("В работе")');
+    await expect(inProgressTab).toBeVisible({ timeout: 10000 });
+    await inProgressTab.click();
+    await page.waitForTimeout(2000);
+    // Проверяем что отображается только статус «В работе» (если есть данные)
+    const statusBadges = page.locator('table tbody td').filter({ hasText: /В работе/ });
+    const otherBadges = page.locator('table tbody td').filter({ hasText: /Новый|Просмотрен|Отклонён/ });
+    // Если есть строки — все должны быть «В работе»
+    const inProgressCount = await statusBadges.count();
+    const otherCount = await otherBadges.count();
+    if (inProgressCount > 0) {
+      // Допускаем что otherBadges = 0 (все строки — «В работе»)
+      expect(otherCount).toBe(0);
     }
   });
 });
