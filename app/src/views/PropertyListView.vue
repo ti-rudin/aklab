@@ -610,13 +610,14 @@
 <script setup lang="ts">
 import SkeletonTable from '@/components/SkeletonTable.vue'
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import api from '@/api/strapi'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
 import { usePropertyData, type Property } from '@/composables/usePropertyData'
 import { useFocusTab } from '@/composables/useFocusTab'
 
 const router = useRouter()
+const route = useRoute()
 
 // ========================
 // Data composable
@@ -1129,5 +1130,8 @@ onUnmounted(() => {
 onMounted(() => {
   fetchItems()
   fetchWorkTotal()
+  if (route.hash === '#focus') {
+    switchToFocus()
+  }
 })
 </script>
