@@ -77,7 +77,7 @@
                 <div class="h-full rounded-lg transition-all duration-500"
                   :style="{ width: trendBarWidth(t.count) + '%', background: 'var(--accent)' }" />
               </div>
-              <span class="text-sm font-mono w-6 sm:w-8 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
+              <span class="text-sm font-mono w-10 sm:w-12 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
             </div>
           </div>
         </div>
