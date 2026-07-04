@@ -239,15 +239,15 @@ deploy-prod.sh + бамп версии).
 - **Cron расписание**: torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, m-ets → 06:00
 - **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
 - **Telegram alerts**: УДАЛЕНЫ из плана
-- **Health badges** на `/sources` — 🟢 Online / 🔴 Offline (polling каждые 30с)
+- **Health badges** на `/settings` (таб Парсеры) — 🟢 Online / 🔴 Offline (polling каждые 30с)
 - **Per-source cron расписание** — cron expr в Source.schedule (дефолт `0 3 * * *`)
-- **Inline-редактирование расписания** на `/sources`
+- **Inline-редактирование расписания** на `/settings` (таб Парсеры)
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
 - **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
-- **Footer** — «История изменений» (was Changelog) + «Документация» (подробная архитектура)
+- **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
 - **Frontend** — 10 страниц: `/` (Dashboard), `/properties`, `/properties/:id` (полная карточка), `/sources`, `/market-references`, `/settings`, `/changelog`, `/documentation`, `/auth` + 404 catch-all
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
 - **Ручной запуск пайплайна** — на `/properties` кнопка «Ручной запуск»: парсинг → анализ → дайджест с поллингом очередей (GET /api/cron/queue-stats каждые 3с). Таймауты: парсинг 100 мин, анализ 3 мин, дайджест 90 сек. Панель «Параметры запуска»: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер), глубина парсинга (1–5000, дефолт 20). Фильтры сохраняются в localStorage. Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
