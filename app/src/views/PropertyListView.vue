@@ -83,105 +83,50 @@
 
       <!-- Запуск парсинга -->
       <div v-if="activeTab === 'all'" class="mb-4">
-        <button @click="launchFiltersOpen = !launchFiltersOpen" 
+        <button @click="launchFiltersOpen = !launchFiltersOpen"
           class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
           style="color: var(--text-muted)">
           <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
           <span>Запуск парсинга</span>
-          <span v-if="activeFilterCount > 0" class="px-1.5 py-0.5 text-xs rounded-full" 
-            style="background: var(--accent); color: white">{{ activeFilterCount }}</span>
         </button>
-        
-        <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border" 
+
+        <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border"
           style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <!-- Price range -->
-          <div class="mb-4">
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена лота (₽)</label>
-            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2 items-center">
-              <input v-model="launchFilters.priceFrom" type="number" placeholder="от" min="0"
-                class="w-full px-3 py-2 rounded-lg border text-sm"
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div class="flex items-center gap-2">
+              <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
+              <input v-model.number="parseDepth" type="number" min="1" max="5000"
+                class="w-24 px-2 py-1.5 rounded-lg border text-sm text-center"
                 style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-              <span class="text-sm text-center hidden sm:inline" style="color: var(--text-muted)">—</span>
-              <input v-model="launchFilters.priceTo" type="number" placeholder="до" min="0"
-                class="w-full px-3 py-2 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-          
-          <!-- Cities -->
-          <div class="mb-4">
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
-            <div class="grid grid-cols-3 gap-2">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" v-model="launchFilters.cities.moscow" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">Москва</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" v-model="launchFilters.cities.mo" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">МО</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" v-model="launchFilters.cities.other" class="rounded flex-shrink-0" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">Другие</span>
-              </label>
-            </div>
-          </div>
-          
-          <!-- Threshold -->
-          <div class="mb-4">
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
-              Порог отсечения: <span class="font-semibold" style="color: var(--text-main)">{{ launchFilters.threshold }}%</span>
-            </label>
-            <div class="flex items-center gap-3">
-              <input v-model.number="launchFilters.threshold" type="range" min="1" max="99" step="1"
-                class="flex-1 min-w-0" style="accent-color: var(--accent)" />
-              <input v-model.number="launchFilters.threshold" type="number" min="1" max="99"
-                class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-          
-          <!-- Actions -->
-          <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-2 border-t" style="border-color: var(--border-subtle)">
-            <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
-              <button @click="resetLaunchFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80 text-left"
-                style="color: var(--text-muted)">Сбросить</button>
-              <div class="flex items-center gap-2">
-                <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
-                <input v-model.number="parseDepth" type="number" min="1" max="500"
-                  class="w-20 px-2 py-1.5 rounded-lg border text-sm text-center"
-                  style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-              </div>
             </div>
             <button
-              @click="runPipeline"
-              :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
+              @click="runParseOnly"
+              :disabled="parseStage !== 'idle' && parseStage !== 'done' && parseStage !== 'error'"
               class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
               :style="{
-                background: pipelineStage === 'done' ? '#059669' : 'var(--accent)',
+                background: parseStage === 'done' ? '#059669' : 'var(--accent)',
               }"
             >
-              <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">▶ Ручной запуск</template>
-              <template v-else-if="pipelineStage === 'done'">Готово — ещё раз</template>
-              <template v-else>Выполняется...</template>
+              <template v-if="parseStage === 'idle' || parseStage === 'error'">▶ Запустить парсинг</template>
+              <template v-else-if="parseStage === 'done'">Готово — ещё раз</template>
+              <template v-else>Парсинг...</template>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Прогресс пайплайна -->
-      <div v-if="pipelineStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
-        <!-- Парсинг -->
+      <!-- Прогресс парсинга -->
+      <div v-if="parseStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
         <div class="flex items-center gap-3">
           <span class="flex-shrink-0 w-5 text-center">
-            <template v-if="pipelineStage === 'parsing'">⏳</template>
+            <template v-if="parseStage === 'parsing'">⏳</template>
             <template v-else-if="parseDone">✓</template>
             <template v-else>○</template>
           </span>
           <div class="flex-1">
             <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
             <div class="text-xs" style="color: var(--text-muted)">
-              <template v-if="pipelineStage === 'parsing'">
+              <template v-if="parseStage === 'parsing'">
                 {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
                 <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
               </template>
@@ -195,63 +140,13 @@
           </div>
         </div>
 
-        <!-- Analyze -->
-        <div class="flex items-center gap-3">
-          <span class="flex-shrink-0 w-5 text-center">
-            <template v-if="pipelineStage === 'analyzing'">⏳</template>
-            <template v-else-if="analyzeDone">✓</template>
-            <template v-else>○</template>
-          </span>
-          <div class="flex-1">
-            <div class="text-sm font-medium" style="color: var(--text-primary)">Анализ</div>
-            <div class="text-xs" style="color: var(--text-muted)">
-              <template v-if="pipelineStage === 'analyzing'">
-                {{ analyzePending }} объектов в очереди
-              </template>
-              <template v-else-if="analyzeDone">
-                {{ pipelineResults.undervaluedTotal }} недооценённых
-                <template v-if="pipelineResults.undervaluedByCity.moscow"> · МСК: {{ pipelineResults.undervaluedByCity.moscow }}</template>
-                <template v-if="pipelineResults.undervaluedByCity.mo"> · МО: {{ pipelineResults.undervaluedByCity.mo }}</template>
-                <template v-if="pipelineResults.undervaluedByCity.other"> · Регионы: {{ pipelineResults.undervaluedByCity.other }}</template>
-              </template>
-              <template v-else>Ожидание...</template>
-            </div>
-          </div>
-        </div>
-
-        <!-- Digest -->
-        <div class="flex items-center gap-3">
-          <span class="flex-shrink-0 w-5 text-center">
-            <template v-if="pipelineStage === 'digesting'">⏳</template>
-            <template v-else-if="digestDone">✓</template>
-            <template v-else>○</template>
-          </span>
-          <div class="flex-1">
-            <div class="text-sm font-medium" style="color: var(--text-primary)">Дайджест</div>
-            <div class="text-xs" style="color: var(--text-muted)">
-              <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
-              <template v-else-if="digestDone && pipelineResults.digestSent">
-                Отправлено {{ pipelineResults.digestCount }} объектов
-              </template>
-              <template v-else-if="digestDone && pipelineResults.digestSkipped">
-                Нет недооценённых объектов в выбранных регионах
-              </template>
-              <template v-else-if="digestDone">Отправлен</template>
-              <template v-else>Ожидание...</template>
-            </div>
-          </div>
-        </div>
-
-        <!-- Done -->
-        <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-          ✓ Пайплайн завершён · Новых объектов: {{ pipelineResults.parseTotal }}
+        <div v-if="parseStage === 'done'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
+          ✓ Парсинг завершён · Новых объектов: {{ pipelineResults.parseTotal }}
           <template v-if="pipelineResults.detailsNeeded > 0"> · Детальных: {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }}</template>
-          · Анализ: {{ pipelineResults.undervaluedTotal }} недооценённых · Дайджест: {{ pipelineResults.digestSent ? 'отправлен на ' + pipelineResults.digestCount + ' объектов' : 'не отправлен (нет объектов)' }}
         </div>
 
-        <!-- Error -->
-        <div v-if="pipelineStage === 'error'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
-          ✗ {{ pipelineError || 'Ошибка пайплайна' }}
+        <div v-if="parseStage === 'error'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
+          ✗ {{ pipelineError || 'Ошибка парсинга' }}
         </div>
       </div>
 
@@ -802,51 +697,8 @@ const filters = reactive({
   undervalued: false,
 })
 
-// Launch filters (for pipeline analysis step)
+// Запуск парсинга — collapsible toggle
 const launchFiltersOpen = ref(false)
-const launchFilters = reactive({
-  priceFrom: '',
-  priceTo: '',
-  cities: { moscow: true, mo: true, other: false },
-  threshold: 20,
-})
-
-// Load from localStorage
-try {
-  const saved = localStorage.getItem('aklab-launch-filters')
-  if (saved) {
-    const parsed = JSON.parse(saved)
-    if (parsed.priceFrom) launchFilters.priceFrom = parsed.priceFrom
-    if (parsed.priceTo) launchFilters.priceTo = parsed.priceTo
-    if (parsed.cities) Object.assign(launchFilters.cities, parsed.cities)
-    if (parsed.threshold) launchFilters.threshold = parsed.threshold
-  }
-} catch {}
-
-// Save to localStorage on change
-watch(launchFilters, (val) => {
-  try {
-    localStorage.setItem('aklab-launch-filters', JSON.stringify(val))
-  } catch {}
-}, { deep: true })
-
-const activeFilterCount = computed(() => {
-  let count = 0
-  if (launchFilters.priceFrom) count++
-  if (launchFilters.priceTo) count++
-  if (launchFilters.threshold !== 20) count++
-  if (!launchFilters.cities.moscow || !launchFilters.cities.mo || launchFilters.cities.other) count++
-  return count
-})
-
-function resetLaunchFilters() {
-  launchFilters.priceFrom = ''
-  launchFilters.priceTo = ''
-  launchFilters.cities.moscow = true
-  launchFilters.cities.mo = true
-  launchFilters.cities.other = false
-  launchFilters.threshold = 20
-}
 
 // ========================
 // ВСЕ ОБЪЕКТЫ — pagination
@@ -945,17 +797,14 @@ doFetchFocus = fetchFocusItems
 // ========================
 // Pipeline state
 // ========================
-type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
-const pipelineStage = ref<PipelineStage>('idle')
+type ParseStage = 'idle' | 'parsing' | 'done' | 'error'
+const parseStage = ref<ParseStage>('idle')
 const parseDepth = ref(20)
 const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const parseDone = ref(false)
 const detailsFetched = ref(0)
 const detailsNeeded = ref(0)
-const analyzeDone = ref(false)
-const analyzePending = ref(0)
-const digestDone = ref(false)
 const pipelineError = ref('')
 
 const pipelineResults = reactive({
@@ -963,11 +812,6 @@ const pipelineResults = reactive({
   parseErrors: 0,
   detailsFetched: 0,
   detailsNeeded: 0,
-  undervaluedTotal: 0,
-  undervaluedByCity: {} as Record<string, number>,
-  digestSent: false,
-  digestCount: 0,
-  digestSkipped: false,
 })
 
 const parseSlugs = ref<string[]>([])
@@ -1007,25 +851,17 @@ function countSourcesParsed(sources: any[], slugs: string[]): number {
   ).length
 }
 
-async function runPipeline() {
-  pipelineStage.value = 'parsing'
+async function runParseOnly() {
+  parseStage.value = 'parsing'
   parseDone.value = false
-  analyzeDone.value = false
-  digestDone.value = false
   parseSourcesDone.value = 0
   detailsFetched.value = 0
   detailsNeeded.value = 0
-  analyzePending.value = 0
   pipelineError.value = ''
   pipelineResults.parseTotal = 0
   pipelineResults.parseErrors = 0
   pipelineResults.detailsFetched = 0
   pipelineResults.detailsNeeded = 0
-  pipelineResults.undervaluedTotal = 0
-  pipelineResults.undervaluedByCity = {}
-  pipelineResults.digestSent = false
-  pipelineResults.digestCount = 0
-  pipelineResults.digestSkipped = false
 
   try {
     const sourcesRes = await api.get('/sources', {
@@ -1035,7 +871,7 @@ async function runPipeline() {
 
     if (sources.length === 0) {
       pipelineError.value = 'Нет активных источников'
-      pipelineStage.value = 'error'
+      parseStage.value = 'error'
       return
     }
 
@@ -1048,7 +884,7 @@ async function runPipeline() {
 
     await new Promise<void>((resolve, reject) => {
       let attempts = 0
-      const maxAttempts = 2000 // ~100 мин при poll 3 сек
+      const maxAttempts = 2000
       pollTimer = setInterval(async () => {
         attempts++
         if (attempts > maxAttempts) {
@@ -1062,7 +898,6 @@ async function runPipeline() {
 
         parseSourcesDone.value = countSourcesParsed(stats.sources, parseSlugs.value)
 
-        // Считаем общее количество fetchDetails по всем источникам
         detailsFetched.value = (stats.sources || [])
           .filter((s: any) => parseSlugs.value.includes(s.slug))
           .reduce((sum: number, s: any) => sum + (s.total_details_fetched || 0), 0)
@@ -1082,100 +917,15 @@ async function runPipeline() {
           pipelineResults.detailsFetched = detailsFetched.value
           pipelineResults.detailsNeeded = detailsNeeded.value
           parseDone.value = true
-          pipelineStage.value = 'analyzing'
-          resolve()
-        }
-      }, 3000)
-    })
-
-    // Build analysis filters
-    const analyzeBody: any = {}
-    if (launchFilters.priceFrom) analyzeBody.priceFrom = Number(launchFilters.priceFrom)
-    if (launchFilters.priceTo) analyzeBody.priceTo = Number(launchFilters.priceTo)
-    const cities = []
-    if (launchFilters.cities.moscow) cities.push('moscow')
-    if (launchFilters.cities.mo) cities.push('mo')
-    if (launchFilters.cities.other) cities.push('other')
-    if (cities.length > 0 && cities.length < 3) analyzeBody.city = cities
-    if (launchFilters.threshold !== 20) analyzeBody.threshold = launchFilters.threshold
-
-    await api.post('/cron/analyze', Object.keys(analyzeBody).length ? analyzeBody : undefined)
-
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0
-      const maxAttempts = 60
-      pollTimer = setInterval(async () => {
-        attempts++
-        if (attempts > maxAttempts) {
-          stopPolling()
-          reject(new Error('Анализ превысил таймаут (3 мин)'))
-          return
-        }
-
-        const stats = await pollQueueStats()
-        if (!stats) return
-
-        const q = stats.queues['analyze-property'] || { pending: 0, active: 0 }
-        analyzePending.value = q.pending + q.active
-
-        if (isQueueEmpty(stats.queues, 'analyze-')) {
-          stopPolling()
-          try {
-            const cities = ['moscow', 'mo', 'other']
-            for (const city of cities) {
-              const res = await api.get('/properties', {
-                params: {
-                  'filters[is_undervalued][$eq]': true,
-                  'filters[city][$eq]': city,
-                  'pagination[pageSize]': 1,
-                },
-              })
-              const count = res.data?.meta?.pagination?.total || 0
-              if (count > 0) pipelineResults.undervaluedByCity[city] = count
-              pipelineResults.undervaluedTotal += count
-            }
-          } catch { /* ignore */ }
-          analyzeDone.value = true
-          pipelineStage.value = 'digesting'
-          resolve()
-        }
-      }, 3000)
-    })
-
-    await api.post('/cron/digest')
-
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0
-      const maxAttempts = 30
-      pollTimer = setInterval(async () => {
-        attempts++
-        if (attempts > maxAttempts) {
-          stopPolling()
-          reject(new Error('Дайджест превысил таймаут (90 сек)'))
-          return
-        }
-
-        const stats = await pollQueueStats()
-        if (!stats) return
-
-        if (isQueueEmpty(stats.queues, 'digest-')) {
-          stopPolling()
-          digestDone.value = true
-          if (pipelineResults.undervaluedTotal > 0) {
-            pipelineResults.digestSent = true
-            pipelineResults.digestCount = pipelineResults.undervaluedTotal
-          } else {
-            pipelineResults.digestSkipped = true
-          }
-          pipelineStage.value = 'done'
+          parseStage.value = 'done'
           resolve()
         }
       }, 3000)
     })
   } catch (err: any) {
     stopPolling()
-    pipelineStage.value = 'error'
-    pipelineError.value = err.message || 'Ошибка пайплайна'
+    parseStage.value = 'error'
+    pipelineError.value = err.message || 'Ошибка парсинга'
   }
 }
 
@@ -1218,17 +968,25 @@ async function recalculateScore() {
     if (focusFilters.cities.mo) cityList.push('mo')
     if (focusFilters.cities.other) cityList.push('other')
 
-    const body: any = { threshold: focusFilters.threshold }
-    if (cityList.length > 0 && cityList.length < 3) body.city = cityList
-    if (focusFilters.priceFrom) body.priceFrom = Number(focusFilters.priceFrom)
-    if (focusFilters.priceTo) body.priceTo = Number(focusFilters.priceTo)
+    // Шаг 1: Анализ (deviation от эталонов)
+    const analyzeBody: any = {}
+    if (cityList.length > 0 && cityList.length < 3) analyzeBody.city = cityList
+    if (focusFilters.priceFrom) analyzeBody.priceFrom = Number(focusFilters.priceFrom)
+    if (focusFilters.priceTo) analyzeBody.priceTo = Number(focusFilters.priceTo)
+    if (focusFilters.threshold) analyzeBody.threshold = focusFilters.threshold
+    await api.post('/cron/analyze', Object.keys(analyzeBody).length ? analyzeBody : undefined)
 
-    await api.post('/cron/score', body)
-    // Refresh list after scoring
+    // Шаг 2: Scoring (focus_score + tags)
+    const scoreBody: any = { threshold: focusFilters.threshold }
+    if (cityList.length > 0 && cityList.length < 3) scoreBody.city = cityList
+    if (focusFilters.priceFrom) scoreBody.priceFrom = Number(focusFilters.priceFrom)
+    if (focusFilters.priceTo) scoreBody.priceTo = Number(focusFilters.priceTo)
+    await api.post('/cron/score', scoreBody)
+
+    // Обновляем список
     await fetchFocusItems()
   } catch (e: any) {
-    console.error('Score recalculation failed:', e)
-    // TODO: заменить на toast notification
+    console.error('Recalculation failed:', e)
     console.warn('[UI] Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     scoringLoading.value = false
