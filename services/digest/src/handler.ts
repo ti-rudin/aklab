@@ -75,6 +75,12 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
   const priceFrom = setting?.price_from;
   const priceTo = setting?.price_to;
 
+  // Проверяем включён ли дайджест
+  if (setting?.digest_enabled === false) {
+    logger.info('Digest disabled in settings, skipping', { correlationId: corrId });
+    return { sent: false, count: 0 };
+  }
+
   const allFocus = await fetchFocusProperties(20);
   const filtered = allFocus.filter((p: any) => {
     if (!regions.includes(p.city)) return false;

@@ -160,6 +160,12 @@ export function registerCrons(strapi: Core.Strapi): void {
 
       if (mskHour !== targetHour) return;
 
+      // Проверяем включён ли дайджест
+      if (setting?.digest_enabled === false) {
+        strapi.log.info(`[cron] digest:morning disabled in settings, skipping (${corrId})`);
+        return;
+      }
+
       strapi.log.info(`[cron] digest:morning triggered at ${digestTime} MSK (${corrId})`);
       queueService.addToQueue('digest-send', {
         date: new Date().toISOString().slice(0, 10),

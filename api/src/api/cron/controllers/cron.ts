@@ -142,6 +142,12 @@ export default {
       const setting = await s.db.query('api::setting.setting').findOne({});
       const smtpTo = setting?.smtp_to || undefined;
 
+      // Проверяем включён ли дайджест
+      if (setting?.digest_enabled === false) {
+        ctx.body = { ok: false, message: 'Дайджест отключён в настройках' };
+        return;
+      }
+
       qs.addToQueue('digest-send', {
         date: new Date().toISOString().slice(0, 10),
         smtpTo,

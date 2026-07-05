@@ -72,6 +72,20 @@
 
         <!-- Время дайджеста -->
         <div>
+          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Дайджест включён</label>
+          <p class="text-xs mb-2" style="color: var(--text-muted)">Включить или выключить автоматический утренний email-дайджест.</p>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              v-model="form.digest_enabled"
+              type="checkbox"
+              class="w-5 h-5 rounded"
+            />
+            <span class="text-sm" style="color: var(--text-main)">{{ form.digest_enabled ? 'Включён' : 'Выключен' }}</span>
+          </label>
+        </div>
+
+        <!-- Время дайджеста -->
+        <div>
           <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Время утреннего дайджеста</label>
           <p class="text-xs mb-2" style="color: var(--text-muted)">Время отправки email-дайджеста (МСК). Формат: HH:MM</p>
           <input
@@ -369,6 +383,7 @@ const form = ref({
   parse_depth: 20,
   digest_time: '09:00',
   smtp_to: '',
+  digest_enabled: true,
   price_from: null as number | null,
   price_to: null as number | null,
   monitored_regions: ['moscow', 'mo', 'other'] as string[],
@@ -402,6 +417,7 @@ onMounted(async () => {
         parse_depth: data.parse_depth ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
+        digest_enabled: data.digest_enabled !== false, // default true
         price_from: data.price_from ?? null,
         price_to: data.price_to ?? null,
         monitored_regions: data.monitored_regions ?? ['moscow', 'mo', 'other'],
