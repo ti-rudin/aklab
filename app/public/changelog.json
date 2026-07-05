@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.0.105",
+    "date": "5 июля 2026",
+    "time": "09:30",
+    "items": [
+      {
+        "text": "FetchDetails для fabrikant и roseltorg",
+        "type": "new"
+      }
+    ]
+  },
+  {
     "version": "v1.0.104",
     "date": "5 июля 2026",
     "time": "08:55",
