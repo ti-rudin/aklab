@@ -138,7 +138,7 @@ describe('cron controller', () => {
 
       expect(mockStrapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
         filters: { status: 'new', is_undervalued: { $null: true } },
-        limit: 500,
+        limit: -1,
       });
       expect(mockQueue.addToQueue).toHaveBeenCalledTimes(2);
       expect(mockQueue.addToQueue).toHaveBeenCalledWith(
@@ -176,7 +176,7 @@ describe('cron controller', () => {
           is_undervalued: { $null: true },
           price: { $gte: 100000, $lte: 500000 },
         },
-        limit: 500,
+        limit: -1,
       });
     });
 
@@ -192,7 +192,7 @@ describe('cron controller', () => {
           is_undervalued: { $null: true },
           city: { $in: ['moscow', 'spb'] },
         },
-        limit: 500,
+        limit: -1,
       });
     });
 

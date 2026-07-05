@@ -146,7 +146,7 @@ describe('scoreProperty', () => {
   // --- deviation_threshold ---
   describe('deviation_threshold rule', () => {
     it('should match when deviation is below threshold', () => {
-      const property = { deviation_percent: -30 };
+      const property = { deviation_percent: 30 };
       const rules = [makeRule({ condition_type: 'deviation_threshold', condition_value: '20', score: 40, tag: 'undervalued', priority: 1 })];
 
       const result = scoreProperty(property, rules);
@@ -156,7 +156,7 @@ describe('scoreProperty', () => {
     });
 
     it('should not match when deviation is above threshold', () => {
-      const property = { deviation_percent: -10 };
+      const property = { deviation_percent: 10 };
       const rules = [makeRule({ condition_type: 'deviation_threshold', condition_value: '20', score: 40, tag: 'undervalued' })];
 
       const result = scoreProperty(property, rules);
@@ -166,7 +166,7 @@ describe('scoreProperty', () => {
     });
 
     it('should use only the highest priority deviation rule when multiple match', () => {
-      const property = { deviation_percent: -50 };
+      const property = { deviation_percent: 50 };
       const rules = [
         makeRule({ id: 1, condition_type: 'deviation_threshold', condition_value: '20', score: 30, tag: 'undervalued_20', priority: 1 }),
         makeRule({ id: 2, condition_type: 'deviation_threshold', condition_value: '40', score: 50, tag: 'undervalued_40', priority: 2 }),
@@ -174,7 +174,7 @@ describe('scoreProperty', () => {
 
       const result = scoreProperty(property, rules);
 
-      // Both match (deviation -50 <= -20 and -50 <= -40)
+      // Both match (deviation 50 >= 20 and 50 >= 40)
       // Should use the one with highest priority NUMBER (priority 2)
       expect(result.score).toBe(50);
       expect(result.tags).toContain('undervalued_40');
@@ -230,7 +230,7 @@ describe('scoreProperty', () => {
       const property = {
         city: 'moscow',
         minimum_price: 100000,
-        deviation_percent: -30,
+        deviation_percent: 30,
       };
       const rules = [
         makeRule({ id: 1, condition_type: 'city_match', condition_value: 'moscow', score: 10, tag: 'moscow_mo', priority: 3 }),
