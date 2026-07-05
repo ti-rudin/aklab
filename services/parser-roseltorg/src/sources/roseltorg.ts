@@ -120,6 +120,85 @@ export class RoseltorgParser implements SourceParser {
       await browser.close();
     }
   }
+
+  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const context = await createStealthContext(browser);
+      const page = await context.newPage();
+      await retryGoto(page, url, 3);
+
+      // Ждём загрузки контента
+      try {
+        await page.waitForSelector('.lot-info, .trade-info, .card, article, h1, h2', { timeout: 15000 });
+      } catch {
+        await page.waitForTimeout(3000);
+      }
+
+      const details = await page.evaluate(() => {
+        const allText = document.body.innerText || '';
+
+        // Описание: ищем длинные блоки текста
+        let description = '';
+        const descCandidates = document.querySelectorAll('.description, .lot-description, [class*="desc"], article p, .info-block p');
+        for (const el of Array.from(descCandidates)) {
+          const text = (el.textContent || '').trim();
+          if (text.length > 50 && text.length > description.length) {
+            description = text.slice(0, 2000);
+          }
+        }
+
+        // Контакты
+        const contactParts: string[] = [];
+        const phoneMatch = allText.match(/(?:тел(?:ефон)?|phone)[:\s.]+([+\d\s()-]{7,20})/i);
+        if (phoneMatch) contactParts.push('Тел: ' + phoneMatch[1].trim());
+
+        const emailMatch = allText.match(/(?:email|e-mail|почт[аы])[:\s]+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+        if (emailMatch) contactParts.push('Email: ' + emailMatch[1].trim());
+
+        const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
+
+        // Адрес: ищем в тексте
+        let address = '';
+        const addrMatch = allText.match(/(?:адрес|расположенн?[:\s]+)(.+?)(?:,\s*(?:общ|пл|к\/н|собств|\n))/i);
+        if (addrMatch) address = addrMatch[1].trim().slice(0, 300);
+
+        // Фото
+        const photoUrls: string[] = [];
+        const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"], .gallery img, .slider img, [class*="carousel"] img');
+        for (const img of Array.from(contentImgs).slice(0, 10)) {
+          const src = (img as HTMLImageElement).src;
+          if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+            photoUrls.push(src);
+          }
+        }
+
+        return {
+          description: description || undefined,
+          contacts,
+          address: address.length > 3 ? address : undefined,
+          photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        };
+      });
+
+      return {
+        description: details.description,
+        contacts: details.contacts,
+        address: details.address,
+        photo_urls: details.photo_urls,
+      };
+    } catch (err: any) {
+      logger.warn(`[roseltorg] fetchDetails error for ${url}: ${err.message}`);
+      return {};
+    } finally {
+      await browser.close();
+    }
+  }
 }
 
 

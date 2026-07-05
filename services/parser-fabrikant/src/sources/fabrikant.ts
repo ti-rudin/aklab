@@ -187,6 +187,98 @@ export class FabrikantParser implements SourceParser {
       await browser.close();
     }
   }
+
+  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const context = await createStealthContext(browser);
+      const page = await context.newPage();
+      await retryGoto(page, url, 3);
+
+      // Ждём загрузки контента
+      try {
+        await page.waitForSelector('[data-slot], .lot-info, .procedure-info, h1, h2', { timeout: 15000 });
+      } catch {
+        await page.waitForTimeout(3000);
+      }
+
+      const details = await page.evaluate(() => {
+        // Описание: ищем в тексте страницы — «Предмет договора», «Описание лота», длинные параграфы
+        let description = '';
+        const allText = document.body.innerText || '';
+
+        // Ищем описание лота — часто после заголовка «Лот №» идёт описание
+        const lotMatch = allText.match(/Лот\s*№?\d*\.\s*(.+?)(?:\n\s*(?:Ожидается|Начальн|Статус|Предмет))/s);
+        if (lotMatch && lotMatch[1].length > 20) {
+          description = lotMatch[1].trim().slice(0, 2000);
+        }
+
+        // Контакты: организатор из шапки
+        const contactParts: string[] = [];
+
+        // Организатор — обычно «Информация об организаторе» followed by name
+        const orgMatch = allText.match(/Информация\s+об\s+организаторе\s*\n\s*(.+?)(?:\n\s*\n|\n\s*Дата)/s);
+        if (orgMatch) {
+          const orgName = orgMatch[1].trim().split('\n')[0].trim();
+          if (orgName && orgName.length > 2 && orgName.length < 200) {
+            contactParts.push('Организатор: ' + orgName);
+          }
+        }
+
+        // Телефон и email из текста
+        const phoneMatch = allText.match(/(?:тел(?:ефон)?|phone)[:\s.]+([+\d\s()-]{7,20})/i);
+        if (phoneMatch) contactParts.push('Тел: ' + phoneMatch[1].trim());
+
+        const emailMatch = allText.match(/(?:email|e-mail|почт[аы])[:\s]+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+        if (emailMatch) contactParts.push('Email: ' + emailMatch[1].trim());
+
+        const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
+
+        // Адрес из заголовка лота (обычно в breadcrumbs или заголовке)
+        let address = '';
+        const h1 = document.querySelector('h1');
+        if (h1) {
+          const h1Text = h1.textContent || '';
+          const addrMatch = h1Text.match(/(?:адрес|расположенн?[:\s]+)(.+?)(?:,\s*(?:общ|пл|к\/н|собств|$))/i);
+          if (addrMatch) address = addrMatch[1].trim();
+        }
+
+        // Фото: ищем img в контенте (не иконки/логотипы)
+        const photoUrls: string[] = [];
+        const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"]');
+        for (const img of Array.from(contentImgs).slice(0, 10)) {
+          const src = (img as HTMLImageElement).src;
+          if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+            photoUrls.push(src);
+          }
+        }
+
+        return {
+          description: description || undefined,
+          contacts,
+          address: address.length > 3 ? address : undefined,
+          photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        };
+      });
+
+      return {
+        description: details.description,
+        contacts: details.contacts,
+        address: details.address,
+        photo_urls: details.photo_urls,
+      };
+    } catch (err: any) {
+      logger.warn(`[fabrikant] fetchDetails error for ${url}: ${err.message}`);
+      return {};
+    } finally {
+      await browser.close();
+    }
+  }
 }
 
 function extractAddress(title: string): string {
