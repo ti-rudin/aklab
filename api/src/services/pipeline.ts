@@ -137,6 +137,11 @@ export class PipelineService {
       this.strapi.log.warn(`[pipeline] Failed to update state: ${err.message}`);
     }
 
+    // DEBUG: log status transitions
+    if (updated.status !== current.status) {
+      this.strapi.log.info(`[pipeline] status: ${current.status} → ${updated.status} (stage=${updated.stage})`);
+    }
+
     // SSE broadcast
     broadcastSSE('progress', updated);
   }
