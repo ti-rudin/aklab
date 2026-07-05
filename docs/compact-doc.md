@@ -215,9 +215,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.0.102)
+## Текущее состояние (июль 2026, v1.0.102+)
 
-- Версия: 1.0.102
+- Версия: 1.0.102+ (не задеплоено)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -488,6 +488,12 @@ deploy-prod.sh + бамп версии).
 41. **Price filter: анализ, не парсинг** — `price_from`/`price_to` в Setting
     фильтруют АНАЛИЗ (auto-analyze 08:00 + digest), а не парсинг. Парсеры
     всегда парсят все объекты, фильтр применяется при сравнении с эталонами.
+42. **propertyExists fail-closed** — при non-OK ответе API (500, 401, etc.)
+    `propertyExists` возвращает `true` (skip). Раньше возвращала `false`
+    → при 500 от API парсер создавал дубликаты. Баг: 1241 дубликат из 3407.
+43. **digest_enabled** — boolean в Setting, default true. 3 уровня защиты:
+    cron/index.ts, cron controller, digest handler. `data !== false` для
+    обратной совместимости (null/undefined → true).
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -680,3 +686,14 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 2. **Build падает → deploy откатывается.** deploy-prod.sh проверяет health check. Если Vue build падает (невалидный HTML), deploy остаётся на предыдущей версии. Это хорошая защита, но нужно проверять build локально перед пушем.
 3. **DRY для парсеров критичен.** 10 копий `classifyPropertyType` с расхождениями в логике (одни пропускали apartment, другие нет). Вынос в shared устранил inconsistency.
 4. **Цена фильтрует анализ, не парсинг.** Пользователь ожидал что парсеры будут фильтровать по цене. Но бизнес-логика: парсим всё, фильтруем при анализе. Это правильно — данные нужны для истории.
+
+### 2026-07-05: Dedup bug + digest toggle (v1.0.102+)
+
+**Что произошло:** найден критический баг — 1241 дубликат из 3407 объектов (36%). Причина: `propertyExists()` при 500 от API возвращала `false` (не существует) вместо `true` (skip).
+
+**Инсайты:**
+1. **fail-closed vs fail-open.** `if (!res.ok) return false` — это fail-open (при ошибке считаем что НЕТ). Правильно: `return true` (при ошибке считаем что ЕСТЬ). Разница критична при нестабильном API.
+2. **2 линии защиты.** `propertyExists` в parse-handler + `propertyExists` в `createProperty`. Если первая пропустит — вторая поймает.
+3. **Порядок фильтров.** Быстрый фильтр (price_per_sqm) должен быть ДО API-вызовов (propertyExists). Экономит запросы.
+4. **Дедуп скрипт.** `scripts/dedup-properties.js` — оставляет самый ранний объект в группе source+external_id, удаляет фото с диска.
+5. **digest_enabled toggle.** 3 уровня защиты: cron, controller, handler. `data.digest_enabled !== false` (default true для обратной совместимости).
