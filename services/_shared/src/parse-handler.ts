@@ -79,6 +79,11 @@ export function createParseHandler(parser: SourceParser) {
 
       if (parser.fetchDetails) {
         detailsNeeded = newProperties.length;
+        if (req.documentId) {
+          await updateSourceStats(req.documentId, {
+            total_details_needed: detailsNeeded,
+          }).catch(() => {});
+        }
         logger.info(`Details needed: ${detailsNeeded} new objects for ${req.source}`, { correlationId: corrId });
       }
 
@@ -93,6 +98,12 @@ export function createParseHandler(parser: SourceParser) {
                 Object.assign(prop, details);
                 detailsFetched++;
                 logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
+                // Промежуточное обновление для UI (fire-and-forget — для прогресса)
+                if (req.documentId) {
+                  updateSourceStats(req.documentId, {
+                    total_details_fetched: detailsFetched,
+                  }).catch(() => {});
+                }
               }
             } catch (err: any) {
               logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
