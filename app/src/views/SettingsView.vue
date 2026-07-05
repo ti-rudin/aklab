@@ -535,7 +535,7 @@ function startPolling() {
   stopPolling()
   pollInterval = setInterval(async () => {
     try {
-      const res = await api.get('/pipeline/status')
+      const res = await api.get('/pipeline/status', { params: { _t: Date.now() } })
       if (res.data?.ok && res.data.state) {
         updatePipelineState(res.data.state)
         const s = res.data.state
