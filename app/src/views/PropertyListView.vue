@@ -190,6 +190,18 @@
             <option value="other">Другое</option>
           </select>
         </div>
+        <div>
+          <label class="block text-xs mb-1" style="color: var(--text-muted)">Цена (₽)</label>
+          <div class="flex gap-1 items-center">
+            <input v-model.number="filters.priceFrom" type="number" placeholder="от" min="0"
+              class="w-20 px-2 py-1.5 rounded-lg border text-sm"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            <span class="text-xs" style="color: var(--text-muted)">—</span>
+            <input v-model.number="filters.priceTo" type="number" placeholder="до" min="0"
+              class="w-20 px-2 py-1.5 rounded-lg border text-sm"
+              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+          </div>
+        </div>
         <button @click="resetFilters" class="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
       </div>
 
@@ -704,6 +716,8 @@ const filters = reactive({
   status: '',
   source: '',
   property_type: '',
+  priceFrom: null as number | null,
+  priceTo: null as number | null,
 })
 
 // Запуск парсинга — collapsible toggle
@@ -747,6 +761,8 @@ async function fetchItems() {
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
   if (filters.property_type) f.property_type = { $eq: filters.property_type }
+  if (filters.priceFrom) f.price = { ...(f.price || {}), $gte: filters.priceFrom }
+  if (filters.priceTo) f.price = { ...(f.price || {}), $lte: filters.priceTo }
   if (Object.keys(f).length) params.filters = f
   await fetchProperties(params)
 }
@@ -756,6 +772,8 @@ function resetFilters() {
   filters.status = ''
   filters.source = ''
   filters.property_type = ''
+  filters.priceFrom = null
+  filters.priceTo = null
   sort.field = 'createdAt'
   sort.direction = 'desc'
   page.value = 1

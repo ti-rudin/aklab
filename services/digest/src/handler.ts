@@ -72,9 +72,16 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
 
   const setting = await fetchSetting().catch(() => null);
   const regions: string[] = setting?.monitored_regions || ['moscow', 'mo'];
+  const priceFrom = setting?.price_from;
+  const priceTo = setting?.price_to;
 
   const allFocus = await fetchFocusProperties(20);
-  const filtered = allFocus.filter((p: any) => regions.includes(p.city));
+  const filtered = allFocus.filter((p: any) => {
+    if (!regions.includes(p.city)) return false;
+    if (priceFrom != null && p.price != null && p.price < Number(priceFrom)) return false;
+    if (priceTo != null && p.price != null && p.price > Number(priceTo)) return false;
+    return true;
+  });
 
   if (filtered.length === 0) {
     logger.info('No focus properties — skipping email', { correlationId: corrId });

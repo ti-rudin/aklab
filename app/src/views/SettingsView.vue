@@ -95,6 +95,21 @@
           />
         </div>
 
+        <!-- Диапазон цен для дайджеста -->
+        <div>
+          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Диапазон цен (₽)</label>
+          <p class="text-xs mb-2" style="color: var(--text-muted)">Объекты вне диапазона не попадут в дайджест. Оставьте пустым для без ограничений.</p>
+          <div class="flex gap-2 items-center">
+            <input v-model.number="form.price_from" type="number" placeholder="от" min="0"
+              class="w-full px-3 py-2 rounded-lg border text-sm"
+              style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)" />
+            <span class="text-sm shrink-0" style="color: var(--text-muted)">—</span>
+            <input v-model.number="form.price_to" type="number" placeholder="до" min="0"
+              class="w-full px-3 py-2 rounded-lg border text-sm"
+              style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)" />
+          </div>
+        </div>
+
         <!-- Регионы мониторинга -->
         <div>
           <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Регионы мониторинга</label>
@@ -354,6 +369,8 @@ const form = ref({
   parse_depth: 20,
   digest_time: '09:00',
   smtp_to: '',
+  price_from: null as number | null,
+  price_to: null as number | null,
   monitored_regions: ['moscow', 'mo', 'other'] as string[],
 })
 const regionOptions = [
@@ -385,6 +402,8 @@ onMounted(async () => {
         parse_depth: data.parse_depth ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
+        price_from: data.price_from ?? null,
+        price_to: data.price_to ?? null,
         monitored_regions: data.monitored_regions ?? ['moscow', 'mo', 'other'],
       }
       const regions = data.monitored_regions ?? ['moscow', 'mo']

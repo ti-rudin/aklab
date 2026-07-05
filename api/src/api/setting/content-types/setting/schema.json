@@ -37,6 +37,14 @@
     "smtp_to": {
       "type": "string"
     },
+    "price_from": {
+      "type": "decimal",
+      "default": null
+    },
+    "price_to": {
+      "type": "decimal",
+      "default": null
+    },
     "monitored_regions": {
       "type": "json",
       "default": ["moscow", "mo"]

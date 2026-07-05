@@ -103,8 +103,20 @@ export function registerCrons(strapi: Core.Strapi): void {
     strapi.log.info(`[cron] analyze:properties triggered (${corrId})`);
     try {
       const s = strapi as unknown as StrapiInstance;
+      const setting = await getSetting(strapi);
+
+      const filters: any = { status: 'new', is_undervalued: { $null: true } };
+      const priceFrom = setting?.price_from;
+      const priceTo = setting?.price_to;
+      if (priceFrom != null && !isNaN(Number(priceFrom))) {
+        filters.price = { ...(filters.price || {}), $gte: Number(priceFrom) };
+      }
+      if (priceTo != null && !isNaN(Number(priceTo))) {
+        filters.price = { ...(filters.price || {}), $lte: Number(priceTo) };
+      }
+
       const properties = await s.entityService.findMany('api::property.property', {
-        filters: { status: 'new', is_undervalued: { $null: true } },
+        filters,
         limit: 50,
       });
       for (const prop of properties || []) {
