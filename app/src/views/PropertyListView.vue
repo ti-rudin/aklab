@@ -957,7 +957,8 @@ async function executeClearNew() {
   try {
     const { data } = await api.post('/properties/clear-new')
     if (data.deleted > 0) {
-      alert(`Удалено ${data.deleted} объектов`)
+      const photoInfo = data.photosDeleted > 0 ? ` (папок с фото: ${data.photosDeleted})` : ''
+      alert(`Удалено ${data.deleted} объектов${photoInfo}`)
     } else {
       alert('Нет объектов со статусом «Новый»')
     }

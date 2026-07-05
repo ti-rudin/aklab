@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('fs/promises', () => ({
   access: vi.fn(),
   readFile: vi.fn(),
+  rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 // --- Mock @strapi/strapi ---
@@ -26,6 +27,7 @@ function makeStrapi() {
   return {
     db: {
       query: vi.fn().mockReturnValue({
+        findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn(),
       }),
       connection: {
@@ -66,33 +68,54 @@ describe('property controller', () => {
 
   // =================== clearNew ===================
   describe('clearNew', () => {
-    it('should return deleted count', async () => {
-      strapi.db.query('api::property.property').deleteMany = vi.fn().mockResolvedValue({ count: 5 });
+    it('should return deleted count with photosDeleted', async () => {
+      const queryResult = strapi.db.query('api::property.property');
+      (queryResult.findMany as any).mockResolvedValue([]);
+      (queryResult.deleteMany as any).mockResolvedValue({ count: 5 });
       const ctx = makeCtx();
 
       await actions.clearNew(ctx);
 
       expect(strapi.db.query).toHaveBeenCalledWith('api::property.property');
-      expect(ctx.body).toEqual({ deleted: 5 });
+      expect(ctx.body).toEqual({ deleted: 5, photosDeleted: 0 });
     });
 
     it('should return 0 when nothing deleted', async () => {
-      strapi.db.query('api::property.property').deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+      const queryResult = strapi.db.query('api::property.property');
+      (queryResult.findMany as any).mockResolvedValue([]);
+      (queryResult.deleteMany as any).mockResolvedValue({ count: 0 });
       const ctx = makeCtx();
 
       await actions.clearNew(ctx);
 
-      expect(ctx.body).toEqual({ deleted: 0 });
+      expect(ctx.body).toEqual({ deleted: 0, photosDeleted: 0 });
     });
 
     it('should pass status=new filter', async () => {
+      const queryResult = strapi.db.query('api::property.property');
+      (queryResult.findMany as any).mockResolvedValue([]);
       const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
-      strapi.db.query('api::property.property').deleteMany = deleteMany;
+      (queryResult.deleteMany as any) = deleteMany;
       const ctx = makeCtx();
 
       await actions.clearNew(ctx);
 
       expect(deleteMany).toHaveBeenCalledWith({ where: { status: 'new' } });
+    });
+
+    it('should delete photo directories for new properties', async () => {
+      const queryResult = strapi.db.query('api::property.property');
+      (queryResult.findMany as any).mockResolvedValue([
+        { documentId: 'doc-aaa' },
+        { documentId: 'doc-bbb' },
+      ]);
+      (queryResult.deleteMany as any).mockResolvedValue({ count: 2 });
+      const ctx = makeCtx();
+
+      await actions.clearNew(ctx);
+
+      expect(fs.rm).toHaveBeenCalledTimes(2);
+      expect(ctx.body).toEqual({ deleted: 2, photosDeleted: 2 });
     });
   });
 
