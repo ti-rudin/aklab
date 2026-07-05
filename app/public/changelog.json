@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.1",
+    "date": "5 июля 2026",
+    "time": "15:35",
+    "items": [
+      {
+        "text": "Страница документации",
+        "type": "improvement"
+      },
+      {
+        "text": "Singleton",
+        "type": "fix"
+      },
+      {
+        "text": "Bump to v1.1.0",
+        "type": "improvement"
+      },
+      {
+        "text": "SSE-based pipeline orchestrator",
+        "type": "new"
+      },
+      {
+        "text": "Bump to v1.0.110",
+        "type": "improvement"
+      },
+      {
+        "text": "Both counters are now direct SET, not additive",
+        "type": "fix"
+      },
+      {
+        "text": "Bump to v1.0.109",
+        "type": "improvement"
+      },
+      {
+        "text": "Two-phase details counters — direct SET for needed, single reset point",
+        "type": "fix"
+      },
+      {
+        "text": "Bump to v1.0.108",
+        "type": "improvement"
+      },
+      {
+        "text": "Reset total_details_needed along with total_details_fetched",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.0.107",
     "date": "5 июля 2026",
     "time": "09:57",
