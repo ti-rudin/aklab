@@ -1,13 +1,16 @@
 /**
  * Росэлторг (roseltorg.ru) — парсер коммерческой недвижимости.
  *
- * Playwright, HTML scraping. Таймаут с Mac — проверяем с сервера.
+ * Playwright, HTML scraping. Работает с сервера (Mac timeout).
+ * URL: https://www.roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
 
-const BASE_URL = 'https://roseltorg.ru';
-const MAX_PAGES = 5;
+const BASE_URL = 'https://www.roseltorg.ru';
+const SEARCH_URL = `${BASE_URL}/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost?sale=all&okato[]=45000000000&status[]=5&status[]=0&status[]=1`;
+const ITEMS_PER_PAGE = 20;
+const MAX_PAGES = 10;
 
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
@@ -31,6 +34,7 @@ export class RoseltorgParser implements SourceParser {
 
   async parse(depth?: number): Promise<ParsedProperty[]> {
     const { chromium } = await import('playwright');
+    const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
     logger.info('[roseltorg] Starting Playwright browser...');
     const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 
@@ -39,76 +43,114 @@ export class RoseltorgParser implements SourceParser {
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
 
-      const searchUrls = [
-        `${BASE_URL}/lot-search`,
-        `${BASE_URL}/search`,
-        `${BASE_URL}/lots`,
-        `${BASE_URL}/trades`,
-        BASE_URL,
-      ];
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+        const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}&page=${pageNum}`;
+        logger.info(`[roseltorg] Loading page ${pageNum}: ${url}`);
 
-      let workingUrl = BASE_URL;
-      for (const url of searchUrls) {
-        try {
-          await retryGoto(page, url, 1);
-          workingUrl = url;
-          break;
-        } catch { continue; }
-      }
-
-      await page.waitForTimeout(5000);
-
-      const cards = await page.evaluate(() => {
-        const results: Array<{ title: string; link: string; price_text: string; excerpt: string }> = [];
-        const selectors = [
-          '.card', '.lot-card', '.trade-card', '.search-result',
-          '.list-item', 'article', 'tr', '[class*="card"]', '[class*="lot"]',
-        ];
-        let found: Element[] = [];
-        for (const sel of selectors) {
-          found = Array.from(document.querySelectorAll(sel));
-          if (found.length > 2) break;
+        if (pageNum > 1) {
+          await randomDelay(3000, 6000);
         }
-        for (const card of found.slice(0, 50)) {
-          const el = card as HTMLElement;
-          const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
-          const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"], td:nth-child(2)');
-          const priceEl = el.querySelector('.price, [class*="price"], .cost, td:nth-child(3)');
-          const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
-          if (!title || title.length < 5) continue;
-          results.push({
-            title: title.slice(0, 200),
-            link: linkEl?.href || '',
-            price_text: priceEl?.textContent?.trim() || '',
-            excerpt: el.textContent?.trim().slice(0, 500) || '',
+
+        try {
+          await retryGoto(page, url, 3);
+        } catch {
+          logger.warn(`[roseltorg] Failed to load page ${pageNum}, stopping`);
+          break;
+        }
+
+        // Ждём загрузки карточек
+        try {
+          await page.waitForSelector('.lot-list table tbody tr, .search-results table tbody tr, table tbody tr, .card, [class*="lot"]', { timeout: 15000 });
+        } catch {
+          await page.waitForTimeout(5000);
+        }
+
+        const cards = await page.evaluate(() => {
+          const results: Array<{ title: string; link: string; price_text: string; excerpt: string }> = [];
+
+          // Росэлторг использует таблицу — ищем строки tbody
+          const rows = document.querySelectorAll('table tbody tr');
+          if (rows.length > 2) {
+            for (const row of Array.from(rows).slice(0, 50)) {
+              const el = row as HTMLElement;
+              const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
+              const title = linkEl?.textContent?.trim() || el.querySelector('td:nth-child(2)')?.textContent?.trim() || '';
+              if (!title || title.length < 5) continue;
+
+              // Цена — обычно 3-4 колонка
+              const cells = el.querySelectorAll('td');
+              let priceText = '';
+              for (const cell of Array.from(cells)) {
+                const t = cell.textContent?.trim() || '';
+                if (/\d[\d\s]*[.,]\d{2}\s*(₽|руб|RUB)/i.test(t) || /^\d[\d\s]*[.,]\d{2}$/.test(t)) {
+                  priceText = t;
+                  break;
+                }
+              }
+
+              results.push({
+                title: title.slice(0, 200),
+                link: linkEl?.href || '',
+                price_text: priceText,
+                excerpt: el.textContent?.trim().slice(0, 500) || '',
+              });
+            }
+            return results;
+          }
+
+          // Fallback: карточки
+          const selectors = [
+            '.card', '.lot-card', '.trade-card', '.search-result',
+            '.list-item', 'article', '[class*="card"]', '[class*="lot"]',
+          ];
+          let found: Element[] = [];
+          for (const sel of selectors) {
+            found = Array.from(document.querySelectorAll(sel));
+            if (found.length > 2) break;
+          }
+          for (const card of found.slice(0, 50)) {
+            const el = card as HTMLElement;
+            const linkEl = el.querySelector('a[href]') as HTMLAnchorElement;
+            const titleEl = el.querySelector('h2, h3, h4, .title, [class*="title"], [class*="name"]');
+            const priceEl = el.querySelector('.price, [class*="price"], .cost');
+            const title = titleEl?.textContent?.trim() || linkEl?.textContent?.trim() || '';
+            if (!title || title.length < 5) continue;
+            results.push({
+              title: title.slice(0, 200),
+              link: linkEl?.href || '',
+              price_text: priceEl?.textContent?.trim() || '',
+              excerpt: el.textContent?.trim().slice(0, 500) || '',
+            });
+          }
+          return results;
+        });
+
+        logger.info(`[roseltorg] Page ${pageNum}: found ${cards.length} cards`);
+
+        for (const card of cards) {
+          const area = extractArea(card.title + ' ' + card.excerpt);
+          const price = parsePrice(card.price_text);
+          const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
+          const excerpt = card.excerpt || '';
+          const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
+          const address = addrMatch ? addrMatch[0].trim() : '';
+
+          allProperties.push({
+            external_id: `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
+            url: fullLink,
+            title: card.title,
+            address,
+            city: detectCity(card.title + ' ' + excerpt),
+            area_sqm: area,
+            price,
+            price_per_sqm: price && area ? Math.round(price / area) : undefined,
+            property_type: classifyPropertyType(card.title),
+            auction_type: 'marketplace',
+            description: excerpt.length > 20 ? excerpt.slice(0, 500) : undefined,
           });
         }
-        return results;
-      });
 
-      logger.info(`[roseltorg] Found ${cards.length} cards at ${workingUrl}`);
-
-      for (const card of cards) {
-        const area = extractArea(card.title + ' ' + card.excerpt);
-        const price = parsePrice(card.price_text);
-        const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
-        const excerpt = card.excerpt || '';
-        const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
-        const address = addrMatch ? addrMatch[0].trim() : '';
-
-        allProperties.push({
-          external_id: `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
-          url: fullLink,
-          title: card.title,
-          address,
-          city: detectCity(card.title + ' ' + excerpt),
-          area_sqm: area,
-          price,
-          price_per_sqm: price && area ? Math.round(price / area) : undefined,
-          property_type: classifyPropertyType(card.title),
-          auction_type: 'marketplace',
-          description: excerpt.length > 20 ? excerpt.slice(0, 500) : undefined,
-        });
+        if (cards.length === 0) break;
       }
 
       logger.info(`[roseltorg] Total: ${allProperties.length} properties`);
