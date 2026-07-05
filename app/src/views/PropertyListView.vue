@@ -92,7 +92,33 @@
 
         <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border"
           style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <!-- Price range -->
+          <div class="mb-3">
+            <label class="block text-xs font-medium mb-1" style="color: var(--text-muted)">Цена лота (₽)</label>
+            <div class="flex gap-2 items-center">
+              <input v-model="parseFilters.priceFrom" type="number" placeholder="от" min="0"
+                class="w-full px-2 py-1.5 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+              <span class="text-xs flex-shrink-0" style="color: var(--text-muted)">—</span>
+              <input v-model="parseFilters.priceTo" type="number" placeholder="до" min="0"
+                class="w-full px-2 py-1.5 rounded-lg border text-sm"
+                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
+            </div>
+          </div>
+          <!-- Cities -->
+          <div class="mb-3">
+            <label class="block text-xs font-medium mb-1" style="color: var(--text-muted)">Город</label>
+            <div class="flex flex-wrap gap-1">
+              <label v-for="opt in cityOptions" :key="opt.value"
+                class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
+                :style="parseFilters.cities.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
+                <input type="checkbox" :value="opt.value" v-model="parseFilters.cities" class="hidden" />
+                {{ opt.label }}
+              </label>
+            </div>
+          </div>
+          <!-- Depth + Button -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t" style="border-color: var(--border-subtle)">
             <div class="flex items-center gap-2">
               <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
               <input v-model.number="parseDepth" type="number" min="1" max="5000"
@@ -843,6 +869,11 @@ doFetchFocus = fetchFocusItems
 type ParseStage = 'idle' | 'parsing' | 'done' | 'error'
 const parseStage = ref<ParseStage>('idle')
 const parseDepth = ref(20)
+const parseFilters = reactive({
+  priceFrom: '' as string | number,
+  priceTo: '' as string | number,
+  cities: ['moscow', 'mo', 'other'] as string[],
+})
 const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const parseDone = ref(false)
@@ -907,24 +938,20 @@ async function runParseOnly() {
   pipelineResults.detailsNeeded = 0
 
   try {
-    const sourcesRes = await api.get('/sources', {
-      params: { 'filters[is_active][$eq]': true, 'pagination[pageSize]': 100 },
+    // Build filters for pipeline
+    const filters: any = {}
+    if (parseFilters.priceFrom) filters.priceFrom = Number(parseFilters.priceFrom)
+    if (parseFilters.priceTo) filters.priceTo = Number(parseFilters.priceTo)
+    if (parseFilters.cities.length > 0 && parseFilters.cities.length < 3) filters.city = parseFilters.cities
+
+    // Start full pipeline (parse → analyze → digest)
+    await api.post('/pipeline/start', {
+      mode: 'full',
+      depth: parseDepth.value,
+      filters: Object.keys(filters).length ? filters : undefined,
     })
-    const sources = sourcesRes.data?.data || []
 
-    if (sources.length === 0) {
-      pipelineError.value = 'Нет активных источников'
-      parseStage.value = 'error'
-      return
-    }
-
-    parseSlugs.value = sources.map((s: any) => s.slug)
-    parseSourcesTotal.value = sources.length
-
-    await Promise.all(
-      sources.map((s: any) => api.post(`/cron/parse/${s.slug}`, { depth: parseDepth.value }).catch(() => null))
-    )
-
+    // Poll pipeline status until done
     await new Promise<void>((resolve, reject) => {
       let attempts = 0
       const maxAttempts = 2000
@@ -932,37 +959,46 @@ async function runParseOnly() {
         attempts++
         if (attempts > maxAttempts) {
           stopPolling()
-          reject(new Error('Парсинг превысил таймаут (100 мин)'))
+          reject(new Error('Пайплайн превысил таймаут (100 мин)'))
           return
         }
 
-        const stats = await pollQueueStats()
-        if (!stats) return
+        try {
+          const { data } = await api.get('/pipeline/status')
+          const state = data?.state
+          if (!state) return
 
-        parseSourcesDone.value = countSourcesParsed(stats.sources, parseSlugs.value)
-
-        detailsFetched.value = (stats.sources || [])
-          .filter((s: any) => parseSlugs.value.includes(s.slug))
-          .reduce((sum: number, s: any) => sum + (s.total_details_fetched || 0), 0)
-        detailsNeeded.value = (stats.sources || [])
-          .filter((s: any) => parseSlugs.value.includes(s.slug))
-          .reduce((sum: number, s: any) => sum + (s.total_details_needed || 0), 0)
-
-        const allParseDone = isQueueEmpty(stats.queues, 'parse-')
-        if (allParseDone && parseSourcesDone.value >= parseSourcesTotal.value) {
-          stopPolling()
-          for (const s of stats.sources || []) {
-            if (parseSlugs.value.includes(s.slug)) {
-              pipelineResults.parseTotal += (s.total_created || 0)
-              if (s.last_parse_status === 'error') pipelineResults.parseErrors++
-            }
+          // Map pipeline stages to parse progress UI
+          const stage = state.stage || ''
+          if (['parsing_scan', 'parsing_details'].includes(stage)) {
+            parseStage.value = 'parsing'
+            parseSourcesDone.value = state.sources_done || 0
+            parseSourcesTotal.value = state.sources_total || 0
+            detailsFetched.value = state.details_fetched || 0
+            detailsNeeded.value = state.details_needed || 0
+          } else if (['parsing_done', 'analyzing', 'analyzing_done', 'analyzing_skipped', 'digesting', 'digest_done'].includes(stage)) {
+            parseDone.value = true
+            parseStage.value = 'done'
+            parseSourcesDone.value = state.sources_done || parseSourcesDone.value
+            parseSourcesTotal.value = state.sources_total || parseSourcesTotal.value
+            detailsFetched.value = state.details_fetched || detailsFetched.value
+            detailsNeeded.value = state.details_needed || detailsNeeded.value
+            pipelineResults.parseTotal = state.objects_created || 0
           }
-          pipelineResults.detailsFetched = detailsFetched.value
-          pipelineResults.detailsNeeded = detailsNeeded.value
-          parseDone.value = true
-          parseStage.value = 'done'
-          resolve()
-        }
+
+          if (['done', 'done_with_errors', 'error', 'cancelled'].includes(stage)) {
+            stopPolling()
+            parseDone.value = true
+            parseStage.value = stage === 'error' ? 'error' : 'done'
+            pipelineResults.parseTotal = state.objects_created || 0
+            if (state.errors?.length) pipelineError.value = state.errors.join('; ')
+            if (stage === 'error') pipelineError.value = state.message || 'Ошибка пайплайна'
+            // Refresh table
+            page.value = 1
+            fetchItems()
+            resolve()
+          }
+        } catch { /* ignore polling errors */ }
       }, 3000)
     })
   } catch (err: any) {
