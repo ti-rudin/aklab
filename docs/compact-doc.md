@@ -464,6 +464,9 @@ deploy-prod.sh + бамп версии).
 31. **resetSourceDetailsCounters** — вызывается в начале КАЖДОГО parse-handler
     (для каждого источника). Обнуляет `total_details_fetched` и `total_details_needed`
     в 0 через PUT `/api/sources/:documentId`. Без этого счётчики кумулятивные.
+    **ВАЖНО (v1.1.5):** Pipeline дополнительно делает bulk-reset ВСЕХ активных
+    источников ДО enqueue parse jobs, чтобы агрегация не подхватывала stale
+    значения. Без этого `fetched > needed` и `needed` «прыгает» во время парсинга.
 32. **JWT_SECRET в .env на сервере** — если JWT_SECRET отсутствует в `api/.env`,
     каждый restart API генерирует новую соль → все JWT инвалидируются → 500 Forbidden.
     Symptom: frontend редиректит на /auth. Fix: добавить `JWT_SECRET=<random>` в `.env`.
@@ -518,6 +521,8 @@ deploy-prod.sh + бамп версии).
     через прямой SET текущего значения, НЕ additive (+1). Это устраняет
     race condition когда `fetched > needed`. Сбрасываются ОДИН раз в
     `resetSourceDetailsCounters` перед стартом парсера.
+    **v1.1.5:** Pipeline дополнительно bulk-resets ВСЕ источники ДО enqueue,
+    устраняя «прыжки» needed при последовательном старте парсеров.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 

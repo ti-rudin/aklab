@@ -223,6 +223,7 @@
           <li><strong>Error resilience</strong> — ошибки не прерывают pipeline</li>
           <li><strong>Cancel</strong> — кнопка «Отменить» в UI</li>
           <li><strong>Pipeline State</strong> — персистентное состояние в БД, reconnect при refresh</li>
+          <li><strong>Bulk counter reset</strong> — счётчики всех источников сбрасываются ДО enqueue (v1.1.5)</li>
         </ul>
       </section>
 
