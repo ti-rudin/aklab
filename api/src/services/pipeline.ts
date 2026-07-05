@@ -112,9 +112,15 @@ export class PipelineService {
 
   async updateState(patch: Partial<PipelineState>, message?: string): Promise<void> {
     const current = await this.getState();
+    // Prevent implicit status downgrade from 'running' to 'idle'
+    // Only explicit status changes (via patch.status) can change it
+    const safePatch = { ...patch };
+    if (current.status === 'running' && !('status' in patch)) {
+      safePatch.status = 'running';
+    }
     const updated: PipelineState = {
       ...current,
-      ...patch,
+      ...safePatch,
       message: message ?? patch.message ?? current.message,
       updated_at: new Date().toISOString(),
     };

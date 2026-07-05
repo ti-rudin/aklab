@@ -245,7 +245,7 @@
         </div>
 
         <!-- Прогресс пайплайна (SSE-based) -->
-        <div v-if="pipelineState.status !== 'idle' || pipelineDone" class="mt-3 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+        <div v-if="pipelineRunning || pipelineDone" class="mt-3 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
           <!-- Парсинг -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
@@ -492,7 +492,14 @@ const pipelineState = reactive({
 
 let eventSource: EventSource | null = null
 
-const pipelineRunning = computed(() => pipelineState.status === 'running' || pipelineState.status === 'cancelling')
+const pipelineRunning = computed(() =>
+  pipelineState.status === 'running' ||
+  pipelineState.status === 'cancelling' ||
+  // Defensive: if stage is active but status got corrupted
+  (pipelineState.stage !== 'idle' && pipelineState.stage !== 'done' &&
+   pipelineState.stage !== 'done_with_errors' && pipelineState.stage !== 'cancelled' &&
+   pipelineState.stage !== 'error')
+)
 const pipelineDone = computed(() => ['done', 'done_with_errors', 'cancelled', 'error'].includes(pipelineState.stage))
 const isParsingStage = computed(() => ['parsing_scan', 'parsing_details'].includes(pipelineState.stage))
 const isParsingDone = computed(() => pipelineState.stage === 'parsing_done' || pipelineDone.value)
@@ -570,7 +577,13 @@ onMounted(async () => {
     const res = await api.get('/pipeline/status')
     if (res.data?.ok && res.data.state) {
       updatePipelineState(res.data.state)
-      if (pipelineRunning.value) {
+      // Connect SSE if pipeline is (or might be) running
+      // Use stage-based check as defensive measure
+      const s = res.data.state
+      const mightBeRunning = s.status === 'running' || s.status === 'cancelling' ||
+        (s.stage && s.stage !== 'idle' && s.stage !== 'done' &&
+         s.stage !== 'done_with_errors' && s.stage !== 'cancelled' && s.stage !== 'error')
+      if (mightBeRunning) {
         connectSSE()
       }
     }

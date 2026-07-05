@@ -23,6 +23,8 @@ export default {
       const depth = body.depth ?? 20;
       const filters = body.filters;
 
+      strapi.log.info(`[pipeline] Start requested: mode=${mode}, depth=${depth}`);
+
       // Fire and forget — pipeline runs in background
       const run = async () => {
         try {
@@ -31,16 +33,17 @@ export default {
           } else if (mode === 'parse') {
             await pipeline.updateState({ status: 'running', stage: 'parsing_scan', trigger: 'manual' });
             await pipeline.parseAll(depth);
-            await pipeline.updateState({ status: 'idle' });
+            await pipeline.updateState({ status: 'idle', stage: 'done' });
           } else if (mode === 'analyze') {
             await pipeline.updateState({ status: 'running', stage: 'analyzing', trigger: 'manual' });
             await pipeline.analyze(filters);
-            await pipeline.updateState({ status: 'idle' });
+            await pipeline.updateState({ status: 'idle', stage: 'done' });
           } else if (mode === 'digest') {
             await pipeline.updateState({ status: 'running', stage: 'digesting', trigger: 'manual' });
             await pipeline.digest();
-            await pipeline.updateState({ status: 'idle' });
+            await pipeline.updateState({ status: 'idle', stage: 'done' });
           }
+          strapi.log.info(`[pipeline] Completed: mode=${mode}`);
         } catch (err: any) {
           strapi.log.error(`[pipeline] Error in mode=${mode}: ${err.message}`);
           await pipeline.updateState({

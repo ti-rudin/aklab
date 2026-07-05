@@ -216,6 +216,8 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
         total_created: 0,
         total_details_fetched: 0,
         total_details_needed: 0,
+        last_parse_status: null,
+        last_parse_error: null,
       } }),
     });
     if (!putRes.ok) {
