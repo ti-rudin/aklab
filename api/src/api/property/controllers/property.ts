@@ -13,19 +13,21 @@ import { getQueueService } from '../../../services/queueService';
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**
    * POST /api/properties/clear-new
-   * Удалить все объекты со статусом "new".
+   * Удалить все объекты кроме статуса "in_progress" (В работе).
    */
   async clearNew(ctx) {
-    // 1. Сначала находим все объекты со статусом "new", чтобы знать documentId для удаления фото
-    const newProperties = await strapi.db.query("api::property.property").findMany({
-      where: { status: "new" },
+    const keepStatus = "in_progress";
+
+    // 1. Находим объекты для удаления (все кроме "in_progress")
+    const toDelete = await strapi.db.query("api::property.property").findMany({
+      where: { status: { $ne: keepStatus } },
       select: ["documentId"],
     });
 
     // 2. Удаляем папки с фото
     const photosBase = path.join(process.cwd(), "data", "photos");
     let photosDeleted = 0;
-    for (const prop of newProperties) {
+    for (const prop of toDelete) {
       const photoDir = path.join(photosBase, prop.documentId);
       try {
         await fs.rm(photoDir, { recursive: true, force: true });
@@ -37,7 +39,7 @@ export default factories.createCoreController("api::property.property", ({ strap
 
     // 3. Удаляем записи из БД
     const deleted = await strapi.db.query("api::property.property").deleteMany({
-      where: { status: "new" },
+      where: { status: { $ne: keepStatus } },
     });
 
     ctx.body = { deleted: deleted.count, photosDeleted };

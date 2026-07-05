@@ -91,7 +91,7 @@ describe('property controller', () => {
       expect(ctx.body).toEqual({ deleted: 0, photosDeleted: 0 });
     });
 
-    it('should pass status=new filter', async () => {
+    it('should pass status!=in_progress filter', async () => {
       const queryResult = strapi.db.query('api::property.property');
       (queryResult.findMany as any).mockResolvedValue([]);
       const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
@@ -100,7 +100,7 @@ describe('property controller', () => {
 
       await actions.clearNew(ctx);
 
-      expect(deleteMany).toHaveBeenCalledWith({ where: { status: 'new' } });
+      expect(deleteMany).toHaveBeenCalledWith({ where: { status: { $ne: 'in_progress' } } });
     });
 
     it('should delete photo directories for new properties', async () => {

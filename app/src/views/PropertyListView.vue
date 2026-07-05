@@ -64,7 +64,7 @@
           style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <h3 class="text-lg font-semibold mb-3" style="color: var(--text-main)">Подтверждение</h3>
           <p class="text-sm mb-6" style="color: var(--text-muted)">
-            Вы уверены, что хотите удалить все объекты со статусом «Новый»? Это действие нельзя отменить.
+            Вы уверены, что хотите удалить все объекты кроме «В работе»? Это действие нельзя отменить.
           </p>
           <div class="flex justify-end gap-3">
             <button @click="showClearDialog = false"
@@ -166,7 +166,6 @@
           <select v-model="filters.status" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
             <option value="">Все</option>
             <option value="new">Новый</option>
-            <option value="in_progress">В работе</option>
             <option value="viewed">Просмотрен</option>
             <option value="rejected">Отклонён</option>
           </select>
@@ -757,6 +756,8 @@ async function fetchItems() {
     pagination: { page: page.value, pageSize },
   }
   const f: any = {}
+  // На вкладке «Все объекты» скрываем объекты «В работе»
+  f.status = { $ne: 'in_progress' }
   if (filters.city) f.city = { $eq: filters.city }
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
