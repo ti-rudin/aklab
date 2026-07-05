@@ -43,8 +43,6 @@ const EXCLUDE_KEYWORDS = [
   'оборудовани', 'станок', 'прибор', 'инвентар',
 ];
 
-
-
 export class FabrikantParser implements SourceParser {
   name = 'fabrikant';
 

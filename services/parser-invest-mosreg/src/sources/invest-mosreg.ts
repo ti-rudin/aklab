@@ -25,7 +25,6 @@ const HEADERS: Record<string, string> = {
   'Accept-Language': 'ru-RU,ru;q=0.9',
 };
 
-
 /* ─── Разбор полей объекта ─── */
 
 interface MapPlace {

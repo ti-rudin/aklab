@@ -19,7 +19,6 @@ const ITEMS_PER_PAGE = 10;
 
 const MOSCOW_REGIONS = new Set(['77', '50']);
 
-
 function extractAddress(item: any): string {
   const desc = item.lotDescription || item.lotName || '';
   const match = desc.match(/(?:по адресу|адрес|расположенн?\s+по)[:\s]+(.+?)(?:[,;]|$)/i);

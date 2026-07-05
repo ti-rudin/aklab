@@ -31,7 +31,6 @@ function searchApiUrl(page: number): string {
 
 // ─── Классификация типа недвижимости ────────────────────────────────────────
 
-
 // ─── Парсинг цены ──────────────────────────────────────────────────────────
 
 function parsePrice(text: string): number | undefined {

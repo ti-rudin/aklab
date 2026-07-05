@@ -30,8 +30,6 @@ const TITLE_EXCLUDE_PATTERNS = [
   'авточасти', 'запчаст', 'шина', 'диск колесн', // автозапчасти
 ];
 
-
-
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
   const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');

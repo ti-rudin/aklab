@@ -14,8 +14,6 @@ const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
 const ITEMS_PER_PAGE = 20;
 
-
-
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
   const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');

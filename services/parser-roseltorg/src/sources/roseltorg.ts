@@ -9,7 +9,6 @@ import { logger, randomDelay, createStealthContext, retryGoto, detectCity, class
 const BASE_URL = 'https://roseltorg.ru';
 const MAX_PAGES = 5;
 
-
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
   const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');

@@ -14,8 +14,6 @@ const SEARCH_URL = `${BASE_URL}/showcase/list?categories=1`;
 const MAX_PAGES = 10;
 const MAX_AGE_HOURS = 24;
 
-
-
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
   const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');

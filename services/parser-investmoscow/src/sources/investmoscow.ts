@@ -28,7 +28,6 @@ const HEADERS: Record<string, string> = {
   'Accept-Language': 'ru-RU,ru;q=0.9',
 };
 
-
 /* ─── Nuxt payload ─── */
 
 /**
