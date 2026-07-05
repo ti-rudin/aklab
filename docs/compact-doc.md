@@ -7,7 +7,7 @@
 
 Сервис мониторинга коммерческой недвижимости. Автоматически находит
 объекты (офисы, склады, торговые помещения), цена которых на 20%+ ниже
-рыночной. Парсит 8 активных источников (Алфалот, Инвест Москва, Сбербанк-АСТ, М-ЕТС, Агрегатор Банкрот, ЕТПРФ, ГИС Торги, Инвест МО), считает
+рыночной. Парсит 10 активных источников (Алфалот, Инвест Москва, Сбербанк-АСТ, М-ЕТС, Агрегатор Банкрот, ЕТПРФ, ГИС Торги, Инвест МО, Фабрикант, Росэлторг), считает
 "рыночную" цену через похожие объекты в радиусе X км, шлёт алерты в
 Telegram (мгновенно) и утренний дайджест на email.
 
@@ -215,15 +215,15 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.0)
+## Текущее состояние (июль 2026, v1.1.12)
 
-- Версия: 1.1.0
+- Версия: 1.1.12
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
   - **Traefik prod:** Docker на 213.184.136.221 (`/opt/traefik/`)
   - **Traefik dev:** Docker на 192.168.11.131 (редактировать `/home/rudin/home-traefik/traefik-config.yml`)
-- **11 источников парсинга** (8 активных, 3 отключены: fedresurs, fabrikant, roseltorg):
+- **11 источников парсинга** (10 активных, 1 отключён: fedresurs):
   - `services/parser-alfalot/` — Playwright SPA (ecosystem.alfalot.ru), порт 1349
   - `services/parser-investmoscow/` — fetch + Nuxt SSR (__NUXT_DATA__), порт 1353
   - `services/parser-sberbank-ast/` — Playwright AJAX + XML (input#xmlData), порт 1351
@@ -232,8 +232,8 @@ deploy-prod.sh + бамп версии).
   - `services/parser-etprf/` — Playwright AJAX (sale.etprf.ru), порт 1350
   - `services/parser-torgi-gov/` — fetch JSON API (/new/api/public/lotcards), порт 1346
   - `services/parser-invest-mosreg/` — fetch JSON API (/aapi/map/places), порт 1352
-  - `services/parser-fabrikant/` — Playwright SPA (fabrikant.ru/procedure/search/sales), порт 1345, **fetchDetails** (описание, контакты, фото)
-  - `services/parser-roseltorg/` — Playwright SPA (roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost), порт 1354, **fetchDetails** (описание, контакты, фото). is_active=0 (нужно активировать)
+  - `services/parser-fabrikant/` — Playwright SPA (fabrikant.ru/procedure/search/sales), порт 1345, **fetchDetails** (описание, контакты, фото). is_active=1.
+  - `services/parser-roseltorg/` — Playwright SPA (roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost), порт 1354, **fetchDetails** (описание, контакты, фото). is_active=1.
   - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
 - **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
 - **Cron расписание**: torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, m-ets → 06:00
@@ -248,7 +248,8 @@ deploy-prod.sh + бамп версии).
   Public role: только login/register/forgot-password.
 - **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
 - **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
-- **Frontend** — 7 страниц: `/` (Dashboard), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.
+- **Frontend** — 7 страниц: `/` (Dashboard — статистика, горячие объекты, таблица типов недвижимости с кликабельными кнопками → фильтр по типу), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.
+- **Фильтры мультиселект** — тип недвижимости и город во вкладках «Все объекты» и «В фокусе» реализованы как чекбоксы (pill-стиль), не select. Множественный выбор, query builder использует `$in`. Dashboard → `/properties?property_type=X` передаёт фильтр.
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
 - **Pipeline Orchestrator** (v1.1.0):
   - **Единый сервис** `api/src/services/pipeline.ts` — оркестрирует парсинг → анализ → дайджест.
@@ -262,7 +263,7 @@ deploy-prod.sh + бамп версии).
   - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
   - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `GET /api/pipeline/stream` (SSE).
   - **3 триггера в UI:**
-    1. **Запуск парсинга** (`/properties` → collapsible) — только парсинг.
+    1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
     2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.
     3. **Пересчитать** (`/properties` → таб «В фокусе») — только scoring.
   - **Дайджест** — top-100 объектов из фокуса (по focus_score), НЕ только is_undervalued. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
@@ -270,7 +271,7 @@ deploy-prod.sh + бамп версии).
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
 - **Парсеры** (обновлено 05.07.2026):
-  - **8 активных парсеров** + 2 готовых к активации (fabrikant, roseltorg), 1 отключён (fedresurs).
+  - **10 активных парсеров** + 1 отключён (fedresurs — Qrator anti-bot).
   - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 204 объекта, fetchDetails.
   - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
   - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). fetchDetails.
@@ -279,8 +280,8 @@ deploy-prod.sh + бамп версии).
   - `etprf` — Playwright AJAX (sale.etprf.ru). 200 объектов, fetchDetails.
   - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). fetchDetails.
   - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов.
-  - `fabrikant` — Playwright SPA (fabrikant.ru). **fetchDetails** (описание, контакты, фото). is_active=0.
-  - `roseltorg` — Playwright SPA (roseltorg.ru). **fetchDetails** + URL с фильтрами (Москва, коммерческая). is_active=0.
+  - `fabrikant` — Playwright SPA (fabrikant.ru). **fetchDetails** (описание, контакты, фото). is_active=1.
+  - `roseltorg` — Playwright SPA (roseltorg.ru). **fetchDetails** + URL с фильтрами (Москва, коммерческая). is_active=1.
   - `fedresurs` — **ОТКЛЮЧЁН** (Qrator anti-bot).
 - Содержимое:
   - **api/src/api/** — 7 content-types (Property, Setting singleton,
@@ -746,9 +747,11 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 44. **resetSourceDetailsCounters: сбрасывать ВСЕ счётчики** — `total_found` и `total_created` должны обнуляться перед каждым парсингом иначе кумулятивные (6015 вместо 52). В v1.0.103 сбрасывались только `total_details_fetched/needed`. Исправлено в v1.0.104.
 45. **Analyzer: объекты без эталона → analyzed=true** — если `MarketReference` не найден для city/property_type, объект помечается `is_undervalued: false, deviation_percent: 0` вместо `analyzed: false`. Без этого `analyzeProgress.done` никогда не достигается (зависание 48/77). v1.0.104.
 46. **Pipeline: два поля «Глубина»** — на `/settings` есть ОТДЕЛЬНОЕ поле «Глубина парсинга (по расписанию)» (form.parse_depth, для cron) и поле «Глубина:» в секции ручного запуска (parseDepth, для pipeline). Они НЕ связаны. Пользователь может поменять одно и удивиться что другое не изменилось. Нужно синкать или убрать дублирование.
-47. **fabrikant/roseltorg: fetchDetails** — добавлены в v1.0.105. Все 8 парсеров с HTML scraping теперь имеют fetchDetails. investmoscow/invest-mosreg — JSON API, им не нужно. fabrikant и roseltorg is_active=0 (нужно активировать вручную).
+47. **fabrikant/roseltorg: fetchDetails** — добавлены в v1.0.105. Все 8 парсеров с HTML scraping теперь имеют fetchDetails. investmoscow/invest-mosreg — JSON API, им не нужно. fabrikant и roseltorg is_active=1 (включены в v1.1.12).
 48. **roseltorg URL** — правильный URL: `/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost?sale=all&okato[]=45000000000&status[]=5&status[]=0&status[]=1` (Москва, коммерческая, активные). Раньше парсер пробовал случайные URL'ы (/lot-search, /search и т.д.) которые не существовали.
 49. **fabrikant data-slot selectors** — карточки: `[data-slot="card"][data-id]`, title: `[data-slot="anchor"]`, цена: `[data-slot="text"]` содержащий "RUB", URL: `/procedure/search/sales` (вкладка "Продажи"), пагинация: `?page=N`.
+50. **Focus endpoint: comma-separated property_type** — `GET /api/properties/focus?property_type=office,warehouse` поддерживает множественные типы через запятую → SQL `IN (?,?)`. Фронтенд передаёт массив как `join(',')`. v1.1.12.
+51. **Фильтры мультиселект** — `filters.city` и `filters.property_type` в PropertyListView теперь `string[]` (были `string`). Strapi query builder использует `$in` вместо `$eq`. Composable `useFocusTab` тоже мигрирован. localStorage загрузка совместима со старым форматом (строка → массив). v1.1.12.
 
 ### 2026-07-05: Pipeline progress + analyzer fix (v1.0.104 → v1.0.106)
 
