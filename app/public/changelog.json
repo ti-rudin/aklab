@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.104",
+    "date": "5 июля 2026",
+    "time": "08:55",
+    "items": [
+      {
+        "text": "Pipeline progress — детальные страницы + анализ X/Y + cumulative total_created",
+        "type": "fix"
+      },
+      {
+        "text": "V1.0.103",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.103",
     "date": "5 июля 2026",
     "time": "08:11",
