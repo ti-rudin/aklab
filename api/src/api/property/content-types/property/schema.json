@@ -123,6 +123,7 @@
         "production",
         "free_purpose",
         "apartment",
+        "land",
         "other"
       ],
       "default": "other"

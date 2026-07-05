@@ -7,7 +7,7 @@
  * Playwright, stealth context, anti-ban.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
 
@@ -31,17 +31,6 @@ function searchApiUrl(page: number): string {
 
 // ─── Классификация типа недвижимости ────────────────────────────────────────
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('квартир')) return 'apartment';
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышлен')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
-      lower.includes('гараж') || lower.includes('здани')) return 'free_purpose';
-  return 'other';
-}
 
 // ─── Парсинг цены ──────────────────────────────────────────────────────────
 

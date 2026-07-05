@@ -12,9 +12,13 @@
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Город *</label>
           <select v-model="form.city" class="w-full px-3 py-2 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
             <option value="" disabled>Выберите…</option>
-            <option value="moscow">Москва</option>
-            <option value="mo">МО</option>
-            <option value="other">Другой</option>
+            <option value="free_purpose">Св. назначения</option>
+            <option value="apartment">Квартира</option>
+            <option value="land">Зем. участок</option>
+            <option value="other">Другое</option>в. назначения</option>
+            <option value="apartment">Квартира</option>
+            <option value="land">Зем. участок</option>
+            <option value="other">Другое</option>
           </select>
         </div>
         <div>
@@ -25,7 +29,9 @@
             <option value="warehouse">Склад</option>
             <option value="retail">Торговля</option>
             <option value="production">Производство</option>
-            <option value="free_purpose">Свободного назначения</option>
+            <option value="free_purpose">Св. назначения</option>
+            <option value="apartment">Квартира</option>
+            <option value="land">Зем. участок</option>
             <option value="other">Другое</option>
           </select>
         </div>

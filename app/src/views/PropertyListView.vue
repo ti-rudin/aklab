@@ -186,6 +186,8 @@
             <option value="retail">Торговля</option>
             <option value="production">Производство</option>
             <option value="free_purpose">Св. назначения</option>
+            <option value="apartment">Квартира</option>
+            <option value="land">Зем. участок</option>
             <option value="other">Другое</option>
           </select>
         </div>
@@ -420,6 +422,8 @@
               <option value="retail">Торговля</option>
               <option value="production">Производство</option>
               <option value="free_purpose">Св. назначения</option>
+              <option value="apartment">Квартира</option>
+              <option value="land">Зем. участок</option>
               <option value="other">Другое</option>
             </select>
           </div>

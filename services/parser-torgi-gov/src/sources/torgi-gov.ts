@@ -8,6 +8,7 @@
  * Регион = 77 (Москва), 50 (МО).
  */
 
+import { classifyPropertyType } from '@aklab/service-shared';
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
@@ -18,16 +19,6 @@ const ITEMS_PER_PAGE = 10;
 
 const MOSCOW_REGIONS = new Set(['77', '50']);
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышлен') || lower.includes('цех')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ')) return 'free_purpose';
-  if (lower.includes('квартир')) return 'apartment';
-  return 'other';
-}
 
 function extractAddress(item: any): string {
   const desc = item.lotDescription || item.lotName || '';

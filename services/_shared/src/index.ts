@@ -10,4 +10,5 @@ export { propertyExists, createProperty, updateSourceStats, resetSourceDetailsCo
 export { createParseHandler } from './parse-handler';
 export { randomDelay, USER_AGENTS, getRandomUA, retryGoto, createStealthContext } from './anti-ban';
 export { detectCity } from './city-detect';
+export { classifyPropertyType } from './property-classifier';
 export type { ParsedProperty, SourceParser, ParseOptions, ParseResult } from './types';

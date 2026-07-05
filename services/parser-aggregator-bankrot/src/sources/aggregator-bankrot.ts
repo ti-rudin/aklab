@@ -7,7 +7,7 @@
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
@@ -30,17 +30,6 @@ const TITLE_EXCLUDE_PATTERNS = [
   'авточасти', 'запчаст', 'шина', 'диск колесн', // автозапчасти
 ];
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышленн') || lower.includes('цех')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
-      lower.includes('гараж') || lower.includes('бокс')) return 'free_purpose';
-  if (lower.includes('квартир')) return 'apartment';
-  return 'other';
-}
 
 
 function parsePrice(text: string): number | undefined {

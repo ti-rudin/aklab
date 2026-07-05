@@ -8,7 +8,7 @@
  * компактного массива с обратными ссылками (Nuxt payload).
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay } from '@aklab/service-shared';
+import { logger, randomDelay, classifyPropertyType } from '@aklab/service-shared';
 
 const BASE_URL = 'https://investmoscow.ru';
 
@@ -28,17 +28,6 @@ const HEADERS: Record<string, string> = {
   'Accept-Language': 'ru-RU,ru;q=0.9',
 };
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышлен')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
-      lower.includes('гараж') || lower.includes('здани')) return 'free_purpose';
-  if (lower.includes('квартир') || lower.includes('апартамен')) return 'apartment';
-  return 'other';
-}
 
 /* ─── Nuxt payload ─── */
 

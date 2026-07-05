@@ -9,6 +9,7 @@
  *   287 — Аренда
  *   1008 — Коммерческие объекты (ЦИАН)
  */
+import { classifyPropertyType } from '@aklab/service-shared';
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
@@ -24,17 +25,6 @@ const HEADERS: Record<string, string> = {
   'Accept-Language': 'ru-RU,ru;q=0.9',
 };
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышленн')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
-      lower.includes('гараж') || lower.includes('здани')) return 'free_purpose';
-  if (lower.includes('квартир') || lower.includes('апартамен')) return 'apartment';
-  return 'other';
-}
 
 /* ─── Разбор полей объекта ─── */
 

@@ -44,7 +44,7 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
   }
 
   // Если парсер уже классифицировал как коммерческий тип — доверяем парсеру
-  const COMMERCIAL_TYPES = ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'apartment'];
+  const COMMERCIAL_TYPES = ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'apartment', 'land'];
   if (COMMERCIAL_TYPES.includes(props.property_type)) {
     return true;
   }
@@ -75,10 +75,10 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
     }
   }
 
-  // 'земельный участок' — только если рядом нет 'нежилое'
-  if (title.includes('земельн') && !title.includes('нежилое')) {
-    return false;
-  }
+  // Земельные участки — теперь разрешены (тип land)
+  // if (title.includes('земельн') && !title.includes('нежилое')) {
+  //   return false;
+  // }
 
   // 'доля в праве' — обычно не коммерческая недвижимость
   if (title.includes('доля в праве')) {

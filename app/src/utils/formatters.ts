@@ -13,6 +13,8 @@ export const typeLabel = (v?: string): string =>
     retail: 'Торговля',
     production: 'Производство',
     free_purpose: 'Свободного назначения',
+    apartment: 'Квартира',
+    land: 'Зем. участок',
     other: 'Другое',
   })[v || ''] || v || ''
 

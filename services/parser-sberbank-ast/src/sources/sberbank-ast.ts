@@ -7,24 +7,13 @@
  * ~6600 лотов, ~332 страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
 
 const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
 const ITEMS_PER_PAGE = 20;
 
-function classifyPropertyType(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('офис') || lower.includes('административн')) return 'office';
-  if (lower.includes('склад') || lower.includes('хранилищ')) return 'warehouse';
-  if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
-  if (lower.includes('производствен') || lower.includes('промышленн')) return 'production';
-  if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
-      lower.includes('гараж') || lower.includes('здани')) return 'free_purpose';
-  if (lower.includes('квартир')) return 'apartment';
-  return 'other';
-}
 
 
 function parsePrice(text: string): number | undefined {
