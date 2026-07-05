@@ -202,13 +202,15 @@ export async function updateSourceStats(documentId: string, data: {
 
 /** Сбросить счётчики fetchDetails перед новым запуском. */
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
+  // Сбрасываем только cumulative-счётчики (total_found/total_created).
+  // НЕ трогаем total_details_fetched/total_details_needed — они управляются
+  // parse-handler'ом во время выполнения и сброс здесь вызывает race condition
+  // (второй job обнуляет needed пока первый ещё фетчит детали).
   try {
     const putRes = await fetch(`${BASE}/sources/${documentId}`, {
       method: 'PUT',
       headers: HEADERS,
       body: JSON.stringify({ data: {
-        total_details_fetched: 0,
-        total_details_needed: 0,
         total_found: 0,
         total_created: 0,
       } }),
@@ -218,6 +220,22 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
     }
   } catch (err: any) {
     logger.warn(`resetSourceDetailsCounters error: ${err.message}`);
+  }
+}
+
+/** Сбросить total_details_fetched в 0 перед началом нового цикла fetchDetails. */
+export async function resetDetailsFetched(documentId: string): Promise<void> {
+  try {
+    const putRes = await fetch(`${BASE}/sources/${documentId}`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({ data: { total_details_fetched: 0 } }),
+    });
+    if (!putRes.ok) {
+      logger.warn(`resetDetailsFetched failed (${putRes.status})`);
+    }
+  } catch (err: any) {
+    logger.warn(`resetDetailsFetched error: ${err.message}`);
   }
 }
 
