@@ -100,10 +100,10 @@ export function createParseHandler(parser: SourceParser) {
                 Object.assign(prop, details);
                 detailsFetched++;
                 logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
-                // Обновление fetched для UI (каждый fetchDetails)
+                // Обновление fetched для UI (SET текущего значения)
                 if (req.documentId) {
                   updateSourceStats(req.documentId, {
-                    total_details_fetched: 1,
+                    total_details_fetched: detailsFetched,
                   }).catch(() => {});
                 }
               }

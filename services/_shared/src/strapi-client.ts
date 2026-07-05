@@ -182,8 +182,8 @@ export async function updateSourceStats(documentId: string, data: {
         if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
         if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
         if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
-        // total_details_fetched: additive (инкремент +1 за каждый fetchDetails)
-        if (hasFetchDelta) updateData.total_details_fetched = (current?.total_details_fetched || 0) + data.total_details_fetched;
+        // total_details_fetched: прямой SET (текущее значение, не инкремент)
+        if (hasFetchDelta) updateData.total_details_fetched = data.total_details_fetched;
         // total_details_needed: прямой SET (точное кол-во после existence check)
         if (hasNeededVal) updateData.total_details_needed = data.total_details_needed;
       } else {
