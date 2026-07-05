@@ -120,10 +120,13 @@ export class PipelineService {
     };
 
     try {
-      await this.strapi.db.query('api::setting.setting').update({
-        where: {},
-        data: { pipeline_state: updated },
-      });
+      const setting = await this.strapi.db.query('api::setting.setting').findOne({});
+      if (setting) {
+        await this.strapi.db.query('api::setting.setting').update({
+          where: { id: setting.id },
+          data: { pipeline_state: updated },
+        });
+      }
     } catch (err: any) {
       this.strapi.log.warn(`[pipeline] Failed to update state: ${err.message}`);
     }
@@ -133,10 +136,15 @@ export class PipelineService {
   }
 
   async resetState(): Promise<void> {
-    await this.strapi.db.query('api::setting.setting').update({
-      where: {},
-      data: { pipeline_state: null },
-    });
+    try {
+      const setting = await this.strapi.db.query('api::setting.setting').findOne({});
+      if (setting) {
+        await this.strapi.db.query('api::setting.setting').update({
+          where: { id: setting.id },
+          data: { pipeline_state: null },
+        });
+      }
+    } catch { /* ok */ }
     broadcastSSE('progress', emptyState());
   }
 
