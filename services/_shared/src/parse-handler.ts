@@ -10,7 +10,7 @@
 
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser, ParseResult } from './types';
-import { propertyExists, createProperty, logCron, updateSourceStats, resetSourceDetailsCounters, resetDetailsFetched } from './strapi-client';
+import { propertyExists, createProperty, logCron, updateSourceStats, resetSourceDetailsCounters, resetDetailsCounters } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 
@@ -82,7 +82,7 @@ export function createParseHandler(parser: SourceParser) {
         detailsNeeded = newProperties.length;
         if (req.documentId) {
           // Сбрасываем fetched перед новым циклом (needed устанавливаем ниже)
-          await resetDetailsFetched(req.documentId).catch(() => {});
+          await resetDetailsCounters(req.documentId).catch(() => {});
           await updateSourceStats(req.documentId, {
             total_details_needed: detailsNeeded,
           }).catch(() => {});

@@ -223,19 +223,19 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
   }
 }
 
-/** Сбросить total_details_fetched в 0 перед началом нового цикла fetchDetails. */
-export async function resetDetailsFetched(documentId: string): Promise<void> {
+/** Сбросить total_details_fetched и total_details_needed в 0 перед началом нового цикла fetchDetails. */
+export async function resetDetailsCounters(documentId: string): Promise<void> {
   try {
     const putRes = await fetch(`${BASE}/sources/${documentId}`, {
       method: 'PUT',
       headers: HEADERS,
-      body: JSON.stringify({ data: { total_details_fetched: 0 } }),
+      body: JSON.stringify({ data: { total_details_fetched: 0, total_details_needed: 0 } }),
     });
     if (!putRes.ok) {
-      logger.warn(`resetDetailsFetched failed (${putRes.status})`);
+      logger.warn(`resetDetailsCounters failed (${putRes.status})`);
     }
   } catch (err: any) {
-    logger.warn(`resetDetailsFetched error: ${err.message}`);
+    logger.warn(`resetDetailsCounters error: ${err.message}`);
   }
 }
 
