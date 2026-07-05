@@ -219,6 +219,28 @@ export class PipelineService {
       objects_created: 0,
     }, `Сканирование источников... (0/${total})`);
 
+    // Сброс счётчиков ВСЕХ активных источников ДО enqueue,
+    // чтобы агрегация не подхватывала stale значения от прошлого запуска
+    const resetData = {
+      total_details_fetched: 0,
+      total_details_needed: 0,
+      total_found: 0,
+      total_created: 0,
+      last_parse_status: null,
+      last_parse_error: null,
+    };
+    let resetCount = 0;
+    for (const src of sources) {
+      try {
+        await this.strapi.db.query('api::source.source').update({
+          where: { documentId: (src as any).documentId },
+          data: resetData,
+        });
+        resetCount++;
+      } catch { /* ignore individual failures */ }
+    }
+    console.log(`[pipeline] Source counters reset for ${resetCount}/${total} sources`);
+
     // Enqueue all parsers
     const corrId = `pipeline-parse-${Date.now()}`;
     const slugs: string[] = [];
