@@ -7,7 +7,7 @@
  * 3. analyze cron регистрируется на 08:00
  * 4. digest cron регистрируется
  * 5. cleanup cron регистрируется
- * 6. score cron регистрируется на 08:05
+ * 6. score merged into analyze (no separate cron)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -17,17 +17,15 @@ const {
   mockCronSchedule,
   mockAddToQueue,
   mockGetQueueService,
-  mockScoreAllProperties,
+  mockAnalyze,
+  mockDigest,
 } = vi.hoisted(() => {
   return {
     mockCronSchedule: vi.fn().mockReturnValue({ stop: vi.fn() }),
     mockAddToQueue: vi.fn(),
     mockGetQueueService: vi.fn(),
-    mockScoreAllProperties: vi.fn().mockResolvedValue({
-      scored: 5,
-      in_focus: 2,
-      by_tag: { good: 3 },
-    }),
+    mockAnalyze: vi.fn().mockResolvedValue({ undervalued: 2, errors: [] }),
+    mockDigest: vi.fn().mockResolvedValue({ sent: true, errors: [] }),
   };
 });
 
@@ -42,9 +40,12 @@ vi.mock('../../services/queueService', () => ({
   getQueueService: mockGetQueueService,
 }));
 
-// ─── Mock focusEngine ─────────────────────────────────────────────
-vi.mock('../../services/focusEngine', () => ({
-  scoreAllProperties: mockScoreAllProperties,
+// ─── Mock pipeline service ──────────────────────────────────────
+vi.mock('../../services/pipeline', () => ({
+  getPipelineService: vi.fn().mockReturnValue({
+    analyze: mockAnalyze,
+    digest: mockDigest,
+  }),
 }));
 
 // ─── Mock strapi ──────────────────────────────────────────────────
@@ -104,8 +105,8 @@ describe('Cron Registration', () => {
     const scheduleCalls = mockCronSchedule.mock.calls.map(c => c[0]);
     expect(scheduleCalls).toContain('0 3 * * *'); // fabrikant
     expect(scheduleCalls).toContain('0 4 * * *'); // torgi-gov
-    // Общее: 2 source + analyze + score + digest + cleanup = 6
-    expect(scheduleCalls.length).toBeGreaterThanOrEqual(6);
+    // Общее: 2 source + analyze + digest + cleanup = 5
+    expect(scheduleCalls.length).toBeGreaterThanOrEqual(5);
   });
 
   // ─── 2. Неактивные sources не регистрируются ────────────────────
@@ -181,22 +182,16 @@ describe('Cron Registration', () => {
     );
   });
 
-  // ─── 6. score cron регистрируется на 08:05 ─────────────────────
-  it('score:properties cron регистрируется на 08:05', async () => {
+  // ─── 6. score merged into analyze — no separate cron ──────────────
+  it('score:properties не регистрируется отдельно (встроен в analyze)', async () => {
     const mockStrapi = createMockStrapi();
     const { registerCrons } = await import('../../cron/index');
 
     registerCrons(mockStrapi as any);
 
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      '5 8 * * *',
-      expect.any(Function),
-      expect.objectContaining({ timezone: 'Europe/Moscow' })
-    );
-
-    expect(mockStrapi.log.info).toHaveBeenCalledWith(
-      '[cron] Registered: score:properties (daily 08:05 MSK)'
-    );
+    // Score cron '5 8 * * *' больше не регистрируется
+    const scheduleCalls = mockCronSchedule.mock.calls.map(c => c[0]);
+    expect(scheduleCalls).not.toContain('5 8 * * *');
   });
 
   // ─── 7. Ошибка загрузки sources логируется ─────────────────────

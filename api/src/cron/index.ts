@@ -14,7 +14,6 @@
 import type { Core } from '@strapi/strapi';
 import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
-import { scoreAllProperties } from "../services/focusEngine";
 import type { StrapiInstance } from '../types/strapi';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
@@ -97,56 +96,25 @@ export function registerCrons(strapi: Core.Strapi): void {
     }
   })();
 
-  // 2. analyze:properties — ежедневно в 08:00 МСК, после парсеров (03:00–06:00)
+  // 2. analyze:properties + score — ежедневно в 08:00 МСК (после парсеров 03:00–06:00)
   cron.schedule('0 8 * * *', async () => {
     const corrId = `cron-analyze-${Date.now()}`;
     strapi.log.info(`[cron] analyze:properties triggered (${corrId})`);
     try {
-      const s = strapi as unknown as StrapiInstance;
+      const { getPipelineService } = await import('../services/pipeline');
+      const pipeline = getPipelineService(strapi as unknown as StrapiInstance);
       const setting = await getSetting(strapi);
-
-      const filters: any = { status: 'new', is_undervalued: { $null: true } };
-      const priceFrom = setting?.price_from;
-      const priceTo = setting?.price_to;
-      if (priceFrom != null && !isNaN(Number(priceFrom))) {
-        filters.price = { ...(filters.price || {}), $gte: Number(priceFrom) };
-      }
-      if (priceTo != null && !isNaN(Number(priceTo))) {
-        filters.price = { ...(filters.price || {}), $lte: Number(priceTo) };
-      }
-
-      const properties = await s.entityService.findMany('api::property.property', {
-        filters,
-        limit: 50,
-      });
-      for (const prop of properties || []) {
-        queueService.addToQueue('analyze-property', { documentId: prop.documentId }, { correlationId: corrId });
-      }
-      if (properties?.length) {
-        strapi.log.info(`[cron] → enqueued ${properties.length} properties for analysis`);
-      }
+      const filters: any = {};
+      if (setting?.price_from != null) filters.priceFrom = Number(setting.price_from);
+      if (setting?.price_to != null) filters.priceTo = Number(setting.price_to);
+      if (setting?.threshold_percent) filters.threshold = Number(setting.threshold_percent);
+      await pipeline.analyze(Object.keys(filters).length ? filters : undefined);
     } catch (err: any) {
       strapi.log.error(`[cron] analyze:properties error: ${err.message}`);
     }
   }, { timezone: CRON_TIMEZONE });
 
   strapi.log.info('[cron] Registered: analyze:properties (daily 08:00 MSK)');
-
-  // 2b. score:properties — ежедневно в 08:05 МСК (после analyze в 08:00)
-  cron.schedule('5 8 * * *', async () => {
-    const corrId = `cron-score-${Date.now()}`;
-    strapi.log.info(`[cron] score:properties triggered (${corrId})`);
-    try {
-      const result = await scoreAllProperties();
-      strapi.log.info(
-        `[cron] score:properties done: scored=${result.scored}, in_focus=${result.in_focus}, tags=${JSON.stringify(result.by_tag)}`
-      );
-    } catch (err: any) {
-      strapi.log.error(`[cron] score:properties error: ${err.message}`);
-    }
-  }, { timezone: CRON_TIMEZONE });
-
-  strapi.log.info('[cron] Registered: score:properties (daily 08:05 MSK)');
 
   // 3. digest:morning — по времени из Setting (проверяем каждый час)
   cron.schedule('0 * * * *', async () => {
@@ -160,18 +128,15 @@ export function registerCrons(strapi: Core.Strapi): void {
 
       if (mskHour !== targetHour) return;
 
-      // Проверяем включён ли дайджест
       if (setting?.digest_enabled === false) {
         strapi.log.info(`[cron] digest:morning disabled in settings, skipping (${corrId})`);
         return;
       }
 
       strapi.log.info(`[cron] digest:morning triggered at ${digestTime} MSK (${corrId})`);
-      queueService.addToQueue('digest-send', {
-        date: new Date().toISOString().slice(0, 10),
-        smtpTo: setting?.smtp_to || null,
-      }, { correlationId: corrId });
-      strapi.log.info('[cron] → enqueued digest-send');
+      const { getPipelineService } = await import('../services/pipeline');
+      const pipeline = getPipelineService(strapi as unknown as StrapiInstance);
+      await pipeline.digest();
     } catch (err: any) {
       strapi.log.error(`[cron] digest:morning error: ${err.message}`);
     }

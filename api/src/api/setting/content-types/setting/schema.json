@@ -58,6 +58,10 @@
     "digest_enabled": {
       "type": "boolean",
       "default": true
+    },
+    "pipeline_state": {
+      "type": "json",
+      "default": null
     }
   }
 }

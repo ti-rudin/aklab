@@ -223,41 +223,41 @@
                 class="w-24 px-2 py-1.5 rounded-lg border text-sm text-center"
                 style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
             </div>
-            <button
-              @click="runFullPipeline"
-              :disabled="pipelineStage !== 'idle' && pipelineStage !== 'done' && pipelineStage !== 'error'"
-              class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-              :style="{
-                background: pipelineStage === 'done' ? '#059669' : 'var(--accent)',
-              }"
-            >
-              <template v-if="pipelineStage === 'idle' || pipelineStage === 'error'">▶ Ручной запуск</template>
-              <template v-else-if="pipelineStage === 'done'">Готово — ещё раз</template>
-              <template v-else>Выполняется...</template>
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="!pipelineRunning"
+                @click="startPipeline"
+                class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
+                :style="{ background: pipelineDone ? '#059669' : 'var(--accent)' }"
+              >
+                <template v-if="pipelineDone">✓ Ещё раз</template>
+                <template v-else>▶ Ручной запуск</template>
+              </button>
+              <button
+                v-else
+                @click="cancelPipeline"
+                class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all"
+              >
+                ◼ Отменить
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Прогресс пайплайна -->
-        <div v-if="pipelineStage !== 'idle'" class="mt-3 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
+        <!-- Прогресс пайплайна (SSE-based) -->
+        <div v-if="pipelineState.status !== 'idle' || pipelineDone" class="mt-3 p-3 sm:p-4 rounded-lg space-y-2 sm:space-y-3" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
           <!-- Парсинг -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="pipelineStage === 'parsing'">⏳</template>
-              <template v-else-if="parseDone">✓</template>
+              <template v-if="isParsingStage">⏳</template>
+              <template v-else-if="isParsingDone">✓</template>
               <template v-else>○</template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Парсинг</div>
               <div class="text-xs" style="color: var(--text-muted)">
-                <template v-if="pipelineStage === 'parsing'">
-                  {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
-                  <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
-                </template>
-                <template v-else-if="parseDone">
-                  {{ parseSourcesTotal }} источников, {{ pl.parseTotal }} объектов
-                  <template v-if="pl.detailsNeeded > 0"> · {{ pl.detailsFetched }}/{{ pl.detailsNeeded }} детальных</template>
-                </template>
+                <template v-if="isParsingStage">{{ pipelineState.message }}</template>
+                <template v-else-if="isParsingDone">{{ pipelineState.sources_done }} источников · {{ pipelineState.objects_created }} новых{{ pipelineState.details_needed > 0 ? ` · ${pipelineState.details_fetched}/${pipelineState.details_needed} детальных` : '' }}</template>
                 <template v-else>Ожидание...</template>
               </div>
             </div>
@@ -266,18 +266,16 @@
           <!-- Анализ -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="pipelineStage === 'analyzing'">⏳</template>
-              <template v-else-if="analyzeDone">✓</template>
+              <template v-if="isAnalyzingStage">⏳</template>
+              <template v-else-if="isAnalyzingDone">✓</template>
               <template v-else>○</template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Анализ</div>
               <div class="text-xs" style="color: var(--text-muted)">
-                <template v-if="pipelineStage === 'analyzing'">
-                  <template v-if="analyzeTotal > 0">{{ analyzeAnalyzed }}/{{ analyzeTotal }} проанализировано</template>
-                  <template v-else>{{ analyzePending }} объектов в очереди</template>
-                </template>
-                <template v-else-if="analyzeDone">{{ pl.undervaluedTotal }} недооценённых</template>
+                <template v-if="isAnalyzingStage">{{ pipelineState.message }}</template>
+                <template v-else-if="isAnalyzingDone">{{ pipelineState.undervalued_count }} недооценённых из {{ pipelineState.analyze_total }}</template>
+                <template v-else-if="pipelineState.stage === 'analyzing_skipped'">Пропущен — нет новых объектов</template>
                 <template v-else>Ожидание...</template>
               </div>
             </div>
@@ -286,30 +284,31 @@
           <!-- Дайджест -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="pipelineStage === 'digesting'">⏳</template>
-              <template v-else-if="digestDone">✓</template>
+              <template v-if="pipelineState.stage === 'digesting'">⏳</template>
+              <template v-else-if="isDigestDone">✓</template>
               <template v-else>○</template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Дайджест</div>
               <div class="text-xs" style="color: var(--text-muted)">
-                <template v-if="pipelineStage === 'digesting'">Отправка email...</template>
-                <template v-else-if="digestDone && pl.digestSent">Отправлено на {{ pl.digestCount }} объектов</template>
-                <template v-else-if="digestDone && pl.digestSkipped">Нет недооценённых</template>
-                <template v-else-if="digestDone">Отправлен</template>
+                <template v-if="pipelineState.stage === 'digesting'">{{ pipelineState.message }}</template>
+                <template v-else-if="pipelineState.stage === 'digest_done'">{{ pipelineState.message }}</template>
+                <template v-else-if="pipelineState.stage === 'done' || pipelineState.stage === 'done_with_errors'">Отправлен</template>
                 <template v-else>Ожидание...</template>
               </div>
             </div>
           </div>
 
           <!-- Done -->
-          <div v-if="pipelineStage === 'done'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-            ✓ Пайплайн завершён · {{ pl.parseTotal }} новых · {{ pl.undervaluedTotal }} недооценённых · Дайджест: {{ pl.digestSent ? 'отправлен' : 'не отправлен' }}
+          <div v-if="pipelineDone" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
+            {{ pipelineState.message || '✓ Пайплайн завершён' }}
           </div>
 
-          <!-- Error -->
-          <div v-if="pipelineStage === 'error'" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
-            ✗ {{ pipelineError || 'Ошибка пайплайна' }}
+          <!-- Errors -->
+          <div v-if="pipelineState.errors?.length" class="pt-2 border-t space-y-1" style="border-color: var(--border-subtle)">
+            <div v-for="err in pipelineState.errors" :key="err" class="text-xs" style="color: #ef4444">
+              ⚠ {{ err }}
+            </div>
           </div>
         </div>
       </div>
@@ -344,7 +343,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -465,10 +464,10 @@ const handleLogout = async () => {
 }
 
 // ========================
-// Ручной запуск (полный пайплайн)
+// Pipeline (SSE-based)
 // ========================
-const pipelineOpen = ref(false)
 const parseDepth = ref(20)
+const pipelineOpen = ref(false)
 const launchFilters = reactive({
   priceFrom: '',
   priceTo: '',
@@ -476,157 +475,105 @@ const launchFilters = reactive({
   threshold: 20,
 })
 
-type PipelineStage = 'idle' | 'parsing' | 'analyzing' | 'digesting' | 'done' | 'error'
-const pipelineStage = ref<PipelineStage>('idle')
-const parseDone = ref(false)
-const parseSourcesTotal = ref(0)
-const parseSourcesDone = ref(0)
-const analyzeDone = ref(false)
-const analyzePending = ref(0)
-const analyzeTotal = ref(0)
-const analyzeAnalyzed = ref(0)
-const detailsFetched = ref(0)
-const detailsNeeded = ref(0)
-const digestDone = ref(false)
-const pipelineError = ref('')
-
-const pl = reactive({
-  parseTotal: 0,
-  detailsFetched: 0,
-  detailsNeeded: 0,
-  undervaluedTotal: 0,
-  digestSent: false,
-  digestCount: 0,
-  digestSkipped: false,
+const pipelineState = reactive({
+  status: 'idle' as string,
+  stage: 'idle' as string,
+  message: '',
+  sources_total: 0,
+  sources_done: 0,
+  details_fetched: 0,
+  details_needed: 0,
+  analyze_total: 0,
+  analyze_done: 0,
+  undervalued_count: 0,
+  objects_created: 0,
+  errors: [] as string[],
 })
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let eventSource: EventSource | null = null
 
-function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+const pipelineRunning = computed(() => pipelineState.status === 'running' || pipelineState.status === 'cancelling')
+const pipelineDone = computed(() => ['done', 'done_with_errors', 'cancelled', 'error'].includes(pipelineState.stage))
+const isParsingStage = computed(() => ['parsing_scan', 'parsing_details'].includes(pipelineState.stage))
+const isParsingDone = computed(() => pipelineState.stage === 'parsing_done' || pipelineDone.value)
+const isAnalyzingStage = computed(() => pipelineState.stage === 'analyzing')
+const isAnalyzingDone = computed(() => ['analyzing_done', 'analyzing_skipped'].includes(pipelineState.stage) || pipelineDone.value)
+const isDigestDone = computed(() => ['digest_done', 'done', 'done_with_errors'].includes(pipelineState.stage))
+
+function updatePipelineState(state: any) {
+  if (!state) return
+  Object.assign(pipelineState, {
+    status: state.status || 'idle',
+    stage: state.stage || 'idle',
+    message: state.message || '',
+    sources_total: state.sources_total || 0,
+    sources_done: state.sources_done || 0,
+    details_fetched: state.details_fetched || 0,
+    details_needed: state.details_needed || 0,
+    analyze_total: state.analyze_total || 0,
+    analyze_done: state.analyze_done || 0,
+    undervalued_count: state.undervalued_count || 0,
+    objects_created: state.objects_created || 0,
+    errors: state.errors || [],
+  })
 }
 
-async function pollQueueStats() {
-  try {
-    const res = await api.get('/cron/queue-stats')
-    return res.data?.ok ? res.data : null
-  } catch { return null }
-}
-
-function isQueueEmpty(queues: Record<string, any>, prefix: string): boolean {
-  for (const [name, stats] of Object.entries(queues)) {
-    if (name.startsWith(prefix)) {
-      const s = stats as { pending: number; active: number }
-      if (s.pending > 0 || s.active > 0) return false
+function connectSSE() {
+  if (eventSource) { eventSource.close(); eventSource = null }
+  eventSource = new EventSource('/api/pipeline/stream')
+  eventSource.addEventListener('progress', (e) => {
+    try { updatePipelineState(JSON.parse(e.data)) } catch { /* ok */ }
+  })
+  eventSource.addEventListener('done', () => {
+    if (eventSource) { eventSource.close(); eventSource = null }
+  })
+  eventSource.addEventListener('error', () => {
+    // Reconnect on connection error (not SSE error event)
+    if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+      setTimeout(connectSSE, 3000)
     }
-  }
-  return true
+  })
 }
 
-function countSourcesParsed(sources: any[], slugs: string[]): number {
-  return sources.filter((s: any) =>
-    slugs.includes(s.slug) && s.last_parse_status !== 'running' && s.last_parse_status !== 'never'
-  ).length
-}
-
-async function runFullPipeline() {
-  pipelineStage.value = 'parsing'
-  parseDone.value = false; analyzeDone.value = false; digestDone.value = false
-  parseSourcesDone.value = 0; analyzePending.value = 0; analyzeTotal.value = 0; analyzeAnalyzed.value = 0; detailsFetched.value = 0; detailsNeeded.value = 0; pipelineError.value = ''
-  pl.parseTotal = 0; pl.detailsFetched = 0; pl.detailsNeeded = 0; pl.undervaluedTotal = 0; pl.digestSent = false; pl.digestCount = 0; pl.digestSkipped = false
-
+async function startPipeline() {
   try {
-    // 1. Парсинг
-    const sourcesRes = await api.get('/sources', { params: { 'filters[is_active][$eq]': true, 'pagination[pageSize]': 100 } })
-    const sources = sourcesRes.data?.data || []
-    if (sources.length === 0) { pipelineError.value = 'Нет активных источников'; pipelineStage.value = 'error'; return }
-
-    const slugs = sources.map((s: any) => s.slug)
-    parseSourcesTotal.value = sources.length
-
-    await Promise.all(sources.map((s: any) => api.post(`/cron/parse/${s.slug}`, { depth: parseDepth.value }).catch(() => null)))
-
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0; const max = 2000
-      pollTimer = setInterval(async () => {
-        if (++attempts > max) { stopPolling(); reject(new Error('Парсинг: таймаут 100 мин')); return }
-        const stats = await pollQueueStats(); if (!stats) return
-        parseSourcesDone.value = countSourcesParsed(stats.sources, slugs)
-        detailsFetched.value = (stats.sources || [])
-          .filter((s: any) => slugs.includes(s.slug))
-          .reduce((sum: number, s: any) => sum + (s.total_details_fetched || 0), 0)
-        detailsNeeded.value = (stats.sources || [])
-          .filter((s: any) => slugs.includes(s.slug))
-          .reduce((sum: number, s: any) => sum + (s.total_details_needed || 0), 0)
-        if (isQueueEmpty(stats.queues, 'parse-') && parseSourcesDone.value >= parseSourcesTotal.value) {
-          stopPolling()
-          for (const s of stats.sources || []) { if (slugs.includes(s.slug)) pl.parseTotal += (s.total_created || 0) }
-          pl.detailsFetched = detailsFetched.value
-          pl.detailsNeeded = detailsNeeded.value
-          parseDone.value = true; pipelineStage.value = 'analyzing'; resolve()
-        }
-      }, 3000)
-    })
-
-    // 2. Анализ
-    const analyzeBody: any = {}
-    if (launchFilters.priceFrom) analyzeBody.priceFrom = Number(launchFilters.priceFrom)
-    if (launchFilters.priceTo) analyzeBody.priceTo = Number(launchFilters.priceTo)
+    const filters: any = {}
+    if (launchFilters.priceFrom) filters.priceFrom = Number(launchFilters.priceFrom)
+    if (launchFilters.priceTo) filters.priceTo = Number(launchFilters.priceTo)
     const cities: string[] = []
     if (launchFilters.cities.moscow) cities.push('moscow')
     if (launchFilters.cities.mo) cities.push('mo')
     if (launchFilters.cities.other) cities.push('other')
-    if (cities.length > 0 && cities.length < 3) analyzeBody.city = cities
-    if (launchFilters.threshold !== 20) analyzeBody.threshold = launchFilters.threshold
-    await api.post('/cron/analyze', Object.keys(analyzeBody).length ? analyzeBody : undefined)
+    if (cities.length > 0 && cities.length < 3) filters.city = cities
+    if (launchFilters.threshold !== 20) filters.threshold = launchFilters.threshold
 
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0; const max = 60
-      pollTimer = setInterval(async () => {
-        if (++attempts > max) { stopPolling(); reject(new Error('Анализ: таймаут 3 мин')); return }
-        const stats = await pollQueueStats(); if (!stats) return
-        const q = stats.queues['analyze-property'] || { pending: 0, active: 0 }
-        analyzePending.value = q.pending + q.active
-        try {
-          const prog = await api.get('/cron/analyze-progress')
-          if (prog.data?.ok) {
-            analyzeTotal.value = prog.data.total || 0
-            analyzeAnalyzed.value = prog.data.analyzed || 0
-          }
-        } catch { /* ok */ }
-        if (isQueueEmpty(stats.queues, 'analyze-')) {
-          stopPolling()
-          for (const city of ['moscow', 'mo', 'other']) {
-            try {
-              const res = await api.get('/properties', { params: { 'filters[is_undervalued][$eq]': true, 'filters[city][$eq]': city, 'pagination[pageSize]': 1 } })
-              pl.undervaluedTotal += res.data?.meta?.pagination?.total || 0
-            } catch { /* ok */ }
-          }
-          analyzeDone.value = true; pipelineStage.value = 'digesting'; resolve()
-        }
-      }, 3000)
+    await api.post('/pipeline/start', {
+      mode: 'full',
+      depth: parseDepth.value,
+      filters: Object.keys(filters).length ? filters : undefined,
     })
-
-    // 3. Дайджест
-    await api.post('/cron/digest')
-
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0; const max = 30
-      pollTimer = setInterval(async () => {
-        if (++attempts > max) { stopPolling(); reject(new Error('Дайджест: таймаут 90 сек')); return }
-        const stats = await pollQueueStats(); if (!stats) return
-        if (isQueueEmpty(stats.queues, 'digest-')) {
-          stopPolling(); digestDone.value = true
-          if (pl.undervaluedTotal > 0) { pl.digestSent = true; pl.digestCount = pl.undervaluedTotal }
-          else { pl.digestSkipped = true }
-          pipelineStage.value = 'done'; resolve()
-        }
-      }, 3000)
-    })
-
+    connectSSE()
   } catch (err: any) {
-    stopPolling(); pipelineStage.value = 'error'
-    pipelineError.value = err.message || 'Ошибка пайплайна'
+    alert(err.response?.data?.message || err.message || 'Ошибка запуска')
   }
 }
+
+async function cancelPipeline() {
+  try {
+    await api.post('/pipeline/cancel')
+  } catch { /* ok */ }
+}
+
+// On page load — check if pipeline is running
+onMounted(async () => {
+  try {
+    const res = await api.get('/pipeline/status')
+    if (res.data?.ok && res.data.state) {
+      updatePipelineState(res.data.state)
+      if (pipelineRunning.value) {
+        connectSSE()
+      }
+    }
+  } catch { /* ok — no pipeline state */ }
+})
 </script>
