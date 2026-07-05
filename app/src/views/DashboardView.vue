@@ -64,6 +64,25 @@
         </div>
       </div>
 
+      <!-- Типы недвижимости -->
+      <div class="mb-8">
+        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📊 Объекты по типам</h2>
+          <div v-if="typeBreakdown.length === 0" class="text-sm" style="color: var(--text-muted)">Нет данных</div>
+          <div v-else class="space-y-2">
+            <div v-for="t in typeBreakdown" :key="t.type"
+              class="flex items-center gap-2 sm:gap-3">
+              <span class="text-xs sm:text-sm w-28 sm:w-36 flex-shrink-0 truncate" style="color: var(--text-muted)">{{ t.label }}</span>
+              <div class="flex-1 h-5 sm:h-6 rounded-lg overflow-hidden" style="background: var(--bg-main)">
+                <div class="h-full rounded-lg transition-all duration-500"
+                  :style="{ width: typeBarWidth(t.count) + '%', background: 'var(--accent)' }" />
+              </div>
+              <span class="text-sm font-mono w-10 sm:w-12 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Тренд -->
       <div class="mb-8">
         <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
@@ -116,11 +135,29 @@ interface TrendDay {
   count: number
 }
 
+interface TypeBreakdown {
+  type: string
+  label: string
+  count: number
+}
+
 const loading = ref(true)
 const error = ref('')
 const stats = ref<DashboardStats | null>(null)
 const topProperties = ref<TopProperty[]>([])
 const trend = ref<TrendDay[]>([])
+const typeBreakdown = ref<TypeBreakdown[]>([])
+
+const TYPE_LABELS: Record<string, string> = {
+  free_purpose: 'Своб. назначения',
+  land: 'Земельные участки',
+  apartment: 'Квартиры',
+  office: 'Офисы',
+  retail: 'Ритейл',
+  warehouse: 'Склады',
+  other: 'Прочее',
+  commercial: 'Коммерческая',
+}
 
 const scoreColor = (score: number) => {
   if (score >= 70) return '#ef4444'
@@ -134,6 +171,11 @@ const formatDate = (d: string) => {
 
 const trendBarWidth = (count: number) => {
   const max = Math.max(...trend.value.map(t => t.count), 1)
+  return Math.round((count / max) * 100)
+}
+
+const typeBarWidth = (count: number) => {
+  const max = Math.max(...typeBreakdown.value.map(t => t.count), 1)
   return Math.round((count / max) * 100)
 }
 
@@ -196,10 +238,30 @@ async function fetchTrend() {
   } catch { /* ignore */ }
 }
 
+async function fetchTypeBreakdown() {
+  try {
+    const { data } = await api.get('/properties', {
+      params: { 'fields[0]': 'property_type', 'pagination[pageSize]': 5000 }
+    })
+    const counts: Record<string, number> = {}
+    for (const p of data.data || []) {
+      const t = p.property_type || 'other'
+      counts[t] = (counts[t] || 0) + 1
+    }
+    typeBreakdown.value = Object.entries(counts)
+      .map(([type, count]) => ({
+        type,
+        label: TYPE_LABELS[type] || type,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count)
+  } catch { /* ignore */ }
+}
+
 async function refresh() {
   loading.value = true
   error.value = ''
-  await Promise.all([fetchStats(), fetchTopProperties(), fetchTrend()])
+  await Promise.all([fetchStats(), fetchTopProperties(), fetchTrend(), fetchTypeBreakdown()])
   loading.value = false
 }
 
