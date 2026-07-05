@@ -170,7 +170,10 @@ export async function updateSourceStats(documentId: string, data: {
   if (data.last_parse_error !== undefined) updateData.last_parse_error = data.last_parse_error;
   if (data.last_parsed_at) updateData.last_parsed_at = data.last_parsed_at;
 
-  if (data.parse_count || data.total_found || data.total_created || data.total_details_fetched || data.total_details_needed) {
+  const hasFetchDelta = data.total_details_fetched !== undefined && data.total_details_fetched !== null;
+  const hasNeededVal = data.total_details_needed !== undefined && data.total_details_needed !== null;
+
+  if (data.parse_count || data.total_found || data.total_created || hasFetchDelta || hasNeededVal) {
     try {
       const res = await fetch(`${BASE}/sources/${documentId}`, { headers: HEADERS });
       if (res.ok) {
@@ -179,8 +182,10 @@ export async function updateSourceStats(documentId: string, data: {
         if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
         if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
         if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
-        if (data.total_details_fetched) updateData.total_details_fetched = (current?.total_details_fetched || 0) + data.total_details_fetched;
-        if (data.total_details_needed) updateData.total_details_needed = (current?.total_details_needed || 0) + data.total_details_needed;
+        // total_details_fetched: additive (инкремент +1 за каждый fetchDetails)
+        if (hasFetchDelta) updateData.total_details_fetched = (current?.total_details_fetched || 0) + data.total_details_fetched;
+        // total_details_needed: прямой SET (точное кол-во после existence check)
+        if (hasNeededVal) updateData.total_details_needed = data.total_details_needed;
       } else {
         logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
       }
@@ -200,12 +205,8 @@ export async function updateSourceStats(documentId: string, data: {
   }
 }
 
-/** Сбросить счётчики fetchDetails перед новым запуском. */
+/** Сбросить ВСЕ счётчики перед новым запуском парсинга. */
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
-  // Сбрасываем только cumulative-счётчики (total_found/total_created).
-  // НЕ трогаем total_details_fetched/total_details_needed — они управляются
-  // parse-handler'ом во время выполнения и сброс здесь вызывает race condition
-  // (второй job обнуляет needed пока первый ещё фетчит детали).
   try {
     const putRes = await fetch(`${BASE}/sources/${documentId}`, {
       method: 'PUT',
@@ -213,6 +214,8 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
       body: JSON.stringify({ data: {
         total_found: 0,
         total_created: 0,
+        total_details_fetched: 0,
+        total_details_needed: 0,
       } }),
     });
     if (!putRes.ok) {
@@ -220,22 +223,6 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
     }
   } catch (err: any) {
     logger.warn(`resetSourceDetailsCounters error: ${err.message}`);
-  }
-}
-
-/** Сбросить total_details_fetched и total_details_needed в 0 перед началом нового цикла fetchDetails. */
-export async function resetDetailsCounters(documentId: string): Promise<void> {
-  try {
-    const putRes = await fetch(`${BASE}/sources/${documentId}`, {
-      method: 'PUT',
-      headers: HEADERS,
-      body: JSON.stringify({ data: { total_details_fetched: 0, total_details_needed: 0 } }),
-    });
-    if (!putRes.ok) {
-      logger.warn(`resetDetailsCounters failed (${putRes.status})`);
-    }
-  } catch (err: any) {
-    logger.warn(`resetDetailsCounters error: ${err.message}`);
   }
 }
 

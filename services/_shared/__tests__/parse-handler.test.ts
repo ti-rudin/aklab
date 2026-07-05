@@ -35,7 +35,6 @@ vi.mock('../src/strapi-client', () => ({
   logCron: vi.fn().mockResolvedValue(undefined),
   updateSourceStats: vi.fn().mockResolvedValue(undefined),
   resetSourceDetailsCounters: vi.fn().mockResolvedValue(undefined),
-  resetDetailsCounters: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/anti-ban', () => ({
