@@ -13,6 +13,12 @@ export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/nul
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Telegram credentials из .env (если не заданы в shell)
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f .env ]; then
+  export TELEGRAM_BOT_TOKEN="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2-)"
+  export TELEGRAM_CHAT_ID="$(grep -E '^TELEGRAM_CHAT_ID=' .env | cut -d= -f2-)"
+fi
+
 FORCE=false
 CI_MODE=false
 for arg in "$@"; do
