@@ -1145,6 +1145,10 @@ onUnmounted(() => {
 })
 
 onMounted(() => {
+  // Читаем query-параметр property_type с дашборда
+  if (route.query.property_type) {
+    filters.property_type = route.query.property_type as string
+  }
   fetchItems()
   fetchWorkTotal()
   if (route.hash === '#focus') {

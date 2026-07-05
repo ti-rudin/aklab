@@ -69,16 +69,15 @@
         <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📊 Объекты по типам</h2>
           <div v-if="typeBreakdown.length === 0" class="text-sm" style="color: var(--text-muted)">Нет данных</div>
-          <div v-else class="space-y-2">
-            <div v-for="t in typeBreakdown" :key="t.type"
-              class="flex items-center gap-2 sm:gap-3">
-              <span class="text-xs sm:text-sm w-28 sm:w-36 flex-shrink-0 truncate" style="color: var(--text-muted)">{{ t.label }}</span>
-              <div class="flex-1 h-5 sm:h-6 rounded-lg overflow-hidden" style="background: var(--bg-main)">
-                <div class="h-full rounded-lg transition-all duration-500"
-                  :style="{ width: typeBarWidth(t.count) + '%', background: 'var(--accent)' }" />
-              </div>
-              <span class="text-sm font-mono w-10 sm:w-12 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
-            </div>
+          <div v-else class="flex flex-wrap gap-2 sm:gap-3">
+            <button v-for="t in typeBreakdown" :key="t.type"
+              @click="router.push(`/properties?property_type=${t.type}`)"
+              class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all hover:scale-[1.03]"
+              style="background: var(--bg-main); border-color: var(--border-subtle)">
+              <span class="text-sm" style="color: var(--text-muted)">{{ t.label }}</span>
+              <span class="text-sm font-bold px-2 py-0.5 rounded-full"
+                style="background: var(--accent-soft); color: var(--accent)">{{ t.count }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -140,11 +139,6 @@ const scoreColor = (score: number) => {
   if (score >= 70) return '#ef4444'
   if (score >= 50) return '#f59e0b'
   return '#4f8cff'
-}
-
-const typeBarWidth = (count: number) => {
-  const max = Math.max(...typeBreakdown.value.map(t => t.count), 1)
-  return Math.round((count / max) * 100)
 }
 
 async function fetchStats() {
