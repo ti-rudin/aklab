@@ -77,15 +77,8 @@ export function createParseHandler(parser: SourceParser) {
         }
       }
 
-      // Считаем сколько детальных нужно (все новые объекты с fetchDetails)
       if (parser.fetchDetails) {
         detailsNeeded = newProperties.length;
-        if (req.documentId) {
-          // Прямой SET нужного кол-ва (не накопление)
-          await updateSourceStats(req.documentId, {
-            total_details_needed: detailsNeeded,
-          }).catch(() => {});
-        }
         logger.info(`Details needed: ${detailsNeeded} new objects for ${req.source}`, { correlationId: corrId });
       }
 
@@ -100,12 +93,6 @@ export function createParseHandler(parser: SourceParser) {
                 Object.assign(prop, details);
                 detailsFetched++;
                 logger.info(`Details fetched: ${prop.external_id}`, { correlationId: corrId });
-                // Обновление fetched для UI (SET текущего значения)
-                if (req.documentId) {
-                  updateSourceStats(req.documentId, {
-                    total_details_fetched: detailsFetched,
-                  }).catch(() => {});
-                }
               }
             } catch (err: any) {
               logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
@@ -162,16 +149,20 @@ export function createParseHandler(parser: SourceParser) {
     }
 
     if (req.documentId) {
-      await updateSourceStats(req.documentId, {
-        last_parse_status: 'success',
-        last_parse_error: undefined,
-        last_parsed_at: new Date().toISOString(),
-        total_found: total,
-        total_created: created,
-        parse_count: 1,
-      }).catch((err: any) => {
+      try {
+        await updateSourceStats(req.documentId, {
+          last_parse_status: 'success',
+          last_parse_error: undefined,
+          last_parsed_at: new Date().toISOString(),
+          total_found: total,
+          total_created: created,
+          parse_count: 1,
+          total_details_fetched: detailsFetched,
+          total_details_needed: detailsNeeded,
+        });
+      } catch (err: any) {
         logger.warn(`Stats update failed: ${err.message}`, { correlationId: corrId });
-      });
+      }
     }
 
     logger.info(

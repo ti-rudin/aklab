@@ -464,9 +464,10 @@ deploy-prod.sh + бамп версии).
 31. **resetSourceDetailsCounters** — вызывается в начале КАЖДОГО parse-handler
     (для каждого источника). Обнуляет `total_details_fetched` и `total_details_needed`
     в 0 через PUT `/api/sources/:documentId`. Без этого счётчики кумулятивные.
-    **ВАЖНО (v1.1.5):** Pipeline дополнительно делает bulk-reset ВСЕХ активных
-    источников ДО enqueue parse jobs, чтобы агрегация не подхватывала stale
-    значения. Без этого `fetched > needed` и `needed` «прыгает» во время парсинга.
+    **ВАЖНО (v1.1.7):** Промежуточные fire-and-forget `updateSourceStats` УДАЛЕНЫ.
+    `total_details_fetched` и `total_details_needed` пишутся ОДИН раз в конце
+    (awaited). Stale PUT от предыдущего запуска мог arrive ПОСЛЕ bulk reset и
+    перезаписать `total_details_fetched` → fetched > needed.
 32. **JWT_SECRET в .env на сервере** — если JWT_SECRET отсутствует в `api/.env`,
     каждый restart API генерирует новую соль → все JWT инвалидируются → 500 Forbidden.
     Symptom: frontend редиректит на /auth. Fix: добавить `JWT_SECRET=<random>` в `.env`.
@@ -517,12 +518,11 @@ deploy-prod.sh + бамп версии).
     При перезагрузке страницы фронтенд читает `/api/pipeline/status` → если
     `status === 'running'`, автоматически подключает SSE stream и показывает
     прогресс. Без персистентного state reconnect был бы невозможен.
-46. **total_details_needed/fetched — прямой SET** — оба счётчика обновляются
-    через прямой SET текущего значения, НЕ additive (+1). Это устраняет
-    race condition когда `fetched > needed`. Сбрасываются ОДИН раз в
-    `resetSourceDetailsCounters` перед стартом парсера.
-    **v1.1.5:** Pipeline дополнительно bulk-resets ВСЕ источники ДО enqueue,
-    устраняя «прыжки» needed при последовательном старте парсеров.
+46. **total_details_needed/fetched — единый awaited write** — оба счётчика
+    пишутся ОДИН раз в конце parse-handler (awaited). Промежуточные
+    fire-and-forget PUT'ы удалены в v1.1.7 — stale PUT от предыдущего запуска
+    мог arrive ПОСЛЕ bulk reset и перезаписать fetched → fetched > needed.
+    Bulk reset pipeline перед enqueue оставлен как дополнительная защита.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
