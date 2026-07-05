@@ -1,5 +1,24 @@
 [
   {
+    "version": "v1.0.103",
+    "date": "5 июля 2026",
+    "time": "08:11",
+    "items": [
+      {
+        "text": "дайджест",
+        "type": "improvement"
+      },
+      {
+        "text": "Дедупликация properties — fail-closed в propertyExists + проверка в createProperty",
+        "type": "fix"
+      },
+      {
+        "text": "Инсайты сессии + gotchas (replace_all, property types, price filter, DRY)",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.102",
     "date": "5 июля 2026",
     "time": "07:17",
