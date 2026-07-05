@@ -46,7 +46,7 @@ export function useFocusTab(
   const focusFilters = reactive({
     threshold: 20,
     cities: { moscow: true, mo: true, other: true },
-    property_type: '',
+    property_type: [] as string[],
     tags: [] as string[],
     priceFrom: '',
     priceTo: '',
@@ -59,7 +59,7 @@ export function useFocusTab(
       const parsed = JSON.parse(saved)
       if (parsed.threshold != null) focusFilters.threshold = parsed.threshold
       if (parsed.cities) Object.assign(focusFilters.cities, parsed.cities)
-      if (parsed.property_type) focusFilters.property_type = parsed.property_type
+      if (parsed.property_type) focusFilters.property_type = Array.isArray(parsed.property_type) ? parsed.property_type : [parsed.property_type]
       if (parsed.tags) focusFilters.tags = parsed.tags
       if (parsed.priceFrom) focusFilters.priceFrom = parsed.priceFrom
       if (parsed.priceTo) focusFilters.priceTo = parsed.priceTo
@@ -78,7 +78,7 @@ export function useFocusTab(
     focusFilters.cities.moscow = true
     focusFilters.cities.mo = true
     focusFilters.cities.other = true
-    focusFilters.property_type = ''
+    focusFilters.property_type = []
     focusFilters.tags = []
     focusFilters.priceFrom = ''
     focusFilters.priceTo = ''

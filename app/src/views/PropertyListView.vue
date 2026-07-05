@@ -179,17 +179,14 @@
         </div>
         <div>
           <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
-          <select v-model="filters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-            <option value="">Все</option>
-            <option value="office">Офис</option>
-            <option value="warehouse">Склад</option>
-            <option value="retail">Торговля</option>
-            <option value="production">Производство</option>
-            <option value="free_purpose">Св. назначения</option>
-            <option value="apartment">Квартира</option>
-            <option value="land">Зем. участок</option>
-            <option value="other">Другое</option>
-          </select>
+          <div class="flex flex-wrap gap-1">
+            <label v-for="opt in typeOptions" :key="opt.value"
+              class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
+              :style="filters.property_type.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
+              <input type="checkbox" :value="opt.value" v-model="filters.property_type" class="hidden" />
+              {{ opt.label }}
+            </label>
+          </div>
         </div>
         <div>
           <label class="block text-xs mb-1" style="color: var(--text-muted)">Цена (₽)</label>
@@ -415,17 +412,14 @@
           <!-- Тип недвижимости -->
           <div>
             <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Тип недвижимости</label>
-            <select v-model="focusFilters.property_type" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-              <option value="">Все</option>
-              <option value="office">Офис</option>
-              <option value="warehouse">Склад</option>
-              <option value="retail">Торговля</option>
-              <option value="production">Производство</option>
-              <option value="free_purpose">Св. назначения</option>
-              <option value="apartment">Квартира</option>
-              <option value="land">Зем. участок</option>
-              <option value="other">Другое</option>
-            </select>
+            <div class="flex flex-wrap gap-1">
+              <label v-for="opt in typeOptions" :key="opt.value"
+                class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
+                :style="focusFilters.property_type.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
+                <input type="checkbox" :value="opt.value" v-model="focusFilters.property_type" class="hidden" />
+                {{ opt.label }}
+              </label>
+            </div>
           </div>
 
           <!-- Теги -->
@@ -700,6 +694,17 @@ function switchToWork() {
 // ========================
 const sources = ['fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow', 'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf', 'sberbank-ast', 'm-ets']
 
+const typeOptions = [
+  { value: 'office', label: 'Офис' },
+  { value: 'warehouse', label: 'Склад' },
+  { value: 'retail', label: 'Торговля' },
+  { value: 'production', label: 'Произв.' },
+  { value: 'free_purpose', label: 'Св. назн.' },
+  { value: 'apartment', label: 'Квартира' },
+  { value: 'land', label: 'Участок' },
+  { value: 'other', label: 'Другое' },
+]
+
 const sort = reactive({
   field: 'createdAt' as string,
   direction: 'desc' as 'asc' | 'desc',
@@ -718,7 +723,7 @@ const filters = reactive({
   city: '',
   status: '',
   source: '',
-  property_type: '',
+  property_type: [] as string[],
   priceFrom: null as number | null,
   priceTo: null as number | null,
 })
@@ -765,7 +770,7 @@ async function fetchItems() {
   if (filters.city) f.city = { $eq: filters.city }
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
-  if (filters.property_type) f.property_type = { $eq: filters.property_type }
+  if (filters.property_type.length) f.property_type = { $in: filters.property_type }
   if (filters.priceFrom) f.price = { ...(f.price || {}), $gte: filters.priceFrom }
   if (filters.priceTo) f.price = { ...(f.price || {}), $lte: filters.priceTo }
   if (Object.keys(f).length) params.filters = f
@@ -776,7 +781,7 @@ function resetFilters() {
   filters.city = ''
   filters.status = ''
   filters.source = ''
-  filters.property_type = ''
+  filters.property_type = []
   filters.priceFrom = null
   filters.priceTo = null
   sort.field = 'createdAt'
@@ -814,7 +819,7 @@ function fetchFocusItems() {
     pageSize: focusPageSize,
   }
   if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-  if (focusFilters.property_type) params.type = focusFilters.property_type
+  if (focusFilters.property_type.length) params.type = focusFilters.property_type.join(',')
   if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
   if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
   if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
@@ -1055,7 +1060,7 @@ async function exportCSV() {
       pageSize: 1000,
     }
     if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-    if (focusFilters.property_type) params.type = focusFilters.property_type
+    if (focusFilters.property_type.length) params.type = focusFilters.property_type.join(',')
     if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
     if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
     if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
@@ -1147,7 +1152,8 @@ onUnmounted(() => {
 onMounted(() => {
   // Читаем query-параметр property_type с дашборда
   if (route.query.property_type) {
-    filters.property_type = route.query.property_type as string
+    const q = route.query.property_type
+    filters.property_type = Array.isArray(q) ? q as string[] : (q as string).split(',')
   }
   fetchItems()
   fetchWorkTotal()

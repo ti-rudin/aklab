@@ -109,8 +109,14 @@ export default factories.createCoreController("api::property.property", ({ strap
     }
 
     if (propertyType) {
-      conditions.push("property_type = ?");
-      params.push(propertyType);
+      const types = propertyType.split(',').map((t: string) => t.trim()).filter(Boolean);
+      if (types.length === 1) {
+        conditions.push("property_type = ?");
+        params.push(types[0]);
+      } else if (types.length > 1) {
+        conditions.push(`property_type IN (${types.map(() => "?").join(",")})`);
+        params.push(...types);
+      }
     }
 
     // Теги: JSON-массив, проверяем наличие каждого тега через LIKE
