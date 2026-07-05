@@ -190,10 +190,6 @@
             <option value="other">Другое</option>
           </select>
         </div>
-        <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5 col-span-2 sm:col-span-1">
-          <input type="checkbox" v-model="filters.undervalued" class="rounded" />
-          <span class="text-sm" style="color: var(--text-muted)">Только недооценённые</span>
-        </label>
         <button @click="resetFilters" class="col-span-2 sm:col-span-1 px-3 py-1.5 rounded-lg border text-sm hover:opacity-80" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
       </div>
 
@@ -708,7 +704,6 @@ const filters = reactive({
   status: '',
   source: '',
   property_type: '',
-  undervalued: false,
 })
 
 // Запуск парсинга — collapsible toggle
@@ -752,7 +747,6 @@ async function fetchItems() {
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
   if (filters.property_type) f.property_type = { $eq: filters.property_type }
-  if (filters.undervalued) f.is_undervalued = { $eq: true }
   if (Object.keys(f).length) params.filters = f
   await fetchProperties(params)
 }
@@ -762,7 +756,6 @@ function resetFilters() {
   filters.status = ''
   filters.source = ''
   filters.property_type = ''
-  filters.undervalued = false
   sort.field = 'createdAt'
   sort.direction = 'desc'
   page.value = 1
