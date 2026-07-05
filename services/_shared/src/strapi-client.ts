@@ -206,7 +206,12 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
     const putRes = await fetch(`${BASE}/sources/${documentId}`, {
       method: 'PUT',
       headers: HEADERS,
-      body: JSON.stringify({ data: { total_details_fetched: 0, total_details_needed: 0 } }),
+      body: JSON.stringify({ data: {
+        total_details_fetched: 0,
+        total_details_needed: 0,
+        total_found: 0,
+        total_created: 0,
+      } }),
     });
     if (!putRes.ok) {
       logger.warn(`resetSourceDetailsCounters failed (${putRes.status})`);

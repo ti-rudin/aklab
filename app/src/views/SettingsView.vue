@@ -252,9 +252,11 @@
               <div class="text-xs" style="color: var(--text-muted)">
                 <template v-if="pipelineStage === 'parsing'">
                   {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
+                  <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
                 </template>
                 <template v-else-if="parseDone">
                   {{ parseSourcesTotal }} источников, {{ pl.parseTotal }} объектов
+                  <template v-if="pl.detailsNeeded > 0"> · {{ pl.detailsFetched }}/{{ pl.detailsNeeded }} детальных</template>
                 </template>
                 <template v-else>Ожидание...</template>
               </div>
@@ -271,7 +273,10 @@
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Анализ</div>
               <div class="text-xs" style="color: var(--text-muted)">
-                <template v-if="pipelineStage === 'analyzing'">{{ analyzePending }} объектов в очереди</template>
+                <template v-if="pipelineStage === 'analyzing'">
+                  <template v-if="analyzeTotal > 0">{{ analyzeAnalyzed }}/{{ analyzeTotal }} проанализировано</template>
+                  <template v-else>{{ analyzePending }} объектов в очереди</template>
+                </template>
                 <template v-else-if="analyzeDone">{{ pl.undervaluedTotal }} недооценённых</template>
                 <template v-else>Ожидание...</template>
               </div>
@@ -478,11 +483,17 @@ const parseSourcesTotal = ref(0)
 const parseSourcesDone = ref(0)
 const analyzeDone = ref(false)
 const analyzePending = ref(0)
+const analyzeTotal = ref(0)
+const analyzeAnalyzed = ref(0)
+const detailsFetched = ref(0)
+const detailsNeeded = ref(0)
 const digestDone = ref(false)
 const pipelineError = ref('')
 
 const pl = reactive({
   parseTotal: 0,
+  detailsFetched: 0,
+  detailsNeeded: 0,
   undervaluedTotal: 0,
   digestSent: false,
   digestCount: 0,
@@ -521,8 +532,8 @@ function countSourcesParsed(sources: any[], slugs: string[]): number {
 async function runFullPipeline() {
   pipelineStage.value = 'parsing'
   parseDone.value = false; analyzeDone.value = false; digestDone.value = false
-  parseSourcesDone.value = 0; analyzePending.value = 0; pipelineError.value = ''
-  pl.parseTotal = 0; pl.undervaluedTotal = 0; pl.digestSent = false; pl.digestCount = 0; pl.digestSkipped = false
+  parseSourcesDone.value = 0; analyzePending.value = 0; analyzeTotal.value = 0; analyzeAnalyzed.value = 0; detailsFetched.value = 0; detailsNeeded.value = 0; pipelineError.value = ''
+  pl.parseTotal = 0; pl.detailsFetched = 0; pl.detailsNeeded = 0; pl.undervaluedTotal = 0; pl.digestSent = false; pl.digestCount = 0; pl.digestSkipped = false
 
   try {
     // 1. Парсинг
@@ -541,9 +552,17 @@ async function runFullPipeline() {
         if (++attempts > max) { stopPolling(); reject(new Error('Парсинг: таймаут 100 мин')); return }
         const stats = await pollQueueStats(); if (!stats) return
         parseSourcesDone.value = countSourcesParsed(stats.sources, slugs)
+        detailsFetched.value = (stats.sources || [])
+          .filter((s: any) => slugs.includes(s.slug))
+          .reduce((sum: number, s: any) => sum + (s.total_details_fetched || 0), 0)
+        detailsNeeded.value = (stats.sources || [])
+          .filter((s: any) => slugs.includes(s.slug))
+          .reduce((sum: number, s: any) => sum + (s.total_details_needed || 0), 0)
         if (isQueueEmpty(stats.queues, 'parse-') && parseSourcesDone.value >= parseSourcesTotal.value) {
           stopPolling()
           for (const s of stats.sources || []) { if (slugs.includes(s.slug)) pl.parseTotal += (s.total_created || 0) }
+          pl.detailsFetched = detailsFetched.value
+          pl.detailsNeeded = detailsNeeded.value
           parseDone.value = true; pipelineStage.value = 'analyzing'; resolve()
         }
       }, 3000)
@@ -568,6 +587,13 @@ async function runFullPipeline() {
         const stats = await pollQueueStats(); if (!stats) return
         const q = stats.queues['analyze-property'] || { pending: 0, active: 0 }
         analyzePending.value = q.pending + q.active
+        try {
+          const prog = await api.get('/cron/analyze-progress')
+          if (prog.data?.ok) {
+            analyzeTotal.value = prog.data.total || 0
+            analyzeAnalyzed.value = prog.data.analyzed || 0
+          }
+        } catch { /* ok */ }
         if (isQueueEmpty(stats.queues, 'analyze-')) {
           stopPolling()
           for (const city of ['moscow', 'mo', 'other']) {

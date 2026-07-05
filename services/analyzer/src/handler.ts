@@ -45,7 +45,13 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
     const ref = await findCachedMarketReference(property.city, property.property_type);
     if (!ref) {
       logger.info(`No active MarketReference for ${property.city}/${property.property_type}`, { correlationId: corrId });
-      return { analyzed: false, undervalued: false };
+      // Помечаем как проанализированный (без эталона — не недооценён)
+      await updateProperty(property.documentId, {
+        is_undervalued: false,
+        deviation_percent: 0,
+        manual_price_per_sqm: null,
+      });
+      return { analyzed: true, undervalued: false };
     }
 
     // Use threshold from job data (frontend filter) or from settings
@@ -60,7 +66,13 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
 
     if (!actualPrice || !refPrice) {
       logger.warn(`Missing price data: actual=${actualPrice}, ref=${refPrice}`, { correlationId: corrId });
-      return { analyzed: false, undervalued: false };
+      // Помечаем как проанализированный (нет данных — не недооценён)
+      await updateProperty(property.documentId, {
+        is_undervalued: false,
+        deviation_percent: 0,
+        manual_price_per_sqm: null,
+      });
+      return { analyzed: true, undervalued: false };
     }
 
     const deviation = ((refPrice - actualPrice) / refPrice) * 100;

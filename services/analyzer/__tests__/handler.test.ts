@@ -75,7 +75,7 @@ describe('handleAnalyzeJob', () => {
     expect(mockedFindRef).not.toHaveBeenCalled();
   });
 
-  it('should return analyzed=false if no market reference found', async () => {
+  it('should return analyzed=true (not undervalued) if no market reference found', async () => {
     mockedFetchProperty.mockResolvedValue({
       documentId: 'prop-1',
       city: 'moscow',
@@ -85,12 +85,16 @@ describe('handleAnalyzeJob', () => {
 
     const result = await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
 
-    expect(result).toEqual({ analyzed: false, undervalued: false });
+    expect(result).toEqual({ analyzed: true, undervalued: false });
     expect(mockedFindRef).toHaveBeenCalledWith('moscow', 'office');
-    expect(mockedUpdateProperty).not.toHaveBeenCalled();
+    expect(mockedUpdateProperty).toHaveBeenCalledWith('prop-1', {
+      is_undervalued: false,
+      deviation_percent: 0,
+      manual_price_per_sqm: null,
+    });
   });
 
-  it('should return analyzed=false if actual price is zero', async () => {
+  it('should return analyzed=true (not undervalued) if actual price is zero', async () => {
     mockedFetchProperty.mockResolvedValue({
       documentId: 'prop-1',
       city: 'moscow',
@@ -101,11 +105,15 @@ describe('handleAnalyzeJob', () => {
 
     const result = await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
 
-    expect(result).toEqual({ analyzed: false, undervalued: false });
-    expect(mockedUpdateProperty).not.toHaveBeenCalled();
+    expect(result).toEqual({ analyzed: true, undervalued: false });
+    expect(mockedUpdateProperty).toHaveBeenCalledWith('prop-1', {
+      is_undervalued: false,
+      deviation_percent: 0,
+      manual_price_per_sqm: null,
+    });
   });
 
-  it('should return analyzed=false if ref price is zero', async () => {
+  it('should return analyzed=true (not undervalued) if ref price is zero', async () => {
     mockedFetchProperty.mockResolvedValue({
       documentId: 'prop-1',
       city: 'moscow',
@@ -116,8 +124,12 @@ describe('handleAnalyzeJob', () => {
 
     const result = await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
 
-    expect(result).toEqual({ analyzed: false, undervalued: false });
-    expect(mockedUpdateProperty).not.toHaveBeenCalled();
+    expect(result).toEqual({ analyzed: true, undervalued: false });
+    expect(mockedUpdateProperty).toHaveBeenCalledWith('prop-1', {
+      is_undervalued: false,
+      deviation_percent: 0,
+      manual_price_per_sqm: null,
+    });
   });
 
   it('should mark property as undervalued when deviation >= threshold', async () => {
