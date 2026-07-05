@@ -215,9 +215,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.0.106)
+## Текущее состояние (июль 2026, v1.1.0)
 
-- Версия: 1.0.106
+- Версия: 1.1.0
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -250,10 +250,21 @@ deploy-prod.sh + бамп версии).
 - **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
 - **Frontend** — 7 страниц: `/` (Dashboard), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.
 - **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
-- **Пайплайн (3 триггера)**:
-  1. **Запуск парсинга** (`/properties` → collapsible «Запуск парсинга») — только парсинг (глубина). Поллинг `GET /api/cron/queue-stats` каждые 3с, таймаут 100 мин.
-  2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. Параметры: цена лота (от/до), город (Москва/МО/Другие), порог отсечения (1-99%, слайдер), глубина парсинга (1–5000, дефолт 20). Фильтры сохраняются в localStorage.
-  3. **Пересчитать** (`/properties` → таб «В фокусе») — анализ (сравнение с эталонами → `deviation_percent`, `is_undervalued`) → scoring (применение focus-rules → `focus_score`, `tags`). Работает только над объектами со `status: 'new'`.
+- **Pipeline Orchestrator** (v1.1.0):
+  - **Единый сервис** `api/src/services/pipeline.ts` — оркестрирует парсинг → анализ → дайджест.
+  - **SSE** (`api/src/services/pipeline-sse.ts`) — реалтайм прогресс через EventSource (без polling).
+  - **Pipeline State** — персистентное состояние в `setting.pipeline_state` (JSON singleton).
+    Статусы: `idle | running | cancelling`. Стадии: `parsing_scan → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`.
+  - **Idempotency** — `if pipeline_state.status === 'running'` → reject (один pipeline одновременно).
+  - **Error resilience** — ошибки отдельных источников копятся в `errors[]`, pipeline идёт до конца.
+  - **Cancel** — кнопка «Отменить» в UI, статус `cancelling`.
+  - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
+  - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
+  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `GET /api/pipeline/stream` (SSE).
+  - **3 триггера в UI:**
+    1. **Запуск парсинга** (`/properties` → collapsible) — только парсинг.
+    2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.
+    3. **Пересчитать** (`/properties` → таб «В фокусе») — только scoring.
   - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
@@ -494,6 +505,18 @@ deploy-prod.sh + бамп версии).
 43. **digest_enabled** — boolean в Setting, default true. 3 уровня защиты:
     cron/index.ts, cron controller, digest handler. `data !== false` для
     обратной совместимости (null/undefined → true).
+44. **Pipeline singleton update requires id** — Strapi 5 `update()` для singleton
+    content-types (Setting) требует `documentId` в where clause. Без него —
+    "Update requires a where parameter" (500). Pipeline state обновляется через
+    `db.query(uid).update({ where: { documentId }, data: { pipeline_state } })`.
+45. **SSE reconnect при refresh** — pipeline state хранится в БД (не в памяти).
+    При перезагрузке страницы фронтенд читает `/api/pipeline/status` → если
+    `status === 'running'`, автоматически подключает SSE stream и показывает
+    прогресс. Без персистентного state reconnect был бы невозможен.
+46. **total_details_needed/fetched — прямой SET** — оба счётчика обновляются
+    через прямой SET текущего значения, НЕ additive (+1). Это устраняет
+    race condition когда `fetched > needed`. Сбрасываются ОДИН раз в
+    `resetSourceDetailsCounters` перед стартом парсера.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
@@ -584,6 +607,22 @@ deploy-prod.sh + бамп версии).
 - CI/CD: GitHub Actions (ci.yml, deploy-dev.yml, deploy-prod.yml)
 - Scripts: deploy-prod.sh (--ci), generate-changelog-ai.js, notify-deploy.sh
 - SSH ключ CI: `~/.ssh/aklab-ci`
+
+**Сделано в сессии 5 июля 2026 (v1.0.104–v1.1.0 — pipeline resilience):**
+- ✅ **SSE-based Pipeline Orchestrator** — `api/src/services/pipeline.ts` (568 строк), `pipeline-sse.ts`, 4 API endpoint (start/cancel/status/stream).
+- ✅ **Pipeline State в БД** — `setting.pipeline_state` (JSON singleton), персистентный. SSE reconnect работает.
+- ✅ **Cron → pipeline** — cron/auto-analyze/digest делегируют в `pipeline.run()`, нет дублирования кода.
+- ✅ **Score + Analysis = один этап** — `scorePropertiesBatch` встроен в `analyzeAll`.
+- ✅ **Error resilience** — ошибки не прерывают pipeline, копятся в `errors[]`.
+- ✅ **Cancel button** — статус `cancelling`, graceful stop.
+- ✅ **Singleton update fix** — Strapi 5 требует `documentId` в where clause для Setting update.
+- ✅ **Счётчики details (v1.0.108–v1.0.110)** — прямой SET вместо additive, единая точка сброса, race condition устранена.
+- ✅ **fetchDetails для fabrikant + roseltorg** — описание, контакты, фото.
+- ✅ **Price filter** — `price_from`/`price_to` в Setting, фильтрует анализ (не парсинг).
+- ✅ **classifyPropertyType DRY** — единая функция в `_shared/property-classifier.ts`.
+- ✅ **propertyExists fail-closed** — non-OK → skip (не создавать дубликаты).
+- ✅ **digest_enabled** — boolean в Setting, 3 уровня защиты.
+- ✅ **236/236 тестов** зелёные.
 
 ## Известные баги / TODO
 

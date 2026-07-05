@@ -13,6 +13,7 @@
         <li><a href="#services" style="color: var(--text-muted)">Сервисы</a></li>
         <li><a href="#data-flow" style="color: var(--text-muted)">Поток данных</a></li>
         <li><a href="#parsers" style="color: var(--text-muted)">Парсеры</a></li>
+        <li><a href="#pipeline" style="color: var(--text-muted)">Пайплайн</a></li>
         <li><a href="#api" style="color: var(--text-muted)">API</a></li>
         <li><a href="#deploy" style="color: var(--text-muted)">Деплой</a></li>
         <li><a href="#sections" style="color: var(--text-muted)">Разделы интерфейса</a></li>
@@ -169,6 +170,61 @@
         </div>
       </section>
 
+      <!-- Пайплайн -->
+      <section id="pipeline" class="doc-section">
+        <h2 style="color: var(--text-primary)">Пайплайн</h2>
+        <p style="color: var(--text-secondary)" class="mb-4">
+          Единый оркестратор для парсинга, анализа и дайджеста. Все вызовы
+          (UI, cron, API) проходят через <code>pipeline.ts</code>. Прогресс
+          транслируется через SSE в реальном времени.
+        </p>
+
+        <div class="flow-steps">
+          <div class="flow-step">
+            <span class="flow-num">1</span>
+            <div>
+              <h3 style="color: var(--text-primary)">Парсинг (scan + details)</h3>
+              <p style="color: var(--text-secondary)">
+                Парсинг списка объектов (<code>parsing_scan</code>) → загрузка
+                детальных страниц (<code>parsing_details</code>). Прогресс:
+                <code>X/Y детальных</code>, счётчики обновляются через SSE.
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num">2</span>
+            <div>
+              <h3 style="color: var(--text-primary)">Анализ + Score</h3>
+              <p style="color: var(--text-secondary)">
+                Сравнение с эталонами → <code>deviation_percent</code>,
+                <code>is_undervalued</code>. Сразу применяются focus-rules →
+                <code>focus_score</code>, <code>tags</code>. Один этап
+                (раньше были отдельно).
+              </p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num">3</span>
+            <div>
+              <h3 style="color: var(--text-primary)">Дайджест</h3>
+              <p style="color: var(--text-secondary)">
+                Email-дайджест с <code>is_undervalued</code> объектами за сутки.
+                Пропускается если нет новых объектов или дайджест отключен.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="mt-6 mb-2" style="color: var(--text-primary)">Особенности</h3>
+        <ul style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.7; padding-left: 1.25rem;">
+          <li><strong>SSE</strong> — реалтайм прогресс через EventSource (не polling)</li>
+          <li><strong>Idempotency</strong> — один pipeline одновременно</li>
+          <li><strong>Error resilience</strong> — ошибки не прерывают pipeline</li>
+          <li><strong>Cancel</strong> — кнопка «Отменить» в UI</li>
+          <li><strong>Pipeline State</strong> — персистентное состояние в БД, reconnect при refresh</li>
+        </ul>
+      </section>
+
       <!-- API -->
       <section id="api" class="doc-section">
         <h2 style="color: var(--text-primary)">API</h2>
@@ -298,29 +354,29 @@ const serviceTable = [
   { name: 'aklab-app', port: '4173', queue: '—', desc: 'Vue 3 frontend (vite preview)' },
   { name: 'parser-fabrikant', port: '1345', queue: 'parse-fabrikant', desc: 'Playwright HTML scraping, data-slot selectors' },
   { name: 'parser-torgi-gov', port: '1346', queue: 'parse-torgi-gov', desc: 'Чистый JSON API, без браузера' },
-  { name: 'parser-aggregator-bankrot', port: '1348', queue: 'parse-aggregator-bankrot', desc: 'Playwright HTML, title-first area extraction' },
+  { name: 'parser-aggregator-bankrot', port: '1348', queue: 'parse-aggregator-bankrot', desc: 'Fetch JSON API' },
   { name: 'parser-alfalot', port: '1349', queue: 'parse-alfalot', desc: 'Playwright SPA (ecosystem.alfalot.ru)' },
   { name: 'parser-etprf', port: '1350', queue: 'parse-etprf', desc: 'Playwright AJAX (sale.etprf.ru)' },
   { name: 'parser-sberbank-ast', port: '1351', queue: 'parse-sberbank-ast', desc: 'Playwright AJAX (utp.sberbank-ast.ru)' },
-  { name: 'parser-invest-mosreg', port: '1352', queue: 'parse-invest-mosreg', desc: 'Playwright generic, CSS-селекторы' },
-  { name: 'parser-investmoscow', port: '1353', queue: 'parse-investmoscow', desc: 'Playwright generic, CSS-селекторы' },
-  { name: 'parser-roseltorg', port: '1354', queue: 'parse-roseltorg', desc: 'Playwright generic, CSS-селекторы' },
-  { name: 'parser-m-ets', port: '1355', queue: 'parse-m-ets', desc: 'Playwright generic, CSS-селекторы' },
+  { name: 'parser-invest-mosreg', port: '1352', queue: 'parse-invest-mosreg', desc: 'Fetch JSON API (/aapi/map/places)' },
+  { name: 'parser-investmoscow', port: '1353', queue: 'parse-investmoscow', desc: 'Fetch + Nuxt SSR (__NUXT_DATA__)' },
+  { name: 'parser-roseltorg', port: '1354', queue: 'parse-roseltorg', desc: 'Playwright SPA (is_active=0)' },
+  { name: 'parser-m-ets', port: '1355', queue: 'parse-m-ets', desc: 'Playwright SPA' },
   { name: 'analyzer', port: '1341', queue: 'analyze-property', desc: 'Сравнение Property vs MarketReference' },
   { name: 'digest', port: '1342', queue: 'digest-send', desc: 'Email-дайджест через SMTP (nodemailer)' },
 ]
 
 const parsers = [
-  { slug: 'fabrikant', name: 'Fabrikant.ru', type: 'Playwright HTML', active: true, desc: 'Аукционы банкротств. Data-slot selectors, пагинация ?page=N.' },
+  { slug: 'fabrikant', name: 'Fabrikant.ru', type: 'Playwright HTML', active: false, desc: 'Аукционы банкротств. Data-slot selectors, пагинация ?page=N. Отключён — нет коммерческой недвижимости.' },
   { slug: 'torgi-gov', name: 'Торги.Гов', type: 'JSON API', active: true, desc: 'Государственные торги. Чистый REST API без браузера.' },
-  { slug: 'aggregator-bankrot', name: 'Агрегатор банкротств', type: 'Playwright HTML', active: true, desc: 'Агрегатор лотов. Title-first извлечение площади.' },
+  { slug: 'aggregator-bankrot', name: 'Агрегатор банкротств', type: 'JSON API', active: true, desc: 'Агрегатор лотов. Fetch JSON API.' },
   { slug: 'alfalot', name: 'АльфаЛот', type: 'Playwright SPA', active: true, desc: 'Экосистема аукционов alfalot.ru.' },
   { slug: 'etprf', name: 'ЕТПРФ', type: 'Playwright AJAX', active: true, desc: 'Электронная торговая площадка sale.etprf.ru.' },
   { slug: 'sberbank-ast', name: 'Сбербанк-АСТ', type: 'Playwright AJAX', active: true, desc: 'Торговая площадка Сбербанка.' },
-  { slug: 'invest-mosreg', name: 'ИнвестМосРег', type: 'Playwright generic', active: true, desc: 'Инвестиционные площадки МО. Селекторы требуют уточнения.' },
-  { slug: 'investmoscow', name: 'ИнвестМосква', type: 'Playwright generic', active: true, desc: 'Инвестиционные площадки Москвы. Селекторы требуют уточнения.' },
-  { slug: 'roseltorg', name: 'Росэлторг', type: 'Playwright generic', active: true, desc: 'Электронные торги roseltorg.ru.' },
-  { slug: 'm-ets', name: 'М-ЕТС', type: 'Playwright generic', active: true, desc: 'Межрегиональная электронная торговая система.' },
+  { slug: 'invest-mosreg', name: 'ИнвестМосРег', type: 'JSON API', active: true, desc: 'Инвестиционные площадки МО. Fetch JSON API.' },
+  { slug: 'investmoscow', name: 'ИнвестМосква', type: 'Nuxt SSR', active: true, desc: 'Инвестиционные площадки Москвы. Fetch + __NUXT_DATA__.' },
+  { slug: 'roseltorg', name: 'Росэлторг', type: 'Playwright generic', active: false, desc: 'Электронные торги roseltorg.ru. Отключён — WAF блокирует.' },
+  { slug: 'm-ets', name: 'М-ЕТС', type: 'Playwright SPA', active: true, desc: 'Межрегиональная электронная торговая система.' },
   { slug: 'fedresurs', name: 'Федресурс', type: 'Playwright', active: false, desc: 'Отключён — Qrator anti-bot блокирует все подходы.' },
 ]
 
@@ -336,6 +392,10 @@ const endpoints = [
   { method: 'POST', path: '/api/cron/analyze', desc: 'Ручной запуск анализатора' },
   { method: 'POST', path: '/api/cron/digest', desc: 'Ручной запуск дайджеста' },
   { method: 'GET', path: '/api/cron/queue-stats', desc: 'Статистика очередей задач' },
+  { method: 'POST', path: '/api/pipeline/start', desc: 'Запуск полного пайплайна (SSE)' },
+  { method: 'GET', path: '/api/pipeline/status', desc: 'Текущее состояние пайплайна' },
+  { method: 'POST', path: '/api/pipeline/cancel', desc: 'Отмена выполняющегося пайплайна' },
+  { method: 'GET', path: '/api/pipeline/stream', desc: 'SSE stream прогресса (EventSource)' },
 ]
 
 const deploySteps = [
