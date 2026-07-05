@@ -2,6 +2,7 @@ import type { Core } from '@strapi/strapi';
 import { runSeeders } from './seeders';
 import { getQueueService } from './services/queueService';
 import { registerCrons } from './cron';
+import { getPipelineService } from './services/pipeline';
 import type { StrapiInstance } from './types/strapi';
 
 export default {
@@ -44,6 +45,19 @@ export default {
       registerCrons(strapi as any);
     } catch (err: any) {
       strapi.log.error(`[bootstrap] registerCrons failed: ${err.message}`);
+    }
+
+    // Pipeline recovery: if state says 'running' after restart, reset it
+    // (the polling loop was lost when the process restarted)
+    try {
+      const pipeline = getPipelineService(strapi as any);
+      const state = await pipeline.getState();
+      if (state.status === 'running') {
+        strapi.log.warn('[bootstrap] Pipeline was running before restart — resetting state');
+        await pipeline.resetState();
+      }
+    } catch (err: any) {
+      strapi.log.error(`[bootstrap] Pipeline recovery failed: ${err.message}`);
     }
   },
 };

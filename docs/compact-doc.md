@@ -237,7 +237,7 @@ deploy-prod.sh + бамп версии).
   - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
 - **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
 - **Cron расписание**: torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, m-ets → 06:00
-- **Email-дайджест**: smtp_to=a@rudin.ru, 09:00 МСК
+- **Email-дайджест**: top-100 объектов из фокуса (по focus_score), smtp_to=a@rudin.ru, 09:00 МСК. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
 - **Telegram alerts**: УДАЛЕНЫ из плана
 - **Health badges** на `/settings` (таб Парсеры) — 🟢 Online / 🔴 Offline (polling каждые 30с)
 - **Per-source cron расписание** — cron expr в Source.schedule (дефолт `0 3 * * *`)
@@ -265,6 +265,7 @@ deploy-prod.sh + бамп версии).
     1. **Запуск парсинга** (`/properties` → collapsible) — только парсинг.
     2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.
     3. **Пересчитать** (`/properties` → таб «В фокусе») — только scoring.
+  - **Дайджест** — top-100 объектов из фокуса (по focus_score), НЕ только is_undervalued. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
   - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
