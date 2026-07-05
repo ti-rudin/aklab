@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.0.107",
+    "date": "5 июля 2026",
+    "time": "09:57",
+    "items": [
+      {
+        "text": "Race condition в details counters — resetDetailsFetched перед циклом",
+        "type": "fix"
+      },
+      {
+        "text": "Росэлторг",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.0.106",
     "date": "5 июля 2026",
     "time": "09:35",
