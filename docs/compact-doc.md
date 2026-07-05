@@ -215,9 +215,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.0.103)
+## Текущее состояние (июль 2026, v1.0.106)
 
-- Версия: 1.0.103
+- Версия: 1.0.106
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -232,8 +232,8 @@ deploy-prod.sh + бамп версии).
   - `services/parser-etprf/` — Playwright AJAX (sale.etprf.ru), порт 1350
   - `services/parser-torgi-gov/` — fetch JSON API (/new/api/public/lotcards), порт 1346
   - `services/parser-invest-mosreg/` — fetch JSON API (/aapi/map/places), порт 1352
-  - ~~`services/parser-fabrikant/`~~ — **ОТКЛЮЧЁН** (сайт не содержит коммерческую недвижимость)
-  - ~~`services/parser-roseltorg/`~~ — **ОТКЛЮЧЁН** (WAF блокирует IP сервера)
+  - `services/parser-fabrikant/` — Playwright SPA (fabrikant.ru/procedure/search/sales), порт 1345, **fetchDetails** (описание, контакты, фото)
+  - `services/parser-roseltorg/` — Playwright SPA (roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost), порт 1354, **fetchDetails** (описание, контакты, фото). is_active=0 (нужно активировать)
   - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
 - **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
 - **Cron расписание**: torgi-gov → 03:00, aggregator-bankrot/alfalot/etprf → 04:00, sberbank-ast/invest-mosreg/investmoscow → 05:00, m-ets → 06:00
@@ -257,18 +257,18 @@ deploy-prod.sh + бамп версии).
   - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
-- **Парсеры** (обновлено 03.07.2026):
-  - **8 активных парсеров**, 3 отключены (fedresurs, fabrikant, roseltorg).
-  - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 44 объекта за запуск.
+- **Парсеры** (обновлено 05.07.2026):
+  - **8 активных парсеров** + 2 готовых к активации (fabrikant, roseltorg), 1 отключён (fedresurs).
+  - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 204 объекта, fetchDetails.
   - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
-  - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). 19 объектов.
-  - `m-ets` — Playwright SPA. 14 объектов.
-  - `aggregator-bankrot` — fetch JSON API. 11 объектов. Фильтр: авто, бытовая химия.
-  - `etprf` — Playwright AJAX (sale.etprf.ru). 11 объектов.
-  - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). 10 объектов. `priceMin`/`priceMax`.
+  - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). fetchDetails.
+  - `m-ets` — Playwright SPA. 200 объектов, fetchDetails.
+  - `aggregator-bankrot` — fetch JSON API. 71 объект, fetchDetails.
+  - `etprf` — Playwright AJAX (sale.etprf.ru). 200 объектов, fetchDetails.
+  - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). fetchDetails.
   - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов.
-  - `fabrikant` — **ОТКЛЮЧЁН** (сайт отдаёт гвозди/стройматериалы вместо недвижимости).
-  - `roseltorg` — **ОТКЛЮЧЁН** (WAF блокирует IP сервера).
+  - `fabrikant` — Playwright SPA (fabrikant.ru). **fetchDetails** (описание, контакты, фото). is_active=0.
+  - `roseltorg` — Playwright SPA (roseltorg.ru). **fetchDetails** + URL с фильтрами (Москва, коммерческая). is_active=0.
   - `fedresurs` — **ОТКЛЮЧЁН** (Qrator anti-bot).
 - Содержимое:
   - **api/src/api/** — 7 content-types (Property, Setting singleton,
@@ -697,3 +697,21 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 3. **Порядок фильтров.** Быстрый фильтр (price_per_sqm) должен быть ДО API-вызовов (propertyExists). Экономит запросы.
 4. **Дедуп скрипт.** `scripts/dedup-properties.js` — оставляет самый ранний объект в группе source+external_id, удаляет фото с диска.
 5. **digest_enabled toggle.** 3 уровня защиты: cron, controller, handler. `data.digest_enabled !== false` (default true для обратной совместимости).
+
+44. **resetSourceDetailsCounters: сбрасывать ВСЕ счётчики** — `total_found` и `total_created` должны обнуляться перед каждым парсингом иначе кумулятивные (6015 вместо 52). В v1.0.103 сбрасывались только `total_details_fetched/needed`. Исправлено в v1.0.104.
+45. **Analyzer: объекты без эталона → analyzed=true** — если `MarketReference` не найден для city/property_type, объект помечается `is_undervalued: false, deviation_percent: 0` вместо `analyzed: false`. Без этого `analyzeProgress.done` никогда не достигается (зависание 48/77). v1.0.104.
+46. **Pipeline: два поля «Глубина»** — на `/settings` есть ОТДЕЛЬНОЕ поле «Глубина парсинга (по расписанию)» (form.parse_depth, для cron) и поле «Глубина:» в секции ручного запуска (parseDepth, для pipeline). Они НЕ связаны. Пользователь может поменять одно и удивиться что другое не изменилось. Нужно синкать или убрать дублирование.
+47. **fabrikant/roseltorg: fetchDetails** — добавлены в v1.0.105. Все 8 парсеров с HTML scraping теперь имеют fetchDetails. investmoscow/invest-mosreg — JSON API, им не нужно. fabrikant и roseltorg is_active=0 (нужно активировать вручную).
+48. **roseltorg URL** — правильный URL: `/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost?sale=all&okato[]=45000000000&status[]=5&status[]=0&status[]=1` (Москва, коммерческая, активные). Раньше парсер пробовал случайные URL'ы (/lot-search, /search и т.д.) которые не существовали.
+49. **fabrikant data-slot selectors** — карточки: `[data-slot="card"][data-id]`, title: `[data-slot="anchor"]`, цена: `[data-slot="text"]` содержащий "RUB", URL: `/procedure/search/sales` (вкладка "Продажи"), пагинация: `?page=N`.
+
+### 2026-07-05: Pipeline progress + analyzer fix (v1.0.104 → v1.0.106)
+
+**Что произошло:** три бага в pipeline, fetchDetails для fabrikant/roseltorg, roseltorg URL.
+
+**Инсайты:**
+1. **cumulative total_created.** `resetSourceDetailsCounters` не сбрасывал `total_found/total_created`. Каждый парсинг прибавлял к старым значениям. 52 реальных объектов → 6015 в UI. Фикс: обнулять ВСЕ 4 поля.
+2. **Analyzer hang 48/77.** 29 объектов (land/apartment) без MarketReference → `analyzed: false` → progress никогда не `done`. Фикс: `analyzed: true, is_undervalued: false`.
+3. **Pipeline depth vs settings depth.** Два независимых поля «Глубина» — одно для cron, другое для ручного запуска. Пользователь менял одно, ожидал что второе применится.
+4. **Парсеры без fetchDetails.** investmoscow/invest-mosreg не нужен (JSON API). fabrikant/roseltorg — просто не был реализован. Добавлен в v1.0.105.
+5. **roseltorg URL guessing.** Парсер пробовал 5 случайных URL'ов вместо одного правильного. Всегда лучше один проверенный URL с фильтрами, чем угадывание.
