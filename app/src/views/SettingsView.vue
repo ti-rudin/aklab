@@ -343,7 +343,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -525,21 +525,53 @@ function updatePipelineState(state: any) {
   })
 }
 
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+function stopPolling() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+}
+
+function startPolling() {
+  stopPolling()
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await api.get('/pipeline/status')
+      if (res.data?.ok && res.data.state) {
+        updatePipelineState(res.data.state)
+        const s = res.data.state
+        if (s.status === 'idle' || s.stage === 'done' || s.stage === 'done_with_errors' ||
+            s.stage === 'cancelled' || s.stage === 'error') {
+          stopPolling()
+        }
+      }
+    } catch { /* ok */ }
+  }, 3000)
+}
+
 function connectSSE() {
   if (eventSource) { eventSource.close(); eventSource = null }
-  eventSource = new EventSource('/api/pipeline/stream')
+  // SSE URL must point to API domain (Vite preview doesn't proxy /api)
+  const apiBase = (import.meta.env.VITE_API_URL as string) || (window.location.origin + '/api')
+  const sseBase = apiBase.replace(/\/api$/, '')
+  eventSource = new EventSource(`${sseBase}/api/pipeline/stream`)
   eventSource.addEventListener('progress', (e) => {
+    stopPolling() // SSE works, no need to poll
     try { updatePipelineState(JSON.parse(e.data)) } catch { /* ok */ }
   })
-  eventSource.addEventListener('done', () => {
+  eventSource.addEventListener('done', (e) => {
+    try { updatePipelineState(JSON.parse((e as any).data)) } catch { /* ok */ }
     if (eventSource) { eventSource.close(); eventSource = null }
+    stopPolling()
   })
   eventSource.addEventListener('error', () => {
-    // Reconnect on connection error (not SSE error event)
     if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-      setTimeout(connectSSE, 3000)
+      // SSE failed — fall back to polling
+      if (eventSource) { eventSource.close(); eventSource = null }
+      startPolling()
     }
   })
+  // Also start polling as backup (SSE might connect but never fire events)
+  startPolling()
 }
 
 async function startPipeline() {
@@ -570,6 +602,12 @@ async function cancelPipeline() {
     await api.post('/pipeline/cancel')
   } catch { /* ok */ }
 }
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (eventSource) { eventSource.close(); eventSource = null }
+  stopPolling()
+})
 
 // On page load — check if pipeline is running
 onMounted(async () => {
