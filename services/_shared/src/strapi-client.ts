@@ -24,7 +24,10 @@ export async function propertyExists(source: string, externalId: string): Promis
   try {
     const url = `${BASE}/properties?filters[source][$eq]=${source}&filters[external_id][$eq]=${externalId}&pagination[limit]=1`;
     const res = await fetch(url, { headers: HEADERS });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      logger.warn(`propertyExists: API returned ${res.status}, fail-closed (skip)`);
+      return true; // fail-closed: при ошибке API считаем что существует
+    }
     const data = (await res.json()) as StrapiResponse<any[]>;
     return (data.data?.length ?? 0) > 0;
   } catch (err: any) {
@@ -117,14 +120,20 @@ export async function createProperty(props: {
     return null;
   }
 
-  // Авто-расчёт price_per_sqm если есть price и area
+  // Авто-расчёт price_per_sqm если есть price и area (до API-вызовов)
   if (!props.price_per_sqm && props.price && props.area_sqm && props.area_sqm > 0) {
     props.price_per_sqm = Math.round(props.price / props.area_sqm);
   }
 
-  // Фильтр: без цены за м² объект не нужен
+  // Фильтр: без цены за м² объект не нужен (до API-вызовов)
   if (!props.price_per_sqm || props.price_per_sqm <= 0) {
     logger.warn(`Skipping no-price-data: "${props.title}" price=${props.price} area=${props.area_sqm} source=${props.source}`);
+    return null;
+  }
+
+  // Дедупликация — вторая линия защиты (первая в parse-handler)
+  if (await propertyExists(props.source, props.external_id)) {
+    logger.warn(`Skipping duplicate: "${props.title}" source=${props.source} ext=${props.external_id}`);
     return null;
   }
 

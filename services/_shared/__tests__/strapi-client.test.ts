@@ -84,13 +84,13 @@ describe('propertyExists()', () => {
     expect(result).toBe(false);
   });
 
-  test('returns false when fetch returns non-OK status', async () => {
+  test('returns true (fail-closed) when fetch returns non-OK status', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ error: 'unauthorized' }, 401)
     );
 
     const result = await propertyExists('tender', 'ext-1');
-    expect(result).toBe(false);
+    expect(result).toBe(true); // fail-closed: non-OK → skip
   });
 
   test('returns true (fail-closed) when fetch throws', async () => {
@@ -110,9 +110,9 @@ describe('createProperty()', () => {
 
   test('creates a property via POST and returns data', async () => {
     const created = { id: 42, documentId: 'doc-42' };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: created })
-    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: created }));  // POST → created
 
     const result = await createProperty({
       source: 'tender',
@@ -129,18 +129,18 @@ describe('createProperty()', () => {
     });
 
     expect(result).toEqual(created);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 
-    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
+    const [url, opts] = (globalThis.fetch as any).mock.calls[1];
     expect(url).toBe(`${BASE}/properties`);
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body).data.source).toBe('tender');
   });
 
   test('auto-calculates price_per_sqm when missing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: { id: 1 } })
-    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { id: 1 } }));  // POST → created
 
     await createProperty({
       source: 'tender',
@@ -155,7 +155,7 @@ describe('createProperty()', () => {
       auction_type: 'bankruptcy',
     });
 
-    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
+    const body = JSON.parse((globalThis.fetch as any).mock.calls[1][1].body);
     expect(body.data.price_per_sqm).toBe(50_000); // 5_000_000 / 100
   });
 
@@ -196,9 +196,9 @@ describe('createProperty()', () => {
   });
 
   test('throws on non-OK response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ error: 'Validation error' }, 400)
-    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ error: 'Validation error' }, 400));  // POST → 400
 
     await expect(
       createProperty({
@@ -218,9 +218,9 @@ describe('createProperty()', () => {
   });
 
   test('passes through marketplace properties without commercial filter', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: { id: 1 } })
-    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { id: 1 } }));  // POST → created
 
     const result = await createProperty({
       source: 'market',
@@ -238,6 +238,29 @@ describe('createProperty()', () => {
 
     // marketplace auction_type bypasses commercial filter
     expect(result).toEqual({ id: 1 });
+  });
+
+  test('skips duplicate property (already exists)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      mockJsonResponse({ data: [{ id: 99 }] })  // propertyExists → found
+    );
+
+    const result = await createProperty({
+      source: 'tender',
+      external_id: 'ext-dup',
+      url: 'https://example.com/dup',
+      title: 'Дубликат',
+      address: 'addr',
+      city: 'moscow',
+      price: 1000,
+      area_sqm: 10,
+      price_per_sqm: 100,
+      property_type: 'warehouse',
+      auction_type: 'bankruptcy',
+    });
+
+    expect(result).toBeNull();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // only propertyExists, no POST
   });
 });
 
