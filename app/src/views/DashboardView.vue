@@ -83,24 +83,7 @@
         </div>
       </div>
 
-      <!-- Тренд -->
-      <div class="mb-8">
-        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📈 Тренд (7 дней)</h2>
-          <div v-if="trend.length === 0" class="text-sm" style="color: var(--text-muted)">Нет данных</div>
-          <div v-else class="space-y-2">
-            <div v-for="t in trend" :key="t.date"
-              class="flex items-center gap-2 sm:gap-3">
-              <span class="text-xs w-16 sm:w-20 flex-shrink-0" style="color: var(--text-muted)">{{ formatDate(t.date) }}</span>
-              <div class="flex-1 h-5 sm:h-6 rounded-lg overflow-hidden" style="background: var(--bg-main)">
-                <div class="h-full rounded-lg transition-all duration-500"
-                  :style="{ width: trendBarWidth(t.count) + '%', background: 'var(--accent)' }" />
-              </div>
-              <span class="text-sm font-mono w-10 sm:w-12 text-right flex-shrink-0" style="color: var(--text-main)">{{ t.count }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+
     </template>
 
     <!-- Ошибка -->
@@ -130,11 +113,6 @@ interface TopProperty {
   tags: string[]
 }
 
-interface TrendDay {
-  date: string
-  count: number
-}
-
 interface TypeBreakdown {
   type: string
   label: string
@@ -145,7 +123,6 @@ const loading = ref(true)
 const error = ref('')
 const stats = ref<DashboardStats | null>(null)
 const topProperties = ref<TopProperty[]>([])
-const trend = ref<TrendDay[]>([])
 const typeBreakdown = ref<TypeBreakdown[]>([])
 
 const TYPE_LABELS: Record<string, string> = {
@@ -163,15 +140,6 @@ const scoreColor = (score: number) => {
   if (score >= 70) return '#ef4444'
   if (score >= 50) return '#f59e0b'
   return '#4f8cff'
-}
-
-const formatDate = (d: string) => {
-  return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
-}
-
-const trendBarWidth = (count: number) => {
-  const max = Math.max(...trend.value.map(t => t.count), 1)
-  return Math.round((count / max) * 100)
 }
 
 const typeBarWidth = (count: number) => {
@@ -211,33 +179,6 @@ async function fetchTopProperties() {
   } catch { /* ignore */ }
 }
 
-async function fetchTrend() {
-  try {
-    // Get events of type 'entered_focus' from last 7 days
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    // Fetch up to 5000 events (scoring creates one per property)
-    const { data } = await api.get('/property-events', {
-      params: {
-        'filters[event_type][$eq]': 'entered_focus',
-        'filters[createdAt][$gte]': since,
-        'sort': 'createdAt:desc',
-        'pagination[pageSize]': 5000,
-      }
-    })
-    // Group by date
-    const byDate: Record<string, number> = {}
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-      byDate[d.toISOString().slice(0, 10)] = 0
-    }
-    for (const evt of data.data || []) {
-      const day = evt.createdAt?.slice(0, 10)
-      if (day && byDate[day] !== undefined) byDate[day]++
-    }
-    trend.value = Object.entries(byDate).map(([date, count]) => ({ date, count }))
-  } catch { /* ignore */ }
-}
-
 async function fetchTypeBreakdown() {
   try {
     const { data } = await api.get('/properties', {
@@ -261,7 +202,7 @@ async function fetchTypeBreakdown() {
 async function refresh() {
   loading.value = true
   error.value = ''
-  await Promise.all([fetchStats(), fetchTopProperties(), fetchTrend(), fetchTypeBreakdown()])
+  await Promise.all([fetchStats(), fetchTopProperties(), fetchTypeBreakdown()])
   loading.value = false
 }
 
