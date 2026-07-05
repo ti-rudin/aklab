@@ -154,12 +154,14 @@
       <div class="rounded-xl p-3 sm:p-4 border mb-6 grid grid-cols-2 sm:flex sm:flex-row sm:flex-wrap gap-2 sm:gap-3 items-end" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <div>
           <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
-          <select v-model="filters.city" class="w-full px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-            <option value="">Все</option>
-            <option value="moscow">Москва</option>
-            <option value="mo">МО</option>
-            <option value="other">Другой</option>
-          </select>
+          <div class="flex flex-wrap gap-1">
+            <label v-for="opt in cityOptions" :key="opt.value"
+              class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
+              :style="filters.city.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
+              <input type="checkbox" :value="opt.value" v-model="filters.city" class="hidden" />
+              {{ opt.label }}
+            </label>
+          </div>
         </div>
         <div v-if="activeTab !== 'work'">
           <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
@@ -705,6 +707,12 @@ const typeOptions = [
   { value: 'other', label: 'Другое' },
 ]
 
+const cityOptions = [
+  { value: 'moscow', label: 'Москва' },
+  { value: 'mo', label: 'МО' },
+  { value: 'other', label: 'Другой' },
+]
+
 const sort = reactive({
   field: 'createdAt' as string,
   direction: 'desc' as 'asc' | 'desc',
@@ -720,7 +728,7 @@ function toggleSort(field: string) {
 }
 
 const filters = reactive({
-  city: '',
+  city: [] as string[],
   status: '',
   source: '',
   property_type: [] as string[],
@@ -767,7 +775,7 @@ async function fetchItems() {
   const f: any = {}
   // На вкладке «Все объекты» скрываем объекты «В работе»
   f.status = { $ne: 'in_progress' }
-  if (filters.city) f.city = { $eq: filters.city }
+  if (filters.city.length) f.city = { $in: filters.city }
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
   if (filters.property_type.length) f.property_type = { $in: filters.property_type }
@@ -778,7 +786,7 @@ async function fetchItems() {
 }
 
 function resetFilters() {
-  filters.city = ''
+  filters.city = []
   filters.status = ''
   filters.source = ''
   filters.property_type = []
