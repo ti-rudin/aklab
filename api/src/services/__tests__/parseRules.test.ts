@@ -27,9 +27,9 @@ describe('buildParseRules', () => {
     expect(rules.stopWords).toEqual(['земельный участок', 'участок'])
   })
 
-  it('returns undefined for empty stop_words', () => {
+  it('returns empty array for empty stop_words (truthy in JS)', () => {
     const rules = buildParseRules({ stop_words: [] })
-    expect(rules.stopWords).toBeUndefined()
+    expect(rules.stopWords).toEqual([])
   })
 
   it('maps price_from/price_to as numbers', () => {

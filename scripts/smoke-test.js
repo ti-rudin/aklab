@@ -141,6 +141,12 @@ async function run() {
     ok('Market references', `${res.data?.data?.length || 0} items`);
   });
 
+  await test('GET /api/pipeline/status', async () => {
+    const res = await api('GET', '/api/pipeline/status');
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
+    ok('Pipeline status', `status=${res.data?.state?.status || 'idle'}`);
+  });
+
   // === 4. Data integrity ===
   console.log('\n🔍 Data integrity:');
 
@@ -170,6 +176,43 @@ async function run() {
     } else {
       ok('Properties valid', '0 items (empty)');
     }
+  });
+
+  await test('Setting has parsing rules fields', async () => {
+    const res = await api('GET', '/api/setting');
+    const setting = res.data?.data;
+    if (!setting) throw new Error('No setting data');
+
+    // stop_words should be an array
+    if (!Array.isArray(setting.stop_words)) {
+      throw new Error(`stop_words is not an array: ${typeof setting.stop_words}`);
+    }
+    if (setting.stop_words.length === 0) {
+      throw new Error('stop_words is empty');
+    }
+
+    // area_from/area_to should exist (can be null)
+    if (!('area_from' in setting)) throw new Error('area_from missing');
+    if (!('area_to' in setting)) throw new Error('area_to missing');
+
+    // monitored_regions should be an array
+    if (!Array.isArray(setting.monitored_regions)) {
+      throw new Error(`monitored_regions is not an array`);
+    }
+
+    // parse_depth should be a number
+    if (typeof setting.parse_depth !== 'number') {
+      throw new Error(`parse_depth is not a number: ${typeof setting.parse_depth}`);
+    }
+
+    ok('Parsing rules', `stop_words=${setting.stop_words.length}, depth=${setting.parse_depth}, regions=${setting.monitored_regions.length}`);
+  });
+
+  await test('GET /api/focus-rules', async () => {
+    const res = await api('GET', '/api/focus-rules');
+    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
+    const rules = res.data?.data || [];
+    ok('Focus rules', `${rules.length} rules`);
   });
 
   // === 5. Microservices ===
