@@ -58,8 +58,7 @@ export function createParseHandler(parser: SourceParser) {
         if (newProperties.length >= depth) break;
 
         try {
-          await randomDelay(500, 1500);
-
+          // No anti-ban delay — propertyExists queries local Strapi (localhost), not external site
           if (await propertyExists(req.source, prop.external_id)) {
             consecutiveDuplicates++;
             if (consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
