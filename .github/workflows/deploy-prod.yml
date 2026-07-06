@@ -1,5 +1,6 @@
 name: Deploy — Prod
 
+# Auto-deploy отключён — только manual workflow_dispatch
 on:
   workflow_dispatch:
     inputs:
