@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.22",
+    "date": "6 июля 2026",
+    "time": "16:07",
+    "items": [
+      {
+        "text": "Убран тип production — мерж в free_purpose",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.21",
     "date": "6 июля 2026",
     "time": "15:55",
