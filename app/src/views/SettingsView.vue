@@ -56,20 +56,6 @@
           />
         </div>
 
-        <!-- Глубина парсинга -->
-        <div>
-          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Глубина парсинга (по расписанию)</label>
-          <p class="text-xs mb-2" style="color: var(--text-muted)">Максимум новых объектов за один запуск парсинга по крону. По умолчанию 20.</p>
-          <input
-            v-model.number="form.parse_depth"
-            type="number"
-            min="1"
-            max="5000"
-            class="w-full px-3 py-2 rounded-lg border text-sm"
-            style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
-          />
-        </div>
-
         <!-- Время дайджеста -->
         <div>
           <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Дайджест включён</label>
@@ -107,43 +93,6 @@
             style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)"
             placeholder="email@example.com"
           />
-        </div>
-
-        <!-- Диапазон цен для дайджеста -->
-        <div>
-          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Диапазон цен (₽)</label>
-          <p class="text-xs mb-2" style="color: var(--text-muted)">Объекты вне диапазона не попадут в дайджест. Оставьте пустым для без ограничений.</p>
-          <div class="flex gap-2 items-center">
-            <input v-model.number="form.price_from" type="number" placeholder="от" min="0"
-              class="w-full px-3 py-2 rounded-lg border text-sm"
-              style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)" />
-            <span class="text-sm shrink-0" style="color: var(--text-muted)">—</span>
-            <input v-model.number="form.price_to" type="number" placeholder="до" min="0"
-              class="w-full px-3 py-2 rounded-lg border text-sm"
-              style="background: var(--bg-input, #fff); border-color: var(--border-subtle); color: var(--text-main)" />
-          </div>
-        </div>
-
-        <!-- Регионы мониторинга -->
-        <div>
-          <label class="block text-sm font-medium mb-1" style="color: var(--text-main)">Регионы мониторинга</label>
-          <p class="text-xs mb-2" style="color: var(--text-muted)">Объекты из неотмеченных регионов не попадут в дайджест.</p>
-          <div class="space-y-2">
-            <label
-              v-for="opt in regionOptions"
-              :key="opt.value"
-              class="flex items-center gap-2 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                :value="opt.value"
-                v-model="regionChecked[opt.value]"
-                class="rounded border-gray-300"
-                style="accent-color: var(--accent)"
-              />
-              <span class="text-sm" style="color: var(--text-main)">{{ opt.label }}</span>
-            </label>
-          </div>
         </div>
 
         <!-- Кнопка -->
@@ -327,7 +276,10 @@
 
     <!-- Таб: Правила -->
     <div v-if="activeTab === 'rules'">
-      <RulesPanel />
+      <ParsingRulesPanel />
+      <div class="mt-8 pt-6 border-t" style="border-color: var(--border-subtle)">
+        <RulesPanel />
+      </div>
     </div>
 
     <!-- Таб: Парсеры -->
@@ -351,6 +303,7 @@ import api from '@/api/strapi'
 import RulesPanel from '@/components/settings/RulesPanel.vue'
 import SourcesPanel from '@/components/settings/SourcesPanel.vue'
 import MarketReferencesPanel from '@/components/settings/MarketReferencesPanel.vue'
+import ParsingRulesPanel from '@/components/settings/ParsingRulesPanel.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -384,31 +337,10 @@ const documentId = ref('')
 
 const form = ref({
   threshold_percent: 20,
-  parse_depth: 20,
   digest_time: '09:00',
   smtp_to: '',
   digest_enabled: true,
-  price_from: null as number | null,
-  price_to: null as number | null,
-  monitored_regions: ['moscow', 'mo', 'other'] as string[],
 })
-const regionOptions = [
-  { value: 'moscow', label: 'Москва' },
-  { value: 'mo', label: 'Московская область' },
-  { value: 'other', label: 'Другие регионы' },
-]
-const regionChecked = reactive<Record<string, boolean>>({
-  moscow: true,
-  mo: true,
-  other: true,
-})
-
-// Sync regionChecked → form.monitored_regions
-watch(regionChecked, (val) => {
-  form.value.monitored_regions = Object.entries(val)
-    .filter(([, v]) => v)
-    .map(([k]) => k)
-}, { deep: true })
 
 onMounted(async () => {
   try {
@@ -418,18 +350,18 @@ onMounted(async () => {
       documentId.value = data.documentId
       form.value = {
         threshold_percent: data.threshold_percent ?? 20,
-        parse_depth: data.parse_depth ?? 20,
         digest_time: data.digest_time ?? '09:00',
         smtp_to: data.smtp_to ?? '',
         digest_enabled: data.digest_enabled !== false, // default true
-        price_from: data.price_from ?? null,
-        price_to: data.price_to ?? null,
-        monitored_regions: data.monitored_regions ?? ['moscow', 'mo', 'other'],
       }
+      // Предзаполнение формы ручного запуска из Setting
+      launchFilters.priceFrom = data.price_from ?? ''
+      launchFilters.priceTo = data.price_to ?? ''
       const regions = data.monitored_regions ?? ['moscow', 'mo']
-      regionChecked.moscow = regions.includes('moscow')
-      regionChecked.mo = regions.includes('mo')
-      regionChecked.other = regions.includes('other')
+      launchFilters.cities.moscow = regions.includes('moscow')
+      launchFilters.cities.mo = regions.includes('mo')
+      launchFilters.cities.other = regions.includes('other')
+      parseDepth.value = data.parse_depth ?? 20
     }
   } catch (err: any) {
     error.value = 'Не удалось загрузить настройки'
