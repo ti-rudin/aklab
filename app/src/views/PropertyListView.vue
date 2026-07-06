@@ -53,7 +53,7 @@
     </div>
 
     <!-- ============================== -->
-    <!-- ВСЕ ОБЪЕКТЫ (существующий UI) -->
+    <!-- ВСЕ ОБЪЕКТЫ / В РАБОТЕ         -->
     <!-- ============================== -->
     <template v-if="activeTab === 'all' || activeTab === 'work'">
       <!-- Диалог подтверждения очистки -->
@@ -108,14 +108,7 @@
           <!-- Cities -->
           <div class="mb-3">
             <label class="block text-xs font-medium mb-1" style="color: var(--text-muted)">Город</label>
-            <div class="flex flex-wrap gap-1">
-              <label v-for="opt in cityOptions" :key="opt.value"
-                class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
-                :style="parseFilters.cities.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
-                <input type="checkbox" :value="opt.value" v-model="parseFilters.cities" class="hidden" />
-                {{ opt.label }}
-              </label>
-            </div>
+            <FilterChips v-model="parseFilters.cities" :options="cityOptions" />
           </div>
           <!-- Depth + Button -->
           <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t" style="border-color: var(--border-subtle)">
@@ -178,38 +171,32 @@
 
       <!-- Фильтры -->
       <div class="rounded-xl p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-        <!-- Поиск -->
-        <div>
-          <div class="relative">
+        <!-- Поиск + переключатель вида -->
+        <div class="flex gap-2 items-center">
+          <div class="relative flex-1">
             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
             <input v-model="searchQuery" @input="onSearchInput" type="text" placeholder="Поиск по названию или адресу..."
               class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
               style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
           </div>
+          <ViewToggle v-model="viewMode" />
         </div>
+        <!-- Мобильный тоггл фильтров -->
+        <button @click="filtersOpen = !filtersOpen"
+          class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
+          style="color: var(--text-muted)">
+          <span>{{ filtersOpen ? '▼' : '▶' }}</span>
+          <span>Фильтры</span>
+        </button>
         <!-- Фильтры -->
-        <div class="flex flex-wrap gap-x-4 gap-y-3 items-end">
+        <div class="flex-wrap gap-x-4 gap-y-3 items-end" :class="filtersOpen ? 'flex' : 'hidden sm:flex'">
           <div>
             <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
-            <div class="flex flex-wrap gap-1">
-              <label v-for="opt in cityOptions" :key="opt.value"
-                class="flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer select-none transition-colors"
-                :style="filters.city.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
-                <input type="checkbox" :value="opt.value" v-model="filters.city" class="hidden" />
-                {{ opt.label }}
-              </label>
-            </div>
+            <FilterChips v-model="filters.city" :options="cityOptions" />
           </div>
           <div>
             <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
-            <div class="flex flex-wrap gap-1">
-              <label v-for="opt in typeOptions" :key="opt.value"
-                class="flex items-center gap-1 text-xs px-2 py-1 rounded-lg cursor-pointer select-none transition-colors"
-                :style="filters.property_type.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
-                <input type="checkbox" :value="opt.value" v-model="filters.property_type" class="hidden" />
-                {{ opt.label }}
-              </label>
-            </div>
+            <FilterChips v-model="filters.property_type" :options="typeOptions" />
           </div>
           <div v-if="activeTab !== 'work'">
             <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
@@ -252,49 +239,27 @@
         <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
       </div>
 
-      <!-- Карточки (все размеры экрана) -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div
+      <!-- Карточки -->
+      <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <PropertyCard
           v-for="item in items"
           :key="item.id"
-          class="rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
-          style="background: var(--bg-elevated); border-color: var(--border-subtle)"
-          @click="router.push(`/properties/${item.documentId}`)"
-        >
-          <!-- Zone 1: Title + badges -->
-          <div class="flex items-start justify-between gap-2 mb-2">
-            <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
-              <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">⚠ {{ item.deviation_percent }}%</span>
-            </div>
-          </div>
-          <!-- Zone 2: Meta line -->
-          <div class="text-xs mb-3 truncate" style="color: var(--text-muted)">
-            <span v-if="item.address">{{ item.address }}</span>
-            <span v-if="item.address && (item.city || item.property_type)"> · </span>
-            <span v-if="item.city">{{ cityLabel(item.city) }}</span>
-            <span v-if="item.city && item.property_type"> · </span>
-            <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
-            <span v-if="item.source"> · {{ item.source }}</span>
-          </div>
-          <!-- Zone 3: Metric tiles -->
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
-            </div>
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">Цена</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price) }}</div>
-            </div>
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price_per_sqm) }}</div>
-            </div>
-          </div>
-        </div>
+          :item="item"
+          variant="default"
+          @open="openProperty(item)"
+        />
       </div>
+
+      <!-- Таблица -->
+      <PropertyTable
+        v-else
+        :items="items"
+        variant="default"
+        :sort-field="sort.field"
+        :sort-direction="sort.direction"
+        @open="openProperty"
+        @sort="toggleSort"
+      />
 
       <!-- Пагинация -->
       <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
@@ -321,7 +286,7 @@
     </template>
 
     <!-- ============================== -->
-    <!-- В ФОКУСЕ (новый UI)           -->
+    <!-- В ФОКУСЕ                       -->
     <!-- ============================== -->
     <template v-if="activeTab === 'focus'">
       <!-- Stats header -->
@@ -360,6 +325,8 @@
         >
           📥 Экспорт CSV
         </button>
+
+        <ViewToggle v-model="viewMode" class="sm:ml-auto" />
       </div>
 
       <!-- Focus filters -->
@@ -371,7 +338,14 @@
             class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
             style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Мобильный тоггл фильтров -->
+        <button @click="focusFiltersOpen = !focusFiltersOpen"
+          class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
+          style="color: var(--text-muted)">
+          <span>{{ focusFiltersOpen ? '▼' : '▶' }}</span>
+          <span>Фильтры</span>
+        </button>
+        <div class="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" :class="focusFiltersOpen ? 'grid' : 'hidden sm:grid'">
           <!-- Порог (threshold) -->
           <div>
             <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
@@ -408,14 +382,7 @@
           <!-- Тип недвижимости -->
           <div>
             <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Тип недвижимости</label>
-            <div class="flex flex-wrap gap-1">
-              <label v-for="opt in typeOptions" :key="opt.value"
-                class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors"
-                :style="focusFilters.property_type.includes(opt.value) ? 'background: var(--accent-soft); color: var(--accent)' : 'background: var(--bg-main); color: var(--text-muted)'">
-                <input type="checkbox" :value="opt.value" v-model="focusFilters.property_type" class="hidden" />
-                {{ opt.label }}
-              </label>
-            </div>
+            <FilterChips v-model="focusFilters.property_type" :options="typeOptions" />
           </div>
 
           <!-- Теги -->
@@ -460,66 +427,35 @@
         <p class="text-sm" style="color: var(--text-muted)">Запустите пересчёт скоров или измените фильтры</p>
       </div>
 
-      <!-- Focus Карточки (все размеры экрана) -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div
+      <!-- Focus Карточки -->
+      <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <PropertyCard
           v-for="item in filteredFocusItems"
           :key="item.id"
-          class="rounded-xl border p-4 transition-all hover:shadow-lg cursor-pointer"
-          style="background: var(--bg-elevated); border-color: var(--border-subtle)"
-        >
-          <!-- Zone 1: checkbox + title + badges -->
-          <div class="flex items-start justify-between gap-2 mb-2">
-            <div class="flex items-start gap-2 flex-1 min-w-0">
-              <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" @click.stop class="rounded mt-0.5 flex-shrink-0" style="accent-color: var(--accent)" />
-              <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)" @click="router.push(`/properties/${item.documentId}`)">{{ item.title }}</h3>
-            </div>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
-              <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" :style="deviationStyle(Number(item.deviation_percent))">{{ item.deviation_percent }}%</span>
-            </div>
-          </div>
-          <!-- Zone 2: Meta line -->
-          <div class="text-xs mb-3 truncate" style="color: var(--text-muted)">
-            <span v-if="item.address">{{ item.address }}</span>
-            <span v-if="item.address && (item.city || item.property_type)"> · </span>
-            <span v-if="item.city">{{ cityLabel(item.city) }}</span>
-            <span v-if="item.city && item.property_type"> · </span>
-            <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
-            <span v-if="item.source"> · {{ item.source }}</span>
-          </div>
-          <!-- Zone 3: Metric tiles -->
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
-            </div>
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">Цена</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price) }}</div>
-            </div>
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price_per_sqm) }}</div>
-            </div>
-            <div>
-              <div class="text-xs" style="color: var(--text-muted)">Скор</div>
-              <div class="text-sm font-mono font-semibold" style="color: var(--text-main)">{{ item.focus_score ?? '—' }}</div>
-            </div>
-          </div>
-          <!-- Zone 4: Tags + action buttons -->
-          <div class="mt-2 pt-2 border-t flex flex-wrap items-center gap-2" style="border-color: var(--border-subtle)">
-            <div class="flex flex-wrap gap-1 flex-1">
-              <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
-            </div>
-            <div v-if="focusSelected.has(item.id)" class="flex gap-1 shrink-0">
-              <button @click.stop="bulkSetStatus('viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
-              <button @click.stop="bulkSetStatus('rejected')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
-              <button @click.stop="bulkExportCSV" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
-            </div>
-          </div>
-        </div>
+          :item="item"
+          variant="focus"
+          :selected="focusSelected.has(item.id)"
+          @open="openProperty(item)"
+          @toggle-select="toggleFocusSelect(item.id)"
+          @bulk-status="bulkSetStatus"
+          @bulk-csv="bulkExportCSV"
+        />
       </div>
+
+      <!-- Focus Таблица -->
+      <PropertyTable
+        v-else
+        :items="filteredFocusItems"
+        variant="focus"
+        :selected-ids="focusSelected"
+        :all-selected="allFocusChecked"
+        :sort-field="focusSort.field"
+        :sort-direction="focusSort.direction"
+        @open="openProperty"
+        @toggle-select="toggleFocusSelect"
+        @toggle-all="toggleAllFocus"
+        @sort="toggleFocusSort"
+      />
 
       <!-- Focus Pagination -->
       <div v-if="focusTotalPages > 1" class="flex justify-between items-center mt-6">
@@ -557,6 +493,10 @@
 
 <script setup lang="ts">
 import SkeletonTable from '@/components/SkeletonTable.vue'
+import PropertyCard from '@/components/properties/PropertyCard.vue'
+import PropertyTable from '@/components/properties/PropertyTable.vue'
+import ViewToggle from '@/components/properties/ViewToggle.vue'
+import FilterChips from '@/components/properties/FilterChips.vue'
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api/strapi'
@@ -566,6 +506,22 @@ import { useFocusTab } from '@/composables/useFocusTab'
 
 const router = useRouter()
 const route = useRoute()
+
+// ========================
+// View mode (cards / table) — persisted
+// ========================
+const viewMode = ref<'cards' | 'table'>((localStorage.getItem('aklab-view-mode') as 'cards' | 'table') || 'cards')
+watch(viewMode, (v) => {
+  try { localStorage.setItem('aklab-view-mode', v) } catch {}
+})
+
+function openProperty(item: { documentId: string }) {
+  router.push(`/properties/${item.documentId}`)
+}
+
+// Мобильные коллапсы фильтров
+const filtersOpen = ref(false)
+const focusFiltersOpen = ref(false)
 
 // ========================
 // Data composable
@@ -602,9 +558,6 @@ const {
   allFocusChecked,
   toggleFocusSelect,
   toggleAllFocus,
-  tagStyle,
-  tagLabel,
-  deviationStyle,
   switchToFocus,
 } = useFocusTab(() => doFetchFocus(), focusTotal, focusItems)
 
@@ -740,8 +693,8 @@ async function fetchItems() {
   if (filters.status) f.status = { $eq: filters.status }
   if (filters.source) f.source = { $eq: filters.source }
   if (filters.property_type.length) f.property_type = { $in: filters.property_type }
-  if (filters.priceFrom) f.price = { ...(f.price || {}), $gte: filters.priceFrom }
-  if (filters.priceTo) f.price = { ...(f.price || {}), $lte: filters.priceTo }
+  if (filters.priceFrom) f.price = { ...f.price, $gte: filters.priceFrom }
+  if (filters.priceTo) f.price = { ...f.price, $lte: filters.priceTo }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.trim()
     f.$or = [
