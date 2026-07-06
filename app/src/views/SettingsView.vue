@@ -38,7 +38,7 @@
 
       <!-- Success -->
       <div v-if="saved" class="mb-4 p-3 rounded-lg text-sm" style="background: var(--success-bg, #efe); color: var(--success-text, #060)">
-        Сохранено ✓
+        Сохранено <Icon name="check" :size="14" class="inline-block" />
       </div>
 
       <form v-if="!loading" @submit.prevent="save" class="space-y-6 max-w-2xl">
@@ -111,7 +111,7 @@
         <button @click="pipelineOpen = !pipelineOpen"
           class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
           style="color: var(--text-muted)">
-          <span>{{ pipelineOpen ? '▼' : '▶' }}</span>
+          <Icon :name="pipelineOpen ? 'chevron-down' : 'play'" :size="14" />
           <span>Ручной запуск</span>
         </button>
 
@@ -179,15 +179,15 @@
                 class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
                 :style="{ background: pipelineDone ? '#059669' : 'var(--accent)' }"
               >
-                <template v-if="pipelineDone">✓ Ещё раз</template>
-                <template v-else>▶ Ручной запуск</template>
+                <template v-if="pipelineDone"><Icon name="check" :size="14" class="inline-block" /> Ещё раз</template>
+                <template v-else><Icon name="play" :size="14" class="inline-block" /> Ручной запуск</template>
               </button>
               <template v-else>
                 <button
                   @click="cancelPipeline"
                   class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all"
                 >
-                  ◼ Отменить
+                  <Icon name="square" :size="14" class="inline-block" /> Отменить
                 </button>
                 <button
                   @click="resetPipeline"
@@ -195,7 +195,7 @@
                   style="border-color: var(--border-subtle); color: var(--text-muted)"
                   title="Сбросить состояние (если зависло)"
                 >
-                  ↻ Сбросить
+                  <Icon name="refresh-cw" :size="14" class="inline-block" /> Сбросить
                 </button>
               </template>
             </div>
@@ -207,9 +207,9 @@
           <!-- Парсинг -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="isParsingStage">⏳</template>
-              <template v-else-if="isParsingDone">✓</template>
-              <template v-else>○</template>
+              <template v-if="isParsingStage"><Icon name="loader" :size="14" class="animate-spin" /></template>
+              <template v-else-if="isParsingDone"><Icon name="check" :size="14" /></template>
+              <template v-else><Icon name="circle" :size="14" /></template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Парсинг</div>
@@ -224,9 +224,9 @@
           <!-- Анализ -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="isAnalyzingStage">⏳</template>
-              <template v-else-if="isAnalyzingDone">✓</template>
-              <template v-else>○</template>
+              <template v-if="isAnalyzingStage"><Icon name="loader" :size="14" class="animate-spin" /></template>
+              <template v-else-if="isAnalyzingDone"><Icon name="check" :size="14" /></template>
+              <template v-else><Icon name="circle" :size="14" /></template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Анализ</div>
@@ -242,9 +242,9 @@
           <!-- Дайджест -->
           <div class="flex items-center gap-3">
             <span class="flex-shrink-0 w-5 text-center">
-              <template v-if="pipelineState.stage === 'digesting'">⏳</template>
-              <template v-else-if="isDigestDone">✓</template>
-              <template v-else>○</template>
+              <template v-if="pipelineState.stage === 'digesting'"><Icon name="loader" :size="14" class="animate-spin" /></template>
+              <template v-else-if="isDigestDone"><Icon name="check" :size="14" /></template>
+              <template v-else><Icon name="circle" :size="14" /></template>
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium" style="color: var(--text-main)">Дайджест</div>
@@ -259,13 +259,13 @@
 
           <!-- Done -->
           <div v-if="pipelineDone" class="pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-            {{ pipelineState.message || '✓ Пайплайн завершён' }}
+            <Icon name="check" :size="14" class="inline-block" /> {{ pipelineState.message || 'Пайплайн завершён' }}
           </div>
 
           <!-- Errors -->
           <div v-if="pipelineState.errors?.length" class="pt-2 border-t space-y-1" style="border-color: var(--border-subtle)">
             <div v-for="err in pipelineState.errors" :key="err" class="text-xs" style="color: #ef4444">
-              ⚠ {{ err }}
+              <Icon name="alert-triangle" :size="12" class="inline-block" /> {{ err }}
             </div>
           </div>
         </div>
@@ -314,6 +314,7 @@ import SourcesPanel from '@/components/settings/SourcesPanel.vue'
 import MarketReferencesPanel from '@/components/settings/MarketReferencesPanel.vue'
 import ParsingRulesPanel from '@/components/settings/ParsingRulesPanel.vue'
 import { usePipeline } from '@/composables/usePipeline'
+import Icon from '@/components/ui/Icon.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
