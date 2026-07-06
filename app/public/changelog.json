@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.27",
+    "date": "6 июля 2026",
+    "time": "21:33",
+    "items": [
+      {
+        "text": "Обновлены compact-doc.md и gotchas.md (54 gotchas, 578 тестов)",
+        "type": "improvement"
+      },
+      {
+        "text": "A11y — крупные FilterChips, router-link в PropertyCard, keyboard support",
+        "type": "new"
+      },
+      {
+        "text": "Фильтры в URL, stagger анимации, типографика/радиусы к токенам",
+        "type": "new"
+      },
+      {
+        "text": "Detail page - hero block, gallery for all, collapsible details",
+        "type": "new"
+      },
+      {
+        "text": "Дашборд — StatCard, /properties/stats, бар-чарт, статус парсеров",
+        "type": "new"
+      },
+      {
+        "text": "Lucide-vue-next иконки — Icon wrapper + App.vue + SettingsView",
+        "type": "new"
+      },
+      {
+        "text": "UI primitives - BaseButton, BaseBadge, BaseCard, BaseInput, EmptyState",
+        "type": "new"
+      },
+      {
+        "text": "Toast system - useToast composable + ToastHost component",
+        "type": "new"
+      },
+      {
+        "text": "Семантические токены + shared styleHelpers (scoreColor, tagStyle, deviationStyle)",
+        "type": "new"
+      },
+      {
+        "text": "Порт app в services.json — 5174 вместо 4173",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.26",
     "date": "6 июля 2026",
     "time": "19:40",
