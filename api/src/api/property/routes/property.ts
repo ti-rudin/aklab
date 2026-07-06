@@ -27,6 +27,12 @@ export default {
       config: {},
     },
     {
+      method: 'GET',
+      path: '/properties/:id/geocode',
+      handler: 'property.geocode',
+      config: {},
+    },
+    {
       method: 'POST',
       path: '/properties/:id/fetch-photos',
       handler: 'property.fetchPhotos',

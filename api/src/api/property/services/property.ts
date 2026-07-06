@@ -14,6 +14,7 @@ interface FocusParams {
   city?: string;
   property_type?: string;
   tags?: string;
+  search?: string;
   sort: string;
   page: number;
   pageSize: number;
@@ -45,7 +46,7 @@ export default factories.createCoreService('api::property.property', ({ strapi }
    */
   async getFocusQuery(params: FocusParams): Promise<FocusResult> {
     const s = strapi as unknown as StrapiInstance;
-    const { threshold, city, property_type: propertyType, tags: tagsParam, sort: sortParam, page, pageSize } = params;
+    const { threshold, city, property_type: propertyType, tags: tagsParam, search: searchParam, sort: sortParam, page, pageSize } = params;
 
     // Построить SQL-запрос с фильтрами
     const conditions: string[] = ['focus_score >= ?'];
@@ -80,6 +81,13 @@ export default factories.createCoreService('api::property.property', ({ strapi }
         conditions.push('tags LIKE ?');
         queryParams.push('%"' + tag + '"%');
       }
+    }
+
+    // Поиск по title / address
+    if (searchParam) {
+      const q = `%${searchParam.trim()}%`
+      conditions.push('(title LIKE ? OR address LIKE ?)')
+      queryParams.push(q, q)
     }
 
     // Сортировка
@@ -142,7 +150,7 @@ export default factories.createCoreService('api::property.property', ({ strapi }
         total: Number(total),
         totalPages: Math.ceil(Number(total) / pageSize),
         threshold,
-        filters: { city, property_type: propertyType, tags: tagsParam, sort: sortParam },
+        filters: { city, property_type: propertyType, tags: tagsParam, search: searchParam, sort: sortParam },
       },
     };
   },

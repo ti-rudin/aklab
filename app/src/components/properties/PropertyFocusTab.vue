@@ -200,7 +200,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
 import SkeletonTable from '@/components/SkeletonTable.vue'
@@ -269,16 +269,18 @@ const viewMode = ref<'cards' | 'table'>((localStorage.getItem('aklab-view-mode')
 const focusFiltersOpen = ref(false)
 
 // ========================
-// Client-side search
+// Search (server-side, debounce)
 // ========================
 const searchQuery = ref('')
-const filteredFocusItems = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return focusItems.value
-  return focusItems.value.filter((item: any) =>
-    (item.title || '').toLowerCase().includes(q) ||
-    (item.address || '').toLowerCase().includes(q)
-  )
+const filteredFocusItems = computed(() => focusItems.value)
+
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => {
+    focusPage.value = 1
+    fetchFocusItems()
+  }, 300)
 })
 
 // ========================
@@ -303,6 +305,7 @@ function fetchFocusItems() {
   if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
   if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
   if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
+  if (searchQuery.value.trim()) params.search = searchQuery.value.trim()
 
   fetchFocusProperties(params)
 }

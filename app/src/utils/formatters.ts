@@ -37,6 +37,20 @@ export const statusStyle = (s?: string): Record<string, string> =>
 export const formatPrice = (v: string | number): string =>
   Number(v).toLocaleString('ru-RU')
 
+export const tagLabel = (v?: string): string =>
+  ({
+    undervalued: 'Недооценённый',
+    has_minimum_price: 'Есть начальная цена',
+    price_drop: 'Снижение цены',
+    high_roi: 'Высокий ROI',
+    new_listing: 'Новый объект',
+    large_area: 'Большая площадь',
+    cheap_sqm: 'Дешёвый м²',
+    premium: 'Премиум',
+    investment: 'Инвестиция',
+    bargain: 'Выгодная сделка',
+  })[v || ''] || v || ''
+
 export const formatPriceShort = (v: string | number | null | undefined): string => {
   if (v == null || v === '') return '—'
   const n = Number(v)

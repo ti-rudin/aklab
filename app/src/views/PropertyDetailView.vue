@@ -400,7 +400,7 @@ const cianUrl = computed(() => {
   if (!property.value?.latitude || !property.value?.longitude) return null
   const lat = property.value.latitude
   const lng = property.value.longitude
-  return `https://www.cian.ru/map/?center=${lat}%2C${lng}&deal_type=sale&engine_version=2&object_type[0]=3&offer_type=suburban&zoom=16`
+  return `https://www.cian.ru/map/?deal_type=sale&offer_type=commercial&object_type[0]=1&object_type[1]=2&object_type[2]=5&center=${lng},${lat}&zoom=16`
 })
 
 async function geocodeAddress() {

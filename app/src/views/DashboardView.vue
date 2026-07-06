@@ -59,7 +59,7 @@
             </div>
             <div class="hidden sm:flex gap-1 flex-shrink-0">
               <BaseBadge v-for="tag in (p.tags || []).slice(0, 3)" :key="tag" size="sm">
-                {{ tag }}
+                {{ tagLabel(tag) }}
               </BaseBadge>
             </div>
           </div>
@@ -90,7 +90,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
 import { scoreColor, scoreBg } from '@/utils/styleHelpers'
-import { typeLabel } from '@/utils/formatters'
+import { typeLabel, tagLabel } from '@/utils/formatters'
 import StatCard from '@/components/ui/StatCard.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseBadge from '@/components/ui/BaseBadge.vue'
