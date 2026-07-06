@@ -7,6 +7,7 @@
  */
 
 import type { StrapiInstance } from '../types/strapi';
+import { buildPropertyWhere } from './buildPropertyWhere';
 
 interface FocusRule {
   id: number;
@@ -339,16 +340,12 @@ export async function scorePropertiesBatch(options?: {
   const minScore = options?.threshold || 0;
 
   // Строим WHERE с опциональными фильтрами
-  const where: any = { status: 'new' };
-  if (options?.city && Array.isArray(options.city) && options.city.length > 0) {
-    where.city = { $in: options.city };
-  }
-  if (options?.priceFrom != null && !isNaN(options.priceFrom)) {
-    where.price = { ...(where.price || {}), $gte: options.priceFrom };
-  }
-  if (options?.priceTo != null && !isNaN(options.priceTo)) {
-    where.price = { ...(where.price || {}), $lte: options.priceTo };
-  }
+  const where = buildPropertyWhere({
+    status: 'new',
+    city: options?.city,
+    priceFrom: options?.priceFrom,
+    priceTo: options?.priceTo,
+  });
 
   // Пагинация: обрабатываем батчами
   const BATCH = 200;
