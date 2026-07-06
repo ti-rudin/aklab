@@ -1,5 +1,28 @@
 [
   {
+    "version": "v1.1.15",
+    "date": "6 июля 2026",
+    "time": "10:43",
+    "items": [
+      {
+        "text": "Price_per_sqm расчёт после деструктуризации rules — исправление теста",
+        "type": "fix"
+      },
+      {
+        "text": "Обновление smoke test — проверка правил парсинга, pipeline, focus-rules",
+        "type": "improvement"
+      },
+      {
+        "text": "Unit тесты для buildParseRules — правила парсинга",
+        "type": "improvement"
+      },
+      {
+        "text": "Исправление E2E тестов — базовая навигация и auth redirect",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.14",
     "date": "6 июля 2026",
     "time": "10:26",
