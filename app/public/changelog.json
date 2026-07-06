@@ -1,5 +1,48 @@
 [
   {
+    "version": "v1.1.14",
+    "date": "6 июля 2026",
+    "time": "10:26",
+    "items": [
+      {
+        "text": "Обновление compact-doc — v1.1.13, правила парсинга, ParseRules",
+        "type": "improvement"
+      },
+      {
+        "text": "Review-правки — rules не утекает в POST, price=0 фильтр, DRY buildParseRules",
+        "type": "fix"
+      },
+      {
+        "text": "ParseRules interface — передача правил парсинга через pipeline и cron в parse-handler",
+        "type": "new"
+      },
+      {
+        "text": "Интеграция ParsingRulesPanel, убраны дубли, предзаполнение ручного запуска",
+        "type": "new"
+      },
+      {
+        "text": "Компонент ParsingRulesPanel — правила парсинга",
+        "type": "new"
+      },
+      {
+        "text": "Предзаполнение формы парсинга из настроек Setting",
+        "type": "new"
+      },
+      {
+        "text": "Добавлены поля stop_words, area_from, area_to в Setting schema",
+        "type": "new"
+      },
+      {
+        "text": "Чтение TELEGRAM_BOT_TOKEN/CHAT_ID из .env",
+        "type": "fix"
+      },
+      {
+        "text": "Unbound TELEGRAM_BOT_TOKEN при set -u",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.13",
     "date": "6 июля 2026",
     "time": "00:36",
