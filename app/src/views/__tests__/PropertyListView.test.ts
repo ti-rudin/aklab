@@ -5,9 +5,10 @@ import PropertyListView from '../PropertyListView.vue'
 vi.mock('@/api/strapi', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 
 const mockPush = vi.fn()
+let mockRouteHash = ''
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush }),
-  useRoute: () => ({ params: {}, hash: '' }),
+  useRoute: () => ({ params: {}, hash: mockRouteHash }),
 }))
 
 const mockToast = { error: vi.fn(), success: vi.fn(), info: vi.fn() }
@@ -51,12 +52,13 @@ vi.mock('@/components/properties/ConfirmClearDialog.vue', () => ({
 
 import api from '@/api/strapi'
 
-async function mountAndWait(routeHash = '') {
-  // Override useRoute per test
-  const { useRoute } = await import('vue-router')
-  vi.mocked(useRoute).mockReturnValue({ params: {}, hash: routeHash } as any)
+function mountView() {
+  return mount(PropertyListView)
+}
 
-  const wrapper = mount(PropertyListView)
+async function mountAndWait(hash = '') {
+  mockRouteHash = hash
+  const wrapper = mountView()
   await flushPromises()
   return wrapper
 }
@@ -64,6 +66,7 @@ async function mountAndWait(routeHash = '') {
 describe('PropertyListView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRouteHash = ''
   })
 
   // ── 3 вкладки ─────────────────────────────────────────────────
@@ -210,12 +213,7 @@ describe('PropertyListView', () => {
 
   // ── hash #focus активирует вкладку «В фокусе» ────────────────
   it('hash #focus активирует вкладку «В фокусе»', async () => {
-    // Mount with route hash '#focus'
-    const { useRoute } = await import('vue-router')
-    vi.mocked(useRoute).mockReturnValue({ params: {}, hash: '#focus' } as any)
-
-    const wrapper = mount(PropertyListView)
-    await flushPromises()
+    const wrapper = await mountAndWait('#focus')
 
     // Focus tab should be rendered (since activeTab = 'focus')
     expect(wrapper.find('.mock-focus-tab').exists()).toBe(true)
