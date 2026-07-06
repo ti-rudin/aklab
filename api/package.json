@@ -17,7 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@aklab/parse-rules": "*",
+    "@aklab/parse-rules": "file:../lib/parse-rules",
     "@strapi/plugin-cloud": "5.44.0",
     "@strapi/plugin-documentation": "^5.44.0",
     "@strapi/plugin-users-permissions": "5.44.0",
