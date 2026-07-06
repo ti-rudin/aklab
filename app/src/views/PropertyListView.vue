@@ -264,7 +264,9 @@
               <th @click="toggleSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
                 Площадь <span v-if="sort.field === 'area_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
               </th>
-              <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
+              <th @click="toggleSort('price')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
+                Цена <span v-if="sort.field === 'price'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
+              </th>
               <th @click="toggleSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
                 ₽/м² <span v-if="sort.field === 'price_per_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
               </th>
@@ -537,6 +539,7 @@
               <th @click="toggleFocusSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
                 Площадь <span v-if="focusSort.field === 'area_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
               </th>
+              <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
               <th @click="toggleFocusSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
                 ₽/м² <span v-if="focusSort.field === 'price_per_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
               </th>
@@ -556,7 +559,7 @@
                 <td class="px-3 py-2" @click.stop>
                   <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded" style="accent-color: var(--accent)" />
                 </td>
-                <td colspan="9" class="px-3 py-2 cursor-pointer transition-colors hover:opacity-80"
+                <td colspan="10" class="px-3 py-2 cursor-pointer transition-colors hover:opacity-80"
                   @click="router.push(`/properties/${item.documentId}`)">
                   <div class="flex items-center gap-3">
                     <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
@@ -576,6 +579,7 @@
                 <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-main)">{{ cityLabel(item.city) }}</td>
                 <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-muted)">{{ typeLabel(item.property_type) }}</td>
                 <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
+                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
                 <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
                 <td class="px-3 py-1.5 text-right font-mono font-semibold" style="color: var(--text-main)">{{ item.focus_score ?? '—' }}</td>
                 <td class="px-3 py-1.5">
