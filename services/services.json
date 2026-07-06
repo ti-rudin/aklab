@@ -1,0 +1,23 @@
+{
+  "core": [
+    { "slug": "api", "pm2_name": "aklab-api", "cwd": "api", "port": 1338 },
+    { "slug": "app", "pm2_name": "aklab-app", "cwd": "app", "port": 4173 }
+  ],
+  "parsers": [
+    { "slug": "parser-fabrikant", "pm2_name": "aklab-parser-fabrikant", "port": 1345, "health_port": 1345 },
+    { "slug": "parser-torgi-gov", "pm2_name": "aklab-parser-torgi-gov", "port": 1346, "health_port": 1346 },
+    { "slug": "parser-aggregator-bankrot", "pm2_name": "aklab-parser-aggregator-bankrot", "port": 1348, "health_port": 1348 },
+    { "slug": "parser-alfalot", "pm2_name": "aklab-parser-alfalot", "port": 1349, "health_port": 1349 },
+    { "slug": "parser-etprf", "pm2_name": "aklab-parser-etprf", "port": 1350, "health_port": 1350 },
+    { "slug": "parser-sberbank-ast", "pm2_name": "aklab-parser-sberbank-ast", "port": 1351, "health_port": 1351 },
+    { "slug": "parser-invest-mosreg", "pm2_name": "aklab-parser-invest-mosreg", "port": 1352, "health_port": 1352 },
+    { "slug": "parser-investmoscow", "pm2_name": "aklab-parser-investmoscow", "port": 1353, "health_port": 1353 },
+    { "slug": "parser-roseltorg", "pm2_name": "aklab-parser-roseltorg", "port": 1354, "health_port": 1354 },
+    { "slug": "parser-m-ets", "pm2_name": "aklab-parser-m-ets", "port": 1355, "health_port": 1355 }
+  ],
+  "workers": [
+    { "slug": "analyzer", "pm2_name": "aklab-analyzer-prod", "cwd": "services/analyzer", "health_port": 1341 },
+    { "slug": "digest", "pm2_name": "aklab-digest-prod", "cwd": "services/digest", "health_port": 1342 },
+    { "slug": "photo-fetcher", "pm2_name": "aklab-photo-fetcher-prod", "cwd": "services/photo-fetcher", "health_port": 1356 }
+  ]
+}

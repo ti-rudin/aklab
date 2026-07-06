@@ -13,6 +13,12 @@ export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/nul
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# === Сервисный манифест ===
+PARSER_SLUGS=$(node -e "const s=require('./services/services.json'); console.log(s.parsers.map(p=>p.slug).join(' '))")
+ALL_SERVICE_SLUGS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug).join(' '))")
+PM2_NAMES=$(node -e "const s=require('./services/services.json'); const all=[...s.core,...s.parsers,...s.workers]; console.log(all.map(p=>p.pm2_name).join(' '))")
+HEALTH_CHECKS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug+':'+p.health_port).join(' '))")
+
 # Telegram credentials из .env (если не заданы в shell)
 if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f .env ]; then
   export TELEGRAM_BOT_TOKEN="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2-)"
@@ -84,14 +90,14 @@ rollback() {
     (cd services/_shared && npm run build 2>&1 | tail -3) || true
     (cd api && npm run build 2>&1 | tail -3) || true
     (cd app && npm run build 2>&1 | tail -3) || true
-    for svc in parser-fabrikant parser-torgi-gov parser-aggregator-bankrot parser-alfalot parser-etprf parser-sberbank-ast parser-invest-mosreg parser-investmoscow parser-roseltorg parser-m-ets analyzer digest photo-fetcher; do
+    for svc in $ALL_SERVICE_SLUGS; do
       (cd "services/$svc" && npm run build 2>&1 | tail -3) || true
     done
     if [ -f "api/.tmp/data.db.bak" ]; then
       cp api/.tmp/data.db.bak api/.tmp/data.db
       log "DB восстановлен из backup"
     fi
-    pm2 restart aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod aklab-photo-fetcher-prod aklab-parser-aggregator-bankrot aklab-parser-alfalot aklab-parser-etprf aklab-parser-sberbank-ast aklab-parser-invest-mosreg aklab-parser-investmoscow aklab-parser-roseltorg aklab-parser-m-ets 2>/dev/null || true
+    pm2 restart $PM2_NAMES 2>/dev/null || true
     if [ "$CI_MODE" = "true" ]; then
       bash "$PROJECT_ROOT/scripts/notify-deploy.sh" failure prod "unknown" "" "Rollback to ${ROLLBACK_SHA:0:8}"
     else
@@ -192,9 +198,21 @@ fi
 NEED_INSTALL=false
 
 # node_modules отсутствует — обязательно ставим
-if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ] || [ ! -d "lib/sqlite-queue/node_modules" ] || [ ! -d "services/_shared/node_modules" ] || [ ! -d "services/parser-fabrikant/node_modules" ] || [ ! -d "services/parser-torgi-gov/node_modules" ] || [ ! -d "services/parser-aggregator-bankrot/node_modules" ] || [ ! -d "services/parser-alfalot/node_modules" ] || [ ! -d "services/parser-etprf/node_modules" ] || [ ! -d "services/parser-sberbank-ast/node_modules" ] || [ ! -d "services/parser-invest-mosreg/node_modules" ] || [ ! -d "services/parser-investmoscow/node_modules" ] || [ ! -d "services/parser-roseltorg/node_modules" ] || [ ! -d "services/parser-m-ets/node_modules" ] || [ ! -d "services/photo-fetcher/node_modules" ]; then
-  NEED_INSTALL=true
-  log "node_modules отсутствует — npm install обязателен"
+for dir in api/node_modules app/node_modules lib/sqlite-queue/node_modules services/_shared/node_modules; do
+  if [ ! -d "$dir" ]; then
+    NEED_INSTALL=true
+    log "node_modules отсутствует в $dir — npm install обязателен"
+    break
+  fi
+done
+if [ "$NEED_INSTALL" != "true" ]; then
+  for svc in $ALL_SERVICE_SLUGS; do
+    if [ ! -d "services/$svc/node_modules" ]; then
+      NEED_INSTALL=true
+      log "node_modules отсутствует в services/$svc — npm install обязателен"
+      break
+    fi
+  done
 fi
 
 # Сравниваем hash package-lock.json
@@ -269,7 +287,7 @@ log "Build App..."
 (cd app && npm run build 2>&1 | tail -3)
 
 log "Build services..."
-for svc in parser-fabrikant parser-torgi-gov parser-aggregator-bankrot parser-alfalot parser-etprf parser-sberbank-ast parser-invest-mosreg parser-investmoscow parser-roseltorg parser-m-ets analyzer digest photo-fetcher; do
+for svc in $ALL_SERVICE_SLUGS; do
   if [ -d "services/$svc" ]; then
     log "  Build services/$svc..."
     (cd "services/$svc" && npm run build 2>&1 | tail -3)
@@ -278,7 +296,7 @@ done
 
 # === Step 7: PM2 restart ===
 log "PM2 restart (all processes)..."
-pm2 stop aklab-api aklab-app aklab-parser-fabrikant aklab-parser-torgi-gov aklab-analyzer-prod aklab-digest-prod aklab-photo-fetcher-prod aklab-parser-aggregator-bankrot aklab-parser-alfalot aklab-parser-etprf aklab-parser-sberbank-ast aklab-parser-invest-mosreg aklab-parser-investmoscow aklab-parser-roseltorg aklab-parser-m-ets 2>/dev/null || true
+pm2 stop $PM2_NAMES 2>/dev/null || true
 pm2 start ecosystem.config.js
 
 # === Step 8: Health check ===
@@ -313,7 +331,7 @@ fi
 
 # Проверяем health микросервисов (не блокирующий — warn)
 sleep 5
-for svc_port in "photo-fetcher:1356" "parser-fabrikant:1345" "parser-torgi-gov:1346" "parser-aggregator-bankrot:1348" "parser-alfalot:1349" "parser-etprf:1350" "parser-sberbank-ast:1351" "parser-invest-mosreg:1352" "parser-investmoscow:1353" "parser-roseltorg:1354" "parser-m-ets:1355" "analyzer:1341" "digest:1342"; do
+for svc_port in $HEALTH_CHECKS; do
   SVC_NAME="${svc_port%%:*}"
   SVC_PORT="${svc_port##*:}"
   SVC_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${SVC_PORT}/health" 2>/dev/null || echo "000")

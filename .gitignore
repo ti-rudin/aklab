@@ -136,6 +136,7 @@ license.txt
 exports
 .strapi
 dist
+!lib/parse-rules/dist/
 build
 .strapi-updater.json
 .strapi-cloud.json.venv/
