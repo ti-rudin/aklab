@@ -22,7 +22,8 @@ async function switchToTableView(page: import('@playwright/test').Page) {
   const tableToggle = page.locator('button[aria-label="Вид: таблица"]')
   if (await tableToggle.isVisible().catch(() => false)) {
     await tableToggle.click()
-    await page.waitForTimeout(500)
+    // Wait for table to actually appear
+    await page.locator('table').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
   }
 }
 
