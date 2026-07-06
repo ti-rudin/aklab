@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.29",
+    "date": "6 июля 2026",
+    "time": "22:49",
+    "items": [
+      {
+        "text": "Planopus3 — toast, search, geocode, a11y, composables (v1.1.29)",
+        "type": "improvement"
+      },
+      {
+        "text": "Geocode endpoint — типизация resp.json() as any[]",
+        "type": "fix"
+      },
+      {
+        "text": "FocusFilters тип — string | number | null для priceFrom/priceTo",
+        "type": "fix"
+      },
+      {
+        "text": "UseFocusParams, usePolling, скрыть documentId (U11,U12,U13)",
+        "type": "new"
+      },
+      {
+        "text": "A11y — lightbox keyboard-nav + focus-trap, bulk bar ARIA (U8,U9)",
+        "type": "new"
+      },
+      {
+        "text": "GeocodeAddress через backend endpoint вместо клиентского Nominatim (U5)",
+        "type": "fix"
+      },
+      {
+        "text": "Серверный поиск focus + geocoding endpoint (U4,U5)",
+        "type": "new"
+      },
+      {
+        "text": "Серверный поиск focus, CIAN commercial link, tagLabel (U4,U6,U7)",
+        "type": "new"
+      },
+      {
+        "text": "Toast уведомления вместо console.warn/alert (U1,U2,U3)",
+        "type": "new"
+      },
+      {
+        "text": "GetStats оптимизация SQL + undervaluedCount limit баг (B3,B4)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.28",
     "date": "6 июля 2026",
     "time": "22:08",
