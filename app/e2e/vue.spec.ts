@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-const TEST_EMAIL = 'test@aklab.tirobots.ru'
-const TEST_PASSWORD = 'Test1234!'
+const TEST_EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru'
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || ''
 
 /**
  * Helper: авторизация через UI.
