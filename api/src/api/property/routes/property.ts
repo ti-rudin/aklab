@@ -12,7 +12,7 @@ export default {
       method: 'POST',
       path: '/properties/clear-new',
       handler: 'property.clearNew',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'GET',
