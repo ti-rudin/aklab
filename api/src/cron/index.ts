@@ -62,13 +62,23 @@ function registerSourceCron(strapi: Core.Strapi, source: any): void {
     try {
       const setting = await getSetting(strapi);
       const depth = setting?.parse_depth || 20;
+      // Правила парсинга из Setting
+      const rules = {
+        stopWords: setting?.stop_words || undefined,
+        priceFrom: setting?.price_from != null ? Number(setting.price_from) : undefined,
+        priceTo: setting?.price_to != null ? Number(setting.price_to) : undefined,
+        areaFrom: setting?.area_from != null ? Number(setting.area_from) : undefined,
+        areaTo: setting?.area_to != null ? Number(setting.area_to) : undefined,
+        cities: setting?.monitored_regions?.length ? setting.monitored_regions : undefined,
+      };
       queueService.addToQueue(queueName, {
         source: slug,
         sourceId,
         documentId,
         depth,
+        rules,
       }, { correlationId: corrId });
-      strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name} (depth=${depth})`);
+      strapi.log.info(`[cron] → enqueued ${queueName} for ${source.name} (depth=${depth}, rules=${JSON.stringify(rules)})`);
     } catch (err: any) {
       strapi.log.error(`[cron] parse:${slug} error: ${err.message}`);
     }

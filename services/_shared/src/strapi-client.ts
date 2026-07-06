@@ -11,6 +11,16 @@ interface StrapiResponse<T> {
   meta?: any;
 }
 
+/** Правила парсинга — передаются из Setting через pipeline в parse-handler. */
+export interface ParseRules {
+  stopWords?: string[];
+  priceFrom?: number;
+  priceTo?: number;
+  areaFrom?: number;
+  areaTo?: number;
+  cities?: string[];
+}
+
 const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
   'Content-Type': 'application/json',
@@ -114,10 +124,54 @@ export async function createProperty(props: {
   photo_urls?: string[];
   latitude?: number;
   longitude?: number;
+  rules?: ParseRules;
 }): Promise<any> {
   if (!isCommercialProperty(props)) {
     logger.warn(`Skipping non-commercial: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
     return null;
+  }
+
+  // Правила парсинга: стоп-слова
+  if (props.rules?.stopWords?.length) {
+    const text = ((props.title || '') + ' ' + (props.description || '')).toLowerCase();
+    for (const word of props.rules.stopWords) {
+      if (text.includes(word.toLowerCase())) {
+        logger.warn(`Skipping stop word "${word}": "${props.title}"`);
+        return null;
+      }
+    }
+  }
+
+  // Правила парсинга: диапазон цен
+  if (props.price) {
+    if (props.rules?.priceFrom != null && props.price < props.rules.priceFrom) {
+      logger.warn(`Skipping below price_from (${props.rules.priceFrom}): "${props.title}" price=${props.price}`);
+      return null;
+    }
+    if (props.rules?.priceTo != null && props.price > props.rules.priceTo) {
+      logger.warn(`Skipping above price_to (${props.rules.priceTo}): "${props.title}" price=${props.price}`);
+      return null;
+    }
+  }
+
+  // Правила парсинга: диапазон площади
+  if (props.area_sqm) {
+    if (props.rules?.areaFrom != null && props.area_sqm < props.rules.areaFrom) {
+      logger.warn(`Skipping below area_from (${props.rules.areaFrom}): "${props.title}" area=${props.area_sqm}`);
+      return null;
+    }
+    if (props.rules?.areaTo != null && props.area_sqm > props.rules.areaTo) {
+      logger.warn(`Skipping above area_to (${props.rules.areaTo}): "${props.title}" area=${props.area_sqm}`);
+      return null;
+    }
+  }
+
+  // Правила парсинга: города (если фильтр указан — пропускаем объекты из других городов)
+  if (props.rules?.cities?.length && props.city) {
+    if (!props.rules.cities.includes(props.city)) {
+      logger.warn(`Skipping city "${props.city}" not in [${props.rules.cities}]: "${props.title}"`);
+      return null;
+    }
   }
 
   // Авто-расчёт price_per_sqm если есть price и area (до API-вызовов)

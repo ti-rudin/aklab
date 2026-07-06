@@ -244,6 +244,16 @@ export class PipelineService {
     // Enqueue all parsers
     const corrId = `pipeline-parse-${Date.now()}`;
     const slugs: string[] = [];
+    // Читаем правила парсинга из Setting
+    const settings = await this.strapi.db.query('api::setting.setting').findOne({});
+    const parseRules = {
+      stopWords: settings?.stop_words || undefined,
+      priceFrom: settings?.price_from != null ? Number(settings.price_from) : undefined,
+      priceTo: settings?.price_to != null ? Number(settings.price_to) : undefined,
+      areaFrom: settings?.area_from != null ? Number(settings.area_from) : undefined,
+      areaTo: settings?.area_to != null ? Number(settings.area_to) : undefined,
+      cities: settings?.monitored_regions?.length ? settings.monitored_regions : undefined,
+    };
     for (const src of sources) {
       if (this.isCancelled()) break;
       const slug = (src as any).slug;
@@ -253,6 +263,7 @@ export class PipelineService {
         sourceId: (src as any).id,
         documentId: (src as any).documentId,
         depth,
+        rules: parseRules,
       }, { correlationId: corrId });
     }
 

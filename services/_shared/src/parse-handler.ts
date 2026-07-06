@@ -11,6 +11,7 @@
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser, ParseResult } from './types';
 import { propertyExists, createProperty, logCron, updateSourceStats, resetSourceDetailsCounters } from './strapi-client';
+import type { ParseRules } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 
@@ -20,6 +21,7 @@ export interface ParseRequest {
   documentId?: string;
   correlationId?: string;
   depth?: number;
+  rules?: ParseRules;
 }
 
 /** Порог последовательных дубликатов для smart stop. */
@@ -131,6 +133,7 @@ export function createParseHandler(parser: SourceParser) {
             contacts: prop.contacts,
             latitude: prop.latitude,
             longitude: prop.longitude,
+            rules: req.rules,
           });
           if (result) created++;
           else filtered++;
