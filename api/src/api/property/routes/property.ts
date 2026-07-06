@@ -12,7 +12,7 @@ export default {
       method: 'POST',
       path: '/properties/clear-new',
       handler: 'property.clearNew',
-      config: { auth: false, policies: [] },
+      config: {},
     },
     {
       method: 'GET',
@@ -30,7 +30,7 @@ export default {
       method: 'POST',
       path: '/properties/:id/fetch-photos',
       handler: 'property.fetchPhotos',
-      config: { auth: false, policies: [] },
+      config: {},
     },
     // Core CRUD routes
     {
