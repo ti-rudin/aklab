@@ -424,12 +424,20 @@ describe('scoreAllProperties', () => {
     expect(result.in_focus).toBe(3); // all properties have score >= 0 (default threshold)
     expect(result.by_tag).toEqual({ moscow_mo: 2 });
 
-    // Verify batch update was called (raw SQL for UPDATE only — events via entityService)
-    expect(mockConnectionRaw).toHaveBeenCalledTimes(1); // 1 UPDATE only
-    const updateCall = mockConnectionRaw.mock.calls[0][0] as string;
-    expect(updateCall).toContain('UPDATE properties');
-    expect(updateCall).toContain('WHEN 1 THEN 10');
-    expect(updateCall).toContain('WHEN 2 THEN 0');
+    // Verify batch update was called via Strapi ORM (parameterized queries)
+    expect(mockQueryUpdate).toHaveBeenCalledTimes(3); // 3 properties
+    expect(mockQueryUpdate).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { focus_score: 10, tags: JSON.stringify(['moscow_mo']) },
+    });
+    expect(mockQueryUpdate).toHaveBeenCalledWith({
+      where: { id: 2 },
+      data: { focus_score: 0, tags: JSON.stringify([]) },
+    });
+    expect(mockQueryUpdate).toHaveBeenCalledWith({
+      where: { id: 3 },
+      data: { focus_score: 10, tags: JSON.stringify(['moscow_mo']) },
+    });
   });
 
   it('should handle batch pagination (multiple batches)', async () => {

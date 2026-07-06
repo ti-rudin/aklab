@@ -26,33 +26,159 @@ interface ScoreResult {
 }
 
 /**
- * Безопасная оценка выражений — только арифметика и сравнения.
- * НЕ использует eval() или new Function().
+ * Безопасная оценка выражений через recursive-descent парсер.
+ * Поддерживает: +, -, *, /, %, >, <, >=, <=, ==, !=, &&, ||, скобки.
+ * Использует ТОЛЬКО whitelist-переменные. НЕ использует eval()/new Function().
  */
-function safeEval(expression: string, vars: Record<string, any>): boolean {
-  // Whitelist допустимых токенов: числа, операторы, скобки, имена переменных
+function safeEval(expression: string, vars: Record<string, number>): boolean {
   const allowedVars = new Set(Object.keys(vars));
-  
-  // Подставляем переменные
-  let expr = expression;
-  for (const [name, value] of Object.entries(vars)) {
-    const numVal = typeof value === 'number' ? value : (typeof value === 'string' ? parseFloat(value) || 0 : 0);
-    // Заменяем только целые слова-переменные (не подстроки)
-    expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), String(numVal));
+  let pos = 0;
+  const src = expression.trim();
+
+  function peek(): string { return src[pos] ?? ''; }
+  function consume(ch: string): void {
+    if (src[pos] !== ch) throw new Error(`Expected '${ch}' at pos ${pos}`);
+    pos++;
   }
-  
-  // Проверяем что остались только безопасные токены: числа, операторы, скобки, пробелы
-  if (/[a-zA-Z_$]/.test(expr)) {
-    throw new Error(`Unsafe expression: unknown variables remain after substitution`);
+  function skipWs(): void { while (pos < src.length && src[pos] === ' ') pos++; }
+
+  // Токенизация: числа (включая десятичные и отрицательные), переменные, операторы
+  function parseNumber(): number {
+    skipWs();
+    let start = pos;
+    if (peek() === '-') { pos++; }
+    while (pos < src.length && (src[pos] >= '0' && src[pos] <= '9' || src[pos] === '.')) pos++;
+    if (pos === start || (pos === start + 1 && src[start] === '-'))
+      throw new Error(`Expected number at pos ${start}`);
+    return parseFloat(src.slice(start, pos));
   }
-  
-  // Проверяем что нет опасных конструкций
-  if (/[;{}[\]\\`]/.test(expr)) {
-    throw new Error(`Unsafe expression: forbidden characters`);
+
+  function parseVariable(): number {
+    skipWs();
+    let start = pos;
+    while (pos < src.length && (/[a-zA-Z_]/.test(src[pos]))) pos++;
+    const name = src.slice(start, pos);
+    if (!allowedVars.has(name)) throw new Error(`Unknown variable '${name}'`);
+    const val = vars[name];
+    return typeof val === 'number' ? val : (parseFloat(val as any) || 0);
   }
-  
-  // Вычисляем через Function (теперь безопасно — только числа и операторы)
-  return new Function(`return (${expr})`)();
+
+  // primary → NUMBER | VARIABLE | '(' expression ')'
+  function primary(): number {
+    skipWs();
+    if (peek() === '(') {
+      consume('(');
+      const val = expression_();
+      consume(')');
+      return val;
+    }
+    // Определяем: число (цифра или минус перед цифрой) или переменная (буква)
+    const ch = peek();
+    if ((ch >= '0' && ch <= '9') || (ch === '-' && pos + 1 < src.length && src[pos + 1] >= '0' && src[pos + 1] <= '9')) {
+      return parseNumber();
+    }
+    if (/[a-zA-Z_]/.test(ch)) {
+      return parseVariable();
+    }
+    throw new Error(`Unexpected character '${ch}' at pos ${pos}`);
+  }
+
+  // multiplicative → unary (('*' | '/' | '%') unary)*
+  function multiplicative(): number {
+    skipWs();
+    let left = primary();
+    skipWs();
+    while (peek() === '*' || peek() === '/' || peek() === '%') {
+      const op = peek(); pos++;
+      const right = primary();
+      if (op === '*') left *= right;
+      else if (op === '/') left /= right;
+      else left %= right;
+      skipWs();
+    }
+    return left;
+  }
+
+  // additive → multiplicative (('+' | '-') multiplicative)*
+  function additive(): number {
+    skipWs();
+    let left = multiplicative();
+    skipWs();
+    while (peek() === '+' || peek() === '-') {
+      const op = peek(); pos++;
+      const right = multiplicative();
+      left = op === '+' ? left + right : left - right;
+      skipWs();
+    }
+    return left;
+  }
+
+  // comparison → additive (('>' | '<' | '>=' | '<=' | '==' | '!=') additive)?
+  function comparison(): number {
+    skipWs();
+    const left = additive();
+    skipWs();
+    // Проверяем двухсимвольные операторы
+    if (pos + 1 < src.length) {
+      const two = src[pos] + src[pos + 1];
+      if (two === '>=' || two === '<=' || two === '==' || two === '!=') {
+        pos += 2;
+        const right = additive();
+        switch (two) {
+          case '>=': return left >= right ? 1 : 0;
+          case '<=': return left <= right ? 1 : 0;
+          case '==': return left === right ? 1 : 0;
+          case '!=': return left !== right ? 1 : 0;
+        }
+      }
+    }
+    if (peek() === '>' || peek() === '<') {
+      const op = peek(); pos++;
+      const right = additive();
+      return op === '>' ? (left > right ? 1 : 0) : (left < right ? 1 : 0);
+    }
+    return left;
+  }
+
+  // logicalAnd → comparison ('&&' comparison)*
+  function logicalAnd(): number {
+    skipWs();
+    let left = comparison();
+    skipWs();
+    while (pos + 1 < src.length && src[pos] === '&' && src[pos + 1] === '&') {
+      pos += 2;
+      const right = comparison();
+      left = (left !== 0 && right !== 0) ? 1 : 0;
+      skipWs();
+    }
+    return left;
+  }
+
+  // logicalOr → logicalAnd ('||' logicalAnd)*
+  function logicalOr(): number {
+    skipWs();
+    let left = logicalAnd();
+    skipWs();
+    while (pos + 1 < src.length && src[pos] === '|' && src[pos + 1] === '|') {
+      pos += 2;
+      const right = logicalAnd();
+      left = (left !== 0 || right !== 0) ? 1 : 0;
+      skipWs();
+    }
+    return left;
+  }
+
+  // expression → logicalOr
+  function expression_(): number {
+    return logicalOr();
+  }
+
+  const result = expression_();
+  skipWs();
+  if (pos < src.length) {
+    throw new Error(`Unexpected trailing characters at pos ${pos}: '${src.slice(pos)}'`);
+  }
+  return result !== 0;
 }
 
 /**
@@ -268,22 +394,14 @@ export async function scorePropertiesBatch(options?: {
       }
     }
 
-    // Batch update focus_score + tags через raw SQL
+    // Batch update focus_score + tags через Strapi ORM (параметризованные запросы)
     if (updates.length > 0) {
-      const ids = updates.map(u => u.id);
-      const scoreCases = updates.map(u =>
-        `WHEN ${u.id} THEN ${u.score}`
-      ).join(' ');
-      const tagCases = updates.map(u =>
-        `WHEN ${u.id} THEN '${JSON.stringify(u.tags).replace(/'/g, "''")}'`
-      ).join(' ');
-
-      await s.db.connection.raw(`
-        UPDATE properties
-        SET focus_score = CASE id ${scoreCases} ELSE focus_score END,
-            tags = CASE id ${tagCases} ELSE tags END
-        WHERE id IN (${ids.join(',')})
-      `);
+      for (const u of updates) {
+        await s.db.query('api::property.property').update({
+          where: { id: u.id },
+          data: { focus_score: u.score, tags: JSON.stringify(u.tags) },
+        });
+      }
     }
 
     // Batch insert events через Strapi ORM (чтобы создавались document_id и relation)
