@@ -407,24 +407,12 @@ async function geocodeAddress() {
   if (!property.value?.address || property.value.latitude) return
   geocoding.value = true
   try {
-    const query = encodeURIComponent(property.value.address)
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
-      headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' }
-    })
-    const results = await resp.json()
-    if (results.length > 0) {
-      const lat = parseFloat(results[0].lat)
-      const lng = parseFloat(results[0].lon)
-      property.value.latitude = lat
-      property.value.longitude = lng
-      // Cache to Strapi
-      try {
-        await api.put(`/properties/${property.value.documentId}`, {
-          data: { latitude: lat, longitude: lng }
-        })
-      } catch { /* non-critical */ }
+    const { data } = await api.get(`/properties/${property.value.documentId}/geocode`)
+    if (data.latitude && data.longitude) {
+      property.value.latitude = data.latitude
+      property.value.longitude = data.longitude
     }
-  } catch { /* geocode failed — button won't show */ }
+  } catch { /* geocode — non-critical, button won't show */ }
   finally { geocoding.value = false }
 }
 
