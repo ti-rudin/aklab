@@ -5,8 +5,8 @@ interface FocusFilters {
   cities: { moscow: boolean; mo: boolean; other: boolean }
   property_type: string[]
   tags: string[]
-  priceFrom: number | null
-  priceTo: number | null
+  priceFrom: string | number | null
+  priceTo: string | number | null
 }
 
 interface FocusSort {
