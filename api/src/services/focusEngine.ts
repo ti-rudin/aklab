@@ -367,6 +367,14 @@ export async function scorePropertiesBatch(options?: {
 
     if (!properties || properties.length === 0) break;
 
+    // Fetch current state to detect unchanged scores/tags
+    const propIds = properties.map(p => p.id);
+    const currentProps = await s.db.query('api::property.property').findMany({
+      where: { id: { $in: propIds } },
+      select: ['id', 'focus_score', 'tags'],
+    });
+    const currentMap = new Map(currentProps.map((p: any) => [p.id, p]));
+
     // Собираем все updates и events в массивы
     const updates: Array<{ id: number; score: number; tags: string[] }> = [];
     const allEvents: Array<{ event_type: string; old_value?: string; new_value?: string; property_id: number }> = [];
@@ -376,13 +384,17 @@ export async function scorePropertiesBatch(options?: {
 
       updates.push({ id: prop.id, score: result.score, tags: result.tags });
 
-      for (const evt of result.events) {
-        allEvents.push({
-          event_type: evt.event_type,
-          old_value: evt.old_value || undefined,
-          new_value: evt.new_value || undefined,
-          property_id: prop.id,
-        });
+      // Only add events if the score actually changed
+      const current = currentMap.get(prop.id);
+      if (current && current.focus_score !== result.score) {
+        for (const evt of result.events) {
+          allEvents.push({
+            event_type: evt.event_type,
+            old_value: evt.old_value || undefined,
+            new_value: evt.new_value || undefined,
+            property_id: prop.id,
+          });
+        }
       }
 
       scored++;
@@ -394,28 +406,32 @@ export async function scorePropertiesBatch(options?: {
       }
     }
 
-    // Batch update focus_score + tags через Strapi ORM (параметризованные запросы)
+    // Batch update focus_score + tags in a single transaction
     if (updates.length > 0) {
-      for (const u of updates) {
-        await s.db.query('api::property.property').update({
-          where: { id: u.id },
-          data: { focus_score: u.score, tags: JSON.stringify(u.tags) },
-        });
-      }
+      await s.db.transaction(async () => {
+        for (const u of updates) {
+          await s.db.query('api::property.property').update({
+            where: { id: u.id },
+            data: { focus_score: u.score, tags: JSON.stringify(u.tags) },
+          });
+        }
+      });
     }
 
-    // Batch insert events через Strapi ORM (чтобы создавались document_id и relation)
+    // Batch insert events in a single transaction
     if (allEvents.length > 0) {
-      for (const evt of allEvents) {
-        await s.entityService.create('api::property-event.property-event', {
-          data: {
-            event_type: evt.event_type,
-            old_value: evt.old_value || null,
-            new_value: evt.new_value || null,
-            property: evt.property_id,
-          },
-        });
-      }
+      await s.db.transaction(async () => {
+        for (const evt of allEvents) {
+          await s.entityService.create('api::property-event.property-event', {
+            data: {
+              event_type: evt.event_type,
+              old_value: evt.old_value || null,
+              new_value: evt.new_value || null,
+              property: evt.property_id,
+            },
+          });
+        }
+      });
     }
 
     if (properties.length < BATCH) break;
