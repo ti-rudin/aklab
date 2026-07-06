@@ -236,6 +236,9 @@ if [ "$NEED_INSTALL" = "true" ]; then
   log "npm install (root + workspaces)..."
   npm install --include=dev 2>&1 | tail -5
   log "npm install api/..."
+  # Link local workspace packages for api/ (not in root workspaces)
+  mkdir -p api/node_modules/@aklab
+  ln -sf ../../../lib/parse-rules api/node_modules/@aklab/parse-rules
   (cd api && npm install --include=dev 2>&1 | tail -3)
   log "npm install app/..."
   (cd app && npm install 2>&1 | tail -3)
