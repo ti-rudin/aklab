@@ -9,13 +9,13 @@ export default {
       method: 'GET',
       path: '/property-events',
       handler: 'property-event.find',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'GET',
       path: '/property-events/:id',
       handler: 'property-event.findOne',
-      config: {},
+      config: { auth: false, policies: [] },
     },
   ],
 };

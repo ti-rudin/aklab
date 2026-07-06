@@ -15,6 +15,17 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL(/\/properties/, { timeout: 15000 })
 }
 
+/**
+ * Helper: переключить вид на «Таблица» (по умолчанию — карточки).
+ */
+async function switchToTableView(page: import('@playwright/test').Page) {
+  const tableToggle = page.locator('button[aria-label="Вид: таблица"]')
+  if (await tableToggle.isVisible().catch(() => false)) {
+    await tableToggle.click()
+    await page.waitForTimeout(500)
+  }
+}
+
 // ========================================
 // 1. Unauthenticated navigation
 // ========================================
@@ -151,7 +162,7 @@ test.describe('Properties page', () => {
   })
 
   test('shows property table or empty state', async ({ page }) => {
-    // Ждём пока загрузка завершится (скелетон пропадёт)
+    await switchToTableView(page)
     const table = page.locator('table')
     const emptyState = page.locator('text=Нет объектов')
     await expect(table.or(emptyState).first()).toBeVisible({ timeout: 15000 })
@@ -174,14 +185,14 @@ test.describe('Properties page', () => {
 
   test('tab В работе switches correctly', async ({ page }) => {
     await page.locator('button:has-text("В работе")').click()
-    // В работе показывает тот же шаблон таблицы, что и «Все объекты»
-    await page.waitForTimeout(1000)
+    await switchToTableView(page)
     const table = page.locator('table')
     const emptyState = page.locator('text=Нет объектов')
     await expect(table.or(emptyState).first()).toBeVisible({ timeout: 10000 })
   })
 
   test('click on property row navigates to detail', async ({ page }) => {
+    await switchToTableView(page)
     const row = page.locator('table tbody tr').first()
     const emptyState = page.locator('text=Нет объектов')
     await expect(row.or(emptyState).first()).toBeVisible({ timeout: 15000 })
@@ -245,6 +256,7 @@ test.describe('Property detail', () => {
   test('shows property info and back link', async ({ page }) => {
     await login(page)
     await page.goto('/properties')
+    await switchToTableView(page)
     const row = page.locator('table tbody tr').first()
     const emptyState = page.locator('text=Нет объектов')
     await expect(row.or(emptyState).first()).toBeVisible({ timeout: 15000 })
@@ -263,6 +275,7 @@ test.describe('Property detail', () => {
   test('back link navigates to properties list', async ({ page }) => {
     await login(page)
     await page.goto('/properties')
+    await switchToTableView(page)
     const row = page.locator('table tbody tr').first()
     const emptyState = page.locator('text=Нет объектов')
     await expect(row.or(emptyState).first()).toBeVisible({ timeout: 15000 })
@@ -283,7 +296,7 @@ test.describe('Properties — pagination', () => {
   })
 
   test('US-4.4: пагинация — если >20 объектов, есть кнопки «Назад»/«Вперёд»', async ({ page }) => {
-    // Ждём загрузку таблицы
+    await switchToTableView(page)
     await expect(page.locator('table tbody tr').first().or(page.locator('text=Нет объектов')).first()).toBeVisible({ timeout: 15000 })
 
     // Проверяем наличие кнопок пагинации (могут быть скрыты если <20 объектов)
@@ -300,8 +313,7 @@ test.describe('Properties — pagination', () => {
 
   test('US-4.7: вкладка «В работе» — клик, проверка контента', async ({ page }) => {
     await page.locator('button:has-text("В работе")').click()
-    // Вкладка «В работе» загружает таблицу или пустое состояние
-    await page.waitForTimeout(1000)
+    await switchToTableView(page)
     const table = page.locator('table')
     const emptyState = page.locator('text=Нет объектов')
     await expect(table.or(emptyState).first()).toBeVisible({ timeout: 10000 })
@@ -379,6 +391,7 @@ test.describe('Property detail — extended', () => {
   async function goToFirstProperty(page: import('@playwright/test').Page) {
     await login(page)
     await page.goto('/properties')
+    await switchToTableView(page)
     const row = page.locator('table tbody tr').first()
     const emptyState = page.locator('text=Нет объектов')
     await expect(row.or(emptyState).first()).toBeVisible({ timeout: 15000 })
