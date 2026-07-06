@@ -62,6 +62,18 @@
     "pipeline_state": {
       "type": "json",
       "default": null
+    },
+    "stop_words": {
+      "type": "json",
+      "default": ["земельный участок", "земельные участки", "зу", "участок"]
+    },
+    "area_from": {
+      "type": "decimal",
+      "default": null
+    },
+    "area_to": {
+      "type": "decimal",
+      "default": null
     }
   }
 }
