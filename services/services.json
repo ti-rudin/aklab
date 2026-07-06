@@ -1,7 +1,7 @@
 {
   "core": [
     { "slug": "api", "pm2_name": "aklab-api", "cwd": "api", "port": 1338 },
-    { "slug": "app", "pm2_name": "aklab-app", "cwd": "app", "port": 4173 }
+    { "slug": "app", "pm2_name": "aklab-app", "cwd": "app", "port": 5174 }
   ],
   "parsers": [
     { "slug": "parser-fabrikant", "pm2_name": "aklab-parser-fabrikant", "port": 1345, "health_port": 1345 },
