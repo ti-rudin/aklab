@@ -213,6 +213,7 @@ import { usePropertyData } from '@/composables/usePropertyData'
 import { useFocusTab } from '@/composables/useFocusTab'
 import { cityLabel, typeLabel } from '@/utils/formatters'
 import { useToast } from '@/composables/useToast'
+import { buildFocusParams, buildAnalyzeBody } from '@/composables/useFocusParams'
 
 const router = useRouter()
 const toast = useToast()
@@ -288,26 +289,7 @@ watch(searchQuery, () => {
 // Fetch
 // ========================
 function fetchFocusItems() {
-  const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
-
-  const cityList: string[] = []
-  if (focusFilters.cities.moscow) cityList.push('moscow')
-  if (focusFilters.cities.mo) cityList.push('mo')
-  if (focusFilters.cities.other) cityList.push('other')
-
-  const params: any = {
-    threshold: focusFilters.threshold,
-    sort: sortParam,
-    page: focusPage.value,
-    pageSize: focusPageSize,
-  }
-  if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-  if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
-  if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
-  if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
-  if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
-  if (searchQuery.value.trim()) params.search = searchQuery.value.trim()
-
+  const params = buildFocusParams(focusFilters, focusSort, focusPage.value, focusPageSize, searchQuery.value)
   fetchFocusProperties(params)
 }
 
@@ -323,17 +305,8 @@ async function recalculateScore() {
   scoringLoading.value = true
   analyzeProgress.value = null
   try {
-    const cityList: string[] = []
-    if (focusFilters.cities.moscow) cityList.push('moscow')
-    if (focusFilters.cities.mo) cityList.push('mo')
-    if (focusFilters.cities.other) cityList.push('other')
-
     // Шаг 1: Анализ (deviation от эталонов) — force=true для пересчёта
-    const analyzeBody: any = { force: true }
-    if (cityList.length > 0 && cityList.length < 3) analyzeBody.city = cityList
-    if (focusFilters.priceFrom) analyzeBody.priceFrom = Number(focusFilters.priceFrom)
-    if (focusFilters.priceTo) analyzeBody.priceTo = Number(focusFilters.priceTo)
-    if (focusFilters.threshold) analyzeBody.threshold = focusFilters.threshold
+    const analyzeBody = buildAnalyzeBody(focusFilters, { force: true })
     await api.post('/cron/analyze', analyzeBody)
 
     // Поллинг прогресса анализа
@@ -347,10 +320,7 @@ async function recalculateScore() {
     }
 
     // Шаг 2: Scoring (focus_score + tags)
-    const scoreBody: any = { threshold: focusFilters.threshold }
-    if (cityList.length > 0 && cityList.length < 3) scoreBody.city = cityList
-    if (focusFilters.priceFrom) scoreBody.priceFrom = Number(focusFilters.priceFrom)
-    if (focusFilters.priceTo) scoreBody.priceTo = Number(focusFilters.priceTo)
+    const scoreBody = buildAnalyzeBody(focusFilters, { threshold: focusFilters.threshold })
     await api.post('/cron/score', scoreBody)
 
     // Обновляем список
@@ -367,24 +337,7 @@ async function recalculateScore() {
 // ========================
 async function exportCSV() {
   try {
-    const cityList: string[] = []
-    if (focusFilters.cities.moscow) cityList.push('moscow')
-    if (focusFilters.cities.mo) cityList.push('mo')
-    if (focusFilters.cities.other) cityList.push('other')
-
-    const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
-
-    const params: any = {
-      threshold: focusFilters.threshold,
-      sort: sortParam,
-      page: 1,
-      pageSize: 1000,
-    }
-    if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-    if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
-    if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
-    if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
-    if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
+    const params = buildFocusParams(focusFilters, focusSort, 1, 1000, undefined)
 
     const { data } = await api.get('/properties/focus', { params })
     const rows = data.data || []

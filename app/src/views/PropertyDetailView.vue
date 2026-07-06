@@ -164,10 +164,7 @@
               <span class="block text-xs" style="color: var(--text-muted)">Обнаружен</span>
               <span style="color: var(--text-main)">{{ formatDate(property.first_seen_at) }}</span>
             </div>
-            <div>
-              <span class="block text-xs" style="color: var(--text-muted)">documentId</span>
-              <span class="font-mono text-xs" style="color: var(--text-muted)">{{ property.documentId }}</span>
-            </div>
+
           </div>
 
           <!-- Описание -->
@@ -293,9 +290,11 @@ import api from '@/api/strapi'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
 import { scoreColor, scoreBg } from '@/utils/styleHelpers'
 import { useToast } from '@/composables/useToast'
+import { usePolling } from '@/composables/usePolling'
 
 const route = useRoute()
 const toast = useToast()
+const { poll } = usePolling()
 
 interface Property {
   id: number
@@ -403,17 +402,14 @@ async function triggerPhotoFetch() {
   photoLoading.value = true
   try {
     await api.post(`/properties/${pv.documentId}/fetch-photos`)
-    // Poll until photos are downloaded (max 60s)
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 2000))
-      try {
-        const { data: propData } = await api.get(`/properties/${pv.documentId}`)
-        if (propData.data?.photos_downloaded) {
-          property.value = { ...pv, ...propData.data }
-          break
-        }
-      } catch { /* retry */ }
-    }
+    await poll(async () => {
+      const { data: propData } = await api.get(`/properties/${pv!.documentId}`)
+      if (propData.data?.photos_downloaded) {
+        property.value = { ...pv!, ...propData.data }
+        return true
+      }
+      return false
+    }, 2000, 30)
   } catch { toast.error('Не удалось загрузить фотографии') }
   finally { photoLoading.value = false }
 }
