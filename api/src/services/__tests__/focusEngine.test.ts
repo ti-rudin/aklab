@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockQueryFindMany = vi.fn();
 const mockQueryUpdate = vi.fn();
 const mockConnectionRaw = vi.fn().mockResolvedValue([]);
+const mockTransaction = vi.fn().mockImplementation(async (cb: any) => cb({}));
 const mockStrapi = {
   log: { warn: vi.fn(), info: vi.fn() },
   entityService: {
@@ -15,6 +16,7 @@ const mockStrapi = {
       findMany: mockQueryFindMany,
       update: mockQueryUpdate,
     }),
+    transaction: mockTransaction,
     connection: {
       raw: mockConnectionRaw,
     },
@@ -381,6 +383,8 @@ describe('scoreAllProperties', () => {
       update: mockQueryUpdate,
     });
     mockConnectionRaw.mockResolvedValue([]);
+    // Restore transaction mock (resetAllMocks clears implementation)
+    mockTransaction.mockImplementation(async (cb: any) => cb({}));
   });
 
   it('should return zeros when no active rules exist', async () => {
@@ -412,7 +416,13 @@ describe('scoreAllProperties', () => {
       { id: 3, city: 'moscow', focus_score: 0, tags: [] },
     ];
     mockQueryFindMany.mockResolvedValueOnce(properties);
-    // Second call returns empty to end pagination
+    // Second call: currentProps for change detection
+    mockQueryFindMany.mockResolvedValueOnce([
+      { id: 1, focus_score: 0, tags: '[]' },
+      { id: 2, focus_score: 0, tags: '[]' },
+      { id: 3, focus_score: 0, tags: '[]' },
+    ]);
+    // Third call: empty to end pagination
     mockQueryFindMany.mockResolvedValueOnce([]);
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
@@ -459,8 +469,12 @@ describe('scoreAllProperties', () => {
       tags: [],
     }));
 
+    // Batch 1: properties → currentProps → (loop continues because 200 == BATCH)
     mockQueryFindMany.mockResolvedValueOnce(batch1);
+    mockQueryFindMany.mockResolvedValueOnce(batch1.map(p => ({ id: p.id, focus_score: 0, tags: '[]' })));
+    // Batch 2: properties → currentProps → (loop ends because 50 < BATCH)
     mockQueryFindMany.mockResolvedValueOnce(batch2);
+    mockQueryFindMany.mockResolvedValueOnce(batch2.map(p => ({ id: p.id, focus_score: 0, tags: '[]' })));
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
 
@@ -470,10 +484,10 @@ describe('scoreAllProperties', () => {
     expect(result.in_focus).toBe(250);
     expect(result.by_tag).toEqual({ moscow_mo: 250 });
 
-    // Verify pagination: two findMany calls with correct offsets
-    expect(mockQueryFindMany).toHaveBeenCalledTimes(2);
+    // Verify pagination: two findMany calls for properties + two for currentProps
+    expect(mockQueryFindMany).toHaveBeenCalledTimes(4);
     expect(mockQueryFindMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 0, limit: 200 }));
-    expect(mockQueryFindMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 200, limit: 200 }));
+    expect(mockQueryFindMany).toHaveBeenNthCalledWith(3, expect.objectContaining({ offset: 200, limit: 200 }));
   });
 
   it('should create property-event records for score changes', async () => {
@@ -484,6 +498,8 @@ describe('scoreAllProperties', () => {
       { id: 1, city: 'moscow', focus_score: 0, tags: [] }, // score will change from 0 to 20
     ];
     mockQueryFindMany.mockResolvedValueOnce(properties);
+    // currentProps: score was 0, will change to 20
+    mockQueryFindMany.mockResolvedValueOnce([{ id: 1, focus_score: 0, tags: '[]' }]);
     mockQueryFindMany.mockResolvedValueOnce([]);
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
@@ -504,11 +520,13 @@ describe('scoreAllProperties', () => {
     const rules = [makeRule({ score: 10, tag: 'moscow_mo' })];
     mockStrapi.entityService.findMany.mockResolvedValue(rules);
 
-    // Property already has focus_score=10 but different old tag
+    // Property has different old score so events will fire
     const properties = [
-      { id: 1, city: 'moscow', focus_score: 10, tags: ['old_tag'] },
+      { id: 1, city: 'moscow', focus_score: 5, tags: ['old_tag'] },
     ];
     mockQueryFindMany.mockResolvedValueOnce(properties);
+    // currentProps: old score was 5, will change to 10
+    mockQueryFindMany.mockResolvedValueOnce([{ id: 1, focus_score: 5, tags: '["old_tag"]' }]);
     mockQueryFindMany.mockResolvedValueOnce([]);
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
@@ -579,6 +597,11 @@ describe('scoreAllProperties', () => {
       { id: 2, city: 'spb', focus_score: 0, tags: [] },    // score will be 0
     ];
     mockQueryFindMany.mockResolvedValueOnce(properties);
+    // currentProps for first call
+    mockQueryFindMany.mockResolvedValueOnce([
+      { id: 1, focus_score: 0, tags: '[]' },
+      { id: 2, focus_score: 0, tags: '[]' },
+    ]);
     mockQueryUpdate.mockResolvedValue({});
     mockStrapi.entityService.create.mockResolvedValue({});
 
@@ -590,6 +613,11 @@ describe('scoreAllProperties', () => {
 
     // With threshold=5, one property is in focus (score 10 >= 5)
     mockQueryFindMany.mockResolvedValueOnce([...properties]);
+    // currentProps for second call
+    mockQueryFindMany.mockResolvedValueOnce([
+      { id: 1, focus_score: 10, tags: '["moscow_mo"]' },
+      { id: 2, focus_score: 0, tags: '[]' },
+    ]);
 
     const result2 = await scoreAllProperties(5);
 
