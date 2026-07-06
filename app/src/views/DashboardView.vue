@@ -9,94 +9,102 @@
       </button>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading && !stats" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-      <div v-for="i in 2" :key="i" class="skeleton h-24 rounded-xl" />
+    <!-- Loading skeleton -->
+    <div v-if="loading && !stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+      <div v-for="i in 5" :key="i" class="skeleton h-24 rounded-xl" />
     </div>
 
-    <template v-else>
-      <!-- Статистика -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-        <div @click="router.push('/properties')"
-          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <p class="text-sm" style="color: var(--text-muted)">Всего объектов</p>
-          <p class="text-3xl font-bold mt-1" style="color: var(--text-main)">{{ stats?.total ?? '—' }}</p>
-        </div>
-        <div @click="router.push('/properties#focus')"
-          class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02] overflow-hidden"
-          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <p style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem;">Добавленные в фокус</p>
-          <p style="color: var(--accent); white-space: nowrap; font-weight: 700; margin-top: 0.25rem; font-size: clamp(1.2rem, 4vw, 1.875rem);">{{ stats?.inFocus ?? '—' }}</p>
-        </div>
-
+    <template v-else-if="stats">
+      <!-- KPI StatCards -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <StatCard title="Всего объектов" :value="stats.total" icon="🏢" to="/properties" />
+        <StatCard title="В фокусе" :value="stats.inFocus" icon="🎯" to="/properties#focus" color="var(--accent)" />
+        <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" color="var(--score-hot)" />
+        <StatCard title="Недооценённые" :value="stats.undervalued" icon="💎" color="var(--warning)" />
+        <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" color="var(--success)" />
       </div>
 
-      <!-- Горячие объекты -->
-      <div class="mb-8">
-        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">🔥 Горячие объекты</h2>
-          <div v-if="topProperties.length === 0" class="text-sm" style="color: var(--text-muted)">Нет объектов в фокусе</div>
-          <div v-else class="space-y-2 sm:space-y-3">
-            <div v-for="p in topProperties" :key="p.documentId"
-              @click="$router.push(`/properties/${p.documentId}`)"
-              class="flex items-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-colors hover:opacity-80"
-              style="background: var(--bg-main); border: 1px solid var(--border-subtle)">
-              <div class="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold"
-                :style="{ background: scoreColor(p.focus_score) + '20', color: scoreColor(p.focus_score) }">
-                {{ p.focus_score }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium truncate" style="color: var(--text-main)">{{ p.title }}</p>
-                <p class="text-xs truncate" style="color: var(--text-muted)">{{ p.address || p.city }}</p>
-              </div>
-              <div class="hidden sm:flex gap-1 flex-shrink-0">
-                <span v-for="tag in (p.tags || []).slice(0, 3)" :key="tag"
-                  class="text-xs px-1.5 py-0.5 rounded-full"
-                  style="background: var(--accent-soft); color: var(--accent)">
-                  {{ tag }}
-                </span>
-              </div>
+      <!-- Bar chart: property types -->
+      <BaseCard v-if="typeEntries.length" padding="lg" class="mb-8">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📊 Объекты по типам</h2>
+        <div class="space-y-3">
+          <div v-for="entry in typeEntries" :key="entry.type" class="flex items-center gap-3">
+            <span class="bar-label">{{ entry.label }}</span>
+            <div class="bar-track flex-1">
+              <div class="bar-fill" :style="{ width: barWidth(entry.count) + '%' }" />
+            </div>
+            <span class="bar-count">{{ entry.count }}</span>
+          </div>
+        </div>
+      </BaseCard>
+
+      <!-- Hot properties -->
+      <BaseCard padding="lg" class="mb-8">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">🔥 Горячие объекты</h2>
+        <div v-if="topProperties.length === 0" class="text-sm" style="color: var(--text-muted)">
+          Нет объектов в фокусе
+        </div>
+        <div v-else class="space-y-2 sm:space-y-3">
+          <div v-for="p in topProperties" :key="p.documentId"
+            @click="$router.push(`/properties/${p.documentId}`)"
+            class="flex items-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-colors hover:opacity-80"
+            style="background: var(--bg-main); border: 1px solid var(--border-subtle)">
+            <div class="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold"
+              :style="{ background: scoreBg(p.focus_score), color: scoreColor(p.focus_score) }">
+              {{ p.focus_score }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate" style="color: var(--text-main)">{{ p.title }}</p>
+              <p class="text-xs truncate" style="color: var(--text-muted)">{{ p.address || p.city }}</p>
+            </div>
+            <div class="hidden sm:flex gap-1 flex-shrink-0">
+              <BaseBadge v-for="tag in (p.tags || []).slice(0, 3)" :key="tag" size="sm">
+                {{ tag }}
+              </BaseBadge>
             </div>
           </div>
         </div>
-      </div>
+      </BaseCard>
 
-      <!-- Типы недвижимости -->
-      <div class="mb-8">
-        <div class="rounded-xl p-4 sm:p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📊 Объекты по типам</h2>
-          <div v-if="typeBreakdown.length === 0" class="text-sm" style="color: var(--text-muted)">Нет данных</div>
-          <div v-else class="flex flex-wrap gap-2 sm:gap-3">
-            <button v-for="t in typeBreakdown" :key="t.type"
-              @click="router.push(`/properties?property_type=${t.type}`)"
-              class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all hover:scale-[1.03]"
-              style="background: var(--bg-main); border-color: var(--border-subtle)">
-              <span class="text-sm" style="color: var(--text-muted)">{{ t.label }}</span>
-              <span class="text-sm font-bold px-2 py-0.5 rounded-full"
-                style="background: var(--accent-soft); color: var(--accent)">{{ t.count }}</span>
-            </button>
-          </div>
+      <!-- Parser status mini-widget -->
+      <BaseCard v-if="sources.length" padding="md">
+        <h2 class="text-base font-semibold mb-3" style="color: var(--text-main)">⚡ Парсеры</h2>
+        <div class="flex flex-wrap gap-2">
+          <span v-for="src in sources" :key="src.documentId"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+            :style="src.active ? 'background: var(--success-soft); color: var(--success)' : 'background: var(--bg-alt); color: var(--text-muted)'">
+            <span class="w-1.5 h-1.5 rounded-full" :style="src.active ? 'background: var(--success)' : 'background: var(--text-muted)'" />
+            {{ src.slug || src.name }}
+          </span>
         </div>
-      </div>
-
-
+      </BaseCard>
     </template>
 
-    <!-- Ошибка -->
+    <!-- Error -->
     <p v-if="error" class="mt-4 text-sm text-center" style="color: #fca5a5">{{ error }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
+import { scoreColor, scoreBg } from '@/utils/styleHelpers'
+import { typeLabel } from '@/utils/formatters'
+import StatCard from '@/components/ui/StatCard.vue'
+import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseBadge from '@/components/ui/BaseBadge.vue'
 
 const router = useRouter()
 
-interface DashboardStats {
+/* ── Types ── */
+interface StatsResponse {
   total: number
   inFocus: number
+  hot: number
+  undervalued: number
+  newToday: number
+  typeBreakdown: Record<string, number>
 }
 
 interface TopProperty {
@@ -108,46 +116,43 @@ interface TopProperty {
   tags: string[]
 }
 
-interface TypeBreakdown {
-  type: string
-  label: string
-  count: number
+interface Source {
+  documentId: string
+  slug?: string
+  name?: string
+  active?: boolean
 }
 
+/* ── State ── */
 const loading = ref(true)
 const error = ref('')
-const stats = ref<DashboardStats | null>(null)
+const stats = ref<StatsResponse | null>(null)
 const topProperties = ref<TopProperty[]>([])
-const typeBreakdown = ref<TypeBreakdown[]>([])
+const sources = ref<Source[]>([])
 
-const TYPE_LABELS: Record<string, string> = {
-  free_purpose: 'Своб. назначения',
-  land: 'Земельные участки',
-  apartment: 'Квартиры',
-  office: 'Офисы',
-  retail: 'Ритейл',
-  warehouse: 'Склады',
-  other: 'Прочее',
-  commercial: 'Коммерческая',
+/* ── Computed ── */
+const typeEntries = computed(() => {
+  if (!stats.value?.typeBreakdown) return []
+  const entries = Object.entries(stats.value.typeBreakdown)
+    .map(([type, count]) => ({ type, label: typeLabel(type), count }))
+    .sort((a, b) => b.count - a.count)
+  return entries
+})
+
+const maxTypeCount = computed(() => {
+  if (!typeEntries.value.length) return 1
+  return Math.max(...typeEntries.value.map(e => e.count), 1)
+})
+
+function barWidth(count: number): number {
+  return Math.round((count / maxTypeCount.value) * 100)
 }
 
-const scoreColor = (score: number) => {
-  if (score >= 70) return '#ef4444'
-  if (score >= 50) return '#f59e0b'
-  return '#4f8cff'
-}
-
+/* ── Fetchers ── */
 async function fetchStats() {
-  // Fetch general stats using standard Strapi pagination meta
   try {
-    const { data } = await api.get('/properties', { params: { 'pagination[pageSize]': 1 } })
-    const total = data.meta?.pagination?.total ?? 0
-
-    // Fetch focus count
-    const focusRes = await api.get('/properties/focus', { params: { threshold: 20, pageSize: 1 } })
-    const inFocus = focusRes.data.meta?.total ?? 0
-
-    stats.value = { total, inFocus }
+    const { data } = await api.get('/properties/stats')
+    stats.value = data
   } catch (e: any) {
     error.value = 'Ошибка загрузки статистики'
   }
@@ -162,32 +167,52 @@ async function fetchTopProperties() {
   } catch { /* ignore */ }
 }
 
-async function fetchTypeBreakdown() {
+async function fetchSources() {
   try {
-    const { data } = await api.get('/properties', {
-      params: { 'fields[0]': 'property_type', 'pagination[pageSize]': 5000 }
-    })
-    const counts: Record<string, number> = {}
-    for (const p of data.data || []) {
-      const t = p.property_type || 'other'
-      counts[t] = (counts[t] || 0) + 1
-    }
-    typeBreakdown.value = Object.entries(counts)
-      .map(([type, count]) => ({
-        type,
-        label: TYPE_LABELS[type] || type,
-        count,
-      }))
-      .sort((a, b) => b.count - a.count)
+    const { data } = await api.get('/sources')
+    sources.value = data.data || data || []
   } catch { /* ignore */ }
 }
 
 async function refresh() {
   loading.value = true
   error.value = ''
-  await Promise.all([fetchStats(), fetchTopProperties(), fetchTypeBreakdown()])
+  await Promise.all([fetchStats(), fetchTopProperties(), fetchSources()])
   loading.value = false
 }
 
 onMounted(refresh)
 </script>
+
+<style scoped>
+.bar-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 7rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.bar-track {
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: var(--bg-alt);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+  min-width: 0.25rem;
+}
+
+.bar-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-main);
+  min-width: 2rem;
+  text-align: right;
+}
+</style>

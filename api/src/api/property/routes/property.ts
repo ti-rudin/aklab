@@ -32,6 +32,12 @@ export default {
       handler: 'property.fetchPhotos',
       config: {},
     },
+    {
+      method: 'GET',
+      path: '/properties/stats',
+      handler: 'property.getStats',
+      config: { auth: false, policies: [] },
+    },
     // Core CRUD routes
     {
       method: 'GET',

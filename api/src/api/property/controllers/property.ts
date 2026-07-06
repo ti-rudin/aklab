@@ -72,9 +72,47 @@ export default factories.createCoreController("api::property.property", ({ strap
   },
 
   /**
-   * POST /api/properties/:id/fetch-photos
-   * Trigger lazy photo fetch for a property. Returns immediately.
+   * GET /api/properties/stats
+   * Агрегированная статистика для дашборда (1 запрос вместо N).
    */
+  async getStats(ctx: any) {
+    const s = strapi as any;
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayISO = yesterday.toISOString();
+
+    // Helper: count by fetching IDs (Strapi 5 db.query may lack .count())
+    const countWhere = async (where: Record<string, any>) => {
+      try {
+        const rows = await s.db.query('api::property.property').findMany({ where, select: ['id'] });
+        return rows?.length ?? 0;
+      } catch { return 0; }
+    };
+
+    const [total, inFocus, hot, undervalued, newToday] = await Promise.all([
+      countWhere({ status: 'new' }),
+      countWhere({ status: 'new', focus_score: { $gt: 0 } }),
+      countWhere({ status: 'new', focus_score: { $gte: 50 } }),
+      countWhere({ is_undervalued: true }),
+      countWhere({ first_seen_at: { $gte: yesterdayISO } }),
+    ]);
+
+    // Type breakdown
+    let typeBreakdown: Record<string, number> = {};
+    try {
+      const allProps = await s.db.query('api::property.property').findMany({
+        where: { status: 'new' },
+        select: ['property_type'],
+      });
+      for (const p of allProps || []) {
+        const t = p.property_type || 'other';
+        typeBreakdown[t] = (typeBreakdown[t] || 0) + 1;
+      }
+    } catch { /* ignore */ }
+
+    ctx.body = { total, inFocus, hot, undervalued, newToday, typeBreakdown };
+  },
+
   async fetchPhotos(ctx) {
     const { id } = ctx.params;
 
