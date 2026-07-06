@@ -7,19 +7,19 @@ export default {
       method: 'POST',
       path: '/pipeline/start',
       handler: 'pipeline.start',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'POST',
       path: '/pipeline/cancel',
       handler: 'pipeline.cancel',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'POST',
       path: '/pipeline/reset',
       handler: 'pipeline.reset',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'GET',
