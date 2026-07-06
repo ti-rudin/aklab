@@ -3,9 +3,9 @@
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold" style="color: var(--text-main)">Объекты</h1>
       <div class="flex items-center gap-3">
-        <span class="text-sm" style="color: var(--text-muted)">{{ activeTab === 'all' ? total : activeTab === 'focus' ? focusTotal : workTotal }} шт.</span>
+        <span class="text-sm" style="color: var(--text-muted)">{{ activeTabTotal }} шт.</span>
         <button v-if="activeTab === 'all'"
-          @click="confirmClearNew"
+          @click="showClearDialog = true"
           :disabled="clearing"
           class="px-3 py-1.5 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
           style="background: #ef4444"
@@ -18,7 +18,7 @@
     <!-- Табы -->
     <div class="flex gap-1 mb-6 overflow-x-auto pb-1" style="border-bottom: 1px solid var(--border-subtle)">
       <button
-        @click="activeTab = 'all'; if (workStatusApplied) { filters.status = ''; workStatusApplied = false }"
+        @click="activeTab = 'all'"
         class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
         :style="{
           color: activeTab === 'all' ? 'var(--accent)' : 'var(--text-muted)',
@@ -29,7 +29,7 @@
         <div v-if="activeTab === 'all'" class="absolute bottom-0 left-0 right-0 h-0.5" style="background: var(--accent)" />
       </button>
       <button
-        @click="switchToFocus"
+        @click="activeTab = 'focus'"
         class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
         :style="{
           color: activeTab === 'focus' ? 'var(--accent)' : 'var(--text-muted)',
@@ -40,7 +40,7 @@
         <div v-if="activeTab === 'focus'" class="absolute bottom-0 left-0 right-0 h-0.5" style="background: var(--accent)" />
       </button>
       <button
-        @click="switchToWork"
+        @click="activeTab = 'work'"
         class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative"
         :style="{
           color: activeTab === 'work' ? 'var(--accent)' : 'var(--text-muted)',
@@ -52,865 +52,68 @@
       </button>
     </div>
 
-    <!-- ============================== -->
-    <!-- ВСЕ ОБЪЕКТЫ / В РАБОТЕ         -->
-    <!-- ============================== -->
-    <template v-if="activeTab === 'all' || activeTab === 'work'">
-      <!-- Диалог подтверждения очистки -->
-      <div v-if="showClearDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center"
-        style="background: rgba(0,0,0,0.5)">
-        <div class="rounded-xl p-6 border max-w-md w-full mx-4 shadow-2xl"
-          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <h3 class="text-lg font-semibold mb-3" style="color: var(--text-main)">Подтверждение</h3>
-          <p class="text-sm mb-6" style="color: var(--text-muted)">
-            Вы уверены, что хотите удалить все объекты кроме «В работе»? Это действие нельзя отменить.
-          </p>
-          <div class="flex justify-end gap-3">
-            <button @click="showClearDialog = false"
-              class="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
-              style="background: var(--bg-main); border: 1px solid var(--border-subtle); color: var(--text-main)">
-              Отмена
-            </button>
-            <button @click="executeClearNew"
-              class="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
-              style="background: #ef4444">
-              Очистить
-            </button>
-          </div>
-        </div>
-      </div>
+    <!-- Запуск парсинга (only on "Все объекты") -->
+    <ParseLaunchPanel v-if="activeTab === 'all'" v-model:parse-depth="parseDepth" @done="onParseDone" />
 
-      <!-- Запуск парсинга -->
-      <div v-if="activeTab === 'all'" class="mb-4">
-        <button @click="launchFiltersOpen = !launchFiltersOpen"
-          class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
-          style="color: var(--text-muted)">
-          <span>{{ launchFiltersOpen ? '▼' : '▶' }}</span>
-          <span>Запуск парсинга</span>
-        </button>
+    <!-- Tab content -->
+    <PropertyAllTab v-if="activeTab === 'all'" ref="allTabRef" status="new" />
+    <PropertyAllTab v-if="activeTab === 'work'" ref="workTabRef" status="in_progress" />
+    <PropertyFocusTab v-if="activeTab === 'focus'" ref="focusTabRef" />
 
-        <div v-if="launchFiltersOpen" class="mt-3 p-4 rounded-xl border"
-          style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <!-- Price range -->
-          <div class="mb-3">
-            <label class="block text-xs font-medium mb-1" style="color: var(--text-muted)">Цена лота (₽)</label>
-            <div class="flex gap-2 items-center">
-              <input v-model="parseFilters.priceFrom" type="number" placeholder="от" min="0"
-                class="w-full px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-              <span class="text-xs flex-shrink-0" style="color: var(--text-muted)">—</span>
-              <input v-model="parseFilters.priceTo" type="number" placeholder="до" min="0"
-                class="w-full px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-          <!-- Cities -->
-          <div class="mb-3">
-            <label class="block text-xs font-medium mb-1" style="color: var(--text-muted)">Город</label>
-            <FilterChips v-model="parseFilters.cities" :options="cityOptions" />
-          </div>
-          <!-- Depth + Button -->
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t" style="border-color: var(--border-subtle)">
-            <div class="flex items-center gap-2">
-              <label class="text-xs whitespace-nowrap" style="color: var(--text-muted)">Глубина:</label>
-              <input v-model.number="parseDepth" type="number" min="1" max="5000"
-                class="w-24 px-2 py-1.5 rounded-lg border text-sm text-center"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-            <button
-              @click="runParseOnly"
-              :disabled="parseStage !== 'idle' && parseStage !== 'done' && parseStage !== 'error'"
-              class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-              :style="{
-                background: parseStage === 'done' ? '#059669' : 'var(--accent)',
-              }"
-            >
-              <template v-if="parseStage === 'idle' || parseStage === 'error'">▶ Запустить парсинг</template>
-              <template v-else-if="parseStage === 'done'">Готово — ещё раз</template>
-              <template v-else>Парсинг...</template>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Прогресс парсинга -->
-      <div v-if="parseStage !== 'idle'" class="mb-6 p-3 sm:p-4 rounded-lg" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
-        <div class="flex items-center gap-3">
-          <span class="flex-shrink-0 w-5 text-center">
-            <template v-if="parseStage === 'parsing'">⏳</template>
-            <template v-else-if="parseDone">✓</template>
-            <template v-else>○</template>
-          </span>
-          <div class="flex-1">
-            <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
-            <div class="text-xs" style="color: var(--text-muted)">
-              <template v-if="parseStage === 'parsing'">
-                {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
-                <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
-              </template>
-              <template v-else-if="parseDone">
-                {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
-                <template v-if="pipelineResults.detailsNeeded > 0"> · {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }} детальных</template>
-                <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
-              </template>
-              <template v-else>Ожидание...</template>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="parseStage === 'done'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-          ✓ Парсинг завершён · Новых объектов: {{ pipelineResults.parseTotal }}
-          <template v-if="pipelineResults.detailsNeeded > 0"> · Детальных: {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }}</template>
-        </div>
-
-        <div v-if="parseStage === 'error'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
-          ✗ {{ pipelineError || 'Ошибка парсинга' }}
-        </div>
-      </div>
-
-      <!-- Фильтры -->
-      <div class="rounded-xl p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-        <!-- Поиск + переключатель вида -->
-        <div class="flex gap-2 items-center">
-          <div class="relative flex-1">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
-            <input v-model="searchQuery" @input="onSearchInput" type="text" placeholder="Поиск по названию или адресу..."
-              class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
-              style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-          </div>
-          <ViewToggle v-model="viewMode" />
-        </div>
-        <!-- Мобильный тоггл фильтров -->
-        <button @click="filtersOpen = !filtersOpen"
-          class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
-          style="color: var(--text-muted)">
-          <span>{{ filtersOpen ? '▼' : '▶' }}</span>
-          <span>Фильтры</span>
-        </button>
-        <!-- Фильтры -->
-        <div class="flex-wrap gap-x-4 gap-y-3 items-end" :class="filtersOpen ? 'flex' : 'hidden sm:flex'">
-          <div>
-            <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
-            <FilterChips v-model="filters.city" :options="cityOptions" />
-          </div>
-          <div>
-            <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
-            <FilterChips v-model="filters.property_type" :options="typeOptions" />
-          </div>
-          <div v-if="activeTab !== 'work'">
-            <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
-            <select v-model="filters.status" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-              <option value="">Все</option>
-              <option value="new">Новый</option>
-              <option value="viewed">Просмотрен</option>
-              <option value="rejected">Отклонён</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
-            <select v-model="filters.source" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-              <option value="">Все</option>
-              <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs mb-1" style="color: var(--text-muted)">Цена (₽)</label>
-            <div class="flex gap-1 items-center">
-              <input v-model.number="filters.priceFrom" type="number" placeholder="от" min="0"
-                class="w-24 px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-              <span class="text-xs" style="color: var(--text-muted)">—</span>
-              <input v-model.number="filters.priceTo" type="number" placeholder="до" min="0"
-                class="w-24 px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-          <button @click="resetFilters" class="px-3 py-1.5 rounded-lg border text-sm hover:opacity-80 self-end" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
-        </div>
-      </div>
-
-      <!-- Loading -->
-      <SkeletonTable v-if="loading" :rows="6" />
-
-      <!-- Пусто -->
-      <div v-else-if="items.length === 0" class="text-center py-16">
-        <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов</p>
-        <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
-      </div>
-
-      <!-- Карточки -->
-      <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <PropertyCard
-          v-for="item in items"
-          :key="item.id"
-          :item="item"
-          variant="default"
-          @open="openProperty(item)"
-        />
-      </div>
-
-      <!-- Таблица -->
-      <PropertyTable
-        v-else
-        :items="items"
-        variant="default"
-        :sort-field="sort.field"
-        :sort-direction="sort.direction"
-        @open="openProperty"
-        @sort="toggleSort"
-      />
-
-      <!-- Пагинация -->
-      <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
-        <button @click="page > 1 && page--" :disabled="page <= 1"
-          class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
-          :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-          ‹
-        </button>
-        <template v-for="p in visiblePages" :key="String(p)">
-          <span v-if="p === '...'" class="px-1 text-sm hidden sm:inline" style="color: var(--text-muted)">…</span>
-          <button v-else @click="page = Number(p)"
-            class="px-2 py-1 sm:px-3 rounded-lg text-xs sm:text-sm hidden sm:inline-block"
-            :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-            {{ p }}
-          </button>
-        </template>
-        <span class="sm:hidden text-xs px-2" style="color: var(--text-muted)">{{ page }} / {{ totalPages }}</span>
-        <button @click="page < totalPages && page++" :disabled="page >= totalPages"
-          class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
-          :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-          ›
-        </button>
-      </div>
-    </template>
-
-    <!-- ============================== -->
-    <!-- В ФОКУСЕ                       -->
-    <!-- ============================== -->
-    <template v-if="activeTab === 'focus'">
-      <!-- Stats header -->
-      <div class="mb-4 text-sm font-medium" style="color: var(--text-main)">
-        В фокусе: <span class="font-bold">{{ focusTotal }}</span> объектов
-        <template v-if="focusAvgScore !== null"> · Средний скор: <span class="font-bold">{{ focusAvgScore }}</span></template>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        <button
-          @click="recalculateScore"
-          :disabled="scoringLoading"
-          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
-        >
-          {{ scoringLoading ? 'Пересчёт...' : '🔄 Пересчитать' }}
-        </button>
-
-        <!-- Прогресс анализа -->
-        <div v-if="analyzeProgress && !analyzeProgress.done" class="flex items-center gap-3 text-sm" style="color: var(--text-muted)">
-          <div class="flex-1 max-w-xs h-2 rounded-full overflow-hidden" style="background: var(--bg-elevated)">
-            <div class="h-full rounded-full transition-all duration-500" style="background: #f59e0b"
-              :style="{ width: Math.round(analyzeProgress.analyzed / analyzeProgress.total * 100) + '%' }"></div>
-          </div>
-          <span class="font-mono whitespace-nowrap">{{ analyzeProgress.analyzed }} / {{ analyzeProgress.total }}</span>
-        </div>
-        <div v-if="analyzeProgress?.done" class="flex items-center gap-2 text-sm" style="color: #22c55e">
-          ✓ Проанализировано: {{ analyzeProgress.analyzed }}, недооценённых: {{ analyzeProgress.undervalued }}
-        </div>
-
-        <button
-          @click="exportCSV"
-          class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
-          style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
-        >
-          📥 Экспорт CSV
-        </button>
-
-        <ViewToggle v-model="viewMode" class="sm:ml-auto" />
-      </div>
-
-      <!-- Focus filters -->
-      <div class="rounded-xl p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-        <!-- Поиск -->
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
-          <input v-model="searchQuery" @input="onSearchInput" type="text" placeholder="Поиск по названию или адресу..."
-            class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-        </div>
-        <!-- Мобильный тоггл фильтров -->
-        <button @click="focusFiltersOpen = !focusFiltersOpen"
-          class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
-          style="color: var(--text-muted)">
-          <span>{{ focusFiltersOpen ? '▼' : '▶' }}</span>
-          <span>Фильтры</span>
-        </button>
-        <div class="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" :class="focusFiltersOpen ? 'grid' : 'hidden sm:grid'">
-          <!-- Порог (threshold) -->
-          <div>
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
-              Порог: <span class="font-semibold" style="color: var(--text-main)">{{ focusFilters.threshold }}</span>
-            </label>
-            <div class="flex items-center gap-3">
-              <input v-model.number="focusFilters.threshold" type="range" min="0" max="100" step="1"
-                class="flex-1 min-w-0" style="accent-color: var(--accent)" />
-              <input v-model.number="focusFilters.threshold" type="number" min="0" max="100"
-                class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-
-          <!-- Город (checkboxes) -->
-          <div>
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
-            <div class="flex flex-wrap gap-3">
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" v-model="focusFilters.cities.moscow" class="rounded" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">Москва</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" v-model="focusFilters.cities.mo" class="rounded" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">МО</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" v-model="focusFilters.cities.other" class="rounded" style="accent-color: var(--accent)" />
-                <span class="text-sm" style="color: var(--text-main)">Другие</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Тип недвижимости -->
-          <div>
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Тип недвижимости</label>
-            <FilterChips v-model="focusFilters.property_type" :options="typeOptions" />
-          </div>
-
-          <!-- Теги -->
-          <div class="sm:col-span-2 lg:col-span-1">
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Теги</label>
-            <div class="flex flex-wrap gap-2">
-              <label v-for="tag in availableTags" :key="tag.value" class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" :value="tag.value" v-model="focusFilters.tags" class="rounded" style="accent-color: var(--accent)" />
-                <span class="text-xs px-1.5 py-0.5 rounded-full" :style="{ background: tag.bgColor, color: tag.textColor }">{{ tag.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Цена -->
-          <div>
-            <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена (₽)</label>
-            <div class="flex gap-2 items-center">
-              <input v-model="focusFilters.priceFrom" type="number" placeholder="от" min="0"
-                class="w-full px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-              <span class="text-sm" style="color: var(--text-muted)">—</span>
-              <input v-model="focusFilters.priceTo" type="number" placeholder="до" min="0"
-                class="w-full px-2 py-1.5 rounded-lg border text-sm"
-                style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Reset -->
-        <div class="mt-3 pt-2 border-t flex justify-end" style="border-color: var(--border-subtle)">
-          <button @click="resetFocusFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80"
-            style="color: var(--text-muted)">Сбросить фильтры</button>
-        </div>
-      </div>
-
-      <!-- Loading -->
-      <SkeletonTable v-if="focusLoading" :rows="6" />
-
-      <!-- Пусто -->
-      <div v-else-if="filteredFocusItems.length === 0" class="text-center py-16">
-        <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов в фокусе</p>
-        <p class="text-sm" style="color: var(--text-muted)">Запустите пересчёт скоров или измените фильтры</p>
-      </div>
-
-      <!-- Focus Карточки -->
-      <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <PropertyCard
-          v-for="item in filteredFocusItems"
-          :key="item.id"
-          :item="item"
-          variant="focus"
-          :selected="focusSelected.has(item.id)"
-          @open="openProperty(item)"
-          @toggle-select="toggleFocusSelect(item.id)"
-          @bulk-status="bulkSetStatus"
-          @bulk-csv="bulkExportCSV"
-        />
-      </div>
-
-      <!-- Focus Таблица -->
-      <PropertyTable
-        v-else
-        :items="filteredFocusItems"
-        variant="focus"
-        :selected-ids="focusSelected"
-        :all-selected="allFocusChecked"
-        :sort-field="focusSort.field"
-        :sort-direction="focusSort.direction"
-        @open="openProperty"
-        @toggle-select="toggleFocusSelect"
-        @toggle-all="toggleAllFocus"
-        @sort="toggleFocusSort"
-      />
-
-      <!-- Focus Pagination -->
-      <div v-if="focusTotalPages > 1" class="flex justify-between items-center mt-6">
-        <span class="text-xs" style="color: var(--text-muted)">
-          Показано {{ (focusPage - 1) * focusPageSize + 1 }}-{{ Math.min(focusPage * focusPageSize, focusTotal) }} из {{ focusTotal }}
-        </span>
-        <div class="flex gap-2">
-          <button @click="focusPage > 1 && focusPage--" :disabled="focusPage <= 1"
-            class="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
-            :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-            ‹ Назад
-          </button>
-          <button @click="focusPage < focusTotalPages && focusPage++" :disabled="focusPage >= focusTotalPages"
-            class="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
-            :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
-            Вперёд ›
-          </button>
-        </div>
-      </div>
-
-      <!-- Bulk action bar (floating) -->
-      <div v-if="focusSelected.size > 0"
-        class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 z-50"
-        style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
-        <span class="text-sm font-medium" style="color: var(--text-main)">Выбрано: {{ focusSelected.size }}</span>
-        <div class="flex gap-2">
-          <button @click="bulkSetStatus('viewed')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
-          <button @click="bulkSetStatus('rejected')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонён</button>
-          <button @click="bulkExportCSV" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
-        </div>
-      </div>
-    </template>
+    <!-- Диалог подтверждения очистки -->
+    <ConfirmClearDialog
+      :visible="showClearDialog"
+      @confirm="executeClearNew"
+      @cancel="showClearDialog = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import SkeletonTable from '@/components/SkeletonTable.vue'
-import PropertyCard from '@/components/properties/PropertyCard.vue'
-import PropertyTable from '@/components/properties/PropertyTable.vue'
-import ViewToggle from '@/components/properties/ViewToggle.vue'
-import FilterChips from '@/components/properties/FilterChips.vue'
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
-import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice, formatPriceShort } from '@/utils/formatters'
-import { usePropertyData, type Property } from '@/composables/usePropertyData'
-import { useFocusTab } from '@/composables/useFocusTab'
+import ParseLaunchPanel from '@/components/properties/ParseLaunchPanel.vue'
+import PropertyAllTab from '@/components/properties/PropertyAllTab.vue'
+import PropertyFocusTab from '@/components/properties/PropertyFocusTab.vue'
+import ConfirmClearDialog from '@/components/properties/ConfirmClearDialog.vue'
 
-const router = useRouter()
 const route = useRoute()
 
 // ========================
-// View mode (cards / table) — persisted
+// Tab state
 // ========================
-const viewMode = ref<'cards' | 'table'>((localStorage.getItem('aklab-view-mode') as 'cards' | 'table') || 'cards')
-watch(viewMode, (v) => {
-  try { localStorage.setItem('aklab-view-mode', v) } catch {}
-})
-
-function openProperty(item: { documentId: string }) {
-  router.push(`/properties/${item.documentId}`)
-}
-
-// Мобильные коллапсы фильтров
-const filtersOpen = ref(false)
-const focusFiltersOpen = ref(false)
+const activeTab = ref<'all' | 'focus' | 'work'>('all')
 
 // ========================
-// Data composable
+// Template refs
 // ========================
-const {
-  properties: items,
-  focusProperties: focusItems,
-  loading,
-  focusLoading,
-  error,
-  total,
-  focusTotal,
-  focusAvgScore,
-  fetchProperties,
-  fetchFocusProperties,
-} = usePropertyData()
+const allTabRef = ref<InstanceType<typeof PropertyAllTab>>()
+const workTabRef = ref<InstanceType<typeof PropertyAllTab>>()
+const focusTabRef = ref<InstanceType<typeof PropertyFocusTab>>()
 
-// ========================
-// Focus tab composable
-// ========================
-let doFetchFocus: () => void = () => {}
-
-const {
-  activeTab,
-  focusSort,
-  toggleFocusSort,
-  focusFilters,
-  resetFocusFilters,
-  availableTags,
-  focusPage,
-  focusPageSize,
-  focusTotalPages,
-  focusSelected,
-  allFocusChecked,
-  toggleFocusSelect,
-  toggleAllFocus,
-  switchToFocus,
-} = useFocusTab(() => doFetchFocus(), focusTotal, focusItems)
-
-// ========================
-// В РАБОТЕ — state
-// ========================
-const workTotal = ref(0)
-const workStatusApplied = ref(false)
-
-async function fetchWorkTotal() {
-  try {
-    const res = await api.get('/properties', {
-      params: { 'filters[status][$eq]': 'in_progress', 'pagination[pageSize]': 1 },
-    })
-    workTotal.value = res.data?.meta?.pagination?.total || 0
-  } catch { workTotal.value = 0 }
-}
-
-function switchToWork() {
-  activeTab.value = 'work'
-  if (!workStatusApplied.value) {
-    filters.status = 'in_progress'
-    workStatusApplied.value = true
-  }
-  fetchWorkTotal()
-}
-
-// ========================
-// ВСЕ ОБЪЕКТЫ — state
-// ========================
-const sources = ['fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow', 'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf', 'sberbank-ast', 'm-ets']
-
-const typeOptions = [
-  { value: 'office', label: 'Офис' },
-  { value: 'warehouse', label: 'Склад' },
-  { value: 'retail', label: 'Торговля' },
-  { value: 'free_purpose', label: 'Св. назн.' },
-  { value: 'apartment', label: 'Квартира' },
-  { value: 'land', label: 'Участок' },
-  { value: 'other', label: 'Другое' },
-]
-
-const cityOptions = [
-  { value: 'moscow', label: 'Москва' },
-  { value: 'mo', label: 'МО' },
-  { value: 'other', label: 'Другой' },
-]
-
-const sort = reactive({
-  field: 'createdAt' as string,
-  direction: 'desc' as 'asc' | 'desc',
-})
-
-function toggleSort(field: string) {
-  if (sort.field === field) {
-    sort.direction = sort.direction === 'asc' ? 'desc' : 'asc'
-  } else {
-    sort.field = field
-    sort.direction = 'desc'
-  }
-}
-
-const filters = reactive({
-  city: [] as string[],
-  status: '',
-  source: '',
-  property_type: [] as string[],
-  priceFrom: null as number | null,
-  priceTo: null as number | null,
-})
-
-const searchQuery = ref('')
-let searchDebounce: ReturnType<typeof setTimeout> | null = null
-
-function onSearchInput() {
-  if (searchDebounce) clearTimeout(searchDebounce)
-  searchDebounce = setTimeout(() => {
-    page.value = 1
-    fetchItems()
-  }, 400)
-}
-
-// Клиентская фильтрация для вкладки "В фокусе"
-const filteredFocusItems = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return focusItems.value
-  return focusItems.value.filter((item: any) =>
-    (item.title || '').toLowerCase().includes(q) ||
-    (item.address || '').toLowerCase().includes(q)
-  )
-})
-
-// Запуск парсинга — collapsible toggle
-const launchFiltersOpen = ref(false)
-
-// ========================
-// ВСЕ ОБЪЕКТЫ — pagination
-// ========================
-const pageSize = 25
-const page = ref(1)
-const totalPages = computed(() => Math.ceil(total.value / pageSize))
-
-const visiblePages = computed(() => {
-  const t = totalPages.value
-  const current = page.value
-  const pages: (number | string)[] = []
-  if (t <= 7) {
-    for (let i = 1; i <= t; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  if (current > 3) pages.push('...')
-  const start = Math.max(2, current - 1)
-  const end = Math.min(t - 1, current + 1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (current < t - 2) pages.push('...')
-  pages.push(t)
-  return pages
+const activeTabTotal = computed(() => {
+  if (activeTab.value === 'all') return allTabRef.value?.total ?? 0
+  if (activeTab.value === 'work') return workTabRef.value?.total ?? 0
+  if (activeTab.value === 'focus') return focusTabRef.value?.total ?? 0
+  return 0
 })
 
 // ========================
-// ВСЕ ОБЪЕКТЫ — fetch
+// Parse depth (v-model)
 // ========================
-async function fetchItems() {
-  const params: any = {
-    sort: `${sort.field}:${sort.direction}`,
-    pagination: { page: page.value, pageSize },
-  }
-  const f: any = {}
-  // На вкладке «Все объекты» скрываем объекты «В работе»
-  f.status = { $ne: 'in_progress' }
-  if (filters.city.length) f.city = { $in: filters.city }
-  if (filters.status) f.status = { $eq: filters.status }
-  if (filters.source) f.source = { $eq: filters.source }
-  if (filters.property_type.length) f.property_type = { $in: filters.property_type }
-  if (filters.priceFrom) f.price = { ...f.price, $gte: filters.priceFrom }
-  if (filters.priceTo) f.price = { ...f.price, $lte: filters.priceTo }
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim()
-    f.$or = [
-      { title: { $containsi: q } },
-      { address: { $containsi: q } },
-    ]
-  }
-  if (Object.keys(f).length) params.filters = f
-  await fetchProperties(params)
-}
-
-function resetFilters() {
-  searchQuery.value = ''
-  filters.city = []
-  filters.status = ''
-  filters.source = ''
-  filters.property_type = []
-  filters.priceFrom = null
-  filters.priceTo = null
-  sort.field = 'createdAt'
-  sort.direction = 'desc'
-  page.value = 1
-}
-
-watch([filters, page, sort], ([, newPage], [, oldPage]) => {
-  if (newPage === oldPage) {
-    if (page.value !== 1) {
-      page.value = 1
-    } else {
-      fetchItems()
-    }
-    return
-  }
-  fetchItems()
-}, { deep: true })
-
-// ========================
-// Focus data fetch
-// ========================
-function fetchFocusItems() {
-  const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
-
-  const cityList: string[] = []
-  if (focusFilters.cities.moscow) cityList.push('moscow')
-  if (focusFilters.cities.mo) cityList.push('mo')
-  if (focusFilters.cities.other) cityList.push('other')
-
-  const params: any = {
-    threshold: focusFilters.threshold,
-    sort: sortParam,
-    page: focusPage.value,
-    pageSize: focusPageSize,
-  }
-  if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-  if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
-  if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
-  if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
-  if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
-
-  fetchFocusProperties(params)
-}
-
-doFetchFocus = fetchFocusItems
-
-// ========================
-// Pipeline state
-// ========================
-type ParseStage = 'idle' | 'parsing' | 'done' | 'error'
-const parseStage = ref<ParseStage>('idle')
 const parseDepth = ref(20)
-const parseFilters = reactive({
-  priceFrom: '' as string | number,
-  priceTo: '' as string | number,
-  cities: ['moscow', 'mo', 'other'] as string[],
-})
-const parseSourcesTotal = ref(0)
-const parseSourcesDone = ref(0)
-const parseDone = ref(false)
-const detailsFetched = ref(0)
-const detailsNeeded = ref(0)
-const pipelineError = ref('')
 
-const pipelineResults = reactive({
-  parseTotal: 0,
-  parseErrors: 0,
-  detailsFetched: 0,
-  detailsNeeded: 0,
-})
-
-const parseSlugs = ref<string[]>([])
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+function onParseDone() {
+  // Refresh the "Все объекты" tab after parsing completes
+  allTabRef.value?.refresh()
 }
 
-async function pollQueueStats() {
-  try {
-    const res = await api.get('/cron/queue-stats')
-    const data = res.data
-    if (!data?.ok) return null
-    return data
-  } catch {
-    return null
-  }
-}
-
-function isQueueEmpty(queues: Record<string, any>, prefix: string): boolean {
-  for (const [name, stats] of Object.entries(queues)) {
-    if (name.startsWith(prefix)) {
-      const s = stats as { pending: number; active: number }
-      if (s.pending > 0 || s.active > 0) return false
-    }
-  }
-  return true
-}
-
-function countSourcesParsed(sources: any[], slugs: string[]): number {
-  return sources.filter((s: any) =>
-    slugs.includes(s.slug) && s.last_parse_status !== 'running' && s.last_parse_status !== 'never'
-  ).length
-}
-
-async function runParseOnly() {
-  parseStage.value = 'parsing'
-  parseDone.value = false
-  parseSourcesDone.value = 0
-  detailsFetched.value = 0
-  detailsNeeded.value = 0
-  pipelineError.value = ''
-  pipelineResults.parseTotal = 0
-  pipelineResults.parseErrors = 0
-  pipelineResults.detailsFetched = 0
-  pipelineResults.detailsNeeded = 0
-
-  try {
-    // Build filters for pipeline
-    const filters: any = {}
-    if (parseFilters.priceFrom) filters.priceFrom = Number(parseFilters.priceFrom)
-    if (parseFilters.priceTo) filters.priceTo = Number(parseFilters.priceTo)
-    if (parseFilters.cities.length > 0 && parseFilters.cities.length < 3) filters.city = parseFilters.cities
-
-    // Start full pipeline (parse → analyze → digest)
-    await api.post('/pipeline/start', {
-      mode: 'full',
-      depth: parseDepth.value,
-      filters: Object.keys(filters).length ? filters : undefined,
-    })
-
-    // Poll pipeline status until done
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0
-      const maxAttempts = 2000
-      pollTimer = setInterval(async () => {
-        attempts++
-        if (attempts > maxAttempts) {
-          stopPolling()
-          reject(new Error('Пайплайн превысил таймаут (100 мин)'))
-          return
-        }
-
-        try {
-          const { data } = await api.get('/pipeline/status')
-          const state = data?.state
-          if (!state) return
-
-          // Map pipeline stages to parse progress UI
-          const stage = state.stage || ''
-          if (['parsing_scan', 'parsing_details'].includes(stage)) {
-            parseStage.value = 'parsing'
-            parseSourcesDone.value = state.sources_done || 0
-            parseSourcesTotal.value = state.sources_total || 0
-            detailsFetched.value = state.details_fetched || 0
-            detailsNeeded.value = state.details_needed || 0
-          } else if (['parsing_done', 'analyzing', 'analyzing_done', 'analyzing_skipped', 'digesting', 'digest_done'].includes(stage)) {
-            parseDone.value = true
-            parseStage.value = 'done'
-            parseSourcesDone.value = state.sources_done || parseSourcesDone.value
-            parseSourcesTotal.value = state.sources_total || parseSourcesTotal.value
-            detailsFetched.value = state.details_fetched || detailsFetched.value
-            detailsNeeded.value = state.details_needed || detailsNeeded.value
-            pipelineResults.parseTotal = state.objects_created || 0
-          }
-
-          if (['done', 'done_with_errors', 'error', 'cancelled'].includes(stage)) {
-            stopPolling()
-            parseDone.value = true
-            parseStage.value = stage === 'error' ? 'error' : 'done'
-            pipelineResults.parseTotal = state.objects_created || 0
-            if (state.errors?.length) pipelineError.value = state.errors.join('; ')
-            if (stage === 'error') pipelineError.value = state.message || 'Ошибка пайплайна'
-            // Refresh table
-            page.value = 1
-            fetchItems()
-            resolve()
-          }
-        } catch { /* ignore polling errors */ }
-      }, 3000)
-    })
-  } catch (err: any) {
-    stopPolling()
-    parseStage.value = 'error'
-    pipelineError.value = err.message || 'Ошибка парсинга'
-  }
-}
-
-// Clear new properties — with in-page confirmation dialog
+// ========================
+// Clear properties
+// ========================
 const clearing = ref(false)
 const showClearDialog = ref(false)
-
-function confirmClearNew() {
-  showClearDialog.value = true
-}
 
 async function executeClearNew() {
   showClearDialog.value = false
@@ -923,7 +126,7 @@ async function executeClearNew() {
     } else {
       alert('Нет объектов со статусом «Новый»')
     }
-    fetchItems()
+    allTabRef.value?.refresh()
   } catch (e: any) {
     alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   } finally {
@@ -932,187 +135,11 @@ async function executeClearNew() {
 }
 
 // ========================
-// Recalculate scoring
-// ========================
-const scoringLoading = ref(false)
-const analyzeProgress = ref<{ total: number; analyzed: number; remaining: number; undervalued: number; done: boolean } | null>(null)
-
-async function recalculateScore() {
-  scoringLoading.value = true
-  analyzeProgress.value = null
-  try {
-    const cityList: string[] = []
-    if (focusFilters.cities.moscow) cityList.push('moscow')
-    if (focusFilters.cities.mo) cityList.push('mo')
-    if (focusFilters.cities.other) cityList.push('other')
-
-    // Шаг 1: Анализ (deviation от эталонов) — force=true для пересчёта
-    const analyzeBody: any = { force: true }
-    if (cityList.length > 0 && cityList.length < 3) analyzeBody.city = cityList
-    if (focusFilters.priceFrom) analyzeBody.priceFrom = Number(focusFilters.priceFrom)
-    if (focusFilters.priceTo) analyzeBody.priceTo = Number(focusFilters.priceTo)
-    if (focusFilters.threshold) analyzeBody.threshold = focusFilters.threshold
-    await api.post('/cron/analyze', analyzeBody)
-
-    // Поллинг прогресса анализа
-    for (let i = 0; i < 120; i++) { // макс 2 мин (120 × 1с)
-      await new Promise(r => setTimeout(r, 1000))
-      try {
-        const { data } = await api.get('/cron/analyze-progress')
-        analyzeProgress.value = data
-        if (data.done) break
-      } catch { /* DB может быть занят — retry */ }
-    }
-
-    // Шаг 2: Scoring (focus_score + tags)
-    const scoreBody: any = { threshold: focusFilters.threshold }
-    if (cityList.length > 0 && cityList.length < 3) scoreBody.city = cityList
-    if (focusFilters.priceFrom) scoreBody.priceFrom = Number(focusFilters.priceFrom)
-    if (focusFilters.priceTo) scoreBody.priceTo = Number(focusFilters.priceTo)
-    await api.post('/cron/score', scoreBody)
-
-    // Обновляем список
-    await fetchFocusItems()
-  } catch (e: any) {
-    console.error('Recalculation failed:', e)
-    console.warn('[UI] Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
-  } finally {
-    scoringLoading.value = false
-  }
-}
-
-// ========================
-// CSV Export
-// ========================
-async function exportCSV() {
-  try {
-    const cityList: string[] = []
-    if (focusFilters.cities.moscow) cityList.push('moscow')
-    if (focusFilters.cities.mo) cityList.push('mo')
-    if (focusFilters.cities.other) cityList.push('other')
-
-    const sortParam = `${focusSort.direction === 'desc' ? '-' : ''}${focusSort.field}`
-
-    const params: any = {
-      threshold: focusFilters.threshold,
-      sort: sortParam,
-      page: 1,
-      pageSize: 1000,
-    }
-    if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-    if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
-    if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
-    if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
-    if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
-
-    const { data } = await api.get('/properties/focus', { params })
-    const rows = data.data || []
-
-    generateCSV(rows)
-  } catch (e: any) {
-    console.error('CSV export failed:', e)
-    // TODO: заменить на toast notification
-    console.warn('[UI] Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
-  }
-}
-
-function generateCSV(rows: any[]) {
-  const header = ['Название', 'Адрес', 'Город', 'Тип', 'Площадь', 'Цена', '₽/м²', 'Скор', 'Теги', 'Ссылка']
-  const csvRows = [header.join(';')]
-
-  for (const row of rows) {
-    const link = `${window.location.origin}/properties/${row.documentId}`
-    const values = [
-      escapeCSV(row.title),
-      escapeCSV(row.address || ''),
-      escapeCSV(cityLabel(row.city)),
-      escapeCSV(typeLabel(row.property_type)),
-      row.area_sqm || '',
-      row.price || '',
-      row.price_per_sqm || '',
-      row.focus_score ?? '',
-      escapeCSV((row.tags || []).join(', ')),
-      link,
-    ]
-    csvRows.push(values.join(';'))
-  }
-
-  const BOM = '\uFEFF'
-  const blob = new Blob([BOM + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `focus_export_${new Date().toISOString().slice(0, 10)}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-function escapeCSV(val: string): string {
-  if (!val) return ''
-  if (val.includes(';') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`
-  }
-  return val
-}
-
-// ========================
-// Bulk actions
-// ========================
-async function bulkSetStatus(status: string) {
-  const ids = Array.from(focusSelected)
-  try {
-    await Promise.all(ids.map(id => {
-      const item = focusItems.value.find(i => i.id === id)
-      if (!item) return Promise.resolve()
-      return api.put(`/properties/${item.documentId}`, { data: { status } })
-    }))
-    focusSelected.clear()
-    await fetchFocusItems()
-  } catch (e: any) {
-    // TODO: заменить на toast notification
-    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
-  }
-}
-
-async function bulkExportCSV() {
-  const ids = Array.from(focusSelected)
-  const rows = focusItems.value.filter(i => ids.includes(i.id))
-  generateCSV(rows)
-}
-
-// ========================
 // Lifecycle
 // ========================
-onUnmounted(() => {
-  stopPolling()
-})
-
-async function loadParseDefaults() {
-  try {
-    const { data } = await api.get('/setting')
-    const s = data?.data
-    if (s) {
-      parseDepth.value = s.parse_depth ?? 20
-      parseFilters.priceFrom = s.price_from ?? ''
-      parseFilters.priceTo = s.price_to ?? ''
-      parseFilters.cities = s.monitored_regions ?? ['moscow', 'mo', 'other']
-    }
-  } catch { /* используем дефолты */ }
-}
-
 onMounted(() => {
-  loadParseDefaults()
-  // Читаем query-параметр property_type с дашборда
-  if (route.query.property_type) {
-    const q = route.query.property_type
-    filters.property_type = Array.isArray(q) ? q as string[] : (q as string).split(',')
-  }
-  fetchItems()
-  fetchWorkTotal()
   if (route.hash === '#focus') {
-    switchToFocus()
+    activeTab.value = 'focus'
   }
 })
 </script>
