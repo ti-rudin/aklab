@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.1.16",
+    "date": "6 июля 2026",
+    "time": "14:16",
+    "items": [
+      {
+        "text": "Обновление compact-doc — unit/E2E тесты, Playwright Ubuntu 26.04 workaround",
+        "type": "improvement"
+      },
+      {
+        "text": "E2E тесты используют TEST_USER_PASSWORD из env",
+        "type": "fix"
+      },
+      {
+        "text": "Полное E2E покрытие — auth, dashboard, properties, settings, property detail",
+        "type": "improvement"
+      },
+      {
+        "text": "Playwright chromium symlinks в deploy script (Ubuntu 26.04 workaround)",
+        "type": "fix"
+      },
+      {
+        "text": "Playwright headless mode через HEADLESS env var",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.15",
     "date": "6 июля 2026",
     "time": "10:43",
