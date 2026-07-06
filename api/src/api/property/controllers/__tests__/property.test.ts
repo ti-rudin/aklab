@@ -11,8 +11,6 @@ vi.mock('fs/promises', () => ({
 vi.mock('@strapi/strapi', () => ({
   factories: {
     createCoreController: vi.fn((_uid: string, factoryFn: any) => {
-      // Return the factory result as the controller object directly
-      // so tests can import it
       return factoryFn;
     }),
   },
@@ -24,6 +22,10 @@ import propertyControllerFactory from '../property';
 
 // Build a mock strapi instance (fresh per test)
 function makeStrapi() {
+  const mockService = {
+    getFocusQuery: vi.fn(),
+    clearNew: vi.fn(),
+  };
   return {
     db: {
       query: vi.fn().mockReturnValue({
@@ -37,6 +39,8 @@ function makeStrapi() {
     entityService: {
       findMany: vi.fn(),
     },
+    service: vi.fn().mockReturnValue(mockService),
+    _mockService: mockService,
   };
 }
 
@@ -61,61 +65,31 @@ describe('property controller', () => {
 
   beforeEach(() => {
     strapi = makeStrapi();
-    // The mock returns the factory function itself; call it to get actions
     actions = (propertyControllerFactory as any)({ strapi });
     vi.clearAllMocks();
   });
 
   // =================== clearNew ===================
   describe('clearNew', () => {
-    it('should return deleted count with photosDeleted', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      (queryResult.deleteMany as any).mockResolvedValue({ count: 5 });
-      const ctx = makeCtx();
+    it('should delegate to service.clearNew and return result', async () => {
+      const expectedResult = { deleted: 5, photosDeleted: 2 };
+      strapi._mockService.clearNew.mockResolvedValue(expectedResult);
 
+      const ctx = makeCtx();
       await actions.clearNew(ctx);
 
-      expect(strapi.db.query).toHaveBeenCalledWith('api::property.property');
-      expect(ctx.body).toEqual({ deleted: 5, photosDeleted: 0 });
+      expect(strapi.service).toHaveBeenCalledWith('api::property.property');
+      expect(strapi._mockService.clearNew).toHaveBeenCalled();
+      expect(ctx.body).toEqual(expectedResult);
     });
 
     it('should return 0 when nothing deleted', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      (queryResult.deleteMany as any).mockResolvedValue({ count: 0 });
-      const ctx = makeCtx();
+      strapi._mockService.clearNew.mockResolvedValue({ deleted: 0, photosDeleted: 0 });
 
+      const ctx = makeCtx();
       await actions.clearNew(ctx);
 
       expect(ctx.body).toEqual({ deleted: 0, photosDeleted: 0 });
-    });
-
-    it('should pass status!=in_progress filter', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
-      (queryResult.deleteMany as any) = deleteMany;
-      const ctx = makeCtx();
-
-      await actions.clearNew(ctx);
-
-      expect(deleteMany).toHaveBeenCalledWith({ where: { status: { $ne: 'in_progress' } } });
-    });
-
-    it('should delete photo directories for new properties', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([
-        { documentId: 'doc-aaa' },
-        { documentId: 'doc-bbb' },
-      ]);
-      (queryResult.deleteMany as any).mockResolvedValue({ count: 2 });
-      const ctx = makeCtx();
-
-      await actions.clearNew(ctx);
-
-      expect(fs.rm).toHaveBeenCalledTimes(2);
-      expect(ctx.body).toEqual({ deleted: 2, photosDeleted: 2 });
     });
   });
 
@@ -183,7 +157,6 @@ describe('property controller', () => {
       const ctx = makeCtx({ params: { documentId: 'doc1', filename: '../../etc/passwd' } });
       await actions.servePhoto(ctx);
 
-      // path.basename strips traversal — the file path should be safe
       const accessPath = (fs.access as any).mock.calls[0]?.[0] as string;
       expect(accessPath).not.toContain('../');
       expect(accessPath).toContain('data/photos/doc1/passwd');
@@ -204,243 +177,126 @@ describe('property controller', () => {
 
   // =================== getFocus ===================
   describe('getFocus', () => {
-    // Helper: set up raw to return count first, then data rows
-    function setupRaw(total: number, rows: any[]) {
-      const raw = strapi.db.connection.raw as ReturnType<typeof vi.fn>;
-      raw
-        .mockResolvedValueOnce({ rows: [{ total: String(total) }] }) // COUNT query
-        .mockResolvedValueOnce({ rows }); // data query
-    }
-
-    it('should return data with meta using default threshold 20', async () => {
-      setupRaw(1, [{ id: 1, document_id: 'd1', title: 'Test', tags: '["tag1"]' }]);
+    it('should parse query params and delegate to service.getFocusQuery', async () => {
+      const expectedResult = {
+        data: [{ id: 1, documentId: 'd1', title: 'Test' }],
+        meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, threshold: 20, filters: {} },
+      };
+      strapi._mockService.getFocusQuery.mockResolvedValue(expectedResult);
 
       const ctx = makeCtx({ query: {} });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.threshold).toBe(20);
-      expect(ctx.body.meta.page).toBe(1);
-      expect(ctx.body.meta.pageSize).toBe(20);
-      expect(ctx.body.data).toHaveLength(1);
-      expect(ctx.body.data[0].tags).toEqual(['tag1']); // JSON parsed
+      expect(strapi.service).toHaveBeenCalledWith('api::property.property');
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith({
+        threshold: 20,
+        city: undefined,
+        property_type: undefined,
+        tags: undefined,
+        sort: '-focus_score',
+        page: 1,
+        pageSize: 20,
+      });
+      expect(ctx.body).toEqual(expectedResult);
     });
 
-    it('should use custom threshold', async () => {
-      setupRaw(0, []);
+    it('should pass custom threshold to service', async () => {
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { threshold: '50' } });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.threshold).toBe(50);
-      // The first raw call should include threshold in params
-      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(firstRawCall[1]).toContain(50);
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 50 })
+      );
     });
 
-    it('should build single city = ? condition', async () => {
-      setupRaw(0, []);
+    it('should pass city filter to service', async () => {
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { city: 'moscow' } });
       await actions.getFocus(ctx);
 
-      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
-      const sql = firstRawCall[0] as string;
-      expect(sql).toContain('city = ?');
-      expect(firstRawCall[1]).toContain('moscow');
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ city: 'moscow' })
+      );
     });
 
-    it('should build IN clause for comma-separated cities', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { city: 'moscow,spb,kazan' } });
-      await actions.getFocus(ctx);
-
-      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
-      const sql = firstRawCall[0] as string;
-      expect(sql).toContain('city IN (?,?,?)');
-      expect(firstRawCall[1]).toEqual(expect.arrayContaining(['moscow', 'spb', 'kazan']));
-    });
-
-    it('should add property_type condition', async () => {
-      setupRaw(0, []);
+    it('should pass property_type filter to service', async () => {
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { property_type: 'apartment' } });
       await actions.getFocus(ctx);
 
-      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
-      const sql = firstRawCall[0] as string;
-      expect(sql).toContain('property_type = ?');
-      expect(firstRawCall[1]).toContain('apartment');
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ property_type: 'apartment' })
+      );
     });
 
-    it('should build LIKE conditions for tags', async () => {
-      setupRaw(0, []);
+    it('should pass tags filter to service', async () => {
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { tags: 'undervalued,new' } });
       await actions.getFocus(ctx);
 
-      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
-      const sql = firstRawCall[0] as string;
-      // Should have two LIKE conditions
-      const likeMatches = sql.match(/tags LIKE \?/g);
-      expect(likeMatches).toHaveLength(2);
-      // Params should include wrapped tag strings
-      expect(firstRawCall[1]).toEqual(expect.arrayContaining(['%"undervalued"%', '%"new"%']));
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: 'undervalued,new' })
+      );
     });
 
-    it('should use default sort -focus_score → DESC focus_score', async () => {
-      setupRaw(0, []);
+    it('should pass sort param to service', async () => {
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
-      const ctx = makeCtx({ query: {} });
+      const ctx = makeCtx({ query: { sort: '-price_per_sqm' } });
       await actions.getFocus(ctx);
 
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      const sql = dataRawCall[0] as string;
-      expect(sql).toContain('ORDER BY focus_score DESC');
-    });
-
-    it('should handle ascending sort (no - prefix)', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { sort: 'price_per_sqm' } });
-      await actions.getFocus(ctx);
-
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      const sql = dataRawCall[0] as string;
-      expect(sql).toContain('ORDER BY price_per_sqm ASC');
-    });
-
-    it('should handle descending sort (with - prefix)', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { sort: '-area_sqm' } });
-      await actions.getFocus(ctx);
-
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      const sql = dataRawCall[0] as string;
-      expect(sql).toContain('ORDER BY area_sqm DESC');
-    });
-
-    it('should ignore disallowed sort fields and use default', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { sort: 'hacker_field' } });
-      await actions.getFocus(ctx);
-
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      const sql = dataRawCall[0] as string;
-      expect(sql).toContain('ORDER BY focus_score');
-      expect(sql).not.toContain('hacker_field');
-    });
-
-    it('should map createdAt to created_at column', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { sort: '-createdAt' } });
-      await actions.getFocus(ctx);
-
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      const sql = dataRawCall[0] as string;
-      expect(sql).toContain('ORDER BY created_at DESC');
-    });
-
-    it('should apply pagination with LIMIT and OFFSET', async () => {
-      setupRaw(50, []);
-
-      const ctx = makeCtx({ query: { page: '3', pageSize: '10' } });
-      await actions.getFocus(ctx);
-
-      const dataRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[1];
-      // params should be [...filterParams, pageSize, offset]
-      const params = dataRawCall[1] as any[];
-      // Last two are pageSize, offset
-      expect(params[params.length - 2]).toBe(10); // pageSize
-      expect(params[params.length - 1]).toBe(20); // (3-1)*10 = 20
-    });
-
-    it('should compute totalPages correctly', async () => {
-      setupRaw(25, []);
-
-      const ctx = makeCtx({ query: { pageSize: '10' } });
-      await actions.getFocus(ctx);
-
-      expect(ctx.body.meta.totalPages).toBe(3); // ceil(25/10)
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: '-price_per_sqm' })
+      );
     });
 
     it('should clamp pageSize to max 100', async () => {
-      setupRaw(0, []);
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { pageSize: '500' } });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.pageSize).toBe(100);
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ pageSize: 100 })
+      );
     });
 
     it('should clamp pageSize to min 1', async () => {
-      setupRaw(0, []);
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { pageSize: '-5' } });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.pageSize).toBe(1);
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ pageSize: 1 })
+      );
     });
 
     it('should clamp page to min 1', async () => {
-      setupRaw(0, []);
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { page: '-3' } });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.page).toBe(1);
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1 })
+      );
     });
 
     it('should handle non-numeric threshold gracefully (defaults to 20)', async () => {
-      setupRaw(0, []);
+      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { threshold: 'abc' } });
       await actions.getFocus(ctx);
 
-      expect(ctx.body.meta.threshold).toBe(20); // Number('abc') || 20
-    });
-
-    it('should handle total from rows[0].total (non-string)', async () => {
-      // Some DB drivers return the total as a number
-      const raw = strapi.db.connection.raw as ReturnType<typeof vi.fn>;
-      raw
-        .mockResolvedValueOnce({ rows: [{ total: 42 }] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      const ctx = makeCtx({ query: {} });
-      await actions.getFocus(ctx);
-
-      expect(ctx.body.meta.total).toBe(42);
-    });
-
-    it('should handle total from flat array (no .rows wrapper)', async () => {
-      const raw = strapi.db.connection.raw as ReturnType<typeof vi.fn>;
-      // Some drivers return [{total: ...}] directly
-      raw
-        .mockResolvedValueOnce([{ total: '7' }])  // count
-        .mockResolvedValueOnce([]);                  // data
-
-      const ctx = makeCtx({ query: {} });
-      await actions.getFocus(ctx);
-
-      expect(ctx.body.meta.total).toBe(7);
-    });
-
-    it('should pass back filters in meta', async () => {
-      setupRaw(0, []);
-
-      const ctx = makeCtx({ query: { city: 'moscow', property_type: 'apartment', tags: 'new', sort: '-price_per_sqm' } });
-      await actions.getFocus(ctx);
-
-      expect(ctx.body.meta.filters).toEqual({
-        city: 'moscow',
-        property_type: 'apartment',
-        tags: 'new',
-        sort: '-price_per_sqm',
-      });
+      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 20 })
+      );
     });
   });
 });
