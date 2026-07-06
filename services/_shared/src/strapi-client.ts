@@ -139,77 +139,78 @@ export async function createProperty(props: {
   rules?: ParseRules;
 }): Promise<any> {
   // Извлекаем rules из props чтобы не утекал в POST payload
-  const { rules, ...propertyData } = props as any;
+  // (деструктурируем ПОСЛЕ всех мутаций props — ниже перед POST)
+  const { rules, ...restProps } = props as any;
 
-  if (!isCommercialProperty(props)) {
-    logger.warn(`Skipping non-commercial: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
+  if (!isCommercialProperty(restProps)) {
+    logger.warn(`Skipping non-commercial: "${restProps.title}" [${restProps.property_type}/${restProps.auction_type}] source=${restProps.source}`);
     return null;
   }
 
   // Правила парсинга: стоп-слова
   if (rules?.stopWords?.length) {
-    const text = ((props.title || '') + ' ' + (props.description || '')).toLowerCase();
+    const text = ((restProps.title || '') + ' ' + (restProps.description || '')).toLowerCase();
     for (const word of rules.stopWords) {
       if (text.includes(word.toLowerCase())) {
-        logger.warn(`Skipping stop word "${word}": "${props.title}"`);
+        logger.warn(`Skipping stop word "${word}": "${restProps.title}"`);
         return null;
       }
     }
   }
 
   // Правила парсинга: диапазон цен
-  if (props.price != null) {
-    if (rules?.priceFrom != null && props.price < rules.priceFrom) {
-      logger.warn(`Skipping below price_from (${rules.priceFrom}): "${props.title}" price=${props.price}`);
+  if (restProps.price != null) {
+    if (rules?.priceFrom != null && restProps.price < rules.priceFrom) {
+      logger.warn(`Skipping below price_from (${rules.priceFrom}): "${restProps.title}" price=${restProps.price}`);
       return null;
     }
-    if (rules?.priceTo != null && props.price > rules.priceTo) {
-      logger.warn(`Skipping above price_to (${rules.priceTo}): "${props.title}" price=${props.price}`);
+    if (rules?.priceTo != null && restProps.price > rules.priceTo) {
+      logger.warn(`Skipping above price_to (${rules.priceTo}): "${restProps.title}" price=${restProps.price}`);
       return null;
     }
   }
 
   // Правила парсинга: диапазон площади
-  if (props.area_sqm != null) {
-    if (rules?.areaFrom != null && props.area_sqm < rules.areaFrom) {
-      logger.warn(`Skipping below area_from (${rules.areaFrom}): "${props.title}" area=${props.area_sqm}`);
+  if (restProps.area_sqm != null) {
+    if (rules?.areaFrom != null && restProps.area_sqm < rules.areaFrom) {
+      logger.warn(`Skipping below area_from (${rules.areaFrom}): "${restProps.title}" area=${restProps.area_sqm}`);
       return null;
     }
-    if (rules?.areaTo != null && props.area_sqm > rules.areaTo) {
-      logger.warn(`Skipping above area_to (${rules.areaTo}): "${props.title}" area=${props.area_sqm}`);
+    if (rules?.areaTo != null && restProps.area_sqm > rules.areaTo) {
+      logger.warn(`Skipping above area_to (${rules.areaTo}): "${restProps.title}" area=${restProps.area_sqm}`);
       return null;
     }
   }
 
   // Правила парсинга: города (если фильтр указан — пропускаем объекты из других городов)
-  if (rules?.cities?.length && props.city) {
-    if (!rules.cities.includes(props.city)) {
-      logger.warn(`Skipping city "${props.city}" not in [${rules.cities}]: "${props.title}"`);
+  if (rules?.cities?.length && restProps.city) {
+    if (!rules.cities.includes(restProps.city)) {
+      logger.warn(`Skipping city "${restProps.city}" not in [${rules.cities}]: "${restProps.title}"`);
       return null;
     }
   }
 
   // Авто-расчёт price_per_sqm если есть price и area (до API-вызовов)
-  if (!props.price_per_sqm && props.price && props.area_sqm && props.area_sqm > 0) {
-    props.price_per_sqm = Math.round(props.price / props.area_sqm);
+  if (!restProps.price_per_sqm && restProps.price && restProps.area_sqm && restProps.area_sqm > 0) {
+    restProps.price_per_sqm = Math.round(restProps.price / restProps.area_sqm);
   }
 
   // Фильтр: без цены за м² объект не нужен (до API-вызовов)
-  if (!props.price_per_sqm || props.price_per_sqm <= 0) {
-    logger.warn(`Skipping no-price-data: "${props.title}" price=${props.price} area=${props.area_sqm} source=${props.source}`);
+  if (!restProps.price_per_sqm || restProps.price_per_sqm <= 0) {
+    logger.warn(`Skipping no-price-data: "${restProps.title}" price=${restProps.price} area=${restProps.area_sqm} source=${restProps.source}`);
     return null;
   }
 
   // Дедупликация — вторая линия защиты (первая в parse-handler)
-  if (await propertyExists(props.source, props.external_id)) {
-    logger.warn(`Skipping duplicate: "${props.title}" source=${props.source} ext=${props.external_id}`);
+  if (await propertyExists(restProps.source, restProps.external_id)) {
+    logger.warn(`Skipping duplicate: "${restProps.title}" source=${restProps.source} ext=${restProps.external_id}`);
     return null;
   }
 
   const res = await fetch(`${BASE}/properties`, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ data: propertyData }),
+    body: JSON.stringify({ data: restProps }),
   });
   if (!res.ok) {
     const body = await res.text();
