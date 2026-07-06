@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.25)
+## Текущее состояние (июль 2026, v1.1.27+)
 
-Версия: 1.1.25
+Версия: 1.1.27+ (post-audit, post-UI-overhaul)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -247,7 +247,7 @@ deploy-prod.sh + бамп версии).
 - **Inline-редактирование расписания** на `/settings` (таб Парсеры)
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
-- **Unit тесты** — `npm run test` (vitest). 20 файлов, 394 теста (root) + 8 файлов, 102 теста (app). Включают buildParseRules (14 тестов), createProperty rules enforcement, queue, pipeline, cron, focusEngine, **extractPrice/extractArea парсеров**, **composables (usePropertyData, useFocusTab)**.
+- **Unit тесты** — `npm run test` (vitest). 27 файлов, 578 тестов (root) + 14 файлов (app). Включают buildParseRules, createProperty, queue, pipeline, cron, focusEngine, buildPropertyWhere, **extractPrice/extractArea всех 10 парсеров**, **composables (usePropertyData, useFocusTab, usePropertyFilters, useToast)**.
 - **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. 29 тестов: unauthenticated (7), auth flow (4), dashboard (4), properties (6), settings (6), property detail (2). Пароль из TEST_USER_PASSWORD env var.
 - **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
 - **API security** — все endpoints требуют JWT (роль Authenticated).
