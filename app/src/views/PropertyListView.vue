@@ -749,7 +749,7 @@ function fetchFocusItems() {
     pageSize: focusPageSize,
   }
   if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-  if (focusFilters.property_type.length) params.type = focusFilters.property_type.join(',')
+  if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
   if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
   if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
   if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
@@ -1000,7 +1000,7 @@ async function exportCSV() {
       pageSize: 1000,
     }
     if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
-    if (focusFilters.property_type.length) params.type = focusFilters.property_type.join(',')
+    if (focusFilters.property_type.length) params.property_type = focusFilters.property_type.join(',')
     if (focusFilters.tags.length > 0) params.tags = focusFilters.tags.join(',')
     if (focusFilters.priceFrom) params.priceFrom = focusFilters.priceFrom
     if (focusFilters.priceTo) params.priceTo = focusFilters.priceTo
