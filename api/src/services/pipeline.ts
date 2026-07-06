@@ -184,7 +184,41 @@ export class PipelineService {
 
   async cancel(): Promise<void> {
     this.cancelRequested = true;
-    await this.updateState({ status: 'cancelling' }, 'Отмена...');
+
+    // Hard reset: clear all parse/analyze/digest queues so the pipeline can finish
+    try {
+      const qs = getQueueService();
+      const stats = qs.getDetailedStats();
+      const queues = stats.queues || stats;
+      for (const qName of Object.keys(queues)) {
+        if (qName.startsWith('parse-') || qName === 'analyze-property' || qName === 'digest-send') {
+          qs.clearQueue(qName);
+        }
+      }
+    } catch { /* ok */ }
+
+    // Immediately set terminal state so UI updates
+    await this.updateState({
+      status: 'idle',
+      stage: 'cancelled',
+    }, 'Пайплайн отменён');
+  }
+
+  // ── Force Reset (for stuck states) ──
+
+  async forceReset(): Promise<void> {
+    this.cancelRequested = true;
+    try {
+      const qs = getQueueService();
+      const stats = qs.getDetailedStats();
+      const queues = stats.queues || stats;
+      for (const qName of Object.keys(queues)) {
+        if (qName.startsWith('parse-') || qName === 'analyze-property' || qName === 'digest-send') {
+          qs.clearQueue(qName);
+        }
+      }
+    } catch { /* ok */ }
+    await this.resetState();
   }
 
   private isCancelled(): boolean {

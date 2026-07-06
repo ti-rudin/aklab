@@ -10,13 +10,13 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading && !stats" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-      <div v-for="i in 3" :key="i" class="skeleton h-24 rounded-xl" />
+    <div v-if="loading && !stats" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div v-for="i in 2" :key="i" class="skeleton h-24 rounded-xl" />
     </div>
 
     <template v-else>
       <!-- Статистика -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
         <div @click="router.push('/properties')"
           class="rounded-xl p-5 border cursor-pointer transition-all hover:scale-[1.02]" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
           <p class="text-sm" style="color: var(--text-muted)">Всего объектов</p>
@@ -28,10 +28,7 @@
           <p style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem;">Добавленные в фокус</p>
           <p style="color: var(--accent); white-space: nowrap; font-weight: 700; margin-top: 0.25rem; font-size: clamp(1.2rem, 4vw, 1.875rem);">{{ stats?.inFocus ?? '—' }}</p>
         </div>
-        <div class="rounded-xl p-5 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-          <p class="text-sm" style="color: var(--text-muted)">Средний скор</p>
-          <p class="text-3xl font-bold mt-1" style="color: var(--text-main)">{{ stats?.avgScore ?? '—' }}</p>
-        </div>
+
       </div>
 
       <!-- Горячие объекты -->
@@ -100,7 +97,6 @@ const router = useRouter()
 interface DashboardStats {
   total: number
   inFocus: number
-  avgScore: string
 }
 
 interface TopProperty {
@@ -151,14 +147,7 @@ async function fetchStats() {
     const focusRes = await api.get('/properties/focus', { params: { threshold: 20, pageSize: 1 } })
     const inFocus = focusRes.data.meta?.total ?? 0
 
-    // Average score from focus endpoint top items
-    const avgRes = await api.get('/properties/focus', { params: { threshold: 0, pageSize: 100, sort: '-focus_score' } })
-    const items = avgRes.data.data || []
-    const avgScore = items.length > 0
-      ? (items.reduce((s: number, i: any) => s + (i.focus_score || 0), 0) / items.length).toFixed(1)
-      : '0'
-
-    stats.value = { total, inFocus, avgScore }
+    stats.value = { total, inFocus }
   } catch (e: any) {
     error.value = 'Ошибка загрузки статистики'
   }

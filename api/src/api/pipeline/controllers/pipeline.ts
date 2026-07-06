@@ -82,6 +82,21 @@ export default {
   },
 
   /**
+   * POST /api/pipeline/reset
+   * Hard reset for stuck pipeline states.
+   */
+  async reset(ctx: any) {
+    try {
+      const pipeline = getPipeline();
+      await pipeline.forceReset();
+      ctx.body = { ok: true, message: 'Pipeline state reset' };
+    } catch (err: any) {
+      ctx.body = { ok: false, message: err.message };
+      ctx.status = 500;
+    }
+  },
+
+  /**
    * GET /api/pipeline/status
    * Returns current pipeline state (for reconnect/page load).
    */

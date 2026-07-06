@@ -16,6 +16,12 @@ export default {
       config: { auth: false, policies: [] },
     },
     {
+      method: 'POST',
+      path: '/pipeline/reset',
+      handler: 'pipeline.reset',
+      config: { auth: false, policies: [] },
+    },
+    {
       method: 'GET',
       path: '/pipeline/status',
       handler: 'pipeline.status',

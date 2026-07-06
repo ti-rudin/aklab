@@ -182,13 +182,22 @@
                 <template v-if="pipelineDone">✓ Ещё раз</template>
                 <template v-else>▶ Ручной запуск</template>
               </button>
-              <button
-                v-else
-                @click="cancelPipeline"
-                class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all"
-              >
-                ◼ Отменить
-              </button>
+              <template v-else>
+                <button
+                  @click="cancelPipeline"
+                  class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all"
+                >
+                  ◼ Отменить
+                </button>
+                <button
+                  @click="resetPipeline"
+                  class="px-3 py-2 rounded-lg text-xs font-medium border transition-colors hover:opacity-80"
+                  style="border-color: var(--border-subtle); color: var(--text-muted)"
+                  title="Сбросить состояние (если зависло)"
+                >
+                  ↻ Сбросить
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -532,6 +541,19 @@ async function startPipeline() {
 async function cancelPipeline() {
   try {
     await api.post('/pipeline/cancel')
+    // Immediately reset local state
+    updatePipelineState({ status: 'idle', stage: 'cancelled', message: 'Пайплайн отменён' })
+    stopPolling()
+    if (eventSource) { eventSource.close(); eventSource = null }
+  } catch { /* ok */ }
+}
+
+async function resetPipeline() {
+  try {
+    await api.post('/pipeline/reset')
+    updatePipelineState({ status: 'idle', stage: 'idle', message: '' })
+    stopPolling()
+    if (eventSource) { eventSource.close(); eventSource = null }
   } catch { /* ok */ }
 }
 

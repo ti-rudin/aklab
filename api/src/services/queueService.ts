@@ -113,6 +113,13 @@ export class QueueService {
   }
 
   /**
+   * Очистить все pending/active задачи в очереди (для pipeline cancel).
+   */
+  clearQueue(queueName: string): number {
+    return this.queue.clearQueue(queueName);
+  }
+
+  /**
    * Graceful close.
    */
   async close(): Promise<void> {

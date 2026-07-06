@@ -74,6 +74,10 @@ export declare class SqliteQueue {
      */
     cancelJob(id: number): boolean;
     /**
+     * Очистить все pending/active задачи в очереди (для pipeline cancel)
+     */
+    clearQueue(queue: string): number;
+    /**
      * Ручная очистка
      */
     clean(olderThanMs?: number): number;

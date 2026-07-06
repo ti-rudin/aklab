@@ -320,6 +320,17 @@ export class SqliteQueue {
   }
 
   /**
+   * Очистить все pending/active задачи в очереди (для pipeline cancel)
+   */
+  clearQueue(queue: string): number {
+    const now = Date.now();
+    const stmt = this.db.prepare(
+      "UPDATE jobs SET status = 'failed', error = 'queue cleared', completed_at = ? WHERE queue = ? AND status IN ('pending', 'active')"
+    );
+    return stmt.run(now, queue).changes;
+  }
+
+  /**
    * Ручная очистка
    */
   clean(olderThanMs?: number): number {
