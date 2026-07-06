@@ -4,6 +4,24 @@
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
+**Сделано в сессии 6 июля 2026 (v1.1.29 — planopus3: аудит → реализация):**
+- ✅ **Toast уведомления (U1,U2,U3)** — `console.warn`/`alert()`/silent catch → `useToast()` в 4 Vue файлах
+- ✅ **Серверный поиск focus (U4)** — `search` param в getFocusQuery, debounce 300ms, client-side фильтр убран
+- ✅ **Backend geocoding endpoint (U5)** — `GET /properties/:id/geocode` с кэшем в БД, клиентский Nominatim убран
+- ✅ **CIAN commercial link (U6)** — `offer_type=commercial`, object_type офис/торговля/склад
+- ✅ **tagLabel() formatter (U7)** — 10 переводов slug-тегов, применён в Dashboard
+- ✅ **a11y lightbox (U8)** — keyboard (Esc/←/→), Teleport, role="dialog", aria-modal
+- ✅ **a11y bulk bar (U9)** — role="toolbar", aria-live, aria-label на кнопках
+- ✅ **useFocusParams composable (U11)** — buildFocusParams + buildAnalyzeBody, дедуп в 3 функциях
+- ✅ **documentId скрыт из UI (U12)**
+- ✅ **usePolling composable (U13)** — auto-cleanup на unmount, замена for-loop
+- ✅ **getStats оптимизация (B3)** — 6→4 параллельных SQL-запроса
+- ✅ **undervaluedCount fix (B4)** — limit:1 → db.query + length
+- ✅ **Закрыты публичные endpoints (B1)** — /focus и /stats требуют JWT
+- ✅ **578/578 тестов**, vue-tsc чисто, smoke test 26/26
+- Gotcha: `resp.json()` → `unknown` в TS strict (gotcha #57), FocusFilters string/number (gotcha #58)
+- Новые файлы: `composables/useFocusParams.ts`, `composables/usePolling.ts`
+
 **Сделано в сессии 24 июня 2026 (v1.0.37 — миграция инфраструктуры):**
 - ✅ **Новый prod-сервер** — 213.184.136.221:5733 (root, Ubuntu 26.04, nedvizhka, 15GB RAM)
 - ✅ **Node v20.20.2 + PM2 7.0.1 + gh (ti-rudin)** — настроено на новом сервере

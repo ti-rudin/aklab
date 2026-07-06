@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.28+)
+## Текущее состояние (июль 2026, v1.1.29+)
 
-Версия: 1.1.28+ (post-audit, post-UI-overhaul, rate-limit fix)
+Версия: 1.1.29+ (post-planopus3: toast, search, geocode, a11y, refactor)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -318,8 +318,10 @@ deploy-prod.sh + бамп версии).
   - **app/src/components/** — Footer, SkeletonLoader, SkeletonTable
   - **app/src/components/properties/** — ParseLaunchPanel, PropertyAllTab, PropertyFocusTab, ConfirmClearDialog, PropertyTable, PropertyCard
   - **app/src/components/settings/** — RulesPanel, ParsingRulesPanel, SourcesPanel, MarketReferencesPanel
+  - **app/src/composables/** — usePropertyData, useFocusTab, useToast, **useFocusParams** (buildFocusParams/buildAnalyzeBody), **usePolling** (auto-cleanup on unmount)
   - **app/src/stores/** — auth.ts (Pinia)
   - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
+  - **app/src/utils/formatters.ts** — cityLabel, typeLabel, statusLabel, statusStyle, formatPrice, **tagLabel** (10 переводов slug-тегов)
   - **scripts/smoke-test.js** — smoke тест (npm run smoke)
   - **scripts/generate-changelog.js** — генератор changelog из git commits
 - На проде (213.184.136.221): 15 PM2 процессов (api, app, 10 парсеров,
@@ -332,6 +334,9 @@ deploy-prod.sh + бамп версии).
 - Vite proxy: `/api/*` → `http://localhost:1338` (только в dev-режиме)
 - Source schema: +schedule (cron expr, дефолт "0 3 * * *"), +health_port (int)
 - Health proxy: `GET /api/sources/:id/health` → Strapi проксирует на `localhost:{health_port}/health`
+- **Geocoding endpoint** — `GET /api/properties/:id/geocode` → Nominatim + кэш lat/lng в БД (auth required)
+- **Серверный поиск в focus** — `GET /api/properties/focus?search=...` → SQL LIKE по title/address (debounce 300ms на фронте)
+- **CIAN deep-link** — commercial параметры: `offer_type=commercial`, `object_type[0]=1&[1]=2&[2]=5` (офис/торговля/склад)
 - Cron per-source: каждый Source получает свой cron job по `Source.schedule`
 - **Strapi 5 sort** — поле `createdAt` (camelCase), НЕ `created_at`. Если
   sort вернёт пустой массив — проверить имя поля.

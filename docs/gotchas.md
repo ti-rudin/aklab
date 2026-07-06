@@ -241,4 +241,9 @@
 56. **Rate-limit пропускает OPTIONS (CORS preflight)** — `ctx.method === 'OPTIONS'`
     должен return next() без подсчёта. Иначе браузерные preflight запросы
     (которые идут каждые 3 сек при polling) съедают лимит за минуту.
+57. **resp.json() возвращает `unknown`** — в TypeScript strict mode `fetch().json()`
+    возвращает `unknown`, не `any`. Нужен явный `as any[]` или `as Record<string, any>`.
+    Symptom: `error TS18046: 'results' is of type 'unknown'`.
+58. **FocusFilters.priceFrom — string из input** — Vue `<input type="number">` даёт
+    `string`, не `number`. Интерфейс `FocusFilters` должен принимать `string | number | null`.
 
