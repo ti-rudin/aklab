@@ -4,12 +4,22 @@
     style="background: var(--bg-elevated); border-color: var(--border-subtle)"
     @click="$emit('open')"
   >
-    <!-- Zone 1: (checkbox) + Title + badges -->
-    <div class="flex items-start justify-between gap-2 mb-2">
-      <div class="flex items-start gap-2 flex-1 min-w-0">
-        <input v-if="variant === 'focus'" type="checkbox" :checked="selected" @change="$emit('toggle-select')" @click.stop
-          class="rounded mt-0.5 flex-shrink-0" style="accent-color: var(--accent)" />
-        <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
+    <!-- Row 1: Title (always fully visible, wraps if needed) -->
+    <div class="flex items-start gap-2 mb-1">
+      <input v-if="variant === 'focus'" type="checkbox" :checked="selected" @change="$emit('toggle-select')" @click.stop
+        class="rounded mt-0.5 flex-shrink-0" style="accent-color: var(--accent)" />
+      <h3 class="font-semibold text-sm flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
+    </div>
+
+    <!-- Row 2: badges + meta line -->
+    <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
+      <div class="text-xs truncate flex-1 min-w-0" style="color: var(--text-muted)">
+        <span v-if="item.address">{{ item.address }}</span>
+        <span v-if="item.address && (item.city || item.property_type)"> · </span>
+        <span v-if="item.city">{{ cityLabel(item.city) }}</span>
+        <span v-if="item.city && item.property_type"> · </span>
+        <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+        <span v-if="item.source"> · {{ item.source }}</span>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
         <template v-if="variant === 'focus'">
@@ -21,16 +31,6 @@
           <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">⚠ {{ item.deviation_percent }}%</span>
         </template>
       </div>
-    </div>
-
-    <!-- Zone 2: Meta line -->
-    <div class="text-xs mb-3 truncate" style="color: var(--text-muted)">
-      <span v-if="item.address">{{ item.address }}</span>
-      <span v-if="item.address && (item.city || item.property_type)"> · </span>
-      <span v-if="item.city">{{ cityLabel(item.city) }}</span>
-      <span v-if="item.city && item.property_type"> · </span>
-      <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
-      <span v-if="item.source"> · {{ item.source }}</span>
     </div>
 
     <!-- Zone 3: Metric tiles -->
