@@ -63,6 +63,7 @@ export default factories.createCoreController("api::property.property", ({ strap
       city: query.city as string | undefined,
       property_type: query.property_type as string | undefined,
       tags: query.tags as string | undefined,
+      search: (query.search as string) || undefined,
       sort: (query.sort as string) || "-focus_score",
       page: Math.max(1, Number(query.page) || 1),
       pageSize: Math.min(100, Math.max(1, Number(query.pageSize) || 20)),
@@ -158,6 +159,54 @@ export default factories.createCoreController("api::property.property", ({ strap
     } catch (err: any) {
       ctx.status = 500;
       ctx.body = { error: 'Failed to queue photo fetch', details: err.message };
+    }
+  },
+
+  /**
+   * GET /api/properties/:id/geocode
+   * Геокодирование объекта через Nominatim, кеширование в БД.
+   */
+  async geocode(ctx) {
+    const { id } = ctx.params;
+    const property = await strapi.db.query('api::property.property').findOne({
+      where: { documentId: id },
+    });
+    if (!property) {
+      ctx.status = 404;
+      ctx.body = { error: 'Property not found' };
+      return;
+    }
+    // Return cached coordinates if available
+    if (property.latitude && property.longitude) {
+      ctx.body = { latitude: property.latitude, longitude: property.longitude, cached: true };
+      return;
+    }
+    if (!property.address) {
+      ctx.status = 400;
+      ctx.body = { error: 'No address' };
+      return;
+    }
+    try {
+      const query = encodeURIComponent(property.address);
+      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
+        headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' }
+      });
+      const results = await resp.json();
+      if (results.length === 0) {
+        ctx.body = { latitude: null, longitude: null, cached: false };
+        return;
+      }
+      const lat = parseFloat(results[0].lat);
+      const lng = parseFloat(results[0].lon);
+      // Cache in DB
+      await strapi.db.query('api::property.property').update({
+        where: { documentId: id },
+        data: { latitude: lat, longitude: lng },
+      });
+      ctx.body = { latitude: lat, longitude: lng, cached: false };
+    } catch (err: any) {
+      ctx.status = 500;
+      ctx.body = { error: 'Geocoding failed', details: err.message };
     }
   },
 }));
