@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.27+)
+## Текущее состояние (июль 2026, v1.1.28+)
 
-Версия: 1.1.27+ (post-audit, post-UI-overhaul)
+Версия: 1.1.28+ (post-audit, post-UI-overhaul, rate-limit fix)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -268,7 +268,7 @@ deploy-prod.sh + бамп версии).
   - **Cancel** — кнопка «Отменить» в UI, статус `cancelling`.
   - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
   - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
-  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `GET /api/pipeline/stream` (SSE).
+  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`, `GET /api/pipeline/stream` (SSE). Все endpoints — `auth: false`.
   - **3 триггера в UI:**
     1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
     2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.

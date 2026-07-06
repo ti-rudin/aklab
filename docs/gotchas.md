@@ -225,9 +225,20 @@
     из `app/`. Для app-specific пакетов нужно `cd app && npm install` отдельно.
 52. **services.json порт app** — порт был `4173`, фактически запускался на `5174`.
     Health-check показывал false positive offline. Проверять при изменении ecosystem.
-53. **Стратегические auth: false на кастомных routes** — все кастомные routes
-    (cron, pipeline, property) имели `auth: false`. Mutating → `config: {}` (JWT),
-    read-only/SSE → `auth: false`.
+53. **Pipeline POST routes — auth: false** — `POST /pipeline/start|cancel|reset`
+    имеют `auth: false` (как GET /status и /stream). Фронтенд не шлёт JWT
+    на pipeline endpoints — без `auth: false` POST запросы возвращали 500
+    Forbidden. **Исторически** mutating routes (cron, pipeline) имели
+    `config: {}` (JWT required), но pipeline — это UI-driven workflow
+    без чувствительных данных, поэтому auth не нужен.
 54. **Strapi 5 db.query.count()** — может отсутствовать. Безопасный паттерн:
     `const rows = await db.query(uid).findMany({where, select: ['id']}); count = rows.length;`
+55. **express-rate-limit НЕ работает в Strapi 5 (Koa)** — пакет
+    `express-rate-limit` создаёт middleware с сигнатурой `(req, res, next)`,
+    а Strapi 5 использует Koa `(ctx, next)`. Симптом: rate-limit middleware
+    не блокирует запросы, но и не считает лимиты (мёртвый код). Заменён на
+    чистый Koa middleware с in-memory Map + sliding window.
+56. **Rate-limit пропускает OPTIONS (CORS preflight)** — `ctx.method === 'OPTIONS'`
+    должен return next() без подсчёта. Иначе браузерные preflight запросы
+    (которые идут каждые 3 сек при polling) съедают лимит за минуту.
 
