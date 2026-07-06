@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.26",
+    "date": "6 июля 2026",
+    "time": "19:40",
+    "items": [
+      {
+        "text": "Vue-tsc build — типы в тестах + noUncheckedIndexedAccess для vitest",
+        "type": "fix"
+      },
+      {
+        "text": "@aklab/parse-rules — file: зависимость вместо npm registry",
+        "type": "fix"
+      },
+      {
+        "text": "Deploy-prod.sh — symlink @aklab/parse-rules для api/ перед npm install",
+        "type": "fix"
+      },
+      {
+        "text": "Добавлен dist/ для @aklab/parse-rules — npm install из api/ требует скомпилированный пакет",
+        "type": "fix"
+      },
+      {
+        "text": "Compact-doc.md обновлён — результаты аудита v1.1.25",
+        "type": "improvement"
+      },
+      {
+        "text": "Compact-doc.md 787→347 строк — выделены gotchas.md (216) и sessions.md (242)",
+        "type": "improvement"
+      },
+      {
+        "text": "Deploy-prod.sh — комментарии о .env ↔ PM2 daemon env синхронизации",
+        "type": "improvement"
+      },
+      {
+        "text": "Branch-protection.md + deploy-prod.yml — убран auto-deploy, только workflow_dispatch",
+        "type": "improvement"
+      },
+      {
+        "text": "Composables — usePropertyData + useFocusTab unit тесты",
+        "type": "improvement"
+      },
+      {
+        "text": "Pipeline.ts 640 строк → 3 модуля (state/stages/index)",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.23",
     "date": "6 июля 2026",
     "time": "16:33",
