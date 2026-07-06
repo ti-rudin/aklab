@@ -215,9 +215,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.12)
+## Текущее состояние (июль 2026, v1.1.13)
 
-- Версия: 1.1.12
+Версия: 1.1.13
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -270,6 +270,15 @@ deploy-prod.sh + бамп версии).
   - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
 - **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
 - **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
+- **Правила парсинга** (v1.1.13):
+  - **Стоп-слова** — Setting.stop_words (json массив, дефолт `["земельный участок", "земельные участки", "зу", "участок"]`). Парсер пропускает объекты содержащие эти слова в title/description.
+  - **Диапазон цен** — Setting.price_from/price_to (decimal). Объекты вне диапазона пропускаются при парсинге.
+  - **Диапазон площади** — Setting.area_from/area_to (decimal). Объекты вне диапазона пропускаются при парсинге.
+  - **Города** — Setting.monitored_regions (json). Объекты из неотслеживаемых городов пропускаются.
+  - **Правила применяются в** `createProperty()` (`_shared/src/strapi-client.ts`) — через `ParseRules` interface, передаётся из pipeline и cron через queue job data.
+  - **UI** — `/settings` → таб «Правила» → секция «Правила парсинга» (ParsingRulesPanel.vue). Глубина, цена, площадь, города перенесены из «Дайджеста».
+  - **Предзаполнение** — формы ручного запуска на `/properties` и `/settings` предзаполняются из Setting.
+  - **buildParseRules(setting)** — helper в `api/src/services/parseRules.ts` (для API) и `_shared/src/strapi-client.ts` (для парсеров).
 - **Парсеры** (обновлено 05.07.2026):
   - **10 активных парсеров** + 1 отключён (fedresurs — Qrator anti-bot).
   - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 204 объекта, fetchDetails.
@@ -287,6 +296,7 @@ deploy-prod.sh + бамп версии).
   - **api/src/api/** — 7 content-types (Property, Setting singleton,
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
+  - **api/src/services/parseRules.ts** — buildParseRules() helper + ParseRules interface (для pipeline/cron)
   - **api/src/cron/index.ts** — 4 cron-задачи, читают active sources из Source коллекции
   - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions + seedTestUser + seedStrapiAdmin
   - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types, anti-ban, city-detect)
@@ -298,6 +308,7 @@ deploy-prod.sh + бамп версии).
   - **app/src/views/** — Auth, PropertyListView (3 таба), PropertyDetailView,
     SettingsView (4 таба: Дайджест, Правила, Парсеры, Эталоны), ChangelogView, NotFoundView
   - **app/src/components/** — Footer, SkeletonLoader, SkeletonTable
+  - **app/src/components/settings/** — RulesPanel, ParsingRulesPanel, SourcesPanel, MarketReferencesPanel
   - **app/src/stores/** — auth.ts (Pinia)
   - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
   - **scripts/smoke-test.js** — smoke тест (npm run smoke)
@@ -502,9 +513,10 @@ deploy-prod.sh + бамп версии).
 40. **classifyPropertyType DRY** — единая функция в
     `_shared/property-classifier.ts`. Все 10 парсеров импортируют оттуда.
     Раньше у каждого парсера была своя копия с расхождениями.
-41. **Price filter: анализ, не парсинг** — `price_from`/`price_to` в Setting
-    фильтруют АНАЛИЗ (auto-analyze 08:00 + digest), а не парсинг. Парсеры
-    всегда парсят все объекты, фильтр применяется при сравнении с эталонами.
+41. **Price/area filter — и парсинг, и анализ** — `price_from`/`price_to` и
+    `area_from`/`area_to` в Setting фильтруют И парсинг (в `createProperty()`),
+    И анализ. Раньше фильтровали только анализ. С v1.1.13 ParseRules передаётся
+    из pipeline/cron через queue job data в parse-handler → createProperty().
 42. **propertyExists fail-closed** — при non-OK ответе API (500, 401, etc.)
     `propertyExists` возвращает `true` (skip). Раньше возвращала `false`
     → при 500 от API парсер создавал дубликаты. Баг: 1241 дубликат из 3407.
@@ -524,6 +536,13 @@ deploy-prod.sh + бамп версии).
     fire-and-forget PUT'ы удалены в v1.1.7 — stale PUT от предыдущего запуска
     мог arrive ПОСЛЕ bulk reset и перезаписать fetched → fetched > needed.
     Bulk reset pipeline перед enqueue оставлен как дополнительная защита.
+47. **ParseRules — rules не утекает в Strapi POST** — `createProperty()`
+    деструктурирует `rules` из props (`const { rules, ...propertyData } = props`)
+    и отправляет только `propertyData` в POST body. Без этого `rules` утекал
+    бы в Strapi API payload (Strapi 5 молча игнорирует, но это data integrity issue).
+48. **buildParseRules — DRY helper** — единая функция в `api/src/services/parseRules.ts`
+    (для pipeline/cron) и `_shared/src/strapi-client.ts` (для парсеров). Дублирование
+    из-за того что `api/` не зависит от `@aklab/service-shared`.
 
 ## Session handoff (v1.0.37 → следующая сессия)
 
