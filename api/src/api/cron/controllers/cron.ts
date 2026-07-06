@@ -3,6 +3,7 @@
  */
 
 import { getQueueService } from '../../../services/queueService';
+import { getPipelineService } from '../../../services/pipeline';
 import { scorePropertiesBatch } from '../../../services/focusEngine';
 import type { StrapiInstance } from '../../../types/strapi';
 
@@ -56,21 +57,17 @@ export default {
   async analyzeAll(ctx: any) {
     try {
       const s = strapi as unknown as StrapiInstance;
-      const qs = getQueue();
-      const corrId = `manual-analyze-${Date.now()}`;
+      const pipeline = getPipelineService(s);
 
       // Parse optional filters from request body
       const body = ctx.request?.body || {};
       const priceFrom = body.priceFrom ? Number(body.priceFrom) : null;
       const priceTo = body.priceTo ? Number(body.priceTo) : null;
-      const cityFilter = body.city || null; // array of city codes
+      const cityFilter: string[] | null = body.city || null;
       const threshold = body.threshold ? Number(body.threshold) : null;
-      const force = body.force === true; // ручной пересчёт — сбросить и пересчитать
+      const force = body.force === true;
 
-      // Build Strapi filters
-      const filters: any = { status: 'new', is_undervalued: { $null: true } };
-
-      // Force mode: сбросить is_undervalued для пересчёта через db.query
+      // Force mode: сбросить is_undervalued для пересчёта (keep inline for now)
       if (force) {
         const resetWhere: any = { status: 'new' };
         if (priceFrom !== null && !isNaN(priceFrom)) {
@@ -99,33 +96,20 @@ export default {
         strapi.log.info(`[cron] Force reset ${resetCount} properties (is_undervalued → null)`);
       }
 
-      if (priceFrom !== null && !isNaN(priceFrom)) {
-        filters.price = { ...(filters.price || {}), $gte: priceFrom };
-      }
-      if (priceTo !== null && !isNaN(priceTo)) {
-        filters.price = { ...(filters.price || {}), $lte: priceTo };
-      }
-      if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
-        filters.city = { $in: cityFilter };
-      }
-
-      const properties = await s.entityService.findMany('api::property.property', {
-        filters,
-        limit: -1,
+      // Delegate analysis to PipelineService
+      const analyzeResult = await pipeline.analyze({
+        city: cityFilter || undefined,
+        priceFrom: priceFrom != null && !isNaN(priceFrom) ? priceFrom : undefined,
+        priceTo: priceTo != null && !isNaN(priceTo) ? priceTo : undefined,
+        threshold: threshold != null && !isNaN(threshold) ? threshold : undefined,
       });
-
-      for (const prop of properties || []) {
-        qs.addToQueue('analyze-property', {
-          documentId: prop.documentId,
-          ...(threshold !== null && !isNaN(threshold) ? { threshold } : {}),
-        }, { correlationId: corrId });
-      }
 
       ctx.body = {
         ok: true,
-        message: `Enqueued ${properties?.length || 0} properties for analysis`,
-        correlationId: corrId,
-        filters: { priceFrom, priceTo, city: cityFilter, threshold },
+        message: `Analysis complete: ${analyzeResult.undervalued} undervalued`,
+        undervalued: analyzeResult.undervalued,
+        errors: analyzeResult.errors,
+        filters: { priceFrom, priceTo, city: cityFilter, threshold, force },
       };
     } catch (err: any) {
       strapi.log.error(`[cron] analyzeAll error: ${err.message}`);
@@ -136,27 +120,16 @@ export default {
   async sendDigest(ctx: any) {
     try {
       const s = strapi as unknown as StrapiInstance;
-      const qs = getQueue();
-      const corrId = `manual-digest-${Date.now()}`;
+      const pipeline = getPipelineService(s);
 
-      const setting = await s.db.query('api::setting.setting').findOne({});
-      const smtpTo = setting?.smtp_to || undefined;
-
-      // Проверяем включён ли дайджест
-      if (setting?.digest_enabled === false) {
-        ctx.body = { ok: false, message: 'Дайджест отключён в настройках' };
-        return;
-      }
-
-      qs.addToQueue('digest-send', {
-        date: new Date().toISOString().slice(0, 10),
-        smtpTo,
-      }, { correlationId: corrId });
+      // Delegate digest to PipelineService (it checks digest_enabled internally)
+      const digestResult = await pipeline.digest();
 
       ctx.body = {
-        ok: true,
-        message: 'Digest job enqueued',
-        correlationId: corrId,
+        ok: digestResult.sent,
+        message: digestResult.sent ? 'Digest sent' : 'Дайджест отключён в настройках',
+        sent: digestResult.sent,
+        errors: digestResult.errors,
       };
     } catch (err: any) {
       strapi.log.error(`[cron] sendDigest error: ${err.message}`);

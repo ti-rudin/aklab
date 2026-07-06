@@ -24,6 +24,7 @@ export interface StrapiInstance {
       delete: (params?: any) => Promise<any>;
       deleteMany: (params?: any) => Promise<{ count: number }>;
     };
+    transaction: (cb: (params: { trx: any; rollback: () => void; commit: () => void; onCommit: (cb: () => void) => void; onRollback: (cb: () => void) => void }) => Promise<void>) => Promise<void>;
     connection: {
       raw: (sql: string, bindings?: any[]) => Promise<any>;
     };

@@ -408,7 +408,7 @@ export async function scorePropertiesBatch(options?: {
 
     // Batch update focus_score + tags in a single transaction
     if (updates.length > 0) {
-      await s.db.transaction(async () => {
+      await s.db.transaction(async ({}) => {
         for (const u of updates) {
           await s.db.query('api::property.property').update({
             where: { id: u.id },
@@ -420,7 +420,7 @@ export async function scorePropertiesBatch(options?: {
 
     // Batch insert events in a single transaction
     if (allEvents.length > 0) {
-      await s.db.transaction(async () => {
+      await s.db.transaction(async ({}) => {
         for (const evt of allEvents) {
           await s.entityService.create('api::property-event.property-event', {
             data: {
