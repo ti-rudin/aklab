@@ -32,7 +32,7 @@ const config: Core.Config.Middlewares = [
   {
     name: 'global::rate-limit',
     config: {
-      max: 10,
+      max: 120,
       windowMs: 60 * 1000,
       message: { error: 'Too many requests, please try again later.' },
     },

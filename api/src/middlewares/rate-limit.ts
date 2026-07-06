@@ -1,6 +1,7 @@
 /**
  * Rate-limit middleware для Strapi 5 (Koa).
  * Простой in-memory sliding window — без express-rate-limit.
+ * Пропускает OPTIONS (CORS preflight) без подсчёта.
  */
 
 const store = new Map<string, { count: number; resetAt: number }>();
@@ -14,10 +15,16 @@ setInterval(() => {
 }, 60_000).unref();
 
 export default (config: any) => {
-  const max = config.max || 10;
+  const max = config.max || 60;
   const windowMs = config.windowMs || 60_000;
 
   return async (ctx: any, next: any) => {
+    // Пропускаем CORS preflight без подсчёта
+    if (ctx.method === 'OPTIONS') {
+      await next();
+      return;
+    }
+
     const ip = ctx.request.ip || ctx.ip || 'unknown';
     const now = Date.now();
 
