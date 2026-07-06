@@ -191,7 +191,7 @@ export default factories.createCoreController("api::property.property", ({ strap
       const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
         headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' }
       });
-      const results = await resp.json();
+      const results = await resp.json() as any[];
       if (results.length === 0) {
         ctx.body = { latitude: null, longitude: null, cached: false };
         return;
