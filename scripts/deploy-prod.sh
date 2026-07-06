@@ -351,6 +351,12 @@ for svc_port in $HEALTH_CHECKS; do
   fi
 done
 
+# === Step 8.5: Seed E2E test data ===
+if [ -f "$PROJECT_ROOT/scripts/seed-e2e-data.js" ]; then
+  log "Seeding E2E test data..."
+  node "$PROJECT_ROOT/scripts/seed-e2e-data.js" 2>&1 | tail -3 || warn "E2E seed failed (non-critical)"
+fi
+
 # === Step 9: Generate changelog (local only — CI handles this) ===
 if [ "$CI_MODE" != "true" ]; then
 log "Генерация changelog..."

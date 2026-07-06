@@ -3,7 +3,9 @@
  * Idempotent — checks for existing external_ids before inserting.
  * Run: ssh server + node /tmp/seed-test-data.js
  */
-const db = require('/home/rudin/aklab/api/node_modules/better-sqlite3')('/home/rudin/aklab/api/.tmp/data.db');
+const path = require('path');
+const dbPath = path.join(__dirname, '..', 'api', '.tmp', 'data.db');
+const db = require(path.join(__dirname, '..', 'api', 'node_modules', 'better-sqlite3'))(dbPath);
 
 function makeDocId() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
