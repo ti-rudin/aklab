@@ -145,7 +145,7 @@
       :item="item"
       variant="focus"
       :selected="focusSelected.has(item.id)"
-      @open="openProperty(item)"
+
       @toggle-select="toggleFocusSelect(item.id)"
       @bulk-status="bulkSetStatus"
       @bulk-csv="bulkExportCSV"

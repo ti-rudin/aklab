@@ -1,12 +1,12 @@
 <template>
-  <div
-    class="rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
+  <router-link
+    :to="`/properties/${item.documentId}`"
+    class="block rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
     style="background: var(--bg-elevated); border-color: var(--border-subtle)"
-    @click="$emit('open')"
   >
     <!-- Row 1: Title (always fully visible, wraps if needed) -->
     <div class="flex items-start gap-2 mb-1">
-      <input v-if="variant === 'focus'" type="checkbox" :checked="selected" @change="$emit('toggle-select')" @click.stop
+      <input v-if="variant === 'focus'" type="checkbox" :checked="selected" @change="$emit('toggle-select')" @click.prevent.stop
         class="rounded mt-0.5 flex-shrink-0" style="accent-color: var(--accent)" />
       <h3 class="font-semibold text-sm flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
     </div>
@@ -59,12 +59,12 @@
         <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
       </div>
       <div v-if="selected" class="flex gap-1 shrink-0">
-        <button @click.stop="$emit('bulk-status', 'viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
-        <button @click.stop="$emit('bulk-status', 'rejected')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
-        <button @click.stop="$emit('bulk-csv')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+        <button @click.stop.prevent="$emit('bulk-status', 'viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
+        <button @click.stop.prevent="$emit('bulk-status', 'rejected')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
+        <button @click.stop.prevent="$emit('bulk-csv')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
       </div>
     </div>
-  </div>
+  </router-link>
 </template>
 
 <script setup lang="ts">

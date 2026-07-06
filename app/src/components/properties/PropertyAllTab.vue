@@ -78,7 +78,7 @@
       variant="default"
       class="stagger-item"
       :style="{ '--i': idx }"
-      @open="openProperty(item)"
+
     />
   </div>
 
