@@ -252,75 +252,8 @@
         <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
       </div>
 
-      <!-- Desktop: Таблица -->
-      <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
-        <table class="w-full text-sm">
-          <thead>
-            <tr style="background: var(--bg-elevated)">
-              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap" style="color: var(--text-muted)">Название</th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
-              <th @click="toggleSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Площадь <span v-if="sort.field === 'area_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th @click="toggleSort('price')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Цена <span v-if="sort.field === 'price'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th @click="toggleSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                ₽/м² <span v-if="sort.field === 'price_per_sqm'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Статус</th>
-              <th @click="toggleSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Оценка <span v-if="sort.field === 'deviation_percent'">{{ sort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="item in items" :key="item.id">
-              <!-- Row 1: Заголовок -->
-              <tr class="cursor-pointer transition-colors hover:opacity-80"
-                :style="{ background: 'var(--bg-elevated)', borderTop: '2px solid var(--border-subtle)' }"
-                @click="router.push(`/properties/${item.documentId}`)">
-                <td class="px-3 py-2">
-                  <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
-                </td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2 text-center">
-                  <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
-                </td>
-                <td class="px-3 py-2 text-center">
-                  <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
-                    ⚠ {{ item.deviation_percent }}%
-                  </span>
-                </td>
-              </tr>
-              <!-- Row 2: Детали -->
-              <tr class="cursor-pointer transition-colors hover:opacity-80"
-                style="border-bottom: 1px solid var(--border-subtle)"
-                @click="router.push(`/properties/${item.documentId}`)">
-                <td class="px-3 py-1.5 text-xs" style="color: var(--text-muted)">{{ item.source }}</td>
-                <td class="px-3 py-1.5 max-w-[200px] truncate" style="color: var(--text-muted)">{{ item.address || '—' }}</td>
-                <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-main)">{{ cityLabel(item.city) }}</td>
-                <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-muted)">{{ typeLabel(item.property_type) }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
-                <td class="px-3 py-1.5"></td>
-                <td class="px-3 py-1.5"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Mobile: Карточки -->
-      <div v-if="!loading && items.length > 0" class="md:hidden space-y-3">
+      <!-- Карточки (все размеры экрана) -->
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div
           v-for="item in items"
           :key="item.id"
@@ -328,27 +261,24 @@
           style="background: var(--bg-elevated); border-color: var(--border-subtle)"
           @click="router.push(`/properties/${item.documentId}`)"
         >
-          <!-- Заголовок + badges -->
+          <!-- Zone 1: Title + badges -->
           <div class="flex items-start justify-between gap-2 mb-2">
             <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)">{{ item.title }}</h3>
             <div class="flex items-center gap-1.5 shrink-0">
               <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
-              <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">
-                ⚠ {{ item.deviation_percent }}%
-              </span>
+              <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(251,191,36,0.15); color: #f59e0b">⚠ {{ item.deviation_percent }}%</span>
             </div>
           </div>
-
-          <!-- Адрес + город + тип -->
-          <div class="text-xs mb-3" style="color: var(--text-muted)">
+          <!-- Zone 2: Meta line -->
+          <div class="text-xs mb-3 truncate" style="color: var(--text-muted)">
             <span v-if="item.address">{{ item.address }}</span>
             <span v-if="item.address && (item.city || item.property_type)"> · </span>
             <span v-if="item.city">{{ cityLabel(item.city) }}</span>
             <span v-if="item.city && item.property_type"> · </span>
             <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+            <span v-if="item.source"> · {{ item.source }}</span>
           </div>
-
-          <!-- Метрики -->
+          <!-- Zone 3: Metric tiles -->
           <div class="grid grid-cols-3 gap-3">
             <div>
               <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
@@ -356,11 +286,11 @@
             </div>
             <div>
               <div class="text-xs" style="color: var(--text-muted)">Цена</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price) }}</div>
             </div>
             <div>
               <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price_per_sqm) }}</div>
             </div>
           </div>
         </div>
@@ -530,127 +460,63 @@
         <p class="text-sm" style="color: var(--text-muted)">Запустите пересчёт скоров или измените фильтры</p>
       </div>
 
-      <!-- Desktop: Focus Table -->
-      <div v-else class="hidden md:block rounded-xl border overflow-x-auto" style="border-color: var(--border-subtle)">
-        <table class="w-full text-sm">
-          <thead>
-            <tr style="background: var(--bg-elevated)">
-              <th class="px-3 py-2 w-8">
-                <input type="checkbox" :checked="allFocusChecked" @change="toggleAllFocus" class="rounded" style="accent-color: var(--accent)" />
-              </th>
-              <th @click="toggleFocusSort('title')" class="text-left px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80 whitespace-nowrap" style="color: var(--text-muted)">
-                Название <span v-if="focusSort.field === 'title'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Адрес</th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Город</th>
-              <th class="text-left px-3 py-2 font-semibold" style="color: var(--text-muted)">Тип</th>
-              <th @click="toggleFocusSort('area_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Площадь <span v-if="focusSort.field === 'area_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th class="text-right px-3 py-2 font-semibold" style="color: var(--text-muted)">Цена</th>
-              <th @click="toggleFocusSort('price_per_sqm')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                ₽/м² <span v-if="focusSort.field === 'price_per_sqm'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th @click="toggleFocusSort('focus_score')" class="text-right px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Скор <span v-if="focusSort.field === 'focus_score'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-              <th class="text-center px-3 py-2 font-semibold" style="color: var(--text-muted)">Теги</th>
-              <th @click="toggleFocusSort('deviation_percent')" class="text-center px-3 py-2 font-semibold cursor-pointer select-none hover:opacity-80" style="color: var(--text-muted)">
-                Оценка <span v-if="focusSort.field === 'deviation_percent'">{{ focusSort.direction === 'asc' ? '↑' : '↓' }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="item in filteredFocusItems" :key="item.id">
-              <!-- Row 1: Заголовок -->
-              <tr :style="{ background: 'var(--bg-elevated)', borderTop: '2px solid var(--border-subtle)' }">
-                <td class="px-3 py-2" @click.stop>
-                  <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded" style="accent-color: var(--accent)" />
-                </td>
-                <td class="px-3 py-2 cursor-pointer transition-colors hover:opacity-80"
-                  @click="router.push(`/properties/${item.documentId}`)">
-                  <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
-                </td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2"></td>
-                <td class="px-3 py-2 text-center">
-                  <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
-                  <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold ml-1" :style="deviationStyle(Number(item.deviation_percent))">
-                    {{ item.deviation_percent }}%
-                  </span>
-                </td>
-              </tr>
-              <!-- Row 2: Детали -->
-              <tr class="cursor-pointer transition-colors hover:opacity-80"
-                style="border-bottom: 1px solid var(--border-subtle)"
-                @click="router.push(`/properties/${item.documentId}`)">
-                <td class="px-3 py-1.5"></td>
-                <td class="px-3 py-1.5 max-w-[200px] truncate" style="color: var(--text-muted)">{{ item.address || '—' }}</td>
-                <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-main)">{{ cityLabel(item.city) }}</td>
-                <td class="px-3 py-1.5 whitespace-nowrap" style="color: var(--text-muted)">{{ typeLabel(item.property_type) }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price ? formatPrice(item.price) : '—' }}</td>
-                <td class="px-3 py-1.5 text-right font-mono" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</td>
-                <td class="px-3 py-1.5 text-right font-mono font-semibold" style="color: var(--text-main)">{{ item.focus_score ?? '—' }}</td>
-                <td class="px-3 py-1.5">
-                  <div class="flex flex-wrap gap-1">
-                    <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
-                    <span v-if="!item.tags || item.tags.length === 0" class="text-xs" style="color: var(--text-muted)">—</span>
-                  </div>
-                </td>
-                <td class="px-3 py-1.5"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Mobile: Focus Cards -->
-      <div v-if="!focusLoading && filteredFocusItems.length > 0" class="md:hidden space-y-3">
+      <!-- Focus Карточки (все размеры экрана) -->
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div
           v-for="item in filteredFocusItems"
           :key="item.id"
-          class="rounded-xl border p-4 transition-all hover:shadow-lg"
+          class="rounded-xl border p-4 transition-all hover:shadow-lg cursor-pointer"
           style="background: var(--bg-elevated); border-color: var(--border-subtle)"
         >
-          <div class="flex items-start gap-2 mb-2">
-            <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded mt-1 flex-shrink-0" style="accent-color: var(--accent)" />
-            <div class="flex-1 min-w-0 cursor-pointer" @click="router.push(`/properties/${item.documentId}`)">
-              <h3 class="font-semibold text-sm truncate" style="color: var(--text-main)">{{ item.title }}</h3>
-              <div class="text-xs" style="color: var(--text-muted)">
-                <span v-if="item.address">{{ item.address }}</span>
-                <span v-if="item.address && (item.city || item.property_type)"> · </span>
-                <span v-if="item.city">{{ cityLabel(item.city) }}</span>
-                <span v-if="item.city && item.property_type"> · </span>
-                <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
-              </div>
+          <!-- Zone 1: checkbox + title + badges -->
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div class="flex items-start gap-2 flex-1 min-w-0">
+              <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" @click.stop class="rounded mt-0.5 flex-shrink-0" style="accent-color: var(--accent)" />
+              <h3 class="font-semibold text-sm truncate flex-1" style="color: var(--text-main)" @click="router.push(`/properties/${item.documentId}`)">{{ item.title }}</h3>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
+              <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap" :style="deviationStyle(Number(item.deviation_percent))">{{ item.deviation_percent }}%</span>
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-3 mb-2">
+          <!-- Zone 2: Meta line -->
+          <div class="text-xs mb-3 truncate" style="color: var(--text-muted)">
+            <span v-if="item.address">{{ item.address }}</span>
+            <span v-if="item.address && (item.city || item.property_type)"> · </span>
+            <span v-if="item.city">{{ cityLabel(item.city) }}</span>
+            <span v-if="item.city && item.property_type"> · </span>
+            <span v-if="item.property_type">{{ typeLabel(item.property_type) }}</span>
+            <span v-if="item.source"> · {{ item.source }}</span>
+          </div>
+          <!-- Zone 3: Metric tiles -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <div class="text-xs" style="color: var(--text-muted)">Площадь</div>
               <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.area_sqm ? `${item.area_sqm} м²` : '—' }}</div>
             </div>
             <div>
+              <div class="text-xs" style="color: var(--text-muted)">Цена</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price) }}</div>
+            </div>
+            <div>
               <div class="text-xs" style="color: var(--text-muted)">₽/м²</div>
-              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ item.price_per_sqm ? formatPrice(item.price_per_sqm) : '—' }}</div>
+              <div class="text-sm font-mono font-medium" style="color: var(--text-main)">{{ formatPriceShort(item.price_per_sqm) }}</div>
             </div>
             <div>
               <div class="text-xs" style="color: var(--text-muted)">Скор</div>
               <div class="text-sm font-mono font-semibold" style="color: var(--text-main)">{{ item.focus_score ?? '—' }}</div>
             </div>
           </div>
-          <!-- Tags + deviation -->
-          <div class="flex flex-wrap gap-1">
-            <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
-            <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
-            <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold" :style="deviationStyle(Number(item.deviation_percent))">{{ item.deviation_percent }}%</span>
+          <!-- Zone 4: Tags + action buttons -->
+          <div class="mt-2 pt-2 border-t flex flex-wrap items-center gap-2" style="border-color: var(--border-subtle)">
+            <div class="flex flex-wrap gap-1 flex-1">
+              <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
+            </div>
+            <div v-if="focusSelected.has(item.id)" class="flex gap-1 shrink-0">
+              <button @click.stop="bulkSetStatus('viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
+              <button @click.stop="bulkSetStatus('rejected')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
+              <button @click.stop="bulkExportCSV" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+            </div>
           </div>
         </div>
       </div>
@@ -694,7 +560,7 @@ import SkeletonTable from '@/components/SkeletonTable.vue'
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api/strapi'
-import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
+import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice, formatPriceShort } from '@/utils/formatters'
 import { usePropertyData, type Property } from '@/composables/usePropertyData'
 import { useFocusTab } from '@/composables/useFocusTab'
 

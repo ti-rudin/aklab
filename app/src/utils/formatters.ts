@@ -36,3 +36,12 @@ export const statusStyle = (s?: string): Record<string, string> =>
 
 export const formatPrice = (v: string | number): string =>
   Number(v).toLocaleString('ru-RU')
+
+export const formatPriceShort = (v: string | number | null | undefined): string => {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  if (isNaN(n)) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}М`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}К`
+  return n.toLocaleString('ru-RU')
+}
