@@ -195,13 +195,13 @@ async function seedSettings(strapi: StrapiInstance): Promise<void> {
         });
         strapi.log.info(`[seed] Setting smtp_to обновлён: ${defaultSmtpTo}`);
       }
-      // Обновляем stop_words если пустой
+      // Обновляем stop_words если пустой — пустой массив (фильтрация по property_type вместо стоп-слов)
       if (!existing.stop_words) {
         await strapi.db.query('api::setting.setting').update({
           where: { id: existing.id },
-          data: { stop_words: ['земельный участок', 'земельные участки', 'зу', 'участок'] },
+          data: { stop_words: [] },
         });
-        strapi.log.info('[seed] Setting stop_words обновлён с дефолтами');
+        strapi.log.info('[seed] Setting stop_words инициализирован пустым');
       }
       strapi.log.info('[seed] Setting уже существует — skip create');
       return;
@@ -217,7 +217,7 @@ async function seedSettings(strapi: StrapiInstance): Promise<void> {
         active_sources: ['fabrikant', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf', 'sberbank-ast', 'invest-mosreg', 'investmoscow', 'roseltorg', 'm-ets'],
         smtp_to: process.env.SMTP_TO || 'a@rudin.ru',
         monitored_regions: ['moscow', 'mo', 'other'],
-        stop_words: ['земельный участок', 'земельные участки', 'зу', 'участок'],
+        stop_words: [],
       },
     });
 
