@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.31",
+    "date": "7 июля 2026",
+    "time": "01:15",
+    "items": [
+      {
+        "text": "Auth:false on all CRUD routes — single-tenant app, JWT breaks on restart",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.30",
     "date": "7 июля 2026",
     "time": "00:24",
