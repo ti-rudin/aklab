@@ -12,6 +12,19 @@ vi.mock('../../../../services/queueService', () => ({
   getQueueService: () => mockQueue,
 }));
 
+// --- Mock pipeline service ---
+const mockPipeline = {
+  analyze: vi.fn(),
+  digest: vi.fn(),
+  getState: vi.fn(),
+  updateState: vi.fn(),
+  resetState: vi.fn(),
+};
+
+vi.mock('../../../../services/pipeline', () => ({
+  getPipelineService: () => mockPipeline,
+}));
+
 // --- Mock focusEngine ---
 vi.mock('../../../../services/focusEngine', () => ({
   scoreProperty: vi.fn(),
@@ -66,6 +79,9 @@ describe('cron controller', () => {
       findMany: vi.fn(),
       update: vi.fn(),
     });
+    // Default pipeline mock returns
+    mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
+    mockPipeline.digest.mockResolvedValue({ sent: true, errors: [] });
     // @ts-ignore
     global.strapi = mockStrapi;
   });
@@ -126,89 +142,66 @@ describe('cron controller', () => {
 
   // =================== analyzeAll ===================
   describe('analyzeAll', () => {
-    it('should enqueue all properties with status=new', async () => {
-      const properties = [
-        { documentId: 'p1' },
-        { documentId: 'p2' },
-      ];
-      mockStrapi.entityService.findMany.mockResolvedValue(properties);
+    it('should delegate to pipeline.analyze and return result', async () => {
+      mockPipeline.analyze.mockResolvedValue({ undervalued: 2, errors: [] });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockStrapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
-        filters: { status: 'new', is_undervalued: { $null: true } },
-        limit: -1,
-      });
-      expect(mockQueue.addToQueue).toHaveBeenCalledTimes(2);
-      expect(mockQueue.addToQueue).toHaveBeenCalledWith(
-        'analyze-property',
-        { documentId: 'p1' },
-        expect.any(Object),
+      expect(mockPipeline.analyze).toHaveBeenCalledWith(
+        expect.objectContaining({}),
       );
       expect(ctx.body.ok).toBe(true);
+      expect(ctx.body.undervalued).toBe(2);
       expect(ctx.body.message).toContain('2');
     });
 
-    it('should pass threshold from body to each job', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([{ documentId: 'p1' }]);
+    it('should pass threshold from body to pipeline.analyze', async () => {
+      mockPipeline.analyze.mockResolvedValue({ undervalued: 1, errors: [] });
 
       const ctx = makeCtx({ request: { body: { threshold: 30 } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockQueue.addToQueue).toHaveBeenCalledWith(
-        'analyze-property',
-        { documentId: 'p1', threshold: 30 },
-        expect.any(Object),
+      expect(mockPipeline.analyze).toHaveBeenCalledWith(
+        expect.objectContaining({ threshold: 30 }),
       );
       expect(ctx.body.filters.threshold).toBe(30);
     });
 
     it('should apply price range filters', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([]);
+      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
 
       const ctx = makeCtx({ request: { body: { priceFrom: 100000, priceTo: 500000 } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockStrapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
-        filters: {
-          status: 'new',
-          is_undervalued: { $null: true },
-          price: { $gte: 100000, $lte: 500000 },
-        },
-        limit: -1,
-      });
+      expect(mockPipeline.analyze).toHaveBeenCalledWith(
+        expect.objectContaining({ priceFrom: 100000, priceTo: 500000 }),
+      );
     });
 
     it('should apply city filter (array)', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([]);
+      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
 
       const ctx = makeCtx({ request: { body: { city: ['moscow', 'spb'] } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockStrapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
-        filters: {
-          status: 'new',
-          is_undervalued: { $null: true },
-          city: { $in: ['moscow', 'spb'] },
-        },
-        limit: -1,
-      });
+      expect(mockPipeline.analyze).toHaveBeenCalledWith(
+        expect.objectContaining({ city: ['moscow', 'spb'] }),
+      );
     });
 
     it('should handle empty properties list', async () => {
-      mockStrapi.entityService.findMany.mockResolvedValue([]);
+      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
 
       expect(ctx.body.ok).toBe(true);
-      expect(ctx.body.message).toContain('0');
-      expect(mockQueue.addToQueue).not.toHaveBeenCalled();
+      expect(ctx.body.undervalued).toBe(0);
     });
 
     it('should call ctx.internalServerError on exception', async () => {
-      mockStrapi.entityService.findMany.mockRejectedValue(new Error('db boom'));
+      mockPipeline.analyze.mockRejectedValue(new Error('db boom'));
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
@@ -219,52 +212,30 @@ describe('cron controller', () => {
 
   // =================== sendDigest ===================
   describe('sendDigest', () => {
-    it('should enqueue digest job with smtp_to from settings', async () => {
-      mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockResolvedValue({
-        smtp_to: 'admin@example.com',
-      });
-      mockQueue.addToQueue.mockReturnValue({ id: 'job1' });
+    it('should delegate to pipeline.digest and return result', async () => {
+      mockPipeline.digest.mockResolvedValue({ sent: true, errors: [] });
 
       const ctx = makeCtx();
       await cronController.sendDigest(ctx);
 
-      expect(mockStrapi.db.query).toHaveBeenCalledWith('api::setting.setting');
-      expect(mockQueue.addToQueue).toHaveBeenCalledWith(
-        'digest-send',
-        expect.objectContaining({
-          date: expect.any(String),
-          smtpTo: 'admin@example.com',
-        }),
-        expect.objectContaining({ correlationId: expect.stringContaining('manual-digest-') }),
-      );
+      expect(mockPipeline.digest).toHaveBeenCalled();
       expect(ctx.body.ok).toBe(true);
+      expect(ctx.body.sent).toBe(true);
     });
 
-    it('should handle missing smtp_to gracefully', async () => {
-      mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockResolvedValue({});
+    it('should return ok=false when digest is disabled', async () => {
+      mockPipeline.digest.mockResolvedValue({ sent: false, errors: [] });
 
       const ctx = makeCtx();
       await cronController.sendDigest(ctx);
 
-      expect(mockQueue.addToQueue).toHaveBeenCalledWith(
-        'digest-send',
-        expect.objectContaining({ smtpTo: undefined }),
-        expect.any(Object),
-      );
-    });
-
-    it('should handle null setting', async () => {
-      mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockResolvedValue(null);
-
-      const ctx = makeCtx();
-      await cronController.sendDigest(ctx);
-
-      expect(ctx.body.ok).toBe(true);
-      expect(mockQueue.addToQueue).toHaveBeenCalled();
+      expect(ctx.body.ok).toBe(false);
+      expect(ctx.body.sent).toBe(false);
+      expect(ctx.body.message).toContain('отключён');
     });
 
     it('should call ctx.internalServerError on exception', async () => {
-      mockStrapi.db.query('api::setting.setting').findOne = vi.fn().mockRejectedValue(new Error('smtp err'));
+      mockPipeline.digest.mockRejectedValue(new Error('smtp err'));
 
       const ctx = makeCtx();
       await cronController.sendDigest(ctx);
