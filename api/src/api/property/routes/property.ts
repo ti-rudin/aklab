@@ -30,7 +30,7 @@ export default {
       method: 'GET',
       path: '/properties/:id/geocode',
       handler: 'property.geocode',
-      config: {},
+      config: { auth: false, policies: [] },
     },
     {
       method: 'POST',
