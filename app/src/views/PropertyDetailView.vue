@@ -113,14 +113,17 @@
           </BaseButton>
         </div>
         <!-- Lightbox -->
-        <div v-if="lightbox.open" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-          @click.self="lightbox.open = false">
-          <button @click="lightbox.open = false" class="absolute top-4 right-4 text-white text-2xl">✕</button>
-          <button @click="prevPhoto" class="absolute left-4 text-white text-3xl">‹</button>
-          <img v-if="property.photos?.[lightbox.idx]" :src="photoUrl(String(property.photos?.[lightbox.idx]))" class="max-h-[80vh] max-w-[90vw] object-contain" />
-          <button @click="nextPhoto" class="absolute right-4 text-white text-3xl">›</button>
-          <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos?.length ?? 0 }}</div>
-        </div>
+        <Teleport to="body">
+          <div v-if="lightbox.open" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            role="dialog" aria-modal="true" aria-label="Просмотр фотографии" tabindex="-1"
+            @click.self="lightbox.open = false">
+            <button @click="lightbox.open = false" class="absolute top-4 right-4 text-white text-2xl" aria-label="Закрыть">✕</button>
+            <button @click="prevPhoto" class="absolute left-4 text-white text-3xl" aria-label="Предыдущее фото">‹</button>
+            <img v-if="property.photos?.[lightbox.idx]" :src="photoUrl(String(property.photos?.[lightbox.idx]))" class="max-h-[80vh] max-w-[90vw] object-contain" />
+            <button @click="nextPhoto" class="absolute right-4 text-white text-3xl" aria-label="Следующее фото">›</button>
+            <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos?.length ?? 0 }}</div>
+          </div>
+        </Teleport>
       </div>
 
       <!-- ==================== СВОРАЧИВАЕМЫЕ ДЕТАЛИ ==================== -->
@@ -284,7 +287,7 @@ import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
@@ -369,6 +372,27 @@ function openLightbox(idx: number) {
 function nextPhoto() {
   if (property.value && lightbox.idx < property.value.photos!.length - 1) lightbox.idx++
 }
+function onLightboxKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') lightbox.open = false
+  else if (e.key === 'ArrowLeft') prevPhoto()
+  else if (e.key === 'ArrowRight') nextPhoto()
+}
+
+watch(() => lightbox.open, (open) => {
+  if (open) {
+    document.addEventListener('keydown', onLightboxKeydown)
+    document.body.style.overflow = 'hidden'
+  } else {
+    document.removeEventListener('keydown', onLightboxKeydown)
+    document.body.style.overflow = ''
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onLightboxKeydown)
+  document.body.style.overflow = ''
+})
+
 function prevPhoto() {
   if (lightbox.idx > 0) lightbox.idx--
 }

@@ -189,12 +189,13 @@
   <!-- Bulk action bar (floating) -->
   <div v-if="focusSelected.size > 0"
     class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 z-50"
-    style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)">
-    <span class="text-sm font-medium" style="color: var(--text-main)">Выбрано: {{ focusSelected.size }}</span>
+    style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)"
+    role="toolbar" aria-label="Действия с выбранными объектами">
+    <span class="text-sm font-medium" style="color: var(--text-main)" aria-live="polite">Выбрано: {{ focusSelected.size }}</span>
     <div class="flex gap-2">
-      <button @click="bulkSetStatus('viewed')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
-      <button @click="bulkSetStatus('rejected')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонён</button>
-      <button @click="bulkExportCSV" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+      <button @click="bulkSetStatus('viewed')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981" aria-label="Отметить как просмотрено">Просмотрено</button>
+      <button @click="bulkSetStatus('rejected')" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444" aria-label="Отметить как отклонённые">Отклонён</button>
+      <button @click="bulkExportCSV" class="text-xs px-3 py-1.5 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff" aria-label="Экспорт выбранных в CSV">CSV</button>
     </div>
   </div>
 </template>
