@@ -289,8 +289,10 @@ import { useRoute } from 'vue-router'
 import api from '@/api/strapi'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
 import { scoreColor, scoreBg } from '@/utils/styleHelpers'
+import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
+const toast = useToast()
 
 interface Property {
   id: number
@@ -388,7 +390,7 @@ async function triggerPhotoFetch() {
         }
       } catch { /* retry */ }
     }
-  } catch { /* silent */ }
+  } catch { toast.error('Не удалось загрузить фотографии') }
   finally { photoLoading.value = false }
 }
 

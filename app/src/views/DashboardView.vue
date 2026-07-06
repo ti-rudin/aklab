@@ -94,8 +94,10 @@ import { typeLabel } from '@/utils/formatters'
 import StatCard from '@/components/ui/StatCard.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseBadge from '@/components/ui/BaseBadge.vue'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
+const toast = useToast()
 
 /* ── Types ── */
 interface StatsResponse {
@@ -164,14 +166,14 @@ async function fetchTopProperties() {
       params: { threshold: 20, pageSize: 5, sort: '-focus_score' }
     })
     topProperties.value = data.data || []
-  } catch { /* ignore */ }
+  } catch { toast.error('Ошибка загрузки горячих объектов') }
 }
 
 async function fetchSources() {
   try {
     const { data } = await api.get('/sources')
     sources.value = data.data || data || []
-  } catch { /* ignore */ }
+  } catch { toast.error('Ошибка загрузки парсеров') }
 }
 
 async function refresh() {

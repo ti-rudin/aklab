@@ -77,8 +77,10 @@ import ParseLaunchPanel from '@/components/properties/ParseLaunchPanel.vue'
 import PropertyAllTab from '@/components/properties/PropertyAllTab.vue'
 import PropertyFocusTab from '@/components/properties/PropertyFocusTab.vue'
 import ConfirmClearDialog from '@/components/properties/ConfirmClearDialog.vue'
+import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
+const toast = useToast()
 
 // ========================
 // Tab state
@@ -122,13 +124,13 @@ async function executeClearNew() {
     const { data } = await api.post('/properties/clear-new')
     if (data.deleted > 0) {
       const photoInfo = data.photosDeleted > 0 ? ` (папок с фото: ${data.photosDeleted})` : ''
-      alert(`Удалено ${data.deleted} объектов${photoInfo}`)
+      toast.success(`Удалено ${data.deleted} объектов${photoInfo}`)
     } else {
-      alert('Нет объектов со статусом «Новый»')
+      toast.info('Нет объектов со статусом «Новый»')
     }
     allTabRef.value?.refresh()
   } catch (e: any) {
-    alert('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     clearing.value = false
   }

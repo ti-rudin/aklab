@@ -211,8 +211,10 @@ import FilterChips from '@/components/properties/FilterChips.vue'
 import { usePropertyData } from '@/composables/usePropertyData'
 import { useFocusTab } from '@/composables/useFocusTab'
 import { cityLabel, typeLabel } from '@/utils/formatters'
+import { useToast } from '@/composables/useToast'
 
 const router = useRouter()
+const toast = useToast()
 
 const {
   focusProperties: focusItems,
@@ -350,8 +352,7 @@ async function recalculateScore() {
     // Обновляем список
     await fetchFocusItems()
   } catch (e: any) {
-    console.error('Recalculation failed:', e)
-    console.warn('[UI] Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
+    toast.error('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
   } finally {
     scoringLoading.value = false
   }
@@ -386,9 +387,7 @@ async function exportCSV() {
 
     generateCSV(rows)
   } catch (e: any) {
-    console.error('CSV export failed:', e)
-    // TODO: заменить на toast notification
-    console.warn('[UI] Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
+    toast.error('Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
@@ -447,8 +446,7 @@ async function bulkSetStatus(status: string) {
     focusSelected.clear()
     await fetchFocusItems()
   } catch (e: any) {
-    // TODO: заменить на toast notification
-    console.warn('[UI] Ошибка: ' + (e.response?.data?.error?.message || e.message))
+    toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
