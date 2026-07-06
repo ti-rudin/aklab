@@ -304,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -313,6 +313,7 @@ import RulesPanel from '@/components/settings/RulesPanel.vue'
 import SourcesPanel from '@/components/settings/SourcesPanel.vue'
 import MarketReferencesPanel from '@/components/settings/MarketReferencesPanel.vue'
 import ParsingRulesPanel from '@/components/settings/ParsingRulesPanel.vue'
+import { usePipeline } from '@/composables/usePipeline'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -405,7 +406,7 @@ const handleLogout = async () => {
 }
 
 // ========================
-// Pipeline (SSE-based)
+// Pipeline
 // ========================
 const parseDepth = ref(20)
 const pipelineOpen = ref(false)
@@ -416,169 +417,36 @@ const launchFilters = reactive({
   threshold: 20,
 })
 
-const pipelineState = reactive({
-  status: 'idle' as string,
-  stage: 'idle' as string,
-  message: '',
-  sources_total: 0,
-  sources_done: 0,
-  details_fetched: 0,
-  details_needed: 0,
-  analyze_total: 0,
-  analyze_done: 0,
-  undervalued_count: 0,
-  objects_created: 0,
-  errors: [] as string[],
-})
+const {
+  state: pipelineState,
+  isRunning: pipelineRunning,
+  isDone: pipelineDone,
+  isParsingStage,
+  isParsingDone,
+  isAnalyzingStage,
+  isAnalyzingDone,
+  isDigestDone,
+  start: pipelineStart,
+  cancel: cancelPipeline,
+  reset: resetPipeline,
+  checkOnMount,
+} = usePipeline()
 
-let eventSource: EventSource | null = null
+function startPipeline() {
+  const filters: any = {}
+  if (launchFilters.priceFrom) filters.priceFrom = Number(launchFilters.priceFrom)
+  if (launchFilters.priceTo) filters.priceTo = Number(launchFilters.priceTo)
+  const cities: string[] = []
+  if (launchFilters.cities.moscow) cities.push('moscow')
+  if (launchFilters.cities.mo) cities.push('mo')
+  if (launchFilters.cities.other) cities.push('other')
+  if (cities.length > 0 && cities.length < 3) filters.city = cities
+  if (launchFilters.threshold !== 20) filters.threshold = launchFilters.threshold
 
-const pipelineRunning = computed(() =>
-  pipelineState.status === 'running' ||
-  pipelineState.status === 'cancelling' ||
-  // Defensive: if stage is active but status got corrupted
-  (pipelineState.stage !== 'idle' && pipelineState.stage !== 'done' &&
-   pipelineState.stage !== 'done_with_errors' && pipelineState.stage !== 'cancelled' &&
-   pipelineState.stage !== 'error')
-)
-const pipelineDone = computed(() => ['done', 'done_with_errors', 'cancelled', 'error'].includes(pipelineState.stage))
-const isParsingStage = computed(() => ['parsing_scan', 'parsing_details'].includes(pipelineState.stage))
-const isParsingDone = computed(() => pipelineState.stage === 'parsing_done' || pipelineDone.value)
-const isAnalyzingStage = computed(() => pipelineState.stage === 'analyzing')
-const isAnalyzingDone = computed(() => ['analyzing_done', 'analyzing_skipped'].includes(pipelineState.stage) || pipelineDone.value)
-const isDigestDone = computed(() => ['digest_done', 'done', 'done_with_errors'].includes(pipelineState.stage))
-
-function updatePipelineState(state: any) {
-  if (!state) return
-  Object.assign(pipelineState, {
-    status: state.status || 'idle',
-    stage: state.stage || 'idle',
-    message: state.message || '',
-    sources_total: state.sources_total || 0,
-    sources_done: state.sources_done || 0,
-    details_fetched: state.details_fetched || 0,
-    details_needed: state.details_needed || 0,
-    analyze_total: state.analyze_total || 0,
-    analyze_done: state.analyze_done || 0,
-    undervalued_count: state.undervalued_count || 0,
-    objects_created: state.objects_created || 0,
-    errors: state.errors || [],
-  })
-}
-
-let pollInterval: ReturnType<typeof setInterval> | null = null
-
-function stopPolling() {
-  if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
-}
-
-function startPolling() {
-  stopPolling()
-  pollInterval = setInterval(async () => {
-    try {
-      const res = await api.get('/pipeline/status', { params: { _t: Date.now() } })
-      if (res.data?.ok && res.data.state) {
-        updatePipelineState(res.data.state)
-        const s = res.data.state
-        if (s.status === 'idle' || s.stage === 'done' || s.stage === 'done_with_errors' ||
-            s.stage === 'cancelled' || s.stage === 'error') {
-          stopPolling()
-        }
-      }
-    } catch { /* ok */ }
-  }, 3000)
-}
-
-function connectSSE() {
-  if (eventSource) { eventSource.close(); eventSource = null }
-  // SSE URL must point to API domain (Vite preview doesn't proxy /api)
-  const apiBase = (import.meta.env.VITE_API_URL as string) || (window.location.origin + '/api')
-  const sseBase = apiBase.replace(/\/api$/, '')
-  eventSource = new EventSource(`${sseBase}/api/pipeline/stream`)
-  eventSource.addEventListener('progress', (e) => {
-    stopPolling() // SSE works, no need to poll
-    try { updatePipelineState(JSON.parse(e.data)) } catch { /* ok */ }
-  })
-  eventSource.addEventListener('done', (e) => {
-    try { updatePipelineState(JSON.parse((e as any).data)) } catch { /* ok */ }
-    if (eventSource) { eventSource.close(); eventSource = null }
-    stopPolling()
-  })
-  eventSource.addEventListener('error', () => {
-    if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-      // SSE failed — fall back to polling
-      if (eventSource) { eventSource.close(); eventSource = null }
-      startPolling()
-    }
-  })
-  // Also start polling as backup (SSE might connect but never fire events)
-  startPolling()
-}
-
-async function startPipeline() {
-  try {
-    const filters: any = {}
-    if (launchFilters.priceFrom) filters.priceFrom = Number(launchFilters.priceFrom)
-    if (launchFilters.priceTo) filters.priceTo = Number(launchFilters.priceTo)
-    const cities: string[] = []
-    if (launchFilters.cities.moscow) cities.push('moscow')
-    if (launchFilters.cities.mo) cities.push('mo')
-    if (launchFilters.cities.other) cities.push('other')
-    if (cities.length > 0 && cities.length < 3) filters.city = cities
-    if (launchFilters.threshold !== 20) filters.threshold = launchFilters.threshold
-
-    await api.post('/pipeline/start', {
-      mode: 'full',
-      depth: parseDepth.value,
-      filters: Object.keys(filters).length ? filters : undefined,
-    })
-    connectSSE()
-  } catch (err: any) {
+  pipelineStart(parseDepth.value, Object.keys(filters).length ? filters : undefined).catch((err: any) => {
     alert(err.response?.data?.message || err.message || 'Ошибка запуска')
-  }
+  })
 }
 
-async function cancelPipeline() {
-  try {
-    await api.post('/pipeline/cancel')
-    // Immediately reset local state
-    updatePipelineState({ status: 'idle', stage: 'cancelled', message: 'Пайплайн отменён' })
-    stopPolling()
-    if (eventSource) { eventSource.close(); eventSource = null }
-  } catch { /* ok */ }
-}
-
-async function resetPipeline() {
-  try {
-    await api.post('/pipeline/reset')
-    updatePipelineState({ status: 'idle', stage: 'idle', message: '' })
-    stopPolling()
-    if (eventSource) { eventSource.close(); eventSource = null }
-  } catch { /* ok */ }
-}
-
-// Cleanup on unmount
-onUnmounted(() => {
-  if (eventSource) { eventSource.close(); eventSource = null }
-  stopPolling()
-})
-
-// On page load — check if pipeline is running
-onMounted(async () => {
-  try {
-    const res = await api.get('/pipeline/status')
-    if (res.data?.ok && res.data.state) {
-      updatePipelineState(res.data.state)
-      // Connect SSE if pipeline is (or might be) running
-      // Use stage-based check as defensive measure
-      const s = res.data.state
-      const mightBeRunning = s.status === 'running' || s.status === 'cancelling' ||
-        (s.stage && s.stage !== 'idle' && s.stage !== 'done' &&
-         s.stage !== 'done_with_errors' && s.stage !== 'cancelled' && s.stage !== 'error')
-      if (mightBeRunning) {
-        connectSSE()
-      }
-    }
-  } catch { /* ok — no pipeline state */ }
-})
+onMounted(checkOnMount)
 </script>

@@ -37,7 +37,7 @@
         </div>
         <button
           @click="runParseOnly"
-          :disabled="parseStage !== 'idle' && parseStage !== 'done' && parseStage !== 'error'"
+          :disabled="parseStage === 'parsing'"
           class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
           :style="{
             background: parseStage === 'done' ? '#059669' : 'var(--accent)',
@@ -63,13 +63,13 @@
         <div class="text-sm font-medium" style="color: var(--text-primary)">Парсинг</div>
         <div class="text-xs" style="color: var(--text-muted)">
           <template v-if="parseStage === 'parsing'">
-            {{ parseSourcesDone }}/{{ parseSourcesTotal }} источников
-            <template v-if="detailsNeeded > 0"> · {{ detailsFetched }}/{{ detailsNeeded }} детальных</template>
+            {{ pipelineState.sources_done }}/{{ pipelineState.sources_total }} источников
+            <template v-if="pipelineState.details_needed > 0"> · {{ pipelineState.details_fetched }}/{{ pipelineState.details_needed }} детальных</template>
           </template>
           <template v-else-if="parseDone">
-            {{ parseSourcesTotal }} источников, {{ pipelineResults.parseTotal }} объектов
-            <template v-if="pipelineResults.detailsNeeded > 0"> · {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }} детальных</template>
-            <template v-if="pipelineResults.parseErrors > 0">, {{ pipelineResults.parseErrors }} ошибок</template>
+            {{ pipelineState.sources_total }} источников, {{ pipelineState.objects_created }} объектов
+            <template v-if="pipelineState.details_needed > 0"> · {{ pipelineState.details_fetched }}/{{ pipelineState.details_needed }} детальных</template>
+            <template v-if="pipelineState.errors.length > 0">, {{ pipelineState.errors.length }} ошибок</template>
           </template>
           <template v-else>Ожидание...</template>
         </div>
@@ -77,8 +77,8 @@
     </div>
 
     <div v-if="parseStage === 'done'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #059669">
-      ✓ Парсинг завершён · Новых объектов: {{ pipelineResults.parseTotal }}
-      <template v-if="pipelineResults.detailsNeeded > 0"> · Детальных: {{ pipelineResults.detailsFetched }}/{{ pipelineResults.detailsNeeded }}</template>
+      ✓ Парсинг завершён · Новых объектов: {{ pipelineState.objects_created }}
+      <template v-if="pipelineState.details_needed > 0"> · Детальных: {{ pipelineState.details_fetched }}/{{ pipelineState.details_needed }}</template>
     </div>
 
     <div v-if="parseStage === 'error'" class="mt-2 pt-2 border-t text-sm font-medium text-center" style="border-color: var(--border-subtle); color: #ef4444">
@@ -88,9 +88,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import api from '@/api/strapi'
 import FilterChips from '@/components/properties/FilterChips.vue'
+import { usePipeline } from '@/composables/usePipeline'
 
 const props = defineProps<{
   parseDepth: number
@@ -119,113 +120,39 @@ const parseFilters = reactive({
 })
 
 // ========================
-// Pipeline state
+// Pipeline (composable)
 // ========================
-type ParseStage = 'idle' | 'parsing' | 'done' | 'error'
-const parseStage = ref<ParseStage>('idle')
-const parseSourcesTotal = ref(0)
-const parseSourcesDone = ref(0)
-const parseDone = ref(false)
-const detailsFetched = ref(0)
-const detailsNeeded = ref(0)
-const pipelineError = ref('')
+const {
+  state: pipelineState,
+  parseStage,
+  isParsingDone: parseDone,
+  isDone,
+  start: pipelineStart,
+} = usePipeline()
 
-const pipelineResults = reactive({
-  parseTotal: 0,
-  parseErrors: 0,
-  detailsFetched: 0,
-  detailsNeeded: 0,
+const pipelineError = computed(() => {
+  if (pipelineState.errors?.length) return pipelineState.errors.join('; ')
+  if (pipelineState.stage === 'error') return pipelineState.message || 'Ошибка парсинга'
+  return ''
 })
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
 async function runParseOnly() {
-  parseStage.value = 'parsing'
-  parseDone.value = false
-  parseSourcesDone.value = 0
-  detailsFetched.value = 0
-  detailsNeeded.value = 0
-  pipelineError.value = ''
-  pipelineResults.parseTotal = 0
-  pipelineResults.parseErrors = 0
-  pipelineResults.detailsFetched = 0
-  pipelineResults.detailsNeeded = 0
+  const filters: any = {}
+  if (parseFilters.priceFrom) filters.priceFrom = Number(parseFilters.priceFrom)
+  if (parseFilters.priceTo) filters.priceTo = Number(parseFilters.priceTo)
+  if (parseFilters.cities.length > 0 && parseFilters.cities.length < 3) filters.city = parseFilters.cities
 
   try {
-    // Build filters for pipeline
-    const filters: any = {}
-    if (parseFilters.priceFrom) filters.priceFrom = Number(parseFilters.priceFrom)
-    if (parseFilters.priceTo) filters.priceTo = Number(parseFilters.priceTo)
-    if (parseFilters.cities.length > 0 && parseFilters.cities.length < 3) filters.city = parseFilters.cities
-
-    // Start full pipeline (parse → analyze → digest)
-    await api.post('/pipeline/start', {
-      mode: 'full',
-      depth: props.parseDepth,
-      filters: Object.keys(filters).length ? filters : undefined,
-    })
-
-    // Poll pipeline status until done
-    await new Promise<void>((resolve, reject) => {
-      let attempts = 0
-      const maxAttempts = 2000
-      pollTimer = setInterval(async () => {
-        attempts++
-        if (attempts > maxAttempts) {
-          stopPolling()
-          reject(new Error('Пайплайн превысил таймаут (100 мин)'))
-          return
-        }
-
-        try {
-          const { data } = await api.get('/pipeline/status')
-          const state = data?.state
-          if (!state) return
-
-          // Map pipeline stages to parse progress UI
-          const stage = state.stage || ''
-          if (['parsing_scan', 'parsing_details'].includes(stage)) {
-            parseStage.value = 'parsing'
-            parseSourcesDone.value = state.sources_done || 0
-            parseSourcesTotal.value = state.sources_total || 0
-            detailsFetched.value = state.details_fetched || 0
-            detailsNeeded.value = state.details_needed || 0
-          } else if (['parsing_done', 'analyzing', 'analyzing_done', 'analyzing_skipped', 'digesting', 'digest_done'].includes(stage)) {
-            parseDone.value = true
-            parseStage.value = 'done'
-            parseSourcesDone.value = state.sources_done || parseSourcesDone.value
-            parseSourcesTotal.value = state.sources_total || parseSourcesTotal.value
-            detailsFetched.value = state.details_fetched || detailsFetched.value
-            detailsNeeded.value = state.details_needed || detailsNeeded.value
-            pipelineResults.parseTotal = state.objects_created || 0
-          }
-
-          if (['done', 'done_with_errors', 'error', 'cancelled'].includes(stage)) {
-            stopPolling()
-            parseDone.value = true
-            parseStage.value = stage === 'error' ? 'error' : 'done'
-            pipelineResults.parseTotal = state.objects_created || 0
-            if (state.errors?.length) pipelineError.value = state.errors.join('; ')
-            if (stage === 'error') pipelineError.value = state.message || 'Ошибка пайплайна'
-            emit('done')
-            resolve()
-          }
-        } catch { /* ignore polling errors */ }
-      }, 3000)
-    })
+    await pipelineStart(props.parseDepth, Object.keys(filters).length ? filters : undefined)
   } catch (err: any) {
-    stopPolling()
-    parseStage.value = 'error'
-    pipelineError.value = err.message || 'Ошибка парсинга'
+    // POST error — state will reflect the failure
   }
 }
+
+// Emit 'done' when pipeline transitions to terminal stage
+watch(isDone, (done, prevDone) => {
+  if (done && !prevDone) emit('done')
+})
 
 // ========================
 // Load defaults
@@ -245,9 +172,5 @@ async function loadParseDefaults() {
 
 onMounted(() => {
   loadParseDefaults()
-})
-
-onUnmounted(() => {
-  stopPolling()
 })
 </script>
