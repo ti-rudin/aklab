@@ -218,6 +218,18 @@ if [ "$NEED_INSTALL" = "true" ]; then
   log "Install Playwright system deps + chromium..."
   npx playwright install-deps chromium 2>&1 | tail -3 || true
   npx playwright install chromium 2>&1 | tail -3
+   # Symlinks для headless chromium если версии не совпадают (Ubuntu 26.04 workaround)
+   PW_CACHE="$HOME/.cache/ms-playwright"
+   for dir in "$PW_CACHE"/chromium-122[0-9]; do
+     [ -d "$dir" ] || continue
+     target="${dir%-*}-1223"
+     [ -d "$target" ] || ln -sf "$dir" "$target" 2>/dev/null || true
+   done
+   for dir in "$PW_CACHE"/chromium_headless_shell-122[0-9]; do
+     [ -d "$dir" ] || continue
+     target="${dir%-*}-1223"
+     [ -d "$target" ] || ln -sf "$dir" "$target" 2>/dev/null || true
+   done
 else
   log "package-lock.json не изменился — пропускаем npm install"
   # app/ и api/ не в workspaces — проверяем их node_modules отдельно
