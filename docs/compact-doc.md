@@ -244,6 +244,9 @@ deploy-prod.sh + бамп версии).
 - **Inline-редактирование расписания** на `/settings` (таб Парсеры)
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
+- **Unit тесты** — `npm run test` (vitest). 13 файлов, 250 тестов. Включают buildParseRules (14 тестов), createProperty rules enforcement, queue, pipeline, cron, focusEngine.
+- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. 29 тестов: unauthenticated (7), auth flow (4), dashboard (4), properties (6), settings (6), property detail (2). Пароль из TEST_USER_PASSWORD env var.
+- **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
 - **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
