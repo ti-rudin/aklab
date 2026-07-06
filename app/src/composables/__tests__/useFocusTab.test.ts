@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, type Ref } from 'vue'
 import {
   tagStyle,
   tagLabel,
@@ -119,8 +119,8 @@ describe('FOCUS_AVAILABLE_TAGS', () => {
 // ─────────────────────────────────────────────────────────────────
 describe('useFocusTab', () => {
   const noop = () => {}
-  let focusTotal: ReturnType<typeof ref<number>>
-  let focusItems: ReturnType<typeof ref<{ id: number }[]>>
+  let focusTotal: Ref<number>
+  let focusItems: Ref<{ id: number }[]>
 
   beforeEach(() => {
     localStorage.clear()
