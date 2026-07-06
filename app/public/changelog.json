@@ -1,5 +1,44 @@
 [
   {
+    "version": "v1.1.30",
+    "date": "7 июля 2026",
+    "time": "00:24",
+    "items": [
+      {
+        "text": "E2E resilient selectors, BASE_URL config, docs update",
+        "type": "fix"
+      },
+      {
+        "text": "E2E resilient selectors, BASE_URL config, seed data, docs update",
+        "type": "fix"
+      },
+      {
+        "text": "Rate limit 120→600/min — 10 парсеров одновременно забивали лимит",
+        "type": "fix"
+      },
+      {
+        "text": "E2E тесты — 32 недостающих user stories",
+        "type": "new"
+      },
+      {
+        "text": "объект",
+        "type": "fix"
+      },
+      {
+        "text": "Unit tests useFocusParams, usePolling, formatters (U11,U13,U7)",
+        "type": "new"
+      },
+      {
+        "text": "Публичный health endpoint",
+        "type": "fix"
+      },
+      {
+        "text": "Вернуть auth: false на /focus и /stats — single-tenant, dashboard падал",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.29",
     "date": "6 июля 2026",
     "time": "22:49",
