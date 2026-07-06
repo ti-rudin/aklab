@@ -1,12 +1,12 @@
 <template>
   <!-- Фильтры -->
-  <div class="rounded-xl p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+  <div class="radius-lg p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
     <!-- Поиск + переключатель вида -->
     <div class="flex gap-2 items-center">
       <div class="relative flex-1">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
         <input v-model="searchQuery" @input="onSearchInput" type="text" placeholder="Поиск по названию или адресу..."
-          class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
+          class="w-full pl-9 pr-3 py-2 radius-md border text-sm"
           style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
       </div>
       <ViewToggle v-model="viewMode" />
@@ -30,7 +30,7 @@
       </div>
       <div v-if="status !== 'in_progress'">
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
-        <select v-model="filters.status" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.status" class="px-2 py-1.5 radius-md border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option value="new">Новый</option>
           <option value="viewed">Просмотрен</option>
@@ -39,7 +39,7 @@
       </div>
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
-        <select v-model="filters.source" class="px-2 py-1.5 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+        <select v-model="filters.source" class="px-2 py-1.5 radius-md border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
           <option value="">Все</option>
           <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
         </select>
@@ -48,15 +48,15 @@
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Цена (₽)</label>
         <div class="flex gap-1 items-center">
           <input v-model.number="filters.priceFrom" type="number" placeholder="от" min="0"
-            class="w-24 px-2 py-1.5 rounded-lg border text-sm"
+            class="w-24 px-2 py-1.5 radius-md border text-sm"
             style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
           <span class="text-xs" style="color: var(--text-muted)">—</span>
           <input v-model.number="filters.priceTo" type="number" placeholder="до" min="0"
-            class="w-24 px-2 py-1.5 rounded-lg border text-sm"
+            class="w-24 px-2 py-1.5 radius-md border text-sm"
             style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
         </div>
       </div>
-      <button @click="handleResetFilters" class="px-3 py-1.5 rounded-lg border text-sm hover:opacity-80 self-end" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
+      <button @click="handleResetFilters" class="px-3 py-1.5 radius-md border text-sm hover:opacity-80 self-end" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
     </div>
   </div>
 
@@ -72,10 +72,12 @@
   <!-- Карточки -->
   <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <PropertyCard
-      v-for="item in items"
+      v-for="(item, idx) in items"
       :key="item.id"
       :item="item"
       variant="default"
+      class="stagger-item"
+      :style="{ '--i': idx }"
       @open="openProperty(item)"
     />
   </div>
@@ -94,21 +96,21 @@
   <!-- Пагинация -->
   <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
     <button @click="page > 1 && page--" :disabled="page <= 1"
-      class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+      class="px-2 py-1 sm:px-3 radius-md text-sm disabled:opacity-40"
       :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
       ‹
     </button>
     <template v-for="p in visiblePages" :key="String(p)">
       <span v-if="p === '...'" class="px-1 text-sm hidden sm:inline" style="color: var(--text-muted)">…</span>
       <button v-else @click="page = Number(p)"
-        class="px-2 py-1 sm:px-3 rounded-lg text-xs sm:text-sm hidden sm:inline-block"
+        class="px-2 py-1 sm:px-3 radius-md text-xs sm:text-sm hidden sm:inline-block"
         :style="{ background: p === page ? 'var(--accent)' : 'var(--bg-elevated)', color: p === page ? 'white' : 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
         {{ p }}
       </button>
     </template>
     <span class="sm:hidden text-xs px-2" style="color: var(--text-muted)">{{ page }} / {{ totalPages }}</span>
     <button @click="page < totalPages && page++" :disabled="page >= totalPages"
-      class="px-2 py-1 sm:px-3 rounded-lg text-sm disabled:opacity-40"
+      class="px-2 py-1 sm:px-3 radius-md text-sm disabled:opacity-40"
       :style="{ background: 'var(--bg-elevated)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)' }">
       ›
     </button>
@@ -300,11 +302,26 @@ defineExpose({ refresh, total })
 // Lifecycle
 // ========================
 onMounted(() => {
-  // Read query-параметр property_type с дашборда (only for "Все объекты")
-  if (props.status === 'new' && route.query.property_type) {
-    const q = route.query.property_type
-    filters.property_type = Array.isArray(q) ? q as string[] : (q as string).split(',')
-  }
+  // Read all query params from URL
+  const q = route.query
+  if (q.property_type) filters.property_type = Array.isArray(q.property_type) ? q.property_type as string[] : (q.property_type as string).split(',')
+  if (q.city) filters.city = Array.isArray(q.city) ? q.city as string[] : (q.city as string).split(',')
+  if (q.priceFrom) filters.priceFrom = Number(q.priceFrom)
+  if (q.priceTo) filters.priceTo = Number(q.priceTo)
+  if (q.source) filters.source = q.source as string
   fetchItems()
 })
+
+// ========================
+// Sync filters to URL
+// ========================
+watch(filters, () => {
+  const query: Record<string, string> = {}
+  if (filters.property_type.length) query.property_type = filters.property_type.join(',')
+  if (filters.city.length) query.city = filters.city.join(',')
+  if (filters.priceFrom != null) query.priceFrom = String(filters.priceFrom)
+  if (filters.priceTo != null) query.priceTo = String(filters.priceTo)
+  if (filters.source) query.source = filters.source
+  router.replace({ query })
+}, { deep: true })
 </script>
