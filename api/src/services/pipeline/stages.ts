@@ -287,13 +287,12 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
     ctx.strapi.log.error(`[pipeline] Score error: ${err.message}`);
   }
 
-  // Count undervalued
-  const undervalued = await ctx.strapi.entityService.findMany('api::property.property', {
-    filters: { is_undervalued: true },
-    limit: 1,
+  // Count undervalued (баг B4: был limit:1 → всегда 0 или 1)
+  const undervaluedRows = await ctx.strapi.db.query('api::property.property').findMany({
+    where: { is_undervalued: true },
+    select: ['id'],
   });
-  // Get total count from pagination
-  const undervaluedCount = (undervalued as any)?.length || 0; // approximation
+  const undervaluedCount = undervaluedRows?.length || 0;
 
   await updateState(ctx.strapi, {
     stage: 'analyzing_done',

@@ -81,34 +81,44 @@ export default factories.createCoreController("api::property.property", ({ strap
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayISO = yesterday.toISOString();
 
-    // Helper: count by fetching IDs (Strapi 5 db.query may lack .count())
+    // Count helper: findMany + select: ['id'] + .length (gotcha #54)
     const countWhere = async (where: Record<string, any>) => {
-      try {
-        const rows = await s.db.query('api::property.property').findMany({ where, select: ['id'] });
-        return rows?.length ?? 0;
-      } catch { return 0; }
+      const rows = await s.db.query('api::property.property').findMany({ where, select: ['id'] });
+      return rows?.length ?? 0;
     };
 
-    const [total, inFocus, hot, undervalued, newToday] = await Promise.all([
-      countWhere({ status: 'new' }),
-      countWhere({ status: 'new', focus_score: { $gt: 0 } }),
-      countWhere({ status: 'new', focus_score: { $gte: 50 } }),
+    // Оптимизация: 4 запроса вместо 6 с параллелизацией
+    // Запрос 1: все status='new' → считаем total, inFocus, hot в JS
+    // Запрос 2: is_undervalued count
+    // Запрос 3: newToday count
+    // Запрос 4: type breakdown
+    const [newRows, undervalued, newToday, typeRows] = await Promise.all([
+      s.db.query('api::property.property').findMany({
+        where: { status: 'new' },
+        select: ['focus_score'],
+      }),
       countWhere({ is_undervalued: true }),
       countWhere({ first_seen_at: { $gte: yesterdayISO } }),
-    ]);
-
-    // Type breakdown
-    let typeBreakdown: Record<string, number> = {};
-    try {
-      const allProps = await s.db.query('api::property.property').findMany({
+      s.db.query('api::property.property').findMany({
         where: { status: 'new' },
         select: ['property_type'],
-      });
-      for (const p of allProps || []) {
-        const t = p.property_type || 'other';
-        typeBreakdown[t] = (typeBreakdown[t] || 0) + 1;
-      }
-    } catch { /* ignore */ }
+      }),
+    ]);
+
+    // Считаем total, inFocus, hot из одного результата
+    const total = newRows?.length ?? 0;
+    let inFocus = 0, hot = 0;
+    for (const row of newRows || []) {
+      if (row.focus_score > 0) inFocus++;
+      if (row.focus_score >= 50) hot++;
+    }
+
+    // Type breakdown
+    const typeBreakdown: Record<string, number> = {};
+    for (const p of typeRows || []) {
+      const t = p.property_type || 'other';
+      typeBreakdown[t] = (typeBreakdown[t] || 0) + 1;
+    }
 
     ctx.body = { total, inFocus, hot, undervalued, newToday, typeBreakdown };
   },

@@ -24,7 +24,7 @@ export default {
       method: 'GET',
       path: '/properties/focus',
       handler: 'property.getFocus',
-      config: { auth: false, policies: [] },
+      config: {},
     },
     {
       method: 'POST',
@@ -36,7 +36,7 @@ export default {
       method: 'GET',
       path: '/properties/stats',
       handler: 'property.getStats',
-      config: { auth: false, policies: [] },
+      config: {},
     },
     // Core CRUD routes
     {
