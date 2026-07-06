@@ -149,6 +149,9 @@
       </router-view>
     </main>
 
+    <!-- Toast notifications -->
+    <ToastHost />
+
     <!-- Screen reader announcements -->
     <div aria-live="polite" class="sr-only"></div>
 
@@ -163,6 +166,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import Footer from '@/components/Footer.vue'
+import ToastHost from '@/components/ui/ToastHost.vue'
 
 const route = useRoute()
 const router = useRouter()
