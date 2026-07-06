@@ -282,14 +282,22 @@
               <tr class="cursor-pointer transition-colors hover:opacity-80"
                 :style="{ background: 'var(--bg-elevated)', borderTop: '2px solid var(--border-subtle)' }"
                 @click="router.push(`/properties/${item.documentId}`)">
-                <td colspan="9" class="px-3 py-2">
-                  <div class="flex items-center gap-3">
-                    <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
-                    <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
-                    <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
-                      ⚠ {{ item.deviation_percent }}%
-                    </span>
-                  </div>
+                <td class="px-3 py-2">
+                  <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
+                </td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2 text-center">
+                  <span class="text-xs px-2 py-0.5 rounded-full" :style="statusStyle(item.status || 'unknown')">{{ statusLabel(item.status || 'unknown') }}</span>
+                </td>
+                <td class="px-3 py-2 text-center">
+                  <span v-if="item.is_undervalued" class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background: rgba(251,191,36,0.15); color: #f59e0b">
+                    ⚠ {{ item.deviation_percent }}%
+                  </span>
                 </td>
               </tr>
               <!-- Row 2: Детали -->
@@ -559,15 +567,23 @@
                 <td class="px-3 py-2" @click.stop>
                   <input type="checkbox" :checked="focusSelected.has(item.id)" @change="toggleFocusSelect(item.id)" class="rounded" style="accent-color: var(--accent)" />
                 </td>
-                <td colspan="10" class="px-3 py-2 cursor-pointer transition-colors hover:opacity-80"
+                <td class="px-3 py-2 cursor-pointer transition-colors hover:opacity-80"
                   @click="router.push(`/properties/${item.documentId}`)">
-                  <div class="flex items-center gap-3">
-                    <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
-                    <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
-                    <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold" :style="deviationStyle(Number(item.deviation_percent))">
-                      {{ item.deviation_percent }}%
-                    </span>
-                  </div>
+                  <span class="text-sm font-semibold" style="color: var(--text-main)">{{ item.title }}</span>
+                </td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2 text-center">
+                  <span v-if="item.has_minimum_price" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" style="background: rgba(79,140,255,0.15); color: #4f8cff">Торги</span>
+                  <span v-if="item.deviation_percent != null" class="text-xs px-2 py-0.5 rounded-full font-semibold ml-1" :style="deviationStyle(Number(item.deviation_percent))">
+                    {{ item.deviation_percent }}%
+                  </span>
                 </td>
               </tr>
               <!-- Row 2: Детали -->
