@@ -1193,7 +1193,21 @@ onUnmounted(() => {
   stopPolling()
 })
 
+async function loadParseDefaults() {
+  try {
+    const { data } = await api.get('/setting')
+    const s = data?.data
+    if (s) {
+      parseDepth.value = s.parse_depth ?? 20
+      parseFilters.priceFrom = s.price_from ?? ''
+      parseFilters.priceTo = s.price_to ?? ''
+      parseFilters.cities = s.monitored_regions ?? ['moscow', 'mo', 'other']
+    }
+  } catch { /* используем дефолты */ }
+}
+
 onMounted(() => {
+  loadParseDefaults()
   // Читаем query-параметр property_type с дашборда
   if (route.query.property_type) {
     const q = route.query.property_type
