@@ -31,7 +31,6 @@
             <option value="office">Офис</option>
             <option value="warehouse">Склад</option>
             <option value="retail">Торговля</option>
-            <option value="production">Производство</option>
             <option value="free_purpose">Св. назначения</option>
             <option value="apartment">Квартира</option>
             <option value="land">Зем. участок</option>

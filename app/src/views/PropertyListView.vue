@@ -775,7 +775,6 @@ const typeOptions = [
   { value: 'office', label: 'Офис' },
   { value: 'warehouse', label: 'Склад' },
   { value: 'retail', label: 'Торговля' },
-  { value: 'production', label: 'Произв.' },
   { value: 'free_purpose', label: 'Св. назн.' },
   { value: 'apartment', label: 'Квартира' },
   { value: 'land', label: 'Участок' },

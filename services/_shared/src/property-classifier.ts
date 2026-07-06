@@ -20,13 +20,10 @@ export function classifyPropertyType(text: string): string {
   // Торговля
   if (lower.includes('магазин') || lower.includes('торгов') || lower.includes('павильон')) return 'retail';
 
-  // Производство
-  if (lower.includes('производствен') || lower.includes('промышленн') || lower.includes('цех')) return 'production';
-
-  // Свободного назначения (нежилые, здания, гаражи)
+  // Свободного назначения (нежилые, здания, гаражи, производство)
   if (lower.includes('нежилое') || lower.includes('помещение') || lower.includes('коммерческ') ||
       lower.includes('гараж') || lower.includes('бокс') || lower.includes('паркинг') ||
-      lower.includes('здани')) return 'free_purpose';
+      lower.includes('здани') || lower.includes('производствен') || lower.includes('промышленн') || lower.includes('цех')) return 'free_purpose';
 
   return 'other';
 }
