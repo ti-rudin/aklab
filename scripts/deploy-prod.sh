@@ -107,6 +107,12 @@ rollback() {
 }
 trap rollback ERR
 
+# ВАЖНО: .env файл и PM2 daemon env — два разных источника секретов.
+# PM2 daemon env захватывается в момент `pm2 start`. Если .env изменён
+# ПОСЛЕ старта — PM2 процессы используют старые значения.
+# Решение: `pm2 restart --update-env` или явная синхронизация (ниже).
+# См. gotchas #24, #33.
+
 # === Step 0.5: Critical env vars sync check ===
 if [ -f ".env" ]; then
   ENV_SALT=$(grep -E "^API_TOKEN_SALT=" .env 2>/dev/null | cut -d= -f2 || echo "")
