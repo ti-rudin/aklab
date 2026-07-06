@@ -15,6 +15,7 @@ import type { Core } from '@strapi/strapi';
 import cron from 'node-cron';
 import { getQueueService } from '../services/queueService';
 import type { StrapiInstance } from '../types/strapi';
+import { buildParseRules } from '../services/parseRules';
 
 const CRON_TIMEZONE = 'Europe/Moscow';
 
@@ -63,14 +64,7 @@ function registerSourceCron(strapi: Core.Strapi, source: any): void {
       const setting = await getSetting(strapi);
       const depth = setting?.parse_depth || 20;
       // Правила парсинга из Setting
-      const rules = {
-        stopWords: setting?.stop_words || undefined,
-        priceFrom: setting?.price_from != null ? Number(setting.price_from) : undefined,
-        priceTo: setting?.price_to != null ? Number(setting.price_to) : undefined,
-        areaFrom: setting?.area_from != null ? Number(setting.area_from) : undefined,
-        areaTo: setting?.area_to != null ? Number(setting.area_to) : undefined,
-        cities: setting?.monitored_regions?.length ? setting.monitored_regions : undefined,
-      };
+      const rules = buildParseRules(setting);
       queueService.addToQueue(queueName, {
         source: slug,
         sourceId,

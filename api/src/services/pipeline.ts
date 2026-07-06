@@ -10,6 +10,7 @@ import type { StrapiInstance } from '../types/strapi';
 import { getQueueService } from './queueService';
 import { scorePropertiesBatch } from './focusEngine';
 import { broadcastSSE } from './pipeline-sse';
+import { buildParseRules } from './parseRules';
 
 // ── Types ──
 
@@ -246,14 +247,7 @@ export class PipelineService {
     const slugs: string[] = [];
     // Читаем правила парсинга из Setting
     const settings = await this.strapi.db.query('api::setting.setting').findOne({});
-    const parseRules = {
-      stopWords: settings?.stop_words || undefined,
-      priceFrom: settings?.price_from != null ? Number(settings.price_from) : undefined,
-      priceTo: settings?.price_to != null ? Number(settings.price_to) : undefined,
-      areaFrom: settings?.area_from != null ? Number(settings.area_from) : undefined,
-      areaTo: settings?.area_to != null ? Number(settings.area_to) : undefined,
-      cities: settings?.monitored_regions?.length ? settings.monitored_regions : undefined,
-    };
+    const parseRules = buildParseRules(settings);
     for (const src of sources) {
       if (this.isCancelled()) break;
       const slug = (src as any).slug;

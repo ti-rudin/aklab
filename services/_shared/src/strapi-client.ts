@@ -21,6 +21,18 @@ export interface ParseRules {
   cities?: string[];
 }
 
+/** Построить ParseRules из записи Setting (singleton). */
+export function buildParseRules(setting: any): ParseRules {
+  return {
+    stopWords: setting?.stop_words || undefined,
+    priceFrom: setting?.price_from != null ? Number(setting.price_from) : undefined,
+    priceTo: setting?.price_to != null ? Number(setting.price_to) : undefined,
+    areaFrom: setting?.area_from != null ? Number(setting.area_from) : undefined,
+    areaTo: setting?.area_to != null ? Number(setting.area_to) : undefined,
+    cities: setting?.monitored_regions?.length ? setting.monitored_regions : undefined,
+  };
+}
+
 const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
   'Content-Type': 'application/json',
@@ -126,15 +138,18 @@ export async function createProperty(props: {
   longitude?: number;
   rules?: ParseRules;
 }): Promise<any> {
+  // Извлекаем rules из props чтобы не утекал в POST payload
+  const { rules, ...propertyData } = props as any;
+
   if (!isCommercialProperty(props)) {
     logger.warn(`Skipping non-commercial: "${props.title}" [${props.property_type}/${props.auction_type}] source=${props.source}`);
     return null;
   }
 
   // Правила парсинга: стоп-слова
-  if (props.rules?.stopWords?.length) {
+  if (rules?.stopWords?.length) {
     const text = ((props.title || '') + ' ' + (props.description || '')).toLowerCase();
-    for (const word of props.rules.stopWords) {
+    for (const word of rules.stopWords) {
       if (text.includes(word.toLowerCase())) {
         logger.warn(`Skipping stop word "${word}": "${props.title}"`);
         return null;
@@ -143,33 +158,33 @@ export async function createProperty(props: {
   }
 
   // Правила парсинга: диапазон цен
-  if (props.price) {
-    if (props.rules?.priceFrom != null && props.price < props.rules.priceFrom) {
-      logger.warn(`Skipping below price_from (${props.rules.priceFrom}): "${props.title}" price=${props.price}`);
+  if (props.price != null) {
+    if (rules?.priceFrom != null && props.price < rules.priceFrom) {
+      logger.warn(`Skipping below price_from (${rules.priceFrom}): "${props.title}" price=${props.price}`);
       return null;
     }
-    if (props.rules?.priceTo != null && props.price > props.rules.priceTo) {
-      logger.warn(`Skipping above price_to (${props.rules.priceTo}): "${props.title}" price=${props.price}`);
+    if (rules?.priceTo != null && props.price > rules.priceTo) {
+      logger.warn(`Skipping above price_to (${rules.priceTo}): "${props.title}" price=${props.price}`);
       return null;
     }
   }
 
   // Правила парсинга: диапазон площади
-  if (props.area_sqm) {
-    if (props.rules?.areaFrom != null && props.area_sqm < props.rules.areaFrom) {
-      logger.warn(`Skipping below area_from (${props.rules.areaFrom}): "${props.title}" area=${props.area_sqm}`);
+  if (props.area_sqm != null) {
+    if (rules?.areaFrom != null && props.area_sqm < rules.areaFrom) {
+      logger.warn(`Skipping below area_from (${rules.areaFrom}): "${props.title}" area=${props.area_sqm}`);
       return null;
     }
-    if (props.rules?.areaTo != null && props.area_sqm > props.rules.areaTo) {
-      logger.warn(`Skipping above area_to (${props.rules.areaTo}): "${props.title}" area=${props.area_sqm}`);
+    if (rules?.areaTo != null && props.area_sqm > rules.areaTo) {
+      logger.warn(`Skipping above area_to (${rules.areaTo}): "${props.title}" area=${props.area_sqm}`);
       return null;
     }
   }
 
   // Правила парсинга: города (если фильтр указан — пропускаем объекты из других городов)
-  if (props.rules?.cities?.length && props.city) {
-    if (!props.rules.cities.includes(props.city)) {
-      logger.warn(`Skipping city "${props.city}" not in [${props.rules.cities}]: "${props.title}"`);
+  if (rules?.cities?.length && props.city) {
+    if (!rules.cities.includes(props.city)) {
+      logger.warn(`Skipping city "${props.city}" not in [${rules.cities}]: "${props.title}"`);
       return null;
     }
   }
@@ -194,7 +209,7 @@ export async function createProperty(props: {
   const res = await fetch(`${BASE}/properties`, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ data: props }),
+    body: JSON.stringify({ data: propertyData }),
   });
   if (!res.ok) {
     const body = await res.text();
