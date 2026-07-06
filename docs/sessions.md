@@ -128,7 +128,7 @@
 
 ## Известные баги / TODO
 
-- **E2E тесты на проде — network isolation** — dev-server (192.168.11.151) не может достучаться до `api-aklab.tirobots.ru` / `213.184.136.221` (connection timeout). E2E тесты на прод нужно запускать **с того же сервера** или из GitHub Actions (prod network). `global-setup.ts` использует `BASE_URL` env — для прод-тестов нужен `FRONTEND_URL=https://aklab.tirobots.ru`. **Нерешено.**
+- **E2E тесты на проде — network isolation** — ~~dev-server (192.168.11.151) не может достучаться до `api-aklab.tirobots.ru` / `213.184.136.221` (connection timeout).~~ **РЕШЕНО:** `playwright.config.ts` поддерживает `BASE_URL` env — webServer не запускается, тесты идут напрямую на `https://aklab.tirobots.ru`. Запуск: `BASE_URL=https://aklab.tirobots.ru TEST_USER_PASSWORD='***' HEADLESS=true npx playwright test --project=chromium`.
 - **5 skipped E2E тестов** — API smoke tests (section 9): 4 работают но skipped из-за rate limiter, 1 (settings endpoint) возвращает 404 (singleton).
 - **Странный коммит `795fdbf "11"` в истории main** — пользовательский,
   squash не делал (force-push опасен). Можно пережить.

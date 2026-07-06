@@ -246,4 +246,17 @@
     Symptom: `error TS18046: 'results' is of type 'unknown'`.
 58. **FocusFilters.priceFrom — string из input** — Vue `<input type="number">` даёт
     `string`, не `number`. Интерфейс `FocusFilters` должен принимать `string | number | null`.
+59. **Playwright config: BASE_URL env** — `app/playwright.config.ts` поддерживает
+    `BASE_URL` env для запуска E2E против production. Если `BASE_URL` задан —
+    webServer не запускается, используется указанный URL.
+    ```bash
+    BASE_URL=https://aklab.tirobots.ru TEST_USER_PASSWORD='***' HEADLESS=true \
+      npx playwright test --project=chromium
+    ```
+    Тестовый юзер: `test@aklab.tirobots.ru` (id=2). Пароль задаётся через
+    `TEST_USER_PASSWORD` env. Seeder обновляет пароль при каждом рестарте API —
+    менять пароль напрямую в БД бессмысленно.
+60. **Seeder перезаписывает пароль test user** — `seedTestUser` в bootstrap
+    обновляет пароль из `TEST_USER_PASSWORD` env при каждом старте API.
+    Если нужно сменить пароль — менять в `.env` и рестартить API.
 

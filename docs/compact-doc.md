@@ -248,7 +248,7 @@ deploy-prod.sh + бамп версии).
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **Unit тесты** — `npm run test` (vitest). 27 файлов, 578 тестов (root) + 14 файлов (app). Включают buildParseRules, createProperty, queue, pipeline, cron, focusEngine, buildPropertyWhere, **extractPrice/extractArea всех 10 парсеров**, **composables (usePropertyData, useFocusTab, usePropertyFilters, useToast)**.
-- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. 29 тестов: unauthenticated (7), auth flow (4), dashboard (4), properties (6), settings (6), property detail (2). Пароль из TEST_USER_PASSWORD env var.
+- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. 56 тестов в 14 describe-блоках: unauthenticated (7), auth flow (4), dashboard (5), properties (6), settings (5), property detail (2), pagination (3), focus tab (3), detail extended (4), settings digest (4), settings rules (2), settings sources (4), market references (3), changelog+docs+404 (4). Пароль из TEST_USER_PASSWORD env. Против production: `BASE_URL=https://aklab.tirobots.ru`.
 - **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.

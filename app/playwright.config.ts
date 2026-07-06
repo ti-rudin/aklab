@@ -10,6 +10,8 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+const BASE_URL = process.env.BASE_URL
+
 export default defineConfig({
   testDir: './e2e',
   /* Maximum time one test can run for. */
@@ -34,7 +36,7 @@ export default defineConfig({
     /* Maximum time each action such as `click()` can take. Defaults to 0 (no limit). */
     actionTimeout: 0,
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5174',
+    baseURL: BASE_URL || (process.env.CI ? 'http://localhost:4173' : 'http://localhost:5174'),
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -97,9 +99,11 @@ export default defineConfig({
   // outputDir: 'test-results/',
 
   /* Run your local dev server before starting the tests */
-  webServer: {
-    command: process.env.CI ? 'npm run preview' : 'npm run dev',
-    port: process.env.CI ? 4173 : 5174,
-    reuseExistingServer: !process.env.CI,
-  },
+  ...(BASE_URL ? {} : {
+    webServer: {
+      command: process.env.CI ? 'npm run preview' : 'npm run dev',
+      port: process.env.CI ? 4173 : 5174,
+      reuseExistingServer: !process.env.CI,
+    },
+  }),
 })
