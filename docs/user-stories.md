@@ -1,922 +1,917 @@
-# AKLAB — User Stories
+# AKLAB — Пользовательские истории (User Stories)
 
-> Comprehensive user stories based on all Vue view files, UI elements, and interactions.
-> Generated: 2026-06-30
-> Updated: 2026-07-05
-
----
-
-## Table of Contents
-
-1. [Authentication (Auth.vue)](#1-authentication)
-2. [App Layout & Navigation (App.vue, Footer.vue)](#2-app-layout--navigation)
-3. [Dashboard (DashboardView.vue)](#3-dashboard)
-4. [Property List — All Objects Tab (PropertyListView.vue)](#4-property-list--all-objects-tab)
-5. [Property List — Focus Tab (PropertyListView.vue)](#5-property-list--focus-tab)
-6. [Property Detail (PropertyDetailView.vue)](#6-property-detail)
-7. [Sources (SourceListView.vue)](#7-sources)
-8. [Market References (MarketReferencesView.vue)](#8-market-references)
-9. [Settings (SettingsView.vue)](#9-settings)
-10. [Focus Rules (RulesView.vue)](#10-focus-rules)
-11. [Changelog (ChangelogView.vue)](#11-changelog)
-12. [Documentation (DocumentationView.vue)](#12-documentation)
-13. [404 Not Found (NotFoundView.vue)](#13-404-not-found)
-14. [Routing & Guards (router/index.ts)](#14-routing--guards)
+> Истории, основанные на **фактической реализации** всех Vue-компонентов, UI-элементов и взаимодействий.
+> Аудит проведён: 2026-07-06
+> Язык: русский
 
 ---
 
-## 1. Authentication
+## Содержание
 
-### US-1.1: Login with email and password
-As a **user**, I want to **log in with my email and password** so that **I can access the protected AKLAB dashboard**.
-
-Acceptance criteria:
-- Email input field (type=email, required, autocomplete=email)
-- Password input field (type=password, required, autocomplete=current-password)
-- "Войти" submit button with loading spinner state
-- Error message displayed in red box on failed login
-- On success, redirect to `/properties`
-- Already-authenticated users redirect away from `/auth`
-
-UI elements: `#email` input, `#password` input, "Войти" button, error alert box, AKLAB logo text
-
----
-
-## 2. App Layout & Navigation
-
-### US-2.1: Navigate between main sections
-As an **authenticated user**, I want to **navigate between Dashboard, Properties, Rules, Sources, References, and Settings** so that **I can access all features of the application**.
-
-Acceptance criteria:
-- Sticky top navigation bar with glass effect
-- Navigation links: Дашборд (`/`), Объекты (`/properties`), Правила (`/rules`), Источники (`/sources`), Эталоны (`/market-references`), Настройки (`/settings`)
-- Active link highlighted with accent color and soft background
-- AKLAB logo links to home page with gradient text (dark/light variants)
-- Only shown when authenticated
-
-UI elements: `<nav>` sticky header, 6 router-links, AKLAB logo link
-
-### US-2.2: Mobile hamburger menu
-As a **mobile user**, I want to **open a hamburger menu** so that **I can navigate the app on small screens**.
-
-Acceptance criteria:
-- Hamburger icon (☰) visible on screens < 640px (sm breakpoint)
-- Clicking toggles mobile menu with slide-down animation
-- Menu contains all nav items + "Выйти" button
-- Menu closes automatically on route change
-- Close icon (✕) shown when menu is open
-
-UI elements: Hamburger button, mobile nav links, "Выйти" button in mobile menu
-
-### US-2.3: Toggle dark/light theme
-As a **user**, I want to **switch between dark and light themes** so that **I can use the app comfortably in different lighting conditions**.
-
-Acceptance criteria:
-- Sun icon button (in dark mode) / Moon icon button (in light mode)
-- Theme persisted across sessions
-- All UI elements adapt to theme via CSS variables
-
-UI elements: Theme toggle button with sun/moon SVG icons
-
-### US-2.4: Logout
-As an **authenticated user**, I want to **log out of the application** so that **my session is ended and my data is protected**.
-
-Acceptance criteria:
-- "Выйти" button in desktop nav (hidden on mobile)
-- "Выйти" button in mobile menu
-- "Выйти" button on Settings page
-- Clears auth state and redirects to `/`
-
-UI elements: "Выйти" button (3 locations)
-
-### US-2.5: View footer links
-As a **user**, I want to **see footer navigation** so that **I can quickly access key sections and informational pages**.
-
-Acceptance criteria:
-- Two-column footer: "Продукт" and "AKLAB" sections
-- Product links: Объекты, Источники, Рыночные эталоны, Настройки
-- Info links: История изменений, Документация
-- Copyright notice with current year
-
-UI elements: Footer with 6 router-links, description text, copyright
+1. [Аутентификация (Auth.vue)](#1-аутентификация)
+2. [Макет и навигация (App.vue, Footer.vue)](#2-макет-и-навигация)
+3. [Дашборд (DashboardView.vue)](#3-дашборд)
+4. [Список объектов — вкладка «Все» (PropertyListView.vue)](#4-список-объектов--вкладка-все)
+5. [Список объектов — вкладка «В фокусе» (PropertyListView.vue)](#5-список-объектов--вкладка-в-фокусе)
+6. [Карточка объекта (PropertyDetailView.vue)](#6-карточка-объекта)
+7. [Настройки — Дайджест (SettingsView.vue)](#7-настройки--дайджест)
+8. [Настройки — Правила (SettingsView.vue → RulesPanel)](#8-настройки--правила)
+9. [Настройки — Парсеры (SettingsView.vue → SourcesPanel)](#9-настройки--парсеры)
+10. [Настройки — Эталоны (SettingsView.vue → MarketReferencesPanel)](#10-настройки--эталоны)
+11. [История изменений (ChangelogView.vue)](#11-история-изменений)
+12. [Документация (DocumentationView.vue)](#12-документация)
+13. [404 — Страница не найдена (NotFoundView.vue)](#13-404--страница-не-найдена)
+14. [Маршрутизация и guards (router/index.ts)](#14-маршрутизация-и-guards)
 
 ---
 
-## 3. Dashboard
+## 1. Аутентификация
 
-### US-3.1: View summary statistics
-As a **user**, I want to **see key statistics at a glance** so that **I can quickly understand the current state of monitored properties**.
+### US-1.1: Вход по email и паролю
+**Как** пользователь, **я хочу** войти в систему с email и паролем, **чтобы** получить доступ к защищённому дашборду AKLAB.
 
-Acceptance criteria:
-- Three stat cards in a row: "Всего объектов", "Добавленные в фокус", "Средний скор"
-- "Всего объектов" card is clickable — navigates to `/properties`
-- "Добавленные в фокус" card is clickable — navigates to `/properties#focus`
-- Skeleton loading placeholders while data loads
-- Error message on failure
+Критерии приёмки:
+- Поле ввода email (type=email, required, autocomplete=email)
+- Поле ввода пароля (type=password, required, autocomplete=current-password)
+- Кнопка «Войти» с состоянием загрузки (спиннер)
+- Сообщение об ошибке при неудачном входе (красный блок)
+- При успехе — редирект на `/properties`
+- Уже аутентифицированные пользователи перенаправляются с `/auth` на `/properties`
 
-UI elements: 3 stat cards with label + large number, 2 clickable cards with navigation
-
-### US-3.2: See hot (top) properties
-As a **user**, I want to **see the top-5 highest-scored focus properties** so that **I can quickly identify the most promising opportunities**.
-
-Acceptance criteria:
-- "🔥 Горячие объекты" section title
-- Up to 5 property cards with score badge, title, address/city, and tags (max 3)
-- Score badge color-coded: red (≥70), amber (≥50), blue (<50)
-- Clicking a property navigates to its detail page
-- "Нет объектов в фокусе" shown when empty
-
-UI elements: Property row cards with score badge, title, address, tag badges, clickable rows
-
-### US-3.3: Run score recalculation
-As a **user**, I want to **trigger a recalculation of property scores** so that **focus scores reflect the latest market data**.
-
-Acceptance criteria:
-- "🔄 Пересчитать выборку" button (outlined style)
-- Loading state: "Запуск…"
-- Disabled while any action is running
-- Success message: "Скоринг запущен"
-
-UI elements: "🔄 Пересчитать выборку" button
-
-### US-3.4: View 7-day trend
-As a **user**, I want to **see a 7-day trend of properties entering focus** so that **I can track momentum over time**.
-
-Acceptance criteria:
-- "📈 Тренд (7 дней)" section title
-- Horizontal bar chart with date labels and count
-- Bar width proportional to max count
-- Data fetched with pageSize=5000 for comprehensive coverage
-- "Нет данных" when empty
-
-UI elements: Trend bar rows with date label, progress bar, count number
-
-### US-3.5: Refresh dashboard
-As a **user**, I want to **refresh all dashboard data** so that **I can see the latest information**.
-
-Acceptance criteria:
-- "↻ Обновить" button in header
-- Disabled and shows "Загрузка…" while refreshing
-- Fetches stats, top properties, and trend in parallel
-
-UI elements: "↻ Обновить" button
+UI-элементы: поле `#email`, поле `#password`, кнопка «Войти», блок ошибки, логотип AKLAB
 
 ---
 
-## 4. Property List — All Objects Tab
+## 2. Макет и навигация
 
-### US-4.1: View all properties table
-As a **user**, I want to **see all properties in a sortable table** so that **I can browse and compare available commercial properties**.
+### US-2.1: Навигация между основными разделами
+**Как** аутентифицированный пользователь, **я хочу** переключаться между Дашбордом, Объектами и Настройками, **чтобы** использовать все возможности приложения.
 
-Acceptance criteria:
-- Desktop: full table with columns: Название, Адрес, Город, Тип, Площадь, Цена, ₽/м², Статус, Оценка
-- Mobile: card-based layout with same data
-- Clicking a row navigates to property detail
-- Loading skeleton while fetching
-- "Нет объектов" when empty
-- Total count shown in header ("N шт.")
+Критерии приёмки:
+- Липкая верхняя панель навигации с glass-эффектом
+- Ссылки навигации: Дашборд (`/`), Объекты (`/properties`), Настройки (`/settings`)
+- Активная ссылка выделена акцентным цветом и мягким фоном
+- Логотип AKLAB ведёт на главную с градиентным текстом (тёмная/светлая тема)
+- Показывается только аутентифицированным пользователям
 
-UI elements: Data table (desktop), property cards (mobile), skeleton loader
+UI-элементы: `<nav>` sticky-хедер, 3 router-link, логотип AKLAB
 
-### US-4.2: Sort property table columns
-As a **user**, I want to **sort the table by area, price/m², or deviation** so that **I can find properties matching my criteria**.
+### US-2.2: Мобильное гамбургер-меню
+**Как** мобильный пользователь, **я хочу** открывать гамбургер-меню, **чтобы** перемещаться по приложению на маленьких экранах.
 
-Acceptance criteria:
-- Sortable columns: Площадь, ₽/м², Оценка (deviation_percent)
-- Click header to toggle asc/desc with arrow indicator (↑/↓)
-- Resets to page 1 on sort change
+Критерии приёмки:
+- Иконка гамбургера (☰) видна на экранах < 640px (sm breakpoint)
+- Нажатие открывает мобильное меню с анимацией slide-down
+- Меню содержит все пункты навигации + кнопку «Выйти»
+- Меню автоматически закрывается при смене маршрута
+- Иконка закрытия (✕) показывается, когда меню открыто
 
-UI elements: Clickable table headers with sort arrows
+UI-элементы: кнопка гамбургера, мобильные ссылки, кнопка «Выйти» в мобильном меню
 
-### US-4.3: Filter properties
-As a **user**, I want to **filter properties by city, status, source, type, and undervalued flag** so that **I can narrow down the list to relevant properties**.
+### US-2.3: Переключение тёмной/светлой темы
+**Как** пользователь, **я хочу** переключаться между тёмной и светлой темой, **чтобы** комфортно работать при разном освещении.
 
-Acceptance criteria:
-- City dropdown: Все, Москва, МО, Другой
-- Status dropdown: Все, Новый, В работе, Просмотрен, Отклонён
-- Source dropdown: Все (dynamically populated from known sources)
-- Type dropdown: Все, Офис, Склад, Торговля, Производство, Св. назначения, Другое
-- "Только недооценённые" checkbox
-- "Сбросить" button to clear all filters
-- Filters reset to page 1 on change
+Критерии приёмки:
+- Кнопка с иконкой солнца (в тёмной теме) / луны (в светлой теме)
+- Тема сохраняется между сессиями
+- Все UI-элементы адаптируются к теме через CSS-переменные
 
-UI elements: 4 select dropdowns, 1 checkbox, 1 reset button
+UI-элементы: кнопка переключения темы с иконками sun/moon
 
-### US-4.4: Paginate property list
-As a **user**, I want to **navigate between pages of properties** so that **I can browse the full list**.
+### US-2.4: Выход из системы
+**Как** аутентифицированный пользователь, **я хочу** выйти из приложения, **чтобы** завершить сессию.
 
-Acceptance criteria:
-- Pagination with page numbers, ellipsis for large ranges
-- Previous (‹) and Next (›) buttons
-- Current page highlighted
-- Mobile: simple "N / M" text with prev/next
-- Disabled state for first/last page buttons
+Критерии приёмки:
+- Кнопка «Выйти» в десктопной навигации (скрыта на мобильных)
+- Кнопка «Выйти» в мобильном меню
+- Кнопка «Выйти» на странице Настроек (вкладка Дайджест)
+- Очищает состояние аутентификации и перенаправляет на `/`
 
-UI elements: Pagination buttons, page numbers, prev/next arrows
+UI-элементы: кнопка «Выйти» (3 места)
 
-### US-4.5: Run manual pipeline
-As a **user**, I want to **run the full pipeline (parsing → analysis → digest)** so that **I can get a complete update of property data and email digest on demand**.
+### US-2.5: Просмотр подвала (footer)
+**Как** пользователь, **я хочу** видеть навигацию в подвале страницы, **чтобы** быстро переходить к ключевым разделам.
 
-Acceptance criteria:
-- "Ручной запуск" button (idle state)
-- "Выполняется..." during execution
-- "Готово — запустить ещё раз" on completion (green)
-- Three-stage progress indicator:
-  - **Парсинг**: shows N/M sources processed, total objects, errors
-  - **Анализ**: shows queue size, then undervalued count by city
-  - **Дайджест**: shows email sent count or "нет объектов"
-- Summary line on completion
-- Error display on failure
-- Disabled during execution
+Критерии приёмки:
+- Две колонки: «Продукт» и «AKLAB»
+- Ссылки «Продукт»: Дашборд, Объекты, Настройки
+- Ссылки «AKLAB»: История изменений, Документация
+- Описание: «Мониторинг коммерческой недвижимости. Автоматический поиск объектов ниже рыночной цены.»
+- Копирайт с текущим годом
 
-UI elements: Pipeline button, 3 progress rows with status icons (⏳/✓/○), summary/error lines
-
-### US-4.6: Configure launch parameters
-As a **user**, I want to **configure analysis parameters before running the pipeline** so that **the analysis step uses my preferred filters**.
-
-Acceptance criteria:
-- "Параметры запуска" collapsible section (▶/▼ toggle)
-- Active filter count badge
-- Price range inputs (от/до in ₽)
-- City checkboxes: Москва, МО, Другие
-- Threshold slider (1–99%) with number input
-- "Сбросить" button to reset defaults
-- "Фильтры применяются к этапу анализа" hint
-- Persisted in localStorage
-
-UI elements: Collapsible panel, 2 number inputs, 3 checkboxes, range slider + number input, reset button
-
-### US-4.7: Clear new properties
-As a **user**, I want to **delete all properties with "Новый" status** so that **I can clean up the list after reviewing new items**.
-
-Acceptance criteria:
-- "Очистить" button
-- Confirmation dialog before deletion
-- Shows count of deleted items
-- Loading state: "Удаление..."
-
-UI elements: "Очистить" button, confirm dialog, alert with count
-
-### US-4.8: View 'В работе' tab
-As a **user**, I want to **view properties that are currently in progress** so that **I can track properties I am actively working on**.
-
-Acceptance criteria:
-- "В работе" tab in the tab switcher alongside "Все объекты" and "В фокусе"
-- Filters properties by status=in_progress
-- Same table layout as "Все объекты" tab
-- Shows count of in-progress properties
-- "Нет объектов в работе" when empty
-
-UI elements: Tab button "В работе", filtered property table
+UI-элементы: Footer с 5 router-link, описание, копирайт
 
 ---
 
-## 5. Property List — Focus Tab
+## 3. Дашборд
 
-### US-5.1: View focus properties
-As a **user**, I want to **see properties in the "В фокусе" tab** so that **I can focus on the highest-priority opportunities**.
+### US-3.1: Просмотр сводной статистики
+**Как** пользователь, **я хочу** видеть ключевую статистику на дашборде, **чтобы** быстро оценить текущее состояние отслеживаемых объектов.
 
-Acceptance criteria:
-- Tab switcher: "Все объекты" | "В фокусе" | "В работе"
-- Stats header: count of focus objects + average score
-- Desktop table columns: checkbox, Название, Адрес, Город, Тип, Площадь, ₽/м², Скор, Теги, Оценка
-- Mobile: card layout with checkbox, title, address, metrics, tags
-- Color-coded deviation badges (red ≤-50%, orange ≤-30%, amber ≤-20%, grey otherwise)
-- "Торги" badge for minimum-price items
-- Tag badges: Недооценён, Торги, Новый, Большая пл., МСК/МО
-- "Нет объектов в фокусе" when empty
+Критерии приёмки:
+- 5 карточек KPI: «Всего объектов», «В фокусе», «Горячие (≥50)», «Недооценённые», «Новые 24ч»
+- «Всего объектов» кликабельна — ведёт на `/properties`
+- «В фокусе» кликабельна — ведёт на `/properties#focus`
+- Скелетоны загрузки пока данные не получены
+- Сообщение об ошибке при неудаче
 
-UI elements: Tab buttons, stats line, data table with checkboxes, tag badges, deviation badges
+UI-элементы: 5 StatCard с иконками, 2 кликабельные карточки
 
-### US-5.2: Sort focus table
-As a **user**, I want to **sort the focus table by title, area, ₽/m², score, or deviation** so that **I can prioritize my review**.
+### US-3.2: Просмотр горячих объектов
+**Как** пользователь, **я хочу** видеть топ-5 объектов с наивысшим focus_score, **чтобы** быстро определить самые перспективные варианты.
 
-Acceptance criteria:
-- Sortable columns: Название, Площадь, ₽/м², Скор, Оценка
-- Click to toggle asc/desc with arrow indicator
+Критерии приёмки:
+- Заголовок «🔥 Горячие объекты»
+- До 5 карточек с бейджем скора, названием, адресом/городом и тегами (макс 3)
+- Бейдж скора цветной: красный (≥50), жёлтый (<50)
+- Нажатие на объект ведёт на его детальную страницу
+- «Нет объектов в фокусе» когда пусто
 
-UI elements: Clickable table headers
+UI-элементы: строки-карточки с бейджем скора, названием, адресом, бейджами тегов
 
-### US-5.3: Filter focus properties
-As a **user**, I want to **filter focus properties by threshold, city, type, tags, and price range** so that **I can find the most relevant properties**.
+### US-3.3: Просмотр типов недвижимости (бар-чарт)
+**Как** пользователь, **я хочу** видеть распределение объектов по типам недвижимости, **чтобы** понимать структуру портфеля.
 
-Acceptance criteria:
-- Threshold slider (0–100) with number input
-- City checkboxes: Москва, МО, Другие
-- Property type dropdown: Все, Офис, Склад, Торговля, Производство, Св. назначения, Другое
-- Tag checkboxes: Недооценён, Торги, Новый, Большая пл., МСК/МО
-- Price range inputs (от/до in ₽)
-- "Сбросить фильтры" button
-- Auto-refresh on filter change
-- Persisted in localStorage
+Критерии приёмки:
+- Заголовок «📊 Объекты по типам»
+- Горизонтальные бары с названием типа, заполненной полосой и количеством
+- Ширина бара пропорциональна максимальному количеству
+- Сортировка по убыванию количества
 
-UI elements: Range slider + number input, 3 city checkboxes, select dropdown, 5 tag checkboxes, 2 number inputs, reset button
+UI-элементы: BaseCard с барами, метками типов и счётчиками
 
-### US-5.4: Recalculate focus scores
-As a **user**, I want to **recalculate focus scores** so that **the focus list reflects the latest scoring rules and market data**.
+### US-3.4: Просмотр статуса парсеров
+**Как** пользователь, **я хочу** видеть статус парсеров на дашборде, **чтобы** знать, какие источники активны.
 
-Acceptance criteria:
-- "🔄 Пересчитать" button
-- Loading state: "Пересчёт..."
-- Uses current focus filters (threshold, city, price range)
-- Refreshes list after recalculation
+Критерии приёмки:
+- Заголовок «⚡ Парсеры»
+- Список источников в виде чипсов с зелёной/серой точкой
+- Зелёная точка = активен, серая = неактивен
 
-UI elements: "🔄 Пересчитать" button
+UI-элементы: BaseCard с чипсами источников
 
-### US-5.5: Export focus properties to CSV
-As a **user**, I want to **export the focus list to a CSV file** so that **I can share or analyze the data in a spreadsheet**.
+### US-3.5: Обновление дашборда
+**Как** пользователь, **я хочу** обновить все данные дашборда, **чтобы** видеть актуальную информацию.
 
-Acceptance criteria:
-- "📥 Экспорт CSV" button
-- Downloads CSV with BOM (UTF-8) for Excel compatibility
-- Columns: Название, Адрес, Город, Тип, Площадь, Цена, ₽/м², Скор, Теги, Ссылка
-- Filename: `focus_export_YYYY-MM-DD.csv`
-- Respects current filters
+Критерии приёмки:
+- Кнопка «↻ Обновить» в заголовке
+- Отключена и показывает «Загрузка…» во время обновления
+- Загружает статистику, горячие объекты и источники параллельно
 
-UI elements: "📥 Экспорт CSV" button
-
-### US-5.6: Bulk select and act on focus properties
-As a **user**, I want to **select multiple focus properties and perform bulk actions** so that **I can efficiently manage my review workflow**.
-
-Acceptance criteria:
-- Checkbox per row (click doesn't navigate to detail)
-- "Select all" checkbox in table header
-- Floating action bar at bottom when items selected: "Выбрано: N"
-- Bulk actions: "Просмотрено" (green), "Отклонён" (red), "CSV" (blue)
-- Clear selection after bulk action
-
-UI elements: Checkboxes, floating action bar with 3 action buttons
-
-### US-5.7: Paginate focus list
-As a **user**, I want to **navigate between pages of focus properties** so that **I can browse the full focus list**.
-
-Acceptance criteria:
-- "‹ Назад" and "Вперёд ›" buttons
-- Shows "Показано X-Y из Z" range
-- Page size: 20
-
-UI elements: Prev/Next pagination buttons, range text
-
-### US-5.8: Hash-based routing to focus tab
-As a **user**, I want to **automatically switch to the focus tab when the URL contains `#focus`** so that **I can share direct links to the focus view or navigate from dashboard stat cards**.
-
-Acceptance criteria:
-- URL hash `#focus` (e.g., `/properties#focus`) automatically activates the "В фокусе" tab on mount
-- Works when navigating from dashboard "Добавленные в фокус" stat card
-- Tab state reflects URL hash
-
-UI elements: Hash-based tab auto-switch logic
+UI-элементы: кнопка «↻ Обновить»
 
 ---
 
-## 6. Property Detail
+## 4. Список объектов — вкладка «Все»
 
-### US-6.1: View property details
-As a **user**, I want to **see full details of a property** so that **I can evaluate whether it's worth pursuing**.
+### US-4.1: Просмотр всех объектов
+**Как** пользователь, **я хочу** видеть все объекты в виде таблицы или карточек, **чтобы** просматривать и сравнивать доступные объекты.
 
-Acceptance criteria:
-- "← К списку объектов" back link
-- Title with status badge and undervalued badge
-- Property fields in grid: Адрес, Город, Тип недвижимости, Площадь, Цена, Цена за м², Источник, Тип торгов, Эталон ₽/м² (if undervalued), Минимальная цена (if auction), Дата публикации на источнике, Дата первого обнаружения, Focus скор
-- Source link "Открыть на источнике →" (opens in new tab)
-- Description text (pre-formatted, with show more/less toggle)
-- Contacts text
-- Skeleton loading state
-- "Объект не найден" when missing
+Критерии приёмки:
+- Три вкладки: «Все объекты», «В фокусе», «В работе»
+- Вкладка «Все объекты» активна по умолчанию
+- Десктоп: таблица с колонками Название, Адрес, Город, Тип, Площадь, Цена, ₽/м², Статус, Оценка
+- Мобильные: карточки с теми же данными
+- Нажатие на строку ведёт на детальную страницу объекта
+- Скелетон загрузки
+- «Нет объектов» когда пусто
+- Счётчик в заголовке: «N шт.»
 
-UI elements: Back link, title, 2 badges, 12–14 field rows, external link, description block, contacts block
+UI-элементы: таблица (десктоп), карточки (мобильные), скелетон
 
-### US-6.2: View property photos
-As a **user**, I want to **view and load photos of properties** so that **I can visually assess the property**.
+### US-4.2: Сортировка таблицы объектов
+**Как** пользователь, **я хочу** сортировать таблицу по площади, цене за м² или отклонению, **чтобы** находить объекты по своим критериям.
 
-Acceptance criteria:
-- **Lazy photo loading** for undervalued objects:
-  - `triggerPhotoFetch()` auto-called on component mount when `is_undervalued && !photos_downloaded`
-  - Spinner displayed while photos are being fetched
-  - Polls for completion every 2 seconds, up to 60 seconds max
-  - Manual "Загрузить фотографии" button shown for triggering fetch on demand
-- Photo gallery (only for properties with photos)
-- Grid layout: 2 cols mobile, 3 cols tablet, 4 cols desktop
-- Click photo to open lightbox
-- Lightbox: close button (✕), prev (‹), next (›), counter "N / M"
-- Click outside image to close lightbox
+Критерии приёмки:
+- Сортируемые колонки: Площадь, ₽/м², Оценка (deviation_percent)
+- Нажатие на заголовок переключает asc/desc со стрелкой (↑/↓)
+- Сброс на первую страницу при смене сортировки
 
-UI elements: Photo fetch trigger, loading spinner, manual fetch button, photo grid, lightbox overlay with nav buttons and counter
+UI-элементы: кликабельные заголовки таблицы со стрелками
 
-### US-6.3: Change property status
-As a **user**, I want to **change the status of a property** so that **I can track my review progress**.
+### US-4.3: Фильтрация объектов
+**Как** пользователь, **я хочу** фильтровать объекты по городу, статусу, источнику, типу и флагу недооценённости, **чтобы** сузить список до релевантных.
 
-Acceptance criteria:
-- Status buttons: Новый (blue), В работу (amber), Просмотрено (green), Отклонено (red)
-- Current status highlighted with colored background
-- Disabled for current status and during save
-- Updates immediately on click
+Критерии приёмки:
+- Выпадающий список города: Все, Москва, МО, Другой
+- Выпадающий список статуса: Все, Новый, В работе, Просмотрен, Отклонён
+- Выпадающий список источника: Все (динамически из известных источников)
+- Выпадающий список типа: Все, Офис, Склад, Торговля, Производство, Св. назначения, Другое
+- Чекбокс «Только недооценённые»
+- Кнопка «Сбросить» для очистки всех фильтров
+- Фильтры сбрасывают на первую страницу
 
-UI elements: 4 status buttons with color styling
+UI-элементы: 4 выпадающих списка, 1 чекбокс, 1 кнопка сброса
 
-### US-6.4: Add comment to property
-As a **user**, I want to **add a comment to a property** so that **I can record my notes and observations**.
+### US-4.4: Пагинация списка объектов
+**Как** пользователь, **я хочу** переключаться между страницами объектов, **чтобы** просматривать полный список.
 
-Acceptance criteria:
-- Text input with "Ваш комментарий…" placeholder
-- "Добавить" button (accent color)
-- Enter key submits
-- Disabled when empty or saving
-- Comment appears in comments list after submission
-- Comments list shows text and timestamp
+Критерии приёмки:
+- Пагинация с номерами страниц, многоточие для больших диапазонов
+- Кнопки «‹ Назад» и «Вперёд ›»
+- Текущая страница выделена
+- Мобильные: простой текст «N / M» с кнопками prev/next
+- Отключённое состояние для первой/последней страницы
 
-UI elements: Comment input, "Добавить" button, comments list
+UI-элементы: кнопки пагинации, номера страниц, стрелки
 
-### US-6.5: View property event history
-As a **user**, I want to **see the event history of a property** so that **I can track how it has changed over time**.
+### US-4.5: Запуск парсинга
+**Как** пользователь, **я хочу** запустить парсинг прямо со страницы объектов, **чтобы** получить свежие данные.
 
-Acceptance criteria:
-- "📋 История" section title
-- Timeline of events with colored dots
-- Event types: Создан, Вошёл в фокус, Вышел из фокуса, Скор изменён, Статус изменён, Цена изменена
-- Each event shows: type label, old→new value (if applicable), timestamp
-- Up to 50 events
+Критерии приёмки:
+- Кнопка «▶ Запустить парсинг» в сворачиваемой панели «Запуск парсинга»
+- Параметры: цена от/до, город (чипсы), глубина (число)
+- Состояния кнопки: «▶ Запустить парсинг», «Парсинг...», «Готово — ещё раз»
+- Прогресс: N/M источников, количество новых объектов, детальных
+- Ошибки отображаются красным блоком
+- После завершения эмитит событие `done` для обновления списка
 
-UI elements: Event timeline with colored dots, type labels, value badges, timestamps
+UI-элементы: сворачиваемая панель, поля фильтров, кнопка запуска, блок прогресса
 
-### US-6.6: View auction info
-As a **user**, I want to **see auction-specific information for a property** so that **I can evaluate auction-type listings separately from regular sales**.
+### US-4.6: Очистка новых объектов
+**Как** пользователь, **я хочу** удалить все объекты со статусом «Новый», **чтобы** очистить список после просмотра.
 
-Acceptance criteria:
-- "📋 Информация о торгах" section
-- Displays auction-related fields: тип торгов, минимальная цена, дата торгов
-- Only shown for properties with auction type (Торги / minimum_price set)
-- Clear visual separation from main property details
+Критерии приёмки:
+- Кнопка «Очистить» (красная) рядом со счётчиком
+- Диалог подтверждения перед удалением
+- Показывает количество удалённых объектов и папок с фото
+- Состояние загрузки: «Удаление...»
 
-UI elements: Auction info section with labeled fields
+UI-элементы: кнопка «Очистить», диалог ConfirmClearDialog, alert с результатом
 
-### US-6.7: Open CIAN listing with geocoding
-As a **user**, I want to **open the property listing on CIAN with pre-filled geocoded location** so that **I can cross-reference the property on Russia's largest real estate platform**.
+### US-4.7: Вкладка «В работе»
+**Как** пользователь, **я хочу** видеть объекты в статусе «В работе», **чтобы** отслеживать активные объекты.
 
-Acceptance criteria:
-- "🔗 Смотреть на CIAN" link button
-- URL constructed with property address as geocoded query parameter
-- Opens in new tab
-- Only shown when CIAN link is available
+Критерии приёмки:
+- Вкладка «В работе» в переключателе вкладок
+- Фильтрует объекты по status=in_progress
+- Та же таблица/карточки, что и вкладка «Все объекты»
+- Показывает количество объектов в работе
+- «Нет объектов в работе» когда пусто
 
-UI elements: CIAN external link button
-
-### US-6.8: Toggle description 'show more'
-As a **user**, I want to **expand and collapse long property descriptions** so that **I can read the full description when needed without excessive scrolling**.
-
-Acceptance criteria:
-- Long descriptions truncated by default (e.g., first 300 characters)
-- "Показать полностью" / "Свернуть" toggle button
-- Smooth expand/collapse transition
-- Short descriptions shown in full without toggle
-
-UI elements: Description text block, show more/less toggle button
+UI-элементы: кнопка вкладки «В работе», отфильтрованная таблица
 
 ---
 
-## 7. Sources
+## 5. Список объектов — вкладка «В фокусе»
 
-### US-7.1: View source list
-As a **user**, I want to **see all configured parsing sources** so that **I can monitor the data collection pipeline**.
+### US-5.1: Просмотр объектов в фокусе
+**Как** пользователь, **я хочу** видеть объекты с focus_score ≥ порога, **чтобы** сосредоточиться на самых приоритетных.
 
-Acceptance criteria:
-- "Источники парсинга" page title
-- Each source card shows:
-  - Name, health badge, active/inactive badge, parse status badge
-  - Parser name, URL, region
-  - Schedule (cron expression with human-readable description)
-  - Statistics: Найдено, Создано, Запусков
-  - Last error (if any, red box)
-  - Last parse timestamp
-- Loading skeleton
-- "Источников пока нет" when empty
+Критерии приёмки:
+- Статистика в заголовке: количество объектов в фокусе + средний скор
+- Десктоп: таблица с колонками чекбокс, Название, Адрес, Город, Тип, Площадь, ₽/м², Скор, Теги, Оценка
+- Мобильные: карточки с чекбоксом, названием, адресом, метриками, тегами
+- Цветные бейджи отклонения (красный ≤-50%, оранжевый ≤-30%, жёлтый ≤-20%, серый иначе)
+- Бейдж «Торги» для объектов с minimum_price
+- Бейджи тегов: Недооценён, Торги, Новый, Большая пл., МСК/МО
+- «Нет объектов в фокусе» когда пусто
 
-UI elements: Source cards with badges, stats, schedule info, error display
+UI-элементы: строка статистики, таблица с чекбоксами, бейджи тегов и отклонения
 
-### US-7.2: Toggle source active/inactive
-As a **user**, I want to **enable or disable a source** so that **I can control which sources participate in parsing**.
+### US-5.2: Сортировка таблицы фокуса
+**Как** пользователь, **я хочу** сортировать таблицу фокуса по названию, площади, цене за м², скору или отклонению, **чтобы** приоритизировать просмотр.
 
-Acceptance criteria:
-- "Выключить" / "Включить" button per source
-- Updates active state immediately
+Критерии приёмки:
+- Сортируемые колонки: Название, Площадь, ₽/м², Скор, Оценка
+- Нажатие переключает asc/desc со стрелкой
 
-UI elements: Toggle button per source
+UI-элементы: кликабельные заголовки таблицы
 
-### US-7.3: Run parser for a source
-As a **user**, I want to **manually trigger parsing for a specific source** so that **I can test or refresh data from that source**.
+### US-5.3: Фильтрация объектов в фокусе
+**Как** пользователь, **я хочу** фильтровать объекты в фокусе по порогу, городу, типу, тегам и цене, **чтобы** найти наиболее релевантные.
 
-Acceptance criteria:
-- "▶ Запустить" button per source
-- Loading state: "⏳ Парсинг..."
-- Polls for completion (up to 2 minutes)
-- Disabled during parsing
+Критерии приёмки:
+- Слайдер порога (0–100) с числовым полем
+- Чекбоксы города: Москва, МО, Другие
+- Чипсы типа недвижимости: Офис, Склад, Торговля, Производство, Св. назн., Квартира, Участок, Другое
+- Чекбоксы тегов: Недооценён, Торги, Новый, Большая пл., МСК/МО
+- Поля цены от/до
+- Кнопка «Сбросить фильтры»
+- Фильтры сохраняются в localStorage
+- Мобильные: фильтры скрыты под кнопкой «▶ Фильтры»
 
-UI elements: "▶ Запустить" button per source
+UI-элементы: слайдер + число, 3 чекбокса города, чипсы типа, 5 чекбоксов тегов, 2 поля цены, кнопка сброса
 
-### US-7.4: Edit source schedule
-As a **user**, I want to **edit the cron schedule for a source** so that **I can control when parsing runs**.
+### US-5.4: Поиск по объектам в фокусе
+**Как** пользователь, **я хочу** искать объекты по названию или адресу, **чтобы** быстро найти конкретный объект.
 
-Acceptance criteria:
-- "Изменить" button next to schedule display
-- Inline edit mode with cron input and human-readable preview
-- ✓ save button, ✕ cancel button
-- Updates schedule on save
+Критерии приёмки:
+- Поле поиска с иконкой 🔍
+- Поиск по текущей странице (client-side)
+- Фильтрует по вхождению в title или address
 
-UI elements: "Изменить" button, cron input, ✓/✕ buttons, schedule description
+UI-элементы: поле ввода с иконкой поиска
 
-### US-7.5: View source health status
-As a **user**, I want to **see the health status of parser services** so that **I know if the parser infrastructure is operational**.
+### US-5.5: Пересчёт скоров
+**Как** пользователь, **я хочу** пересчитать focus_score для объектов, **чтобы** список в фокусе отражал актуальные данные.
 
-Acceptance criteria:
-- Health badge per source: 🟢 Сервис ОК, 🔴 Сервис оффлайн, ⏳ Проверка..., ⚪ Нет порта
-- Auto-refreshes every 30 seconds
+Критерии приёмки:
+- Кнопка «🔄 Пересчитать»
+- Состояние загрузки: «Пересчёт...»
+- Использует текущие фильтры фокуса (порог, город, цена)
+- Запускает анализ (POST /cron/analyze) с поллингом прогресса
+- Затем запускает скоринг (POST /cron/score)
+- Обновляет список после завершения
+- Показывает прогресс анализа: N/M проанализировано, количество недооценённых
 
-UI elements: Health status badges
+UI-элементы: кнопка «🔄 Пересчитать», прогресс-бар анализа
 
-### US-7.6: Add new source (hidden/seeded)
-As an **admin**, I want to **add a new parsing source** so that **I can expand data collection to new platforms**.
+### US-5.6: Экспорт в CSV
+**Как** пользователь, **я хочу** экспортировать список фокуса в CSV, **чтобы** анализировать данные в таблицах.
 
-Acceptance criteria:
-- Form with fields: Название, Slug, URL, Парсер (select), Тип торгов (select), Регион, Расписание (cron), Health порт
-- "Создать" button (disabled until name, slug, parser filled)
-- Parser select auto-fills health port
-- Note: "Кнопка 'Добавить' скрыта — источники управляются через seeders"
+Критерии приёмки:
+- Кнопка «📥 Экспорт CSV»
+- Скачивает CSV с BOM (UTF-8) для совместимости с Excel
+- Колонки: Название, Адрес, Город, Тип, Площадь, Цена, ₽/м², Скор, Теги, Ссылка
+- Имя файла: `focus_export_YYYY-MM-DD.csv`
+- Учитывает текущие фильтры
 
-UI elements: Form with 8 inputs, "Создать" button
+UI-элементы: кнопка «📥 Экспорт CSV»
 
----
+### US-5.7: Мультивыбор и bulk-действия
+**Как** пользователь, **я хочу** выбирать несколько объектов и выполнять массовые действия, **чтобы** эффективно управлять рабочим процессом.
 
-## 8. Market References
+Критерии приёмки:
+- Чекбокс у каждой строки (нажатие не ведёт на детальную страницу)
+- Чекбокс «Выбрать все» в заголовке таблицы
+- Плавающая панель действий внизу: «Выбрано: N»
+- Bulk-действия: «Просмотрено» (зелёный), «Отклонён» (красный), «CSV» (синий)
+- Выделение сбрасывается после bulk-действия
 
-### US-8.1: Add new market reference
-As a **user**, I want to **add a new market reference (₽/m² benchmark)** so that **the analyzer can compare property prices against market rates**.
+UI-элементы: чекбоксы, плавающая панель с 3 кнопками
 
-Acceptance criteria:
-- Form with fields: Город* (select), Тип недвижимости* (select), Цена за м²* (number), Действует с* (date), Примечание (text)
-- "Добавить" button (disabled until valid)
-- Validation: city, type, price >0, and date required
-- Form resets on success
-- "← Настройки" back link
+### US-5.8: Пагинация списка фокуса
+**Как** пользователь, **я хочу** переключаться между страницами объектов в фокусе, **чтобы** просматривать полный список.
 
-UI elements: 5 form fields, "Добавить" submit button, back link
+Критерии приёмки:
+- Кнопки «‹ Назад» и «Вперёд ›»
+- Текст «Показано X-Y из Z»
+- Размер страницы: 20
 
-### US-8.2: View market references table
-As a **user**, I want to **see all market references in a table** so that **I can review and manage pricing benchmarks**.
+UI-элементы: кнопки prev/next, текст диапазона
 
-Acceptance criteria:
-- Desktop table columns: Город, Тип, ₽/м², С даты, Примечание, Статус, Actions
-- Mobile: card layout
-- Active references shown at full opacity, inactive at 50%
-- Status badge: "Активен" (green) / "Неактивен" (red)
-- Loading skeleton
-- "Эталоны не добавлены" when empty
+### US-5.9: Hash-маршрутизация на вкладку фокуса
+**Как** пользователь, **я хочу** автоматически переключаться на вкладку «В фокусе» при наличии `#focus` в URL, **чтобы** переходить по прямым ссылкам с дашборда.
 
-UI elements: Data table (desktop), reference cards (mobile), status badges
+Критерии приёмки:
+- URL hash `#focus` (например, `/properties#focus`) активирует вкладку «В фокусе» при монтировании
+- Работает при переходе с дашборда (карточка «В фокусе»)
 
-### US-8.3: Edit market reference price
-As a **user**, I want to **edit the price of a market reference** so that **I can update benchmarks as market conditions change**.
-
-Acceptance criteria:
-- "Изменить цену" link (only for active references)
-- Inline edit: number input replaces displayed price
-- "Сохранить" and "Отмена" buttons
-- Desktop: inline in table row
-- Mobile: inline in card
-
-UI elements: "Изменить цену" link, price input, "Сохранить"/"Отмена" buttons
-
-### US-8.4: Activate/deactivate market reference
-As a **user**, I want to **activate or deactivate a market reference** so that **I can control which benchmarks are used in analysis**.
-
-Acceptance criteria:
-- "Деактивировать" link (red) for active references
-- "Активировать" link (green) for inactive references
-- Updates immediately
-
-UI elements: Activate/Deactivate link
+UI-элементы: логика авто-переключения вкладки по hash
 
 ---
 
-## 9. Settings
+## 6. Карточка объекта
 
-### US-9.1: Configure deviation threshold
-As a **user**, I want to **set the minimum deviation threshold percentage** so that **only properties significantly below market price trigger notifications**.
+### US-6.1: Просмотр деталей объекта
+**Как** пользователь, **я хочу** видеть полную информацию об объекте, **чтобы** оценить, стоит ли его рассматривать.
 
-Acceptance criteria:
-- Number input (1–99), default 20
-- Description: "Минимальное отклонение от рыночной цены для уведомления"
+Критерии приёмки:
+- Ссылка «← К списку объектов» для возврата
+- Hero-блок: цена (крупно), цена за м², бейдж недооценённости с процентом, бейдж focus_score
+- Название и адрес
+- Метрики: площадь, тип, источник, город, статус (цветной бейдж)
+- Секция «Детали» (сворачиваемая): начальная цена, эталон ₽/м², тип торгов, дата публикации, дата обнаружения, documentId
+- Описание (с кнопкой «Показать полностью» если >300 символов)
+- Контакты
+- Скелетон загрузки
+- «Объект не найден» когда отсутствует
 
-UI elements: Number input for threshold_percent
+UI-элементы: hero-блок, сворачиваемые детали, описание, контакты, скелетон
 
-### US-9.2: Configure digest time
-As a **user**, I want to **set the morning digest email time** so that **I receive the email at my preferred time**.
+### US-6.2: Просмотр фотографий
+**Как** пользователь, **я хочу** просматривать и загружать фотографии объекта, **чтобы** визуально оценить недвижимость.
 
-Acceptance criteria:
-- Time input (HH:MM format), default 09:00
-- Description: "Время отправки email-дайджеста (МСК)"
+Критерии приёмки:
+- Автоматическая загрузка фото при монтировании (если ещё не загружены)
+- Спиннер во время загрузки
+- Кнопка «Загрузить фотографии» для ручного запуска
+- Сетка фото: 2 колонки на мобильных, 3 на планшетах, 4 на десктопе
+- Нажатие на фото открывает lightbox
+- Lightbox: кнопка закрытия (✕), prev (‹), next (›), счётчик «N / M»
+- Нажатие вне изображения закрывает lightbox
 
-UI elements: Time input for digest_time
+UI-элементы: кнопка загрузки, спиннер, сетка фото, lightbox с навигацией
 
-### US-9.3: Configure digest email recipients
-As a **user**, I want to **set the email address(es) for the digest** so that **the right people receive the morning digest**.
+### US-6.3: Смена статуса объекта
+**Как** пользователь, **я хочу** менять статус объекта, **чтобы** отслеживать прогресс просмотра.
 
-Acceptance criteria:
-- Text input, supports comma-separated multiple addresses
-- Placeholder: "email@example.com"
+Критерии приёмки:
+- Кнопки статусов: Новый (синий), В работу (жёлтый), Просмотрено (зелёный), Отклонено (красный)
+- Текущий статус выделен цветом
+- Отключены для текущего статуса и во время сохранения
+- Обновляется сразу после нажатия
 
-UI elements: Text input for smtp_to
+UI-элементы: 4 кнопки статусов с цветовой стилизацией
 
-### US-9.4: Configure monitored regions
-As a **user**, I want to **select which regions are included in monitoring** so that **the digest only includes properties from relevant areas**.
+### US-6.4: Добавление комментария
+**Как** пользователь, **я хочу** добавлять комментарий к объекту, **чтобы** записывать свои заметки.
 
-Acceptance criteria:
-- Checkboxes: Москва, Московская область, Другие регионы
-- Description: "Объекты из неотмеченных регионов не попадут в дайджест"
-- All checked by default
+Критерии приёмки:
+- Поле ввода с плейсхолдером «Ваш комментарий…»
+- Кнопка «Добавить» (акцентный цвет)
+- Enter отправляет комментарий
+- Отключена когда пусто или идёт сохранение
+- Комментарий появляется в списке после отправки
+- Список комментариев показывает текст и дату
 
-UI elements: 3 checkboxes for monitored_regions
+UI-элементы: поле ввода, кнопка «Добавить», список комментариев
 
-### US-9.5: Save settings
-As a **user**, I want to **save my settings** so that **my preferences are persisted**.
+### US-6.5: Просмотр истории событий
+**Как** пользователь, **я хочу** видеть историю изменений объекта, **чтобы** отслеживать, как он менялся со временем.
 
-Acceptance criteria:
-- "Сохранить" button (full width, accent color)
-- Loading state: "Сохранение..."
-- Success message: "Сохранено ✓" (disappears after 3s)
-- Error message on failure
-- Creates or updates settings singleton
+Критерии приёмки:
+- Заголовок «📋 История»
+- Лента событий с цветными точками
+- Типы событий: Создан, Вошёл в фокус, Вышел из фокуса, Скор изменён, Статус изменён, Цена изменена
+- Каждое событие: метка типа, старое→новое значение (если есть), дата
+- До 50 событий
 
-UI elements: "Сохранить" button, success/error messages
+UI-элементы: лента событий с цветными точками, метками, бейджами значений, датами
 
-### US-9.6: Navigate to market references
-As a **user**, I want to **navigate to market references from settings** so that **I can manage pricing benchmarks**.
+### US-6.6: Просмотр информации о торгах
+**Как** пользователь, **я хочу** видеть информацию о торгах для объекта, **чтобы** оценивать лоты отдельно от обычных продаж.
 
-Acceptance criteria:
-- "Рыночные эталоны" link card with description "Ручные цены за м² для сравнения" and arrow
+Критерии приёмки:
+- Секция «📋 Информация о торгах»
+- Поля: тип торгов, начальная цена, текущая цена, дата размещения
+- Показывается только для объектов с auction_type или minimum_price
 
-UI elements: Router-link card to `/market-references`
+UI-элементы: секция с полями торгов
 
-### US-9.7: Logout from settings
-As a **user**, I want to **log out from the settings page** so that **I can end my session**.
+### US-6.7: Ссылка на ЦИАН с геокодингом
+**Как** пользователь, **я хочу** открыть карту ЦИАН с координатами объекта, **чтобы** посмотреть соседние предложения.
 
-Acceptance criteria:
-- "Выйти" button (full width, outlined)
-- Redirects to `/auth`
+Критерии приёмки:
+- Ссылка «Посмотреть соседей на ЦИАН» с иконкой маркера
+- URL формируется из координат (latitude/longitude) объекта
+- Открывается в новой вкладке
+- Показывается только если есть координаты
+- Если координат нет — геокодинг через Nominatim (client-side) с сохранением в БД
+- Во время геокодинга: «⏳ Определяем координаты…»
 
-UI elements: "Выйти" button
+UI-элементы: ссылка на ЦИАН с иконкой, индикатор геокодинга
+
+### US-6.8: Ссылка на источник
+**Как** пользователь, **я хочу** открыть оригинальное объявление на площадке-источнике, **чтобы** увидеть полную информацию.
+
+Критерии приёмки:
+- Ссылка «Открыть на источнике →» с иконкой
+- Открывается в новой вкладке
+- Показывается только если есть URL
+- Если URL нет: «Ссылка на источник недоступна»
+
+UI-элементы: внешняя ссылка на источник
 
 ---
 
-## 10. Focus Rules
+## 7. Настройки — Дайджест
 
-### US-10.1: View focus rules
-As a **user**, I want to **see all focus scoring rules** so that **I understand how focus scores are calculated**.
+### US-7.1: Настройка порога отклонения
+**Как** пользователь, **я хочу** задать минимальный процент отклонения от рыночной цены, **чтобы** получать уведомления только о значительно недооценённых объектах.
 
-Acceptance criteria:
-- "Правила фокуса" page title
-- Each rule card shows: name, score badge ("+N очк."), tag badge, condition type + value, description
-- Inactive rules shown at 50% opacity
-- "Нет правил" when empty with guidance text
-- Loading skeleton
+Критерии приёмки:
+- Числовое поле (1–99), по умолчанию 20
+- Описание: «Минимальное отклонение от рыночной цены для уведомления»
 
-UI elements: Rule cards with badges, condition text, description
+UI-элементы: числовое поле threshold_percent
 
-### US-10.2: Create new focus rule
-As a **user**, I want to **create a new focus rule** so that **I can customize the scoring algorithm**.
+### US-7.2: Включение/выключение дайджеста
+**Как** пользователь, **я хочу** включать и выключать автоматический email-дайджест, **чтобы** контролировать получение писем.
 
-Acceptance criteria:
-- "+ Новое правило" button in header
-- Modal dialog with form:
-  - Название* (text input)
-  - Описание (textarea, 2 rows)
+Критерии приёмки:
+- Чекбокс «Дайджест включён»
+- Текст: «Включён» / «Выключен»
+
+UI-элементы: чекбокс с подписью
+
+### US-7.3: Настройка времени дайджеста
+**Как** пользователь, **я хочу** задать время отправки утреннего дайджеста, **чтобы** получать письмо в удобное время.
+
+Критерии приёмки:
+- Поле типа time (HH:MM), по умолчанию 09:00
+- Описание: «Время отправки email-дайджеста (МСК)»
+
+UI-элементы: поле time
+
+### US-7.4: Настройка email получателя
+**Как** пользователь, **я хочу** указать email для получения дайджеста, **чтобы** письма приходили на нужный адрес.
+
+Критерии приёмки:
+- Текстовое поле, поддерживает несколько адресов через запятую
+- Плейсхолдер: «email@example.com»
+
+UI-элементы: текстовое поле smtp_to
+
+### US-7.5: Сохранение настроек
+**Как** пользователь, **я хочу** сохранить настройки дайджеста, **чтобы** они применились.
+
+Критерии приёмки:
+- Кнопка «Сохранить» (полная ширина, акцентный цвет)
+- Состояние загрузки: «Сохранение...»
+- Сообщение об успехе: «Сохранено ✓» (исчезает через 3 сек)
+- Сообщение об ошибке при неудаче
+- Создаёт или обновляет настройки (singleton)
+
+UI-элементы: кнопка «Сохранить», сообщения успеха/ошибки
+
+### US-7.6: Ручной запуск пайплайна
+**Как** пользователь, **я хочу** запустить полный пайплайн (парсинг → анализ → дайджест) из настроек, **чтобы** получить полное обновление данных.
+
+Критерии приёмки:
+- Сворачиваемая секция «Ручной запуск» (▶/▼)
+- Параметры: цена от/до, город (чекбоксы), порог отсечения (слайдер + число), глубина (число)
+- Кнопка «▶ Ручной запуск» / «✓ Ещё раз» / «Отменить» + «Сбросить»
+- Трёхстадийный прогресс (SSE-based):
+  - **Парсинг**: N источников, новых объектов, детальных
+  - **Анализ**: количество недооценённых из общего числа
+  - **Дайджест**: статус отправки
+- Итоговое сообщение при завершении
+- Ошибки отображаются красным списком
+
+UI-элементы: сворачиваемая панель, поля фильтров, кнопки запуска/отмены, 3 строки прогресса с иконками
+
+### US-7.7: Выход из настроек
+**Как** пользователь, **я хочу** выйти из системы со страницы настроек, **чтобы** завершить сессию.
+
+Критерии приёмки:
+- Кнопка «Выйти» (полная ширина, outlined)
+- Перенаправляет на `/auth`
+
+UI-элементы: кнопка «Выйти»
+
+---
+
+## 8. Настройки — Правила
+
+### US-8.1: Просмотр правил парсинга
+**Как** пользователь, **я хочу** видеть правила парсинга, **чтобы** понимать, как обрабатываются данные с площадок.
+
+Критерии приёмки:
+- Список правил с полями: площадка, тип, шаблон URL, описание
+- Возможность включать/выключать правила
+
+UI-элементы: ParsingRulesPanel
+
+### US-8.2: Просмотр правил фокуса
+**Как** пользователь, **я хочу** видеть все правила расчёта focus_score, **чтобы** понимать, как формируется оценка.
+
+Критерии приёмки:
+- Заголовок «Правила фокуса»
+- Каждое правило: название, бейдж «+N очк.», бейдж тега, условие + значение, описание
+- Неактивные правила показаны с opacity 50%
+- «Нет правил» когда пусто
+- Скелетон загрузки
+
+UI-элементы: RulesPanel с карточками правил
+
+### US-8.3: Создание нового правила фокуса
+**Как** пользователь, **я хочу** создать новое правило фокуса, **чтобы** настроить алгоритм скоринга.
+
+Критерии приёмки:
+- Кнопка «+ Новое правило» в заголовке
+- Модальное окно с формой:
+  - Название* (текст)
+  - Описание (textarea, 2 строки)
   - Тип условия* (select: Порог отклонения, Наличие поля, Совпадение города, Произвольное)
-  - Значение условия (text input)
-  - Очки* (number input, min 1)
-  - Тег* (text input)
-  - Приоритет (number input, min 0)
-- "Отмена" and "Сохранить" buttons
-- Saves and refreshes list
+  - Значение условия (текст)
+  - Очки* (число, min 1)
+  - Тег* (текст)
+  - Приоритет (число, min 0)
+- Кнопки «Отмена» и «Сохранить»
+- Сохраняет и обновляет список
 
-UI elements: "+ Новое правило" button, modal with 7 form fields, 2 action buttons
+UI-элементы: кнопка «+ Новое правило», модальное окно с 7 полями, 2 кнопки
 
-### US-10.3: Edit focus rule
-As a **user**, I want to **edit an existing focus rule** so that **I can adjust scoring parameters**.
+### US-8.4: Редактирование правила фокуса
+**Как** пользователь, **я хочу** редактировать существующее правило фокуса, **чтобы** изменять параметры скоринга.
 
-Acceptance criteria:
-- Edit icon (pencil) button per rule
-- Same modal as create, pre-filled with rule data
-- Title changes to "Редактировать правило"
+Критерии приёмки:
+- Кнопка редактирования (карандаш) у каждого правила
+- То же модальное окно, что и создание, с предзаполненными данными
+- Заголовок меняется на «Редактировать правило»
 
-UI elements: Edit icon button, same modal form
+UI-элементы: кнопка карандаша, модальное окно
 
-### US-10.4: Toggle focus rule active/inactive
-As a **user**, I want to **enable or disable a focus rule** so that **I can experiment with different scoring configurations**.
+### US-8.5: Включение/выключение правила фокуса
+**Как** пользователь, **я хочу** включать и выключать правила фокуса, **чтобы** экспериментировать с разными конфигурациями.
 
-Acceptance criteria:
-- Toggle switch per rule (pill-shaped)
-- Active: accent color with knob on right
-- Inactive: grey with knob on left
-- Updates immediately
+Критерии приёмки:
+- Переключатель (pill-shaped) у каждого правила
+- Активный: акцентный цвет, ползунок справа
+- Неактивный: серый, ползунок слева
+- Обновляется сразу
 
-UI elements: Toggle switch per rule
+UI-элементы: toggle-переключатель у каждого правила
 
-### US-10.5: Delete focus rule
-As a **user**, I want to **delete a focus rule** so that **I can remove rules that are no longer needed**.
+### US-8.6: Удаление правила фокуса
+**Как** пользователь, **я хочу** удалять правила фокуса, **чтобы** убирать ненужные.
 
-Acceptance criteria:
-- Delete icon (trash) button per rule
-- Confirmation dialog: "Удалить правило «name»?"
-- Removes from list on confirm
+Критерии приёмки:
+- Кнопка удаления (корзина) у каждого правила
+- Диалог подтверждения: «Удалить правило «name»?»
+- Удаляется из списка после подтверждения
 
-UI elements: Delete icon button, confirm dialog
-
----
-
-## 11. Changelog
-
-### US-11.1: View changelog
-As a **user**, I want to **see the history of AKLAB updates** so that **I know what features and fixes have been released**.
-
-Acceptance criteria:
-- "Changelog" page title with description
-- Timeline of releases, each with: version (monospace), date, list of items
-- Each item has: type icon (✦ new, ↑ improvement, • fix), text, type badge
-- Loaded from `/changelog.json`
-- Loading skeleton
-
-UI elements: Release cards with version, date, item list with type badges
-
-### US-11.2: Filter changelog by category
-As a **user**, I want to **filter the changelog by change type** so that **I can focus on specific types of updates**.
-
-Acceptance criteria:
-- Filter buttons: Все, Новое, Улучшения, Исправления
-- Active filter highlighted with category-specific color (grey, green, blue, amber)
-- Releases without matching items are hidden
-- Resets pagination on filter change
-
-UI elements: 4 filter buttons (pill-shaped)
-
-### US-11.3: Load more changelog entries
-As a **user**, I want to **load more changelog entries** so that **I can see older releases**.
-
-Acceptance criteria:
-- "Показать ещё" button when more releases exist
-- Loads 10 releases at a time
-- "Все обновления загружены" when all shown
-
-UI elements: "Показать ещё" button, end-of-list text
+UI-элементы: кнопка корзины, диалог подтверждения
 
 ---
 
-## 12. Documentation
+## 9. Настройки — Парсеры
 
-### US-12.1: Read AKLAB documentation
-As a **user**, I want to **read the AKLAB architecture and usage documentation** so that **I understand how the system works**.
+### US-9.1: Просмотр списка источников
+**Как** пользователь, **я хочу** видеть все настроенные источники парсинга, **чтобы** контролировать пайплайн сбора данных.
 
-Acceptance criteria:
-- Table of contents with anchor links: Обзор, Архитектура, Сервисы, Поток данных, Парсеры, API, Деплой, Разделы интерфейса
-- Sections with structured content:
-  - **Обзор**: Product description
-  - **Архитектура**: Diagram (Frontend → Backend → Microservices), dependency tree
-  - **Сервисы**: Table of services with name, port, queue, description
-  - **Поток данных**: 3-step flow (Парсинг → Анализ → Дайджест)
-  - **Парсеры**: Cards for each parser with name, type, status, description
-  - **API**: Table of endpoints with method, path, description
-  - **Деплой**: Step-by-step deployment process
-  - **Разделы интерфейса**: Links to Properties, Sources, Market References, Settings, Changelog
+Критерии приёмки:
+- Каждый источник показывает: название, бейдж здоровья, активный/неактивный, статус парсинга
+- Имя парсера, URL, регион
+- Расписание (cron + человекочитаемое описание)
+- Статистика: Найдено, Создано, Запусков
+- Последняя ошибка (если есть, красный блок)
+- Дата последнего парсинга
+- Скелетон загрузки
+- «Источников пока нет» когда пусто
 
-UI elements: TOC links, architecture diagram, service table, flow steps, parser cards, API table, deploy steps, section links
+UI-элементы: SourcesPanel с карточками источников
 
----
+### US-9.2: Включение/выключение источника
+**Как** пользователь, **я хочу** включать и выключать источник, **чтобы** контролировать, какие площадки участвуют в парсинге.
 
-## 13. 404 Not Found
+Критерии приёмки:
+- Кнопка «Выключить» / «Включить» у каждого источника
+- Обновляет состояние сразу
 
-### US-13.1: Handle unknown routes
-As a **user**, I want to **see a friendly 404 page when I visit a non-existent URL** so that **I can recover and navigate to a valid page**.
+UI-элементы: кнопка переключения у каждого источника
 
-Acceptance criteria:
-- Large "404" text in accent color
-- "Страница не найдена" heading
-- Explanation text
-- "Перейти к объектам" button linking to `/properties`
+### US-9.3: Ручной запуск парсера
+**Как** пользователь, **я хочу** запустить парсинг для конкретного источника, **чтобы** проверить или обновить данные.
 
-UI elements: "404" display, heading, description, "Перейти к объектам" button
+Критерии приёмки:
+- Кнопка «▶ Запустить» у каждого источника
+- Состояние загрузки: «⏳ Парсинг...»
+- Поллинг завершения (до 2 минут)
+- Отключена во время парсинга
 
----
+UI-элементы: кнопка «▶ Запустить» у каждого источника
 
-## 14. Routing & Guards
+### US-9.4: Редактирование расписания
+**Как** пользователь, **я хочу** редактировать cron-расписание источника, **чтобы** контролировать, когда запускается парсинг.
 
-### US-14.1: Require authentication for protected pages
-As a **system**, I want to **redirect unauthenticated users to the login page** so that **only authorized users can access the application**.
+Критерии приёмки:
+- Кнопка «Изменить» рядом с расписанием
+- Инлайн-редактирование: поле cron + человекочитаемый превью
+- Кнопки ✓ сохранить, ✕ отмена
+- Расписание обновляется после сохранения
 
-Acceptance criteria:
-- All routes except `/auth` require authentication
-- Unauthenticated users redirected to `/auth`
-- Authenticated users visiting `/auth` redirected to `/properties`
-- Auth store initialized before guard check
+UI-элементы: кнопка «Изменить», поле cron, кнопки ✓/✕
 
-UI elements: N/A (router guard logic)
+### US-9.5: Просмотр здоровья сервиса
+**Как** пользователь, **я хочу** видеть статус здоровья сервисов парсеров, **чтобы** знать, работает ли инфраструктура.
 
-### US-14.2: Page transitions
-As a **user**, I want to **see smooth page transitions** so that **navigation feels polished**.
+Критерии приёмки:
+- Бейдж здоровья: 🟢 Сервис ОК, 🔴 Сервис оффлайн, ⏳ Проверка..., ⚪ Нет порта
+- Автообновление каждые 30 секунд
 
-Acceptance criteria:
-- Out-in transition on route changes
-- Mobile menu closes on route change
-
-UI elements: `<transition>` wrapper on `<router-view>`
-
----
-
-## Summary Statistics
-
-| Section | User Stories | Interactive Elements |
-|---------|-------------|---------------------|
-| Authentication | 1 | 3 (2 inputs, 1 button) |
-| App Layout & Navigation | 5 | 10 (nav links, theme toggle, hamburger, logout) |
-| Dashboard | 5 | 5 (refresh, score recalc, stat cards) |
-| Property List — All | 8 | 17 (filters, pagination, pipeline, clear, in-progress tab) |
-| Property List — Focus | 8 | 21 (filters, bulk actions, export, checkboxes, hash routing) |
-| Property Detail | 8 | 16 (status buttons, comment, photos, links, auction, CIAN, show more) |
-| Sources | 6 | 10 (toggle, run, schedule edit, health) |
-| Market References | 4 | 8 (form, edit, toggle) |
-| Settings | 7 | 8 (inputs, checkboxes, save, logout, link) |
-| Focus Rules | 5 | 7 (create, edit, toggle, delete, modal form) |
-| Changelog | 3 | 5 (filter buttons, load more) |
-| Documentation | 1 | 8 (TOC links, section links) |
-| 404 Not Found | 1 | 1 (button) |
-| Routing & Guards | 2 | 0 (logic only) |
-| **Total** | **64** | **~119** |
+UI-элементы: бейджи статуса здоровья
 
 ---
 
-## E2E Coverage Matrix
+## 10. Настройки — Эталоны
 
-| User Story | E2E Test(s) | Status |
-|------------|-------------|--------|
-| US-1.1 Login | 1.1, 1.2, 1.3 | ✅ |
-| US-2.1 Navigation | 8.1–8.4 | ✅ |
-| US-2.2 Mobile hamburger | — | ❌ |
-| US-2.3 Theme toggle | 8.6 | ✅ |
-| US-2.4 Logout | 1.5, 6.2 | ✅ |
-| US-2.5 Footer links | — | ❌ |
-| US-3.1 Dashboard stats | 10.1, 10.2 | ✅ |
-| US-3.2 Hot properties | 10.3 | ✅ |
-| US-3.3 Run scoring | — | ❌ |
-| US-3.4 7-day trend | — | ❌ |
-| US-3.5 Refresh dashboard | 10.5 | ✅ |
-| US-4.1 Properties table | 2.1–2.3 | ✅ |
-| US-4.2 Sort columns | 2.9 | ✅ |
-| US-4.3 Filter properties | 2.5–2.7 | ✅ |
-| US-4.4 Pagination | — | ❌ |
-| US-4.5 Pipeline | 2.4 | ✅ |
-| US-4.6 Launch params | 2.10 | ✅ |
-| US-4.7 Clear new | — | ❌ |
-| US-4.8 В работе tab | — | ❌ |
-| US-5.1 Focus view | 3.1, 3.4 | ✅ |
-| US-5.2 Focus sort | 3.9 | ✅ |
-| US-5.3 Focus filters | 3.2, 3.3, 3.11–3.18 | ✅ |
-| US-5.4 Recalculate | — | ❌ |
-| US-5.5 CSV export | 3.6 | ✅ |
-| US-5.6 Bulk select | 3.8 | ✅ |
-| US-5.7 Focus pagination | — | ❌ |
-| US-5.8 Hash routing | — | ❌ |
-| US-6.1 Detail view | 4.1–4.3 | ✅ |
-| US-6.2 Photos (lazy load) | — | ❌ |
-| US-6.3 Status change | 4.4 | ✅ |
-| US-6.4 Comments | 4.5 | ✅ |
-| US-6.5 Event history | 10.10 | ✅ |
-| US-6.6 Auction info | — | ❌ |
-| US-6.7 CIAN link | — | ❌ |
-| US-6.8 Description toggle | — | ❌ |
-| US-7.1 Source list | 5.1, 5.2 | ✅ |
-| US-7.2 Toggle source | — | ❌ |
-| US-7.3 Run parser | — | ❌ |
-| US-7.4 Edit schedule | — | ❌ |
-| US-7.5 Health badges | — | ❌ |
-| US-8.1 Add reference | 7.2 | ✅ |
-| US-8.2 References table | — | ❌ |
-| US-8.3 Edit price | — | ❌ |
-| US-8.4 Activate/deactivate | — | ❌ |
-| US-9.1 Threshold | 6.2 | ✅ |
-| US-9.2 Digest time | 6.2 | ✅ |
-| US-9.3 Digest email | 6.2 | ✅ |
-| US-9.4 Monitored regions | — | ❌ |
-| US-9.5 Save settings | — | ❌ |
-| US-9.6 Navigate to refs | — | ❌ |
-| US-9.7 Logout from settings | — | ❌ |
-| US-10.1 View rules | 10.6 | ✅ |
-| US-10.2 Create rule | 10.7 | ✅ |
-| US-10.3 Edit rule | — | ❌ |
-| US-10.4 Toggle rule | 10.8 | ✅ |
-| US-10.5 Delete rule | 10.9 | ✅ |
-| US-11.1 View changelog | — | ❌ |
-| US-11.2 Filter changelog | — | ❌ |
-| US-11.3 Load more | — | ❌ |
-| US-12.1 Documentation | — | ❌ |
-| US-13.1 404 page | 11.1 | ✅ |
+### US-10.1: Просмотр рыночных эталонов
+**Как** пользователь, **я хочу** видеть все рыночные эталоны (₽/м²), **чтобы** управлять ценовыми ориентирами.
+
+Критерии приёмки:
+- Таблица (десктоп): Город, Тип, ₽/м², С даты, Примечание, Статус, Действия
+- Карточки (мобильные)
+- Активные эталоны — полная opacity, неактивные — 50%
+- Бейдж статуса: «Активен» (зелёный) / «Неактивен» (красный)
+- Скелетон загрузки
+- «Эталоны не добавлены» когда пусто
+
+UI-элементы: MarketReferencesPanel с таблицей/карточками
+
+### US-10.2: Добавление нового эталона
+**Как** пользователь, **я хочу** добавить новый рыночный эталон, **чтобы** анализатор мог сравнивать цены.
+
+Критерии приёмки:
+- Форма: Город* (select), Тип недвижимости* (select), Цена за м²* (число), Действует с* (date), Примечание (текст)
+- Кнопка «Добавить» (отключена пока невалидно)
+- Валидация: город, тип, цена >0 и дата обязательны
+- Форма сбрасывается после успеха
+
+UI-элементы: 5 полей формы, кнопка «Добавить»
+
+### US-10.3: Редактирование цены эталона
+**Как** пользователь, **я хочу** изменить цену рыночного эталона, **чтобы** обновлять ориентиры при изменении рынка.
+
+Критерии приёмки:
+- Ссылка «Изменить цену» (только для активных эталонов)
+- Инлайн-редактирование: числовое поле заменяет цену
+- Кнопки «Сохранить» и «Отмена»
+- Десктоп: инлайн в строке таблицы
+- Мобильные: инлайн в карточке
+
+UI-элементы: ссылка «Изменить цену», поле цены, кнопки «Сохранить»/«Отмена»
+
+### US-10.4: Активация/деактивация эталона
+**Как** пользователь, **я хочу** активировать или деактивировать эталон, **чтобы** контролировать, какие ориентиры используются в анализе.
+
+Критерии приёмки:
+- Ссылка «Деактивировать» (красная) для активных
+- Ссылка «Активировать» (зелёная) для неактивных
+- Обновляется сразу
+
+UI-элементы: ссылка активации/деактивации
+
+---
+
+## 11. История изменений
+
+### US-11.1: Просмотр changelog
+**Как** пользователь, **я хочу** видеть историю обновлений AKLAB, **чтобы** знать, какие функции и исправления были выпущены.
+
+Критерии приёмки:
+- Заголовок «Changelog» с описанием
+- Лента релизов: версия (monospace), дата, список изменений
+- Каждый пункт: иконка типа (✦ новое, ↑ улучшение, • исправление), текст, бейдж типа
+- Загружается из `/changelog.json`
+- Скелетон загрузки
+
+UI-элементы: карточки релизов с версией, датой, списком изменений
+
+### US-11.2: Фильтрация changelog по категории
+**Как** пользователь, **я хочу** фильтровать changelog по типу изменений, **чтобы** сосредоточиться на конкретных обновлениях.
+
+Критерии приёмки:
+- Кнопки фильтра: Все, Новое, Улучшения, Исправления
+- Активный фильтр выделен цветом категории
+- Релизы без подходящих пунктов скрываются
+- Сброс пагинации при смене фильтра
+
+UI-элементы: 4 кнопки фильтра (pill-shaped)
+
+### US-11.3: Загрузка следующих записей
+**Как** пользователь, **я хочу** загружать больше записей changelog, **чтобы** видеть более старые релизы.
+
+Критерии приёмки:
+- Кнопка «Показать ещё» когда есть ещё релизы
+- Загружает 10 релизов за раз
+- «Все обновления загружены» когда всё показано
+
+UI-элементы: кнопка «Показать ещё», текст конца списка
+
+---
+
+## 12. Документация
+
+### US-12.1: Чтение документации
+**Как** пользователь, **я хочу** читать документацию по архитектуре и использованию AKLAB, **чтобы** понимать, как работает система.
+
+Критерии приёмки:
+- Содержание с якорными ссылками: Обзор, Архитектура, Сервисы, Поток данных, Парсеры, API, Деплой, Разделы интерфейса
+- Секции со структурированным контентом:
+  - **Обзор**: описание продукта
+  - **Архитектура**: схема (Frontend → Backend → Microservices), дерево зависимостей
+  - **Сервисы**: таблица с именем, портом, очередью, описанием
+  - **Поток данных**: 3 шага (Парсинг → Анализ → Дайджест)
+  - **Парсеры**: карточки с именем, типом, статусом, описанием
+  - **API**: таблица endpoints с методом, путём, описанием
+  - **Деплой**: пошаговый процесс развёртывания
+  - **Разделы интерфейса**: ссылки на Объекты, Настройки, Changelog
+
+UI-элементы: TOC-ссылки, схема архитектуры, таблица сервисов, шаги потока, карточки парсеров, таблица API, шаги деплоя, ссылки на разделы
+
+---
+
+## 13. 404 — Страница не найдена
+
+### US-13.1: Обработка неизвестных маршрутов
+**Как** пользователь, **я хочу** видеть дружественную страницу 404 при переходе на несуществующий URL, **чтобы** восстановиться и перейти на валидную страницу.
+
+Критерии приёмки:
+- Крупный текст «404» акцентным цветом
+- Заголовок «Страница не найдена»
+- Пояснительный текст
+- Кнопка «Перейти к объектам» ведущая на `/properties`
+
+UI-элементы: «404», заголовок, описание, кнопка
+
+---
+
+## 14. Маршрутизация и guards
+
+### US-14.1: Требование аутентификации для защищённых страниц
+**Как** система, **я хочу** перенаправлять неаутентифицированных пользователей на страницу входа, **чтобы** только авторизованные пользователи имели доступ.
+
+Критерии приёмки:
+- Все маршруты кроме `/auth` требуют аутентификации
+- Неаутентифицированные пользователи перенаправляются на `/auth`
+- Аутентифицированные пользователи на `/auth` перенаправляются на `/properties`
+- Auth store инициализируется перед проверкой guard
+
+UI-элементы: N/A (логика router guard)
+
+### US-14.2: Анимация переходов между страницами
+**Как** пользователь, **я хочу** видеть плавные переходы между страницами, **чтобы** навигация выглядела отполированно.
+
+Критерии приёмки:
+- Out-in transition при смене маршрута
+- Мобильное меню закрывается при смене маршрута
+
+UI-элементы: `<transition>` обёртка на `<router-view>`
+
+---
+
+## Сводная статистика
+
+| Раздел | Историй | Интерактивных элементов |
+|--------|---------|------------------------|
+| Аутентификация | 1 | 3 (2 поля, 1 кнопка) |
+| Макет и навигация | 5 | 8 (ссылки, тема, гамбургер, выход) |
+| Дашборд | 5 | 6 (KPI, бары, горячие, парсеры, обновление) |
+| Список — Все | 7 | 16 (фильтры, пагинация, парсинг, очистка, вкладки) |
+| Список — Фокус | 9 | 22 (фильтры, поиск, bulk, экспорт, чекбоксы, hash) |
+| Карточка объекта | 8 | 16 (статусы, комментарии, фото, ссылки, торги, CIAN) |
+| Настройки — Дайджест | 7 | 9 (поля, чекбокс, кнопки, пайплайн, выход) |
+| Настройки — Правила | 6 | 8 (создать, редактировать, toggle, удалить, модалка) |
+| Настройки — Парсеры | 5 | 7 (toggle, запуск, расписание, здоровье) |
+| Настройки — Эталоны | 4 | 7 (форма, редактирование, toggle) |
+| История изменений | 3 | 5 (фильтры, загрузить ещё) |
+| Документация | 1 | 8 (TOC, ссылки разделов) |
+| 404 | 1 | 1 (кнопка) |
+| Маршрутизация | 2 | 0 (только логика) |
+| **Итого** | **63** | **~116** |
+
+---
+
+## Матрица E2E-покрытия
+
+| История | E2E-тест(ы) | Статус |
+|---------|-------------|--------|
+| US-1.1 Вход | 1.1, 1.2, 1.3 | ✅ |
+| US-2.1 Навигация | 8.1–8.4 | ✅ |
+| US-2.2 Мобильное меню | — | ❌ |
+| US-2.3 Тема | 8.6 | ✅ |
+| US-2.4 Выход | 1.5, 6.2 | ✅ |
+| US-2.5 Footer | — | ❌ |
+| US-3.1 Статистика дашборда | 10.1, 10.2 | ✅ |
+| US-3.2 Горячие объекты | 10.3 | ✅ |
+| US-3.3 Типы (бар-чарт) | — | ❌ |
+| US-3.4 Парсеры на дашборде | — | ❌ |
+| US-3.5 Обновление дашборда | 10.5 | ✅ |
+| US-4.1 Таблица объектов | 2.1–2.3 | ✅ |
+| US-4.2 Сортировка | 2.9 | ✅ |
+| US-4.3 Фильтрация | 2.5–2.7 | ✅ |
+| US-4.4 Пагинация | — | ❌ |
+| US-4.5 Запуск парсинга | 2.4 | ✅ |
+| US-4.6 Очистка новых | — | ❌ |
+| US-4.7 Вкладка «В работе» | — | ❌ |
+| US-5.1 Фокус-список | 3.1, 3.4 | ✅ |
+| US-5.2 Сортировка фокуса | 3.9 | ✅ |
+| US-5.3 Фильтры фокуса | 3.2, 3.3, 3.11–3.18 | ✅ |
+| US-5.4 Поиск в фокусе | — | ❌ |
+| US-5.5 Пересчёт скоров | — | ❌ |
+| US-5.6 Экспорт CSV | 3.6 | ✅ |
+| US-5.7 Bulk-действия | 3.8 | ✅ |
+| US-5.8 Пагинация фокуса | — | ❌ |
+| US-5.9 Hash-маршрутизация | — | ❌ |
+| US-6.1 Детали объекта | 4.1–4.3 | ✅ |
+| US-6.2 Фотографии | — | ❌ |
+| US-6.3 Смена статуса | 4.4 | ✅ |
+| US-6.4 Комментарии | 4.5 | ✅ |
+| US-6.5 История событий | 10.10 | ✅ |
+| US-6.6 Информация о торгах | — | ❌ |
+| US-6.7 CIAN-ссылка | — | ❌ |
+| US-6.8 Ссылка на источник | — | ❌ |
+| US-7.1 Порог отклонения | 6.2 | ✅ |
+| US-7.2 Дайджест вкл/выкл | — | ❌ |
+| US-7.3 Время дайджеста | 6.2 | ✅ |
+| US-7.4 Email дайджеста | 6.2 | ✅ |
+| US-7.5 Сохранение настроек | — | ❌ |
+| US-7.6 Ручной запуск пайплайна | — | ❌ |
+| US-7.7 Выход из настроек | — | ❌ |
+| US-8.1 Правила парсинга | — | ❌ |
+| US-8.2 Просмотр правил фокуса | 10.6 | ✅ |
+| US-8.3 Создание правила | 10.7 | ✅ |
+| US-8.4 Редактирование правила | — | ❌ |
+| US-8.5 Toggle правила | 10.8 | ✅ |
+| US-8.6 Удаление правила | 10.9 | ✅ |
+| US-9.1 Список источников | 5.1, 5.2 | ✅ |
+| US-9.2 Toggle источника | — | ❌ |
+| US-9.3 Запуск парсера | — | ❌ |
+| US-9.4 Редактирование расписания | — | ❌ |
+| US-9.5 Здоровье сервиса | — | ❌ |
+| US-10.1 Просмотр эталонов | — | ❌ |
+| US-10.2 Добавление эталона | 7.2 | ✅ |
+| US-10.3 Редактирование цены | — | ❌ |
+| US-10.4 Активация эталона | — | ❌ |
+| US-11.1 Просмотр changelog | — | ❌ |
+| US-11.2 Фильтрация changelog | — | ❌ |
+| US-11.3 Загрузить ещё | — | ❌ |
+| US-12.1 Документация | — | ❌ |
+| US-13.1 404 | 11.1 | ✅ |
 | US-14.1 Auth guard | 11.2–11.4 | ✅ |
-| US-14.2 Event log | 10.10 | ✅ |
+| US-14.2 Переходы | 10.10 | ✅ |
 
-**Coverage: 34/64 user stories (53%) have E2E tests. 30 stories need tests.**
+**Покрытие: 31/63 историй (49%) имеют E2E-тесты. 32 истории без тестов.**
