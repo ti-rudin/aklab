@@ -1,5 +1,24 @@
 [
   {
+    "version": "v1.1.28",
+    "date": "6 июля 2026",
+    "time": "22:08",
+    "items": [
+      {
+        "text": "Публичный health endpoint",
+        "type": "fix"
+      },
+      {
+        "text": "Rate-limit — пропуск OPTIONS, лимит 120/мин",
+        "type": "fix"
+      },
+      {
+        "text": "Rate-limit middleware — чистый Koa вместо express-rate-limit (сломал Strapi)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.27",
     "date": "6 июля 2026",
     "time": "21:33",
