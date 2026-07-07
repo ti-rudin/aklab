@@ -76,11 +76,15 @@ export async function handleAnalyzeJob(job: Job): Promise<{ analyzed: boolean; u
     }
 
     const deviation = ((refPrice - actualPrice) / refPrice) * 100;
-    const isUndervalued = deviation >= threshold;
+    // deviation > 0 = объект ДЕШЕВЛЕ рынка (недооценён)
+    // deviation < 0 = объект ДОРОЖЕ рынка (переоценён)
+    const isUndervalued = deviation > 0 && deviation >= threshold;
+    const roundedDeviation = Math.round(deviation * 10) / 10;
 
     await updateProperty(property.documentId, {
       is_undervalued: isUndervalued,
-      deviation_percent: isUndervalued ? Math.round(deviation * 10) / 10 : 0,
+      // Всегда сохраняем реальную deviation (не 0!) — нужна для focus scoring
+      deviation_percent: roundedDeviation,
       manual_price_per_sqm: isUndervalued ? refPrice : null,
     });
 
