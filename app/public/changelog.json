@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.42",
+    "date": "7 июля 2026",
+    "time": "14:57",
+    "items": [
+      {
+        "text": "Invest-mosreg price conversion (млн→руб) + m-ets auction_type",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.41",
     "date": "7 июля 2026",
     "time": "14:40",
