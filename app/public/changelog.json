@@ -2,6 +2,21 @@
   {
     "version": "v1.1.44",
     "date": "7 июля 2026",
+    "time": "21:41",
+    "items": [
+      {
+        "text": "V1.1.44 — UI cleanup (дашборд, теги, типы)",
+        "type": "new"
+      },
+      {
+        "text": "Увеличение rate limit с 600 до 6000 req/мин (10 парсеров × propertyExists)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.1.44",
+    "date": "7 июля 2026",
     "time": "21:35",
     "items": [
       {
