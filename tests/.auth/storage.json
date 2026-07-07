@@ -2,19 +2,19 @@
   "cookies": [],
   "origins": [
     {
-      "origin": "https://aklab.tirobots.ru",
+      "origin": "https://aklab-dev.tirobots.ru",
       "localStorage": [
         {
           "name": "user",
-          "value": "{\"id\":1,\"documentId\":\"uda07v7vph7e7mqhr6sn1l32\",\"username\":\"test\",\"email\":\"test@aklab.tirobots.ru\",\"provider\":\"local\",\"confirmed\":true,\"blocked\":false,\"createdAt\":\"2026-06-24T16:48:33.216Z\",\"updatedAt\":\"2026-06-24T16:48:33.216Z\",\"publishedAt\":\"2026-06-24T16:48:33.111Z\"}"
+          "value": "{\"id\":6,\"documentId\":\"owofc1qydr8w0iqufanqylvf\",\"username\":\"test\",\"email\":\"test@aklab.tirobots.ru\",\"provider\":\"local\",\"confirmed\":true,\"blocked\":false,\"createdAt\":\"2026-06-26T11:18:49.585Z\",\"updatedAt\":\"2026-07-04T18:54:37.578Z\",\"publishedAt\":\"2026-07-04T18:54:37.296Z\"}"
         },
         {
           "name": "jwt",
-          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzgyOTE0NzY0LCJleHAiOjE3ODU1MDY3NjR9.4eRLd_idbhjsXz2rtoKtaCE6YVKASFhvv46L9HLYLzs"
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwiaWF0IjoxNzgzMjAzODI1LCJleHAiOjE3ODU3OTU4MjV9.YQ_pYjOPk1r_WU1l260HVYbp9FbKu8CotFSCU7fNVjQ"
         },
         {
           "name": "lastAuthTime",
-          "value": "1782914765777"
+          "value": "1783203825749"
         }
       ]
     }

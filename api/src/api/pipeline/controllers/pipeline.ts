@@ -23,7 +23,7 @@ export default {
       const depth = body.depth ?? 20;
       const filters = body.filters;
 
-      strapi.log.info(`[pipeline] Start requested: mode=${mode}, depth=${depth}`);
+      strapi.log.info(`[pipeline] Start requested: mode=${mode}, depth=${depth}, filters=${JSON.stringify(filters)}`);
 
       // Fire and forget — pipeline runs in background
       const run = async () => {

@@ -441,7 +441,7 @@ function startPipeline() {
   if (launchFilters.cities.moscow) cities.push('moscow')
   if (launchFilters.cities.mo) cities.push('mo')
   if (launchFilters.cities.other) cities.push('other')
-  if (cities.length > 0 && cities.length < 3) filters.city = cities
+  if (cities.length > 0) filters.city = cities
   if (launchFilters.threshold !== 20) filters.threshold = launchFilters.threshold
 
   pipelineStart(parseDepth.value, Object.keys(filters).length ? filters : undefined).catch((err: any) => {
