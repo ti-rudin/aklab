@@ -259,4 +259,11 @@
 60. **Seeder перезаписывает пароль test user** — `seedTestUser` в bootstrap
     обновляет пароль из `TEST_USER_PASSWORD` env при каждом старте API.
     Если нужно сменить пароль — менять в `.env` и рестартить API.
+61. **Terminal tool маскирует пароли (`***`)** — когда агент передаёт пароль
+    через переменную окружения (например `TEST_USER_PASSWORD='xxx' npx playwright test`),
+    инструмент terminal автоматически заменяет значение на `***` в выводе.
+    Playwright получает `***` вместо реального пароля → тесты падают на auth.
+    **Workaround**: записать пароль в файл (`echo "$PASSWORD" > /tmp/.e2e_password`)
+    и читать из файла: `TEST_USER_PASSWORD=$(cat /tmp/.e2e_password)`.
+    Альтернатива: задать в `.env` и не передавать через shell inline.
 

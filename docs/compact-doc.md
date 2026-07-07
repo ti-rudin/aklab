@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.29+)
+## Текущее состояние (июль 2026, v1.1.32)
 
-Версия: 1.1.29+ (post-planopus3: toast, search, geocode, a11y, refactor)
+Версия: 1.1.32 (E2E stabilization: 56/56 tests passing)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -248,7 +248,7 @@ deploy-prod.sh + бамп версии).
 - **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
 - **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
 - **Unit тесты** — `npm run test` (vitest). 27 файлов, 578 тестов (root) + 14 файлов (app). Включают buildParseRules, createProperty, queue, pipeline, cron, focusEngine, buildPropertyWhere, **extractPrice/extractArea всех 10 парсеров**, **composables (usePropertyData, useFocusTab, usePropertyFilters, useToast)**.
-- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. 56 тестов в 14 describe-блоках: unauthenticated (7), auth flow (4), dashboard (5), properties (6), settings (5), property detail (2), pagination (3), focus tab (3), detail extended (4), settings digest (4), settings rules (2), settings sources (4), market references (3), changelog+docs+404 (4). Пароль из TEST_USER_PASSWORD env. Против production: `BASE_URL=https://aklab.tirobots.ru`.
+- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. **56/56 тестов passing** в 14 describe-блоках: unauthenticated (7), auth flow (4), dashboard (5), properties (6), settings (5), property detail (2), pagination (3), focus tab (3), detail extended (4), settings digest (4), settings rules (2), settings sources (4), market references (3), changelog+docs+404 (4). Пароль из файла `/tmp/.e2e_password` (workaround: terminal tool маскирует `***` при передаче через env). Против production: `BASE_URL=https://aklab.tirobots.ru`. **Ключевые фиксы (v1.1.32):** API-based login попробован, но откатился на UI login (стабильнее). Заменён table-row click на `navigateToFirstProperty` (API-based). `switchToTableView` возвращает boolean + handle empty tables. Селекторы: `Цена→₽`, conditional dashboard types. Hash routing timeout + double-login removed. Rate limit users-permissions 50→300. Auto-seed в deploy-prod.sh.
 - **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
 - **API security** — все endpoints требуют JWT (роль Authenticated).
   Public role: только login/register/forgot-password.
@@ -358,7 +358,7 @@ deploy-prod.sh + бамп версии).
 ## Strapi 5 — gotchas
 
 **Вынесено в отдельный файл:** см. [docs/gotchas.md](gotchas.md)
-(48+ пронумерованных пунктов, стабильный reference)
+(61 пронумерованный пункт, стабильный reference)
 
 ## Session handoff
 

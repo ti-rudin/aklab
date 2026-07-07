@@ -2,18 +2,38 @@
   {
     "version": "v1.1.32",
     "date": "7 июля 2026",
-    "time": "08:22",
+    "time": "12:00",
     "items": [
       {
-        "text": "56/56 test fixes — API-based nav, rate limit, selectors",
+        "text": "E2E 56/56 tests passing — stabilize all failing tests",
         "type": "fix"
       },
       {
-        "text": "Скрипт деплоя на продакшен",
+        "text": "Replace table-row click with API-based navigateToFirstProperty",
         "type": "fix"
       },
       {
-        "text": "E2E switchToTableView wait for table, focus hash test resilience",
+        "text": "switchToTableView returns boolean + handle empty tables",
+        "type": "fix"
+      },
+      {
+        "text": "Fix selectors: Цена→₽, conditional dashboard types",
+        "type": "fix"
+      },
+      {
+        "text": "Hash routing timeout + removed double-login",
+        "type": "fix"
+      },
+      {
+        "text": "Users-permissions rate limit 50→300",
+        "type": "improve"
+      },
+      {
+        "text": "Auto-seed in deploy-prod.sh",
+        "type": "improve"
+      },
+      {
+        "text": "Password file workaround for terminal masking",
         "type": "fix"
       }
     ]
