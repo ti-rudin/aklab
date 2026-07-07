@@ -64,7 +64,7 @@ describe('DashboardView', () => {
   })
 
   // ── KPI карточки ──────────────────────────────────────────────
-  it('отображает 5 KPI карточек при загрузке данных', async () => {
+  it('отображает 4 KPI карточки при загрузке данных', async () => {
     const wrapper = await mountAndWait()
 
     expect(wrapper.text()).toContain('Всего объектов')
@@ -73,8 +73,6 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('15')
     expect(wrapper.text()).toContain('Горячие (≥50)')
     expect(wrapper.text()).toContain('8')
-    expect(wrapper.text()).toContain('Недооценённые')
-    expect(wrapper.text()).toContain('5')
     expect(wrapper.text()).toContain('Новые 24ч')
     expect(wrapper.text()).toContain('3')
   })
@@ -86,7 +84,7 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView)
 
     const skeletons = wrapper.findAll('.skeleton')
-    expect(skeletons.length).toBe(5)
+    expect(skeletons.length).toBe(4)
   })
 
   // ── Ошибка загрузки stats ─────────────────────────────────────

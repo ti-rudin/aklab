@@ -10,17 +10,16 @@
     </div>
 
     <!-- Loading skeleton -->
-    <div v-if="loading && !stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-      <div v-for="i in 5" :key="i" class="skeleton h-24 rounded-xl" />
+    <div v-if="loading && !stats" class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      <div v-for="i in 4" :key="i" class="skeleton h-24 rounded-xl" />
     </div>
 
     <template v-else-if="stats">
       <!-- KPI StatCards -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatCard title="Всего объектов" :value="stats.total" icon="🏢" to="/properties" />
         <StatCard title="В фокусе" :value="stats.inFocus" icon="🎯" to="/properties#focus" color="var(--accent)" />
         <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" color="var(--score-hot)" />
-        <StatCard title="Недооценённые" :value="stats.undervalued" icon="💎" color="var(--warning)" />
         <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" color="var(--success)" />
       </div>
 
