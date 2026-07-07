@@ -1,5 +1,24 @@
 [
   {
+    "version": "v1.1.32",
+    "date": "7 июля 2026",
+    "time": "08:22",
+    "items": [
+      {
+        "text": "56/56 test fixes — API-based nav, rate limit, selectors",
+        "type": "fix"
+      },
+      {
+        "text": "Скрипт деплоя на продакшен",
+        "type": "fix"
+      },
+      {
+        "text": "E2E switchToTableView wait for table, focus hash test resilience",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.31",
     "date": "7 июля 2026",
     "time": "01:15",
