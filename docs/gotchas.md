@@ -320,3 +320,6 @@
     - Новый stage `parsing_scan_done` между Phase 1 и Phase 2.
 63. **resetSourceDetailsCounters** — вызывается ТОЛЬКО в Phase 1 (scan). Phase 2 НЕ сбрасывает счётчики.
 64. **total_details_needed** — устанавливается в Phase 1. Если у парсера нет `fetchDetails` — будет 0.
+
+65. **invest-mosreg: цена в млн.руб.** — API invest.mosreg.ru возвращает кадастровую стоимость в млн (31.68 = 31 680 000₽). Парсер конвертирует: `num < 1000 → num * 1_000_000`. Площадь земельных участков в гектарах → `num < 100 → num * 10_000`.
+66. **m-ets: auction_type='bankruptcy'** — m-ets.ru это аукционы банкротств, НЕ маркетплейс. `auction_type='marketplace'` обходил `isCommercialProperty()` → автомобили и права требования проходили фильтр.
