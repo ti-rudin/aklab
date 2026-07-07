@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.32)
+## Текущее состояние (июль 2026, v1.1.33)
 
-Версия: 1.1.32 (E2E stabilization: 56/56 tests passing)
+Версия: 1.1.33 (pipeline/analyzer/auth fixes)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -250,8 +250,8 @@ deploy-prod.sh + бамп версии).
 - **Unit тесты** — `npm run test` (vitest). 27 файлов, 578 тестов (root) + 14 файлов (app). Включают buildParseRules, createProperty, queue, pipeline, cron, focusEngine, buildPropertyWhere, **extractPrice/extractArea всех 10 парсеров**, **composables (usePropertyData, useFocusTab, usePropertyFilters, useToast)**.
 - **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. **56/56 тестов passing** в 14 describe-блоках: unauthenticated (7), auth flow (4), dashboard (5), properties (6), settings (5), property detail (2), pagination (3), focus tab (3), detail extended (4), settings digest (4), settings rules (2), settings sources (4), market references (3), changelog+docs+404 (4). Пароль из файла `/tmp/.e2e_password` (workaround: terminal tool маскирует `***` при передаче через env). Против production: `BASE_URL=https://aklab.tirobots.ru`. **Ключевые фиксы (v1.1.32):** API-based login попробован, но откатился на UI login (стабильнее). Заменён table-row click на `navigateToFirstProperty` (API-based). `switchToTableView` возвращает boolean + handle empty tables. Селекторы: `Цена→₽`, conditional dashboard types. Hash routing timeout + double-login removed. Rate limit users-permissions 50→300. Auto-seed в deploy-prod.sh.
 - **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
-- **API security** — все endpoints требуют JWT (роль Authenticated).
-  Public role: только login/register/forgot-password.
+- **API security** — single-tenant: все endpoints `auth: false, policies: []`.
+  API-токен не работает с `config: {}` (gotcha #62). JWT протухает после `pm2 restart`.
 - **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
 - **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
 - **Frontend** — 7 страниц: `/` (Dashboard — статистика, горячие объекты, таблица типов недвижимости с кликабельными кнопками → фильтр по типу), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.

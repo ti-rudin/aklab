@@ -267,3 +267,21 @@
     и читать из файла: `TEST_USER_PASSWORD=$(cat /tmp/.e2e_password)`.
     Альтернатива: задать в `.env` и не передавать через shell inline.
 
+62. **API token не работает с `config: {}` (auth required)** — Strapi 5 routes
+    без явного `config` или с `config: {}` требуют JWT. API-токен (из `.env`)
+    не проходит auth на таких endpoints -> `ForbiddenError: 500`.
+    **Решение**: в single-tenant приложении ВСЕ endpoints = `auth: false, policies: []`.
+    Пострадали: `market-references`, `sources`, `setting`, `cron-log`.
+    Gotcha #32/#24 (JWT протухает после restart) + этот = причина почему
+    `config: {}` не работает в single-tenant.
+63. **Analyzer deviation: отрицательная != недооценка** — формула:
+    `deviation = (refPrice - actualPrice) / refPrice * 100`.
+    deviation > 0 = объект ДЕШЕВЛЕ рынка (недооценён).
+    deviation < 0 = объект ДОРОЖЕ рынка (переоценён).
+    Старый баг: `isUndervalued = deviation >= threshold` — отрицательная
+    deviation (-24%) считалась недооценкой. Фикс: `deviation > 0 && deviation >= threshold`.
+64. **Analyzer обнулял deviation_percent для не-undervalued** —
+    `deviation_percent: isUndervalued ? deviation : 0` терял реальное
+    значение -> focus engine не мог считать скор. Фикс: всегда сохранять
+    реальную deviation.
+

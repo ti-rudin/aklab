@@ -2,9 +2,20 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
-## Session handoff (v1.0.37 → следующая сессия)
+## Session handoff (v1.0.37 -> следующая сессия)
+**Сделано в сессии 7 июля 2026 (pipeline/analyzer/auth fixes):**
+- Фильтры формы -> parseAll (P1) -- `parseAll()` принимает `filters` из формы ручного запуска.
+  Раньше `PipelineService.run()` передавал filters только в `analyze()`, не в `parseAll()`.
+  Парсеры всегда читали глобальные настройки из БД, игнорируя форму.
+- Analyzer deviation fix (A1) -- отрицательная deviation не = undervalued.
+  `isUndervalued = deviation > 0 && deviation >= threshold` (было `deviation >= threshold`).
+- Analyzer deviation_percent fix (A2) -- всегда сохраняем реальную deviation.
+  Было: `deviation_percent: isUndervalued ? deviation : 0` -- обнуляло для не-undervalued.
+- auth:false на всех routes (B5) -- `market-references`, `sources`, `setting`, `cron-log`.
+  API-токен не работает с `config: {}` в Strapi 5. Gotcha #62.
+- Документация обновлена -- gotchas 62-64, sessions, compact-doc.
 
-**Сделано в сессии 6 июля 2026 (v1.1.29 — planopus3: аудит → реализация):**
+**Сделано в сессии 6 июля 2026 (v1.1.29 — planopus3: аудит -> реализация):**
 - ✅ **Toast уведомления (U1,U2,U3)** — `console.warn`/`alert()`/silent catch → `useToast()` в 4 Vue файлах
 - ✅ **Серверный поиск focus (U4)** — `search` param в getFocusQuery, debounce 300ms, client-side фильтр убран
 - ✅ **Backend geocoding endpoint (U5)** — `GET /properties/:id/geocode` с кэшем в БД, клиентский Nominatim убран
