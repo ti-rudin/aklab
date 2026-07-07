@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.37)
+## Текущее состояние (июль 2026, v1.1.42)
 
-Версия: 1.1.37 (двуфазный парсинг)
+Версия: 1.1.42 (фикс цен парсеров)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -287,16 +287,16 @@ deploy-prod.sh + бамп версии).
   - **UI** — `/settings` → таб «Правила» → секция «Правила парсинга» (ParsingRulesPanel.vue). Глубина, цена, площадь, города перенесены из «Дайджеста».
   - **Предзаполнение** — формы ручного запуска на `/properties` и `/settings` предзаполняются из Setting.
   - **buildParseRules(setting)** — единая функция в `lib/parse-rules/` (`@aklab/parse-rules`). Re-export из `api/src/services/parseRules.ts` и `_shared/src/strapi-client.ts`.
-- **Парсеры** (обновлено 05.07.2026):
+- **Парсеры** (обновлено 07.07.2026):
   - **10 активных парсеров** + 1 отключён (fedresurs — Qrator anti-bot).
   - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 204 объекта, fetchDetails.
   - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
   - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). fetchDetails.
-  - `m-ets` — Playwright SPA. 200 объектов, fetchDetails.
+  - `m-ets` — Playwright SPA. 200 объектов, fetchDetails. **Фильтр:** `auction_type='bankruptcy'` (не marketplace — там автомобили/права требования).
   - `aggregator-bankrot` — fetch JSON API. 71 объект, fetchDetails.
   - `etprf` — Playwright AJAX (sale.etprf.ru). 200 объектов, fetchDetails.
   - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). fetchDetails.
-  - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов.
+  - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов. **Важно:** API отдаёт цену в млн.руб. и площадь в гектарах — парсер конвертирует (×1M, ×10000).
   - `fabrikant` — Playwright SPA (fabrikant.ru). **fetchDetails** (описание, контакты, фото). is_active=1.
   - `roseltorg` — Playwright SPA (roseltorg.ru). **fetchDetails** + URL с фильтрами (Москва, коммерческая). is_active=1.
   - `fedresurs` — **ОТКЛЮЧЁН** (Qrator anti-bot).
