@@ -1,8 +1,12 @@
 /**
  * Pipeline Stages — parseAll, analyze, digest.
  *
- * Each stage is a standalone async function that receives a PipelineContext
- * (strapi instance + callbacks for state updates and cancellation checks).
+ * ДВУХФАЗНЫЙ ПАРСИНГ:
+ *   Phase 1 (scan):     ВСЕ источники сканируют списки → фильтруют → сохраняют
+ *   Phase 2 (details):  ТОЛЬКО ПОТОМ загружаем детали для ВСЕХ
+ *
+ * Глобальная синхронизация: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1.
+ * Счётчики НЕ прыгают — pipeline читает их только после завершения фазы.
  */
 
 import type { StrapiInstance } from '../../types/strapi';
@@ -24,6 +28,50 @@ export interface PipelineContext {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Ждём пока ВСЕ очереди для данных slug'ов станут пустыми.
+ * Возвращает true если все завершились, false если отменено.
+ */
+async function waitForQueues(
+  qs: ReturnType<typeof getQueueService>,
+  slugs: string[],
+  ctx: PipelineContext,
+  onPoll: (stats: any[], queues: Record<string, any>) => Promise<void>,
+): Promise<boolean> {
+  const queueNames = slugs.map(s => `parse-${s}`);
+  while (!ctx.isCancelled()) {
+    await sleep(3000);
+    const stats = qs.getDetailedStats();
+    const queues = stats.queues || stats;
+
+    // Проверяем есть ли активные задачи
+    let anyActive = false;
+    for (const qName of queueNames) {
+      const q = queues[qName];
+      if (q && (q.pending > 0 || q.active > 0)) {
+        anyActive = true;
+        break;
+      }
+    }
+
+    // Читаем статистику из БД
+    const sourceStats = await ctx.getSourceStats(slugs);
+    let doneCount = 0;
+    for (const s of sourceStats) {
+      if (s.last_parse_status === 'success' || s.last_parse_status === 'error') {
+        doneCount++;
+      }
+    }
+
+    // Вызываем callback для обновления UI
+    await onPoll(sourceStats, queues);
+
+    // Все очереди пусты + все источники отчитались
+    if (!anyActive && doneCount >= slugs.length) break;
+  }
+  return !ctx.isCancelled();
 }
 
 // ── Parse All Sources ──
@@ -55,8 +103,7 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
     objects_created: 0,
   }, `Сканирование источников... (0/${total})`);
 
-  // Сброс счётчиков ВСЕХ активных источников ДО enqueue,
-  // чтобы агрегация не подхватывала stale значения от прошлого запуска
+  // Сброс счётчиков ВСЕХ активных источников ДО enqueue
   const resetData = {
     total_details_fetched: 0,
     total_details_needed: 0,
@@ -73,59 +120,143 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
         data: resetData,
       });
       resetCount++;
-    } catch { /* ignore individual failures */ }
+    } catch { /* ignore */ }
   }
-  console.log(`[pipeline] Source counters reset for ${resetCount}/${total} sources`);
+  console.log(`[pipeline:reset] ${resetCount}/${total} sources reset to zero`);
 
-  // Enqueue all parsers
-  const corrId = `pipeline-parse-${Date.now()}`;
-  const slugs: string[] = [];
-  // Читаем правила парсинга из Setting, мерджим с фильтрами из формы
+  // Читаем правила парсинга
   const settings = await ctx.strapi.db.query('api::setting.setting').findOne({});
   const parseRules = buildParseRules(settings);
-  // Фильтры из формы ручного запуска перезаписывают глобальные настройки
   if (filters) {
     if (filters.priceFrom != null) parseRules.priceFrom = filters.priceFrom;
     if (filters.priceTo != null) parseRules.priceTo = filters.priceTo;
     if (filters.city?.length) parseRules.cities = filters.city;
   }
+  console.log(`[pipeline:enqueue] parseRules: ${JSON.stringify({ cities: parseRules.cities, priceFrom: parseRules.priceFrom, priceTo: parseRules.priceTo, areaFrom: parseRules.areaFrom })}`);
+
+  const corrId = `pipeline-parse-${Date.now()}`;
+  const slugs: string[] = [];
+
+  // ═══════════════════════════════════════════════════════════════
+  // ФАЗА 1: СКАНИРОВАНИЕ ВСЕХ ИСТОЧНИКОВ
+  // Парсинг списков + дедуп + предфильтр → файлы с результатами
+  // ═══════════════════════════════════════════════════════════════
+  console.log(`[pipeline:phase1] Starting scan for ${total} sources`);
+  await updateState(ctx.strapi, {
+    stage: 'parsing_scan',
+    message: `Фаза 1: сканирование... (0/${total})`,
+  });
+
   for (const src of sources) {
     if (ctx.isCancelled()) break;
     const slug = (src as any).slug;
     slugs.push(slug);
+    console.log(`[pipeline:enqueue:scan] ${slug} id=${(src as any).id} docId=${(src as any).documentId}`);
     qs.addToQueue(`parse-${slug}`, {
       source: slug,
       sourceId: (src as any).id,
       documentId: (src as any).documentId,
       depth,
       rules: parseRules,
+      correlationId: corrId,
+      phase: 'scan',
     }, { correlationId: corrId });
   }
 
-  // Wait for all parse queues to drain
-  const parseQueues = slugs.map(s => `parse-${s}`);
-  let lastSourcesDone = 0;
-  while (!ctx.isCancelled()) {
-    await sleep(3000);
-    const stats = qs.getDetailedStats();
-    const queues = stats.queues || stats;
-
-    // Count active parse queues
-    let anyActive = false;
-    for (const qName of parseQueues) {
-      const q = queues[qName];
-      if (q && (q.pending > 0 || q.active > 0)) {
-        anyActive = true;
-        break;
+  // Ждём завершения ВСЕХ сканирований
+  const phase1Done = await waitForQueues(qs, slugs, ctx, async (sourceStats) => {
+    let doneCount = 0;
+    for (const s of sourceStats) {
+      console.log(`[pipeline:scan:poll] ${s.slug}: found=${s.total_found||0} needed=${s.total_details_needed||0} status=${s.last_parse_status||'running'}`);
+      if (s.last_parse_status === 'success' || s.last_parse_status === 'error') {
+        doneCount++;
+        if (s.last_parse_status === 'error' && s.last_parse_error) {
+          const msg = `${s.slug}: ${s.last_parse_error}`;
+          if (!errors.includes(msg)) errors.push(msg);
+        }
       }
     }
+    await updateState(ctx.strapi, {
+      stage: 'parsing_scan',
+      message: `Фаза 1: сканирование... (${doneCount}/${total})`,
+      sources_done: doneCount,
+    });
+  });
 
-    // Read source stats from DB for progress
-    const sourceStats = await ctx.getSourceStats(slugs);
-    let totalFetched = 0, totalNeeded = 0, totalCreated = 0, doneCount = 0;
+  if (!phase1Done) return { created: 0, errors };
+
+  // ═══════════════════════════════════════════════════════════════
+  // ПРОМЕЖУТОЧНЫЙ ИТОГ ФАЗЫ 1
+  // Теперь мы знаем ОБЩЕЕ количество объектов к детальной загрузке
+  // ═══════════════════════════════════════════════════════════════
+  const scanStats = await ctx.getSourceStats(slugs);
+  let totalDetailsNeeded = 0, totalFound = 0;
+  for (const s of scanStats) {
+    totalDetailsNeeded += s.total_details_needed || 0;
+    totalFound += s.total_found || 0;
+    console.log(`[pipeline:scan:result] ${s.slug}: found=${s.total_found||0} needed=${s.total_details_needed||0}`);
+  }
+  console.log(`[pipeline:phase1:complete] totalFound=${totalFound} totalDetailsNeeded=${totalDetailsNeeded}`);
+
+  await updateState(ctx.strapi, {
+    stage: 'parsing_scan_done',
+    details_needed: totalDetailsNeeded,
+    sources_done: total,
+    message: `✓ Фаза 1: ${totalFound} найдено, ${totalDetailsNeeded} к детальной загрузке`,
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // ФАЗА 2: ДЕТАЛЬНАЯ ЗАГРУЗКА
+  // Загрузка детальных страниц + создание в Strapi
+  // Начинается ТОЛЬКО после завершения ВСЕХ Phase 1
+  // ═══════════════════════════════════════════════════════════════
+  if (totalDetailsNeeded === 0) {
+    console.log(`[pipeline:phase2] Skipping — nothing to fetch`);
+    await updateState(ctx.strapi, {
+      stage: 'parsing_done',
+      message: `✓ Парсинг: 0 деталей к загрузке`,
+    });
+    return { created: 0, errors };
+  }
+
+  // Сбрасываем last_parse_status перед Phase 2,
+  // чтобы polling loop не считал источники "завершёнными" по Phase 1
+  for (const src of sources) {
+    try {
+      await ctx.strapi.db.query('api::source.source').update({
+        where: { documentId: (src as any).documentId },
+        data: { last_parse_status: null, last_parse_error: null },
+      });
+    } catch {}
+  }
+
+  console.log(`[pipeline:phase2] Starting detail fetch for ${slugs.length} sources (${totalDetailsNeeded} pages)`);
+  await updateState(ctx.strapi, {
+    stage: 'parsing_details',
+    message: `Фаза 2: загрузка деталей... (0/${totalDetailsNeeded})`,
+  });
+
+  for (const slug of slugs) {
+    if (ctx.isCancelled()) break;
+    const src = sources.find((s: any) => s.slug === slug) as any;
+    console.log(`[pipeline:enqueue:details] ${slug}`);
+    qs.addToQueue(`parse-${slug}`, {
+      source: slug,
+      sourceId: src.id,
+      documentId: src.documentId,
+      depth,
+      rules: parseRules,
+      correlationId: corrId,
+      phase: 'details',
+    }, { correlationId: corrId });
+  }
+
+  // Ждём завершения ВСЕХ детальных загрузок
+  const phase2Done = await waitForQueues(qs, slugs, ctx, async (sourceStats) => {
+    let totalFetched = 0, totalCreated = 0, doneCount = 0;
     for (const s of sourceStats) {
+      console.log(`[pipeline:details:poll] ${s.slug}: fetched=${s.total_details_fetched||0} created=${s.total_created||0} status=${s.last_parse_status||'running'}`);
       totalFetched += s.total_details_fetched || 0;
-      totalNeeded += s.total_details_needed || 0;
       totalCreated += s.total_created || 0;
       if (s.last_parse_status === 'success' || s.last_parse_status === 'error') {
         doneCount++;
@@ -135,40 +266,24 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
         }
       }
     }
-
-    // Determine stage
-    let stage: PipelineStage = 'parsing_scan';
-    let message = `Сканирование источников... (${doneCount}/${total})`;
-    if (totalNeeded > 0) {
-      stage = 'parsing_details';
-      message = `Загрузка деталей: ${totalFetched}/${totalNeeded}`;
-      if (doneCount > lastSourcesDone) {
-        message = `Сканирование источников... (${doneCount}/${total}) · Детали: ${totalFetched}/${totalNeeded}`;
-      }
-    }
-
-    if (doneCount > lastSourcesDone) lastSourcesDone = doneCount;
-
     await updateState(ctx.strapi, {
-      stage,
-      message,
-      sources_done: doneCount,
+      stage: 'parsing_details',
+      message: `Фаза 2: ${totalFetched}/${totalDetailsNeeded} деталей, ${totalCreated} создано`,
       details_fetched: totalFetched,
-      details_needed: totalNeeded,
       objects_created: totalCreated,
-      errors,
     });
+  });
 
-    if (!anyActive && doneCount >= total) break;
-  }
-
-  // Final read
+  // ═══════════════════════════════════════════════════════════════
+  // ФИНАЛЬНЫЙ ИТОГ
+  // ═══════════════════════════════════════════════════════════════
   const finalStats = await ctx.getSourceStats(slugs);
   let finalCreated = 0, finalFetched = 0, finalNeeded = 0;
   for (const s of finalStats) {
     finalCreated += s.total_created || 0;
     finalFetched += s.total_details_fetched || 0;
     finalNeeded += s.total_details_needed || 0;
+    console.log(`[pipeline:final] ${s.slug}: created=${s.total_created||0} fetched=${s.total_details_fetched||0} needed=${s.total_details_needed||0}`);
   }
 
   await updateState(ctx.strapi, {
@@ -293,7 +408,7 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
     ctx.strapi.log.error(`[pipeline] Score error: ${err.message}`);
   }
 
-  // Count undervalued (баг B4: был limit:1 → всегда 0 или 1)
+  // Count undervalued
   const undervaluedRows = await ctx.strapi.db.query('api::property.property').findMany({
     where: { is_undervalued: true },
     select: ['id'],

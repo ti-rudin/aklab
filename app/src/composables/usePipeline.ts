@@ -55,7 +55,7 @@ export function usePipeline() {
   )
 
   const isParsingStage = computed(() =>
-    ['parsing_scan', 'parsing_details'].includes(state.stage)
+    ['parsing_scan', 'parsing_scan_done', 'parsing_details'].includes(state.stage)
   )
 
   const isParsingDone = computed(() =>

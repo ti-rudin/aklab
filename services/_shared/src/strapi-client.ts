@@ -282,6 +282,7 @@ export async function updateSourceStats(documentId: string, data: {
       if (res.ok) {
         const json = (await res.json()) as StrapiResponse<any>;
         const current = json.data;
+        console.log(`[strapi-client:updateStats] docId=${documentId} BEFORE: found=${current?.total_found} created=${current?.total_created} fetched=${current?.total_details_fetched} needed=${current?.total_details_needed} status=${current?.last_parse_status}`);
         if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
         if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
         if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
@@ -289,6 +290,7 @@ export async function updateSourceStats(documentId: string, data: {
         if (hasFetchDelta) updateData.total_details_fetched = data.total_details_fetched;
         // total_details_needed: прямой SET (точное кол-во после existence check)
         if (hasNeededVal) updateData.total_details_needed = data.total_details_needed;
+        console.log(`[strapi-client:updateStats] docId=${documentId} SETTING:`, JSON.stringify(updateData));
       } else {
         logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
       }
@@ -302,7 +304,9 @@ export async function updateSourceStats(documentId: string, data: {
     headers: HEADERS,
     body: JSON.stringify({ data: updateData }),
   });
-  if (!putRes.ok) {
+  if (putRes.ok) {
+    console.log(`[strapi-client:updateStats] docId=${documentId} PUT OK →`, JSON.stringify(updateData));
+  } else {
     const body = await putRes.text();
     logger.warn(`updateSourceStats PUT failed (${putRes.status}): ${body}`);
   }
@@ -310,6 +314,7 @@ export async function updateSourceStats(documentId: string, data: {
 
 /** Сбросить ВСЕ счётчики перед новым запуском парсинга. */
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
+  console.log(`[strapi-client:reset] docId=${documentId} → resetting ALL counters to 0`);
   try {
     const putRes = await fetch(`${BASE}/sources/${documentId}`, {
       method: 'PUT',
@@ -323,7 +328,9 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
         last_parse_error: null,
       } }),
     });
-    if (!putRes.ok) {
+    if (putRes.ok) {
+      console.log(`[strapi-client:reset] docId=${documentId} → OK`);
+    } else {
       logger.warn(`resetSourceDetailsCounters failed (${putRes.status})`);
     }
   } catch (err: any) {

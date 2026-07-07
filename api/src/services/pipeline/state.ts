@@ -13,6 +13,7 @@ import { broadcastSSE } from '../pipeline-sse';
 export type PipelineStage =
   | 'idle'
   | 'parsing_scan'
+  | 'parsing_scan_done'
   | 'parsing_details'
   | 'parsing_done'
   | 'analyzing'

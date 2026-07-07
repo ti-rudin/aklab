@@ -239,8 +239,11 @@ describe('createParseHandler()', () => {
     await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
-      last_parse_status: 'success',
       total_found: 2,
+      total_details_needed: 0,
+    }));
+    expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
+      last_parse_status: 'success',
       total_created: 2,
       parse_count: 1,
     }));
@@ -285,6 +288,10 @@ describe('createParseHandler()', () => {
     expect(createProperty).not.toHaveBeenCalled();
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
       total_found: 0,
+      total_details_needed: 0,
+    }));
+    expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
+      last_parse_status: 'success',
       total_created: 0,
     }));
   });
