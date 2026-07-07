@@ -285,3 +285,29 @@
     значение -> focus engine не мог считать скор. Фикс: всегда сохранять
     реальную deviation.
 
+
+65. **preFilterProperty — фильтрация ДО fetchDetails** —
+    Старый flow: parse() → для КАЖДОГО объекта fetchDetails (2-5 сек) → createProperty() (тут фильтры).
+    Проблема: 214 детальных загрузок → 29 создано (86% зря).
+    Новый flow: parse() → preFilterProperty() (city, stop words, area, price) → только прошедшие → fetchDetails → createProperty.
+    Экономия: вместо 291 fetchDetails → 15. Реализовано в .
+66. **SettingsView cities.length < 3 пропускал фильтр** —
+     — при выборе ВСЕХ 3 городов
+    (Москва + МО + Другие) фильтр НЕ передавался → pipeline брал глобальные настройки .
+    Тот же баг что #64 в ParseLaunchPanel, но в SettingsView не был исправлен.
+    Фикс: .
+67. **Pipeline controller логирует фильтры** —
+     — теперь видно
+    какие фильтры реально дошли до pipeline. Помогает дебажить проблемы с городами/ценами.
+
+65. **preFilterProperty — фильтрация ДО fetchDetails** —
+    Старый flow: parse() → для КАЖДОГО объекта fetchDetails (2-5 сек) → createProperty() (тут фильтры).
+    Проблема: 214 детальных загрузок → 29 создано (86% зря).
+    Новый flow: parse() → preFilterProperty() (city, stop words, area, price) → только прошедшие → fetchDetails → createProperty.
+    Экономия: вместо 291 fetchDetails → 15. Реализовано в services/_shared/src/parse-handler.ts.
+66. **SettingsView cities.length < 3 пропускал фильтр** —
+    Если выбрать ВСЕ 3 города (Москва + МО + Другие), фильтр НЕ передавался → pipeline брал глобальные настройки.
+    Тот же баг что и в ParseLaunchPanel, но в SettingsView не был исправлен.
+    Фикс: убрано условие length < 3.
+67. **Pipeline controller логирует фильтры** —
+    Теперь видно какие фильтры реально дошли до pipeline. Помогает дебажить проблемы с городами/ценами.

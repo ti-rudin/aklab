@@ -218,7 +218,7 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.33)
+## Текущее состояние (июль 2026, v1.1.34)
 
 Версия: 1.1.33 (pipeline/analyzer/auth fixes)
 - **Инфраструктура (24.06.2026):**
@@ -268,6 +268,7 @@ deploy-prod.sh + бамп версии).
   - **Cancel** — кнопка «Отменить» в UI, статус `cancelling`.
   - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
   - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
+  - **Pre-filter** (v1.1.34) — preFilterProperty() в parse-handler фильтрует по city, stop words, area, price ДО fetchDetails. Экономия: вместо 291 fetchDetails → 15.
   - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`, `GET /api/pipeline/stream` (SSE). Все endpoints — `auth: false`.
   - **3 триггера в UI:**
     1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
