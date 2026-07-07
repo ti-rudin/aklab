@@ -218,9 +218,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.34)
+## Текущее состояние (июль 2026, v1.1.37)
 
-Версия: 1.1.33 (pipeline/analyzer/auth fixes)
+Версия: 1.1.37 (двуфазный парсинг)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod
@@ -262,14 +262,14 @@ deploy-prod.sh + бамп версии).
     Разбит на 3 модуля: `state.ts` (get/update/reset state), `stages.ts` (parseAll/analyze/digest), `index.ts` (run/cancel/orchestrate).
   - **SSE** (`api/src/services/pipeline-sse.ts`) — реалтайм прогресс через EventSource (без polling).
   - **Pipeline State** — персистентное состояние в `setting.pipeline_state` (JSON singleton).
-    Статусы: `idle | running | cancelling`. Стадии: `parsing_scan → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`.
+    Статусы: `idle | running | cancelling`. Стадии: `parsing_scan → parsing_scan_done → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`.
   - **Idempotency** — `if pipeline_state.status === 'running'` → reject (один pipeline одновременно).
   - **Error resilience** — ошибки отдельных источников копятся в `errors[]`, pipeline идёт до конца.
   - **Cancel** — кнопка «Отменить» в UI, статус `cancelling`.
   - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
   - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
-  - **Pre-filter** (v1.1.34) — preFilterProperty() в parse-handler фильтрует по city, stop words, area, price ДО fetchDetails. Экономия: вместо 291 fetchDetails → 15.
-  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`, `GET /api/pipeline/stream` (SSE). Все endpoints — `auth: false`.
+  - **Pre-filter** (v1.1.37) — preFilterProperty() в parse-handler фильтрует по city, stop words, area, price ДО fetchDetails. Экономия: вместо 291 fetchDetails → 15.
+  - **Двуфазный парсинг** (v1.1.37) — parse-handler разделён на Phase 1 (scan: парсинг списков + дедуп + предфильтр → файл) и Phase 2 (details: чтение файла + fetchDetails + createProperty). Pipeline синхронизирует фазы глобально: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1. Счётчики НЕ прыгают.  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`, `GET /api/pipeline/stream` (SSE). Все endpoints — `auth: false`.
   - **3 триггера в UI:**
     1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
     2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.

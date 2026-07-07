@@ -311,3 +311,12 @@
     Фикс: убрано условие length < 3.
 67. **Pipeline controller логирует фильтры** —
     Теперь видно какие фильтры реально дошли до pipeline. Помогает дебажить проблемы с городами/ценами.
+
+62. **Двуфазный парсинг** (v1.1.37) — parse-handler разделён на:
+    - Phase 1 (scan): парсинг списков + дедуп + предфильтр → сохраняет в `/tmp/aklab-scan/`
+    - Phase 2 (details): чтение файла + fetchDetails + createProperty
+    - Pipeline синхронизирует фазы глобально: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1.
+    - Счётчики НЕ прыгают — pipeline читает их только после завершения фазы.
+    - Новый stage `parsing_scan_done` между Phase 1 и Phase 2.
+63. **resetSourceDetailsCounters** — вызывается ТОЛЬКО в Phase 1 (scan). Phase 2 НЕ сбрасывает счётчики.
+64. **total_details_needed** — устанавливается в Phase 1. Если у парсера нет `fetchDetails` — будет 0.
