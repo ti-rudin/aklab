@@ -126,6 +126,12 @@ if [ -f ".env" ]; then
 fi
 
 # === Step 1: Checkout main and git pull ===
+# Discard uncommitted local changes (package-lock.json, etc.) that block git pull
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+  warn "Local changes detected — stashing before checkout"
+  git stash --include-untracked 2>/dev/null || git checkout -- . 2>/dev/null || true
+fi
+
 log "Checkout main..."
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "main" ]; then
@@ -288,6 +294,11 @@ log "Build lib/sqlite-queue..."
 
 log "Build services/_shared..."
 (cd services/_shared && npm run build 2>&1 | tail -3)
+if [ ! -f services/_shared/dist/parse-handler.js ]; then
+  err "_shared build FAILED — parse-handler.js missing"
+  exit 1
+fi
+log "_shared build verified"
 
 log "Build API..."
 (cd api && npm run build 2>&1 | tail -3)
