@@ -95,6 +95,58 @@ function isCommercialProperty(props: { title: string; property_type: string; auc
 }
 
 /**
+ * Предварительная фильтрация по данным из СПИСКА (до fetchDetails).
+ * Проверяет только те фильтры, для которых данные есть на уровне списка:
+ * city, stop words, commercial type, price (если есть), area (если есть).
+ *
+ * Цель: не загружать детальные страницы для объектов, которые всё равно будут отфильтрованы.
+ * createProperty() повторно проверит все фильтры (включая price_per_sqm).
+ */
+export function preFilterProperty(
+  props: { title: string; city: string; property_type: string; auction_type: string; price?: number; area_sqm?: number },
+  rules?: ParseRules,
+): { pass: boolean; reason?: string } {
+  // Город
+  if (rules?.cities?.length && props.city && !rules.cities.includes(props.city)) {
+    return { pass: false, reason: `city "${props.city}" not in [${rules.cities}]` };
+  }
+
+  // Стоп-слова (только title — description доступен только после fetchDetails)
+  if (rules?.stopWords?.length) {
+    const text = (props.title || '').toLowerCase();
+    for (const word of rules.stopWords) {
+      if (text.includes(word.toLowerCase())) {
+        return { pass: false, reason: `stop word "${word}"` };
+      }
+    }
+  }
+
+  // Коммерческая недвижимость
+  if (!isCommercialProperty(props)) {
+    return { pass: false, reason: `non-commercial [${props.property_type}/${props.auction_type}]` };
+  }
+
+  // Цена (если есть на уровне списка — не все парсеры дают цену сразу)
+  if (props.price != null) {
+    if (rules?.priceFrom != null && props.price < rules.priceFrom) {
+      return { pass: false, reason: `price ${props.price} < ${rules.priceFrom}` };
+    }
+    if (rules?.priceTo != null && props.price > rules.priceTo) {
+      return { pass: false, reason: `price ${props.price} > ${rules.priceTo}` };
+    }
+  }
+
+  // Площадь (если есть на уровне списка)
+  if (props.area_sqm != null) {
+    if (rules?.areaFrom != null && props.area_sqm < rules.areaFrom) {
+      return { pass: false, reason: `area ${props.area_sqm} < ${rules.areaFrom}` };
+    }
+  }
+
+  return { pass: true };
+}
+
+/**
  * Создать Property в Strapi.
  * Фильтрует: некоммерческие объекты + объекты без данных для расчёта цены за м².
  */

@@ -32,6 +32,7 @@ vi.mock('../src/logger', () => ({
 vi.mock('../src/strapi-client', () => ({
   propertyExists: vi.fn(),
   createProperty: vi.fn(),
+  preFilterProperty: vi.fn().mockReturnValue({ pass: true }),
   logCron: vi.fn().mockResolvedValue(undefined),
   updateSourceStats: vi.fn().mockResolvedValue(undefined),
   resetSourceDetailsCounters: vi.fn().mockResolvedValue(undefined),

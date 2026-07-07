@@ -10,7 +10,7 @@
 
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser, ParseResult } from './types';
-import { propertyExists, createProperty, logCron, updateSourceStats, resetSourceDetailsCounters } from './strapi-client';
+import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters } from './strapi-client';
 import type { ParseRules } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
@@ -37,7 +37,7 @@ export function createParseHandler(parser: SourceParser) {
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 20;
     const startedAt = new Date().toISOString();
-    let total = 0, created = 0, filtered = 0, consecutiveDuplicates = 0, detailsFetched = 0, detailsNeeded = 0;
+    let total = 0, created = 0, filtered = 0, preFiltered = 0, consecutiveDuplicates = 0, detailsFetched = 0, detailsNeeded = 0;
     let errorMsg: string | undefined;
 
     // Сброс счётчиков fetchDetails перед новым запуском
@@ -51,7 +51,7 @@ export function createParseHandler(parser: SourceParser) {
       total = properties.length;
       logger.info(`Parsed ${total} from ${req.source} (depth=${depth})`, { correlationId: corrId });
 
-      // Фаза 2a: проверка existence — собираем только новые объекты
+      // Фаза 2a: проверка existence + предфильтр — собираем только новые и проходящие фильтры
       const newProperties: typeof properties = [];
       for (const prop of properties) {
         // Depth limit
@@ -72,6 +72,15 @@ export function createParseHandler(parser: SourceParser) {
           }
 
           consecutiveDuplicates = 0;
+
+          // Предфильтр: проверяем city, stop words, commercial type ДО fetchDetails
+          const preResult = preFilterProperty(prop, req.rules);
+          if (!preResult.pass) {
+            preFiltered++;
+            logger.info(`Pre-filtered: ${prop.external_id}: ${preResult.reason}`, { correlationId: corrId });
+            continue;
+          }
+
           newProperties.push(prop);
         } catch (err: any) {
           logger.warn(`Existence check failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
@@ -179,7 +188,7 @@ export function createParseHandler(parser: SourceParser) {
     }
 
     logger.info(
-      `Done: ${created} created, ${filtered} filtered, ${total} total, ${detailsFetched} details fetched (depth=${depth})`,
+      `Done: ${created} created, ${filtered} filtered, ${preFiltered} pre-filtered, ${total} total, ${detailsFetched} details fetched (depth=${depth})`,
       { correlationId: corrId },
     );
     return { created, filtered, total, detailsFetched };

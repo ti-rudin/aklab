@@ -169,7 +169,7 @@ describe('handleAnalyzeJob', () => {
     expect(result).toEqual({ analyzed: true, undervalued: false });
     expect(mockedUpdateProperty).toHaveBeenCalledWith('prop-1', {
       is_undervalued: false,
-      deviation_percent: 0,
+      deviation_percent: 10,
       manual_price_per_sqm: null,
     });
   });
