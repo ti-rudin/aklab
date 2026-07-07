@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.36",
+    "date": "7 июля 2026",
+    "time": "13:18",
+    "items": [
+      {
+        "text": "Clean dist/ before build — Vite cache was skipping app rebuild",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.35",
     "date": "7 июля 2026",
     "time": "12:46",
