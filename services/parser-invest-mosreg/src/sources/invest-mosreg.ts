@@ -44,11 +44,17 @@ function getField(place: MapPlace, fieldName: string): string {
 }
 
 function extractArea(place: MapPlace): number | undefined {
-  // Пробуем поля «Площадь»
+  // Пробуем поля «Площадь» — API может возвращать в гектарах
   for (const f of place.fields) {
     if (/площадь/i.test(f.name) && f.value) {
       const num = parseFloat(String(f.value).replace(',', '.'));
-      if (!isNaN(num) && num > 0) return num;
+      if (!isNaN(num) && num > 0) {
+        // Если значение < 100 и поле содержит "участка" — скорее всего гектары, конвертируем в м²
+        if (num < 100 && /земельн|участк/i.test(f.name)) {
+          return Math.round(num * 10_000);
+        }
+        return num;
+      }
     }
   }
   // Из текста названия
@@ -61,11 +67,15 @@ function extractArea(place: MapPlace): number | undefined {
 }
 
 function extractPrice(place: MapPlace): number | undefined {
-  // Кадастровая стоимость
+  // Кадастровая стоимость — API возвращает в млн. руб.
   for (const f of place.fields) {
     if (/кадастровая стоимость/i.test(f.name) && f.value) {
-      const num = parseFloat(String(f.value).replace(',', '.'));
-      if (!isNaN(num) && num > 0) return num;
+      const raw = String(f.value);
+      const num = parseFloat(raw.replace(',', '.'));
+      if (!isNaN(num) && num > 0) {
+        // Если значение < 1000 — скорее всего млн. руб., конвертируем
+        return num < 1000 ? Math.round(num * 1_000_000) : num;
+      }
     }
   }
   return undefined;

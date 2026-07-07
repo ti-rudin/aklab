@@ -65,11 +65,15 @@ function extractArea(place: MapPlace): number | undefined {
 }
 
 function extractPrice(place: MapPlace): number | undefined {
-  // Кадастровая стоимость
+  // Кадастровая стоимость — API возвращает в млн. руб.
   for (const f of place.fields) {
     if (/кадастровая стоимость/i.test(f.name) && f.value) {
-      const num = parseFloat(String(f.value).replace(',', '.'));
-      if (!isNaN(num) && num > 0) return num;
+      const raw = String(f.value);
+      const num = parseFloat(raw.replace(',', '.'));
+      if (!isNaN(num) && num > 0) {
+        // Если значение < 1000 — скорее всего млн. руб., конвертируем
+        return num < 1000 ? Math.round(num * 1_000_000) : num;
+      }
     }
   }
   return undefined;

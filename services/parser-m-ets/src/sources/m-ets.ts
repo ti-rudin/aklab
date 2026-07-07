@@ -232,7 +232,7 @@ export class MetsParser implements SourceParser {
               minimum_price: minimumPrice,
               price_per_sqm: price && area ? Math.round(price / area) : undefined,
               property_type: classifyPropertyType(title + ' ' + description),
-              auction_type: 'marketplace',
+              auction_type: 'bankruptcy',
               description: description.slice(0, 1000) || undefined,
             });
           }
