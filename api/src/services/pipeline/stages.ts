@@ -28,7 +28,7 @@ function sleep(ms: number): Promise<void> {
 
 // ── Parse All Sources ──
 
-export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ created: number; errors: string[] }> {
+export async function parseAll(ctx: PipelineContext, depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
   const qs = getQueueService();
   const errors: string[] = [];
 
@@ -80,9 +80,15 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
   // Enqueue all parsers
   const corrId = `pipeline-parse-${Date.now()}`;
   const slugs: string[] = [];
-  // Читаем правила парсинга из Setting
+  // Читаем правила парсинга из Setting, мерджим с фильтрами из формы
   const settings = await ctx.strapi.db.query('api::setting.setting').findOne({});
   const parseRules = buildParseRules(settings);
+  // Фильтры из формы ручного запуска перезаписывают глобальные настройки
+  if (filters) {
+    if (filters.priceFrom != null) parseRules.priceFrom = filters.priceFrom;
+    if (filters.priceTo != null) parseRules.priceTo = filters.priceTo;
+    if (filters.city?.length) parseRules.cities = filters.city;
+  }
   for (const src of sources) {
     if (ctx.isCancelled()) break;
     const slug = (src as any).slug;

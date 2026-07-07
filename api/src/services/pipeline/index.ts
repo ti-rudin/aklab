@@ -113,8 +113,8 @@ export class PipelineService implements PipelineContext {
 
   // ── Stage Delegates ──
 
-  async parseAll(depth: number): Promise<{ created: number; errors: string[] }> {
-    return parseAll(this, depth);
+  async parseAll(depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
+    return parseAll(this, depth, filters);
   }
 
   async analyze(filters?: RunOptions['filters']): Promise<{ undervalued: number; errors: string[] }> {
@@ -136,9 +136,9 @@ export class PipelineService implements PipelineContext {
     const allErrors: string[] = [];
 
     try {
-      // Stage 1: Parse
+      // Stage 1: Parse (filters from form override global settings)
       if (!this.isCancelled()) {
-        const parseResult = await this.parseAll(depth);
+        const parseResult = await this.parseAll(depth, filters);
         allErrors.push(...parseResult.errors);
       }
 

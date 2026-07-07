@@ -32,7 +32,7 @@ export default {
             await pipeline.run(depth, filters, 'manual');
           } else if (mode === 'parse') {
             await pipeline.updateState({ status: 'running', stage: 'parsing_scan', trigger: 'manual' });
-            await pipeline.parseAll(depth);
+            await pipeline.parseAll(depth, filters);
             await pipeline.updateState({ status: 'idle', stage: 'done' });
           } else if (mode === 'analyze') {
             await pipeline.updateState({ status: 'running', stage: 'analyzing', trigger: 'manual' });
