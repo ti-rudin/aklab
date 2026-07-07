@@ -289,10 +289,12 @@ log "Extract VITE_ vars → app/.env.local..."
 grep -E "^VITE_" .env > app/.env.local 2>/dev/null || true
 
 # === Step 6: Build ===
-log "Build lib/sqlite-queue..."
+log "Build lib/sqlite-queue (clean dist first)..."
+rm -rf lib/sqlite-queue/dist
 (cd lib/sqlite-queue && npm run build 2>&1 | tail -3)
 
-log "Build services/_shared..."
+log "Build services/_shared (clean dist first)..."
+rm -rf services/_shared/dist
 (cd services/_shared && npm run build 2>&1 | tail -3)
 if [ ! -f services/_shared/dist/parse-handler.js ]; then
   err "_shared build FAILED — parse-handler.js missing"
@@ -300,16 +302,19 @@ if [ ! -f services/_shared/dist/parse-handler.js ]; then
 fi
 log "_shared build verified"
 
-log "Build API..."
+log "Build API (clean dist first)..."
+rm -rf api/dist
 (cd api && npm run build 2>&1 | tail -3)
 
-log "Build App..."
+log "Build App (clean dist first)..."
+rm -rf app/dist
 (cd app && npm run build 2>&1 | tail -3)
 
 log "Build services..."
 for svc in $ALL_SERVICE_SLUGS; do
   if [ -d "services/$svc" ]; then
-    log "  Build services/$svc..."
+    log "  Build services/$svc (clean dist first)..."
+    rm -rf "services/$svc/dist"
     (cd "services/$svc" && npm run build 2>&1 | tail -3)
   fi
 done
@@ -362,11 +367,6 @@ for svc_port in $HEALTH_CHECKS; do
   fi
 done
 
-# === Step 8.5: Seed E2E test data ===
-if [ -f "$PROJECT_ROOT/scripts/seed-e2e-data.js" ]; then
-  log "Seeding E2E test data..."
-  node "$PROJECT_ROOT/scripts/seed-e2e-data.js" 2>&1 | tail -3 || warn "E2E seed failed (non-critical)"
-fi
 
 # === Step 9: Generate changelog (local only — CI handles this) ===
 if [ "$CI_MODE" != "true" ]; then
