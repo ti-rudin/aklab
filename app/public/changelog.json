@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.1.33",
+    "date": "7 июля 2026",
+    "time": "10:34",
+    "items": [
+      {
+        "text": "V1.1.33 — gotchas 62-64, sessions, compact-doc обновлены",
+        "type": "improvement"
+      },
+      {
+        "text": "Auth:false на всех routes — single-tenant, API token не работает с config:{}",
+        "type": "fix"
+      },
+      {
+        "text": "Analyzer — отрицательная deviation не = undervalued, сохраняем реальную deviation",
+        "type": "fix"
+      },
+      {
+        "text": "Передавать фильтры формы в parseAll — форма запуска теперь влияет на парсеры",
+        "type": "fix"
+      },
+      {
+        "text": "Update gotchas, compact-doc, user-stories for v1.1.32 E2E 56/56",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.32",
     "date": "7 июля 2026",
     "time": "12:00",
