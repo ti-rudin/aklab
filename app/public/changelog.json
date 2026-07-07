@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.35",
+    "date": "7 июля 2026",
+    "time": "12:46",
+    "items": [
+      {
+        "text": "Auto-stash before git pull + _shared build verification",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.33",
     "date": "7 июля 2026",
     "time": "10:34",
