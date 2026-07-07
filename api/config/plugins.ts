@@ -10,7 +10,7 @@ const config = ({ env }: Core.Config.Shared.ConfigParams): Core.Config.Plugin =>
       ratelimit: {
         enabled: true,
         interval: { min: 1 },
-        max: 50,
+        max: 300,
       },
     },
   },
