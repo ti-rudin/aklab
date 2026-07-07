@@ -139,12 +139,23 @@ export function createParseHandler(parser: SourceParser) {
 
         // Если это ТОЛЬКО scan — возвращаем результат
         if (phase === 'scan') {
+          // ВАЖНО: устанавливаем success, иначе pipeline не считает источник завершённым
+          if (req.documentId) {
+            await updateSourceStats(req.documentId, {
+              last_parse_status: 'success',
+              last_parse_error: undefined,
+              last_parsed_at: new Date().toISOString(),
+              total_found: total,
+              total_details_needed: detailsNeeded,
+            }).catch(() => {});
+          }
           await logCron({
             name: `scan-${req.source}`,
             started_at: startedAt,
             finished_at: new Date().toISOString(),
             items_processed: newProperties.length,
           }).catch(() => {});
+          console.log(`[parse-handler:${req.source}] SCAN RETURN: total=${total} new=${newProperties.length} detailsNeeded=${detailsNeeded}`);
           return { created: 0, filtered: preFiltered, total, detailsFetched: 0 };
         }
       }
