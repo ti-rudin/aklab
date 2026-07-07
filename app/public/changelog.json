@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.40",
+    "date": "7 июля 2026",
+    "time": "14:23",
+    "items": [
+      {
+        "text": "Scan phase must set last_parse_status='success' for pipeline doneCount",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.38",
     "date": "7 июля 2026",
     "time": "14:15",
