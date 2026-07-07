@@ -11,31 +11,36 @@ export default {
       handler: 'api::source.source.healthCheck',
       config: { auth: false, policies: [] },
     },
-    // Standard CRUD (без config — Users-Permissions обрабатывает автоматически)
+    // Standard CRUD (auth: false — single-tenant, API token не работает с config:{})
     {
       method: 'GET' as const,
       path: '/sources',
       handler: 'api::source.source.find',
+      config: { auth: false, policies: [] },
     },
     {
       method: 'GET' as const,
       path: '/sources/:id',
       handler: 'api::source.source.findOne',
+      config: { auth: false, policies: [] },
     },
     {
       method: 'POST' as const,
       path: '/sources',
       handler: 'api::source.source.create',
+      config: { auth: false, policies: [] },
     },
     {
       method: 'PUT' as const,
       path: '/sources/:id',
       handler: 'api::source.source.update',
+      config: { auth: false, policies: [] },
     },
     {
       method: 'DELETE' as const,
       path: '/sources/:id',
       handler: 'api::source.source.delete',
+      config: { auth: false, policies: [] },
     },
   ],
 };

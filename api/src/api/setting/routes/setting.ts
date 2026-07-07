@@ -1,10 +1,10 @@
 /**
- * setting router
- *
- * Фаза 1: стандартные CRUD-маршруты через factories.createCoreRouter.
- * setting — singleType → будут сгенерированы find/update/delete
- * (без create/findOne, как и положено singleton'у).
+ * setting router — singleType, auth: false (single-tenant app)
  */
-import { factories } from '@strapi/strapi';
-
-export default factories.createCoreRouter('api::setting.setting');
+export default {
+  routes: [
+    { method: 'GET', path: '/setting', handler: 'setting.find', config: { auth: false, policies: [] } },
+    { method: 'PUT', path: '/setting', handler: 'setting.update', config: { auth: false, policies: [] } },
+    { method: 'DELETE', path: '/setting', handler: 'setting.delete', config: { auth: false, policies: [] } },
+  ],
+};
