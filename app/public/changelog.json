@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.37",
+    "date": "7 июля 2026",
+    "time": "14:06",
+    "items": [
+      {
+        "text": "Двухфазный парсинг — Phase 1 (scan) → Phase 2 (details)",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.36",
     "date": "7 июля 2026",
     "time": "13:18",
