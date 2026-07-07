@@ -58,7 +58,7 @@
               <p class="text-xs truncate" style="color: var(--text-muted)">{{ p.address || p.city }}</p>
             </div>
             <div class="hidden sm:flex gap-1 flex-shrink-0">
-              <BaseBadge v-for="tag in (p.tags || []).slice(0, 3)" :key="tag" size="sm">
+              <BaseBadge v-for="tag in (p.tags || []).filter(t => !HIDDEN_TAGS.includes(t)).slice(0, 3)" :key="tag" size="sm">
                 {{ tagLabel(tag) }}
               </BaseBadge>
             </div>
@@ -66,18 +66,7 @@
         </div>
       </BaseCard>
 
-      <!-- Parser status mini-widget -->
-      <BaseCard v-if="sources.length" padding="md">
-        <h2 class="text-base font-semibold mb-3" style="color: var(--text-main)">⚡ Парсеры</h2>
-        <div class="flex flex-wrap gap-2">
-          <span v-for="src in sources" :key="src.documentId"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-            :style="src.active ? 'background: var(--success-soft); color: var(--success)' : 'background: var(--bg-alt); color: var(--text-muted)'">
-            <span class="w-1.5 h-1.5 rounded-full" :style="src.active ? 'background: var(--success)' : 'background: var(--text-muted)'" />
-            {{ src.slug || src.name }}
-          </span>
-        </div>
-      </BaseCard>
+
     </template>
 
     <!-- Error -->
@@ -91,6 +80,7 @@ import { useRouter } from 'vue-router'
 import api from '@/api/strapi'
 import { scoreColor, scoreBg } from '@/utils/styleHelpers'
 import { typeLabel, tagLabel } from '@/utils/formatters'
+import { HIDDEN_TAGS } from '@/composables/useFocusTab'
 import StatCard from '@/components/ui/StatCard.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -118,20 +108,11 @@ interface TopProperty {
   tags: string[]
 }
 
-interface Source {
-  documentId: string
-  slug?: string
-  name?: string
-  active?: boolean
-}
-
 /* ── State ── */
 const loading = ref(true)
 const error = ref('')
 const stats = ref<StatsResponse | null>(null)
 const topProperties = ref<TopProperty[]>([])
-const sources = ref<Source[]>([])
-
 /* ── Computed ── */
 const typeEntries = computed(() => {
   if (!stats.value?.typeBreakdown) return []
@@ -169,17 +150,10 @@ async function fetchTopProperties() {
   } catch { toast.error('Ошибка загрузки горячих объектов') }
 }
 
-async function fetchSources() {
-  try {
-    const { data } = await api.get('/sources')
-    sources.value = data.data || data || []
-  } catch { toast.error('Ошибка загрузки парсеров') }
-}
-
 async function refresh() {
   loading.value = true
   error.value = ''
-  await Promise.all([fetchStats(), fetchTopProperties(), fetchSources()])
+  await Promise.all([fetchStats(), fetchTopProperties()])
   loading.value = false
 }
 

@@ -56,7 +56,7 @@
     <!-- Zone 4 (focus only): Tags + quick actions -->
     <div v-if="variant === 'focus'" class="mt-2 pt-2 border-t flex flex-wrap items-center gap-2" style="border-color: var(--border-subtle)">
       <div class="flex flex-wrap gap-1 flex-1">
-        <span v-for="tag in (item.tags || [])" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
+        <span v-for="tag in (item.tags || []).filter(t => !HIDDEN_TAGS.includes(t))" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
       </div>
       <div v-if="selected" class="flex gap-1 shrink-0">
         <button @click.stop.prevent="$emit('bulk-status', 'viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
@@ -70,7 +70,7 @@
 <script setup lang="ts">
 import type { Property } from '@/composables/usePropertyData'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPriceShort } from '@/utils/formatters'
-import { tagStyle, tagLabel, deviationStyle } from '@/composables/useFocusTab'
+import { tagStyle, tagLabel, deviationStyle, HIDDEN_TAGS } from '@/composables/useFocusTab'
 
 withDefaults(defineProps<{
   item: Property

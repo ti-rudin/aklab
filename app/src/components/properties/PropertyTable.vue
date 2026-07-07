@@ -82,7 +82,7 @@
                 </td>
                 <td class="px-3 pb-3 pt-0 hidden lg:table-cell">
                   <div class="flex flex-wrap gap-1">
-                    <span v-for="tag in (item.tags || []).slice(0, 2)" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
+                    <span v-for="tag in (item.tags || []).filter(t => !HIDDEN_TAGS.includes(t)).slice(0, 2)" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
                   </div>
                 </td>
               </template>
@@ -103,7 +103,7 @@
 <script setup lang="ts">
 import type { Property } from '@/composables/usePropertyData'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPriceShort } from '@/utils/formatters'
-import { tagStyle, tagLabel, deviationStyle } from '@/composables/useFocusTab'
+import { tagStyle, tagLabel, deviationStyle, HIDDEN_TAGS } from '@/composables/useFocusTab'
 
 const props = withDefaults(defineProps<{
   items: Property[]

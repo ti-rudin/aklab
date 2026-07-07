@@ -12,7 +12,7 @@ export const typeLabel = (v?: string): string =>
     warehouse: 'Склад',
     retail: 'Торговля',
     production: 'Производство',
-    free_purpose: 'Свободного назначения',
+    free_purpose: 'Св. назначения',
     apartment: 'Квартира',
     land: 'Зем. участок',
     other: 'Другое',

@@ -100,8 +100,8 @@ describe('deviationStyle', () => {
 })
 
 describe('FOCUS_AVAILABLE_TAGS', () => {
-  it('contains 5 tags', () => {
-    expect(FOCUS_AVAILABLE_TAGS).toHaveLength(5)
+  it('contains 4 tags', () => {
+    expect(FOCUS_AVAILABLE_TAGS).toHaveLength(4)
   })
 
   it('each tag has value, label, bgColor, textColor', () => {

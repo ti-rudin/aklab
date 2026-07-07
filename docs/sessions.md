@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.44)
+**Сделано в сессии 7 июля 2026 (UI cleanup):**
+- Убрана секция «Парсеры» с дашборда — лишний запрос `/sources`, виджет удалён
+- `free_purpose` → «Св. назначения» (было «Свободного назначения») в typeLabel
+- Тег `moscow_mo` (МСК/МО) скрыт из UI — город и так отображается отдельно
+  - `HIDDEN_TAGS` массив в `useFocusTab.ts`, фильтрация в PropertyCard, PropertyTable, Dashboard
+  - Focus engine по-прежнему генерирует тег для скоринга
+- Rate limit увеличен до 6000 req/мин (v1.1.43)
+
 ## Session handoff (v1.0.37 -> следующая сессия)
 **Сделано в сессии 7 июля 2026 (pipeline/analyzer/auth fixes):**
 - Фильтры формы -> parseAll (P1) -- `parseAll()` принимает `filters` из формы ручного запуска.

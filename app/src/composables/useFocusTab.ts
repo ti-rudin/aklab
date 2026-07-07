@@ -5,12 +5,14 @@
  */
 import { ref, reactive, computed, watch, type Ref } from 'vue'
 
+/** Tags hidden from UI — city is already shown separately */
+export const HIDDEN_TAGS = ['moscow_mo']
+
 export const FOCUS_AVAILABLE_TAGS = [
   { value: 'undervalued', label: 'Недооценён', bgColor: 'rgba(251,191,36,0.15)', textColor: '#f59e0b' },
   { value: 'has_minimum_price', label: 'Торги', bgColor: 'rgba(79,140,255,0.15)', textColor: '#4f8cff' },
   { value: 'new', label: 'Новый', bgColor: 'rgba(16,185,129,0.15)', textColor: '#10b981' },
   { value: 'large_area', label: 'Большая пл.', bgColor: 'rgba(168,85,247,0.15)', textColor: '#a855f7' },
-  { value: 'moscow_mo', label: 'МСК/МО', bgColor: 'rgba(20,184,166,0.15)', textColor: '#14b8a6' },
 ]
 
 // ========================

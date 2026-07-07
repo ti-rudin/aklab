@@ -42,18 +42,11 @@ const mockTopProperties = [
   },
 ]
 
-const mockSources = [
-  { documentId: 's1', slug: 'CIAN', active: true },
-  { documentId: 's2', name: 'Avito', active: false },
-]
-
 function setupApiSuccess() {
   ;(api.get as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
     if (url === '/properties/stats') return Promise.resolve({ data: mockStats })
     if (url === '/properties/focus')
       return Promise.resolve({ data: { data: mockTopProperties } })
-    if (url === '/sources')
-      return Promise.resolve({ data: { data: mockSources } })
     return Promise.resolve({ data: {} })
   })
 }
@@ -102,7 +95,6 @@ describe('DashboardView', () => {
       if (url === '/properties/stats') return Promise.reject(new Error('Network'))
       if (url === '/properties/focus')
         return Promise.resolve({ data: { data: [] } })
-      if (url === '/sources') return Promise.resolve({ data: { data: [] } })
       return Promise.resolve({ data: {} })
     })
 
@@ -126,15 +118,6 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('60')
   })
 
-  // ── Парсеры с зелёной/серой точкой ───────────────────────────
-  it('отображает парсеры с зелёной/серой точкой', async () => {
-    const wrapper = await mountAndWait()
-
-    expect(wrapper.text()).toContain('⚡ Парсеры')
-    expect(wrapper.text()).toContain('CIAN')
-    expect(wrapper.text()).toContain('Avito')
-  })
-
   // ── Кнопка «Обновить» вызывает refresh ───────────────────────
   it('кнопка «Обновить» вызывает refresh (api.get)', async () => {
     const wrapper = await mountAndWait()
@@ -145,9 +128,9 @@ describe('DashboardView', () => {
     await btn.trigger('click')
     await flushPromises()
 
-    // refresh() calls api.get 3 times again
+    // refresh() calls api.get 2 times again (stats + focus)
     expect((api.get as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-      initialCalls + 3,
+      initialCalls + 2,
     )
   })
 
