@@ -140,7 +140,7 @@ async function runParseOnly() {
   const filters: any = {}
   if (parseFilters.priceFrom) filters.priceFrom = Number(parseFilters.priceFrom)
   if (parseFilters.priceTo) filters.priceTo = Number(parseFilters.priceTo)
-  if (parseFilters.cities.length > 0 && parseFilters.cities.length < 3) filters.city = parseFilters.cities
+  if (parseFilters.cities.length > 0) filters.city = parseFilters.cities
 
   try {
     await pipelineStart(props.parseDepth, Object.keys(filters).length ? filters : undefined)
