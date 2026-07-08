@@ -323,6 +323,7 @@ done
 log "PM2 restart (all processes)..."
 pm2 stop $PM2_NAMES 2>/dev/null || true
 pm2 start ecosystem.config.js
+pm2 save  # Сохраняем dump.pm2 для восстановления после reboot
 
 # === Step 8: Health check ===
 # Strapi admin build занимает ~140s + ~10-20s на старт runtime.
