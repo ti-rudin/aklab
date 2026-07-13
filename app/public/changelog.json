@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.51",
+    "date": "13 июля 2026",
+    "time": "15:31",
+    "items": [
+      {
+        "text": "Город из fetchDetails — 3 бага",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.50",
     "date": "13 июля 2026",
     "time": "15:23",
