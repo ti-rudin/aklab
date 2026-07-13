@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.54",
+    "date": "13 июля 2026",
+    "time": "22:47",
+    "items": [
+      {
+        "text": "Threshold=0 в focus API — 0 || 20 = 20 (falsy bug)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.53",
     "date": "13 июля 2026",
     "time": "20:21",
