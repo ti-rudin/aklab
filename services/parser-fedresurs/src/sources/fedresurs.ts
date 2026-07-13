@@ -132,7 +132,7 @@ export class FedresursParser implements SourceParser {
     const page = await context.newPage();
 
     logger.info(`[fedresurs] Navigating to ${url} for Qrator challenge...`);
-    await retryGoto(page, url, 3);
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
 
     // Ждём qrator_ssid2 cookie (Qrator JS challenge)
     let cookieSet = false;
@@ -141,14 +141,25 @@ export class FedresursParser implements SourceParser {
       const qrator = cookies.find((c: any) => c.name === 'qrator_ssid2' || c.name === 'qrator_jsid');
       if (qrator) {
         cookieSet = true;
-        logger.info(`[fedresurs] Qrator cookie set: ${qrator.name}`);
+        logger.info(`[fedresurs] Qrator cookie set: ${qrator.name} = ${qrator.value.slice(0, 30)}...`);
         break;
       }
       await page.waitForTimeout(1000);
     }
 
     if (!cookieSet) {
-      logger.warn('[fedresurs] Qrator cookie not set after 30s — continuing anyway');
+      // Логируем все cookies для диагностики
+      const allCookies = await context.cookies();
+      logger.warn(`[fedresurs] Qrator cookie not set after 30s. Cookies: ${allCookies.map((c: any) => c.name).join(', ')}`);
+      // Попробуем перезагрузить страницу
+      await page.reload({ waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await page.waitForTimeout(5000);
+      const retryCookies = await context.cookies();
+      const retryQrator = retryCookies.find((c: any) => c.name === 'qrator_ssid2' || c.name === 'qrator_jsid');
+      if (retryQrator) {
+        cookieSet = true;
+        logger.info(`[fedresurs] Qrator cookie set after retry: ${retryQrator.name}`);
+      }
     }
 
     return page;
@@ -164,13 +175,13 @@ export class FedresursParser implements SourceParser {
 
     while (true) {
       logger.info(`[fedresurs] Fetching pledged-subjects offset=${offset}...`);
-      const data = await page.evaluate(async (off: number, lim: number) => {
-        const res = await fetch(`/backend/pledged-subjects?limit=${lim}&offset=${off}&onlyAvailableToParticipate=false`, {
+      const data = await page.evaluate(async (args: {off: number, lim: number}) => {
+        const res = await fetch(`/backend/pledged-subjects?limit=${args.lim}&offset=${args.off}&onlyAvailableToParticipate=false`, {
           headers: { 'Accept': 'application/json' },
         });
         if (!res.ok) return { error: res.status };
         return res.json();
-      }, offset, limit) as any;
+      }, {off: offset, lim: limit}) as any;
 
       if (data.error) {
         logger.warn(`[fedresurs] pledged-subjects error: HTTP ${data.error}`);
@@ -228,13 +239,13 @@ export class FedresursParser implements SourceParser {
     // Получаем список торгов
     while (results.length < maxItems) {
       logger.info(`[fedresurs] Fetching biddings offset=${offset}...`);
-      const data = await page.evaluate(async (off: number, lim: number) => {
-        const res = await fetch(`/backend/biddings?limit=${lim}&offset=${off}&onlyAvailableToParticipate=true`, {
+      const data = await page.evaluate(async (args: {off: number, lim: number}) => {
+        const res = await fetch(`/backend/biddings?limit=${args.lim}&offset=${args.off}&onlyAvailableToParticipate=true`, {
           headers: { 'Accept': 'application/json' },
         });
         if (!res.ok) return { error: res.status };
         return res.json();
-      }, offset, limit) as any;
+      }, {off: offset, lim: limit}) as any;
 
       if (data.error) {
         logger.warn(`[fedresurs] biddings error: HTTP ${data.error}`);
