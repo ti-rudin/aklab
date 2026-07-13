@@ -1,5 +1,28 @@
 [
   {
+    "version": "v1.1.55",
+    "date": "14 июля 2026",
+    "time": "00:44",
+    "items": [
+      {
+        "text": "Fedresurs health_port 1347→1357 в seeder",
+        "type": "fix"
+      },
+      {
+        "text": "Tsconfig ignoreDeprecations 5.0 for TS 5.x",
+        "type": "fix"
+      },
+      {
+        "text": "Parser-fedresurs — новый парсер банкротных торгов",
+        "type": "new"
+      },
+      {
+        "text": "Focus slider default = threshold_percent из настроек",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.54",
     "date": "13 июля 2026",
     "time": "22:47",
