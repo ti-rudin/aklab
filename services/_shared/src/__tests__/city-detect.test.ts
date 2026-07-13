@@ -91,4 +91,35 @@ describe('detectCity', () => {
       expect(detectCity('нежилое помещение, площадь 100 кв.м')).toBe('other');
     });
   });
+
+  // --- NON_MOSCOW_REGIONS blacklist ---
+  describe('non-Moscow regions blacklist', () => {
+    it('returns other for Дагестан + Москва in template text', () => {
+      expect(detectCity('Республика Дагестан, с. Леваши, описание... Москва')).toBe('other');
+    });
+
+    it('returns other for Алтайский край', () => {
+      expect(detectCity('Алтайский край, г. Барнаул')).toBe('other');
+    });
+
+    it('returns other for Новосибирск', () => {
+      expect(detectCity('Новосибирск, ул. Ленина')).toBe('other');
+    });
+
+    it('returns other for Екатеринбург', () => {
+      expect(detectCity('Екатеринбург, ул. Малышева')).toBe('other');
+    });
+
+    it('returns other for Краснодарский край', () => {
+      expect(detectCity('Краснодарский край, г. Сочи')).toBe('other');
+    });
+
+    it('returns other for Чеченская республика + Москва', () => {
+      expect(detectCity('Чеченская Республика, г. Грозный. г. Москва')).toBe('other');
+    });
+
+    it('returns mo when MO keyword present (priority over blacklist)', () => {
+      expect(detectCity('Московская область')).toBe('mo');
+    });
+  });
 });
