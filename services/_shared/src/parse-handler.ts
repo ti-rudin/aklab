@@ -198,7 +198,7 @@ export function createParseHandler(parser: SourceParser) {
                   }
                   // Fallback: если город всё ещё "other", ищем во всём доступном тексте
                   if (prop.city === 'other') {
-                    const searchText = [prop.title, prop.address, prop.description].filter(Boolean).join(' ');
+                    const searchText = [prop.title, prop.address].filter(Boolean).join(' ');
                     prop.city = detectCity(searchText);
                   }
                   detailsFetched++;
