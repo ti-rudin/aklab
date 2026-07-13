@@ -2,6 +2,40 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.52)
+**Сделано в сессии 13 июля 2026 (parser audit + city detection + focus engine):**
+- ✅ **detectCity blacklist** — не-московские регионы (Дагестан, Башкортостан и т.д.) → return 'other' до проверки "Москва". +7 тестов
+- ✅ **description убран из city fallback** — описание с детальных страниц содержало "Москва" в шаблонном тексте → ложные срабатывания
+- ✅ **first_seen_at auto-set** — заполняется при создании объекта в createProperty. Focus rule "Новый объект" (score 10) теперь работает
+- ✅ **minimum_price extraction** — fabrikant, aggregator-bankrot, alfalot, etprf теперь извлекают начальную цену торгов. Focus rule "Торги" (score 20) теперь работает
+- ✅ **Torgi-gov SSL fix** — установлен Russian Trusted Root CA сертификат на prod сервере. API torgi.gov.ru теперь работает
+- ✅ **Fabrikant keyword filter** — убраны generic keywords ('объект', 'имущество', 'актив') — парсер перестал ловить гвозди и балки
+- ✅ **Roseltorg header filter** — фильтрация строк заголовков таблицы
+- ✅ **Analyzer** — запущен для 10 объектов с NULL deviation, все 37 объектов теперь имеют deviation
+- ✅ **Focus engine** — 4 объекта в фокусе (undervalued, score=50, deviation ~85%)
+- **Итого:** 7 коммитов + SSL сертификат. v1.1.49→v1.1.52
+
+### Парсеры — определение города
+
+| Парсер | Источник | Надёжность |
+|--------|----------|------------|
+| investmoscow | hardcoded 'moscow' | 🟢 100% |
+| invest-mosreg | hardcoded 'mo' | 🟢 100% |
+| torgi-gov | API regionCode '77' | 🟢 API |
+| m-ets | detectCity(title+region+desc) | 🟡 3 поля |
+| alfalot | detectCity(card.region) | 🟡 поле |
+| etprf | detectCity(row.subject) | 🟡 поле |
+| sberbank-ast | detectCity(GeoDataAddress) | 🟡 XML |
+| fabrikant | detectCity(title) + Moscow fallback | 🔴 regex |
+| aggregator-bankrot | detectCity(excerpt) + Moscow fallback | 🔴 regex |
+| roseltorg | detectCity(title+excerpt) + Moscow fallback | 🔴 regex |
+
+### Проблемы найдены (не исправлены, низкий приоритет)
+- Sberbank-ast: stop word "на право заключения" фильтрует все лоты (аренда, не продажа) — ожидаемое поведение
+- Torgi-gov: API может вернуть 0 если нет опубликованных лотов в Москве
+- Fabrikant: федеральная площадка, мало московских объектов
+- Roseltorg: мало московских объектов на площадке
+
 ## Session handoff (v1.1.48)
 **Сделано в сессии 13 июля 2026 (reject from list + deploy hardening):**
 - ✅ **Быстрое отклонение из списка** — кнопка «Отклонить» на каждой карточке (без чекбокса) + столбец «Действия» в таблице
