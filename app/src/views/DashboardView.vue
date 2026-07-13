@@ -133,7 +133,7 @@ function barWidth(count: number): number {
 /* ── Fetchers ── */
 async function fetchStats() {
   try {
-    const { data } = await api.get('/properties/stats', { params: { focusThreshold: 20 } })
+    const { data } = await api.get('/properties/stats')
     stats.value = data
   } catch (e: any) {
     error.value = 'Ошибка загрузки статистики'
