@@ -106,8 +106,9 @@ export function preFilterProperty(
   props: { title: string; city: string; property_type: string; auction_type: string; price?: number; area_sqm?: number },
   rules?: ParseRules,
 ): { pass: boolean; reason?: string } {
-  // Город
-  if (rules?.cities?.length && props.city && !rules.cities.includes(props.city)) {
+  // Город — фильтруем только ТОЧНО известные города, не в списке.
+  // "other" (неизвестный) пропускаем — fetchDetails может дать адрес с нужным городом.
+  if (rules?.cities?.length && props.city && props.city !== 'other' && !rules.cities.includes(props.city)) {
     return { pass: false, reason: `city "${props.city}" not in [${rules.cities}]` };
   }
 

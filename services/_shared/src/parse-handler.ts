@@ -21,6 +21,7 @@ import { propertyExists, createProperty, preFilterProperty, logCron, updateSourc
 import type { ParseRules } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
+import { detectCity } from './city-detect';
 
 export interface ParseRequest {
   source: string;
@@ -190,6 +191,10 @@ export function createParseHandler(parser: SourceParser) {
                 const details = await parser.fetchDetails(prop.url);
                 if (details && Object.keys(details).length > 0) {
                   Object.assign(prop, details);
+                  // Пересчитываем город после fetchDetails — детальная страница может содержать адрес с "Москва"
+                  if (details.address) {
+                    prop.city = detectCity(details.address + ' ' + (prop.title || ''));
+                  }
                   detailsFetched++;
                   console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
                   // Промежуточное обновление для UI
