@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.50",
+    "date": "13 июля 2026",
+    "time": "15:23",
+    "items": [
+      {
+        "text": "Расширенный поиск адреса в fetchDetails (fabrikant, roseltorg, aggregator-bankrot)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.49",
     "date": "13 июля 2026",
     "time": "14:32",
