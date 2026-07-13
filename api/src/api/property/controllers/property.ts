@@ -59,7 +59,7 @@ export default factories.createCoreController("api::property.property", ({ strap
     const query = ctx.query || {};
 
     const params = {
-      threshold: (() => { const v = Number(query.threshold); return isNaN(v) ? 20 : v; })(),
+      threshold: Number(query.threshold) || 0,
       city: query.city as string | undefined,
       property_type: query.property_type as string | undefined,
       tags: query.tags as string | undefined,

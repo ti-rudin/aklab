@@ -62,9 +62,9 @@
           Порог: <span class="font-semibold" style="color: var(--text-main)">{{ focusFilters.threshold }}</span>
         </label>
         <div class="flex items-center gap-3">
-          <input v-model.number="focusFilters.threshold" type="range" min="0" max="100" step="1"
+          <input v-model.number="focusFilters.threshold" type="range" min="1" max="100" step="1"
             class="flex-1 min-w-0" style="accent-color: var(--accent)" />
-          <input v-model.number="focusFilters.threshold" type="number" min="0" max="100"
+          <input v-model.number="focusFilters.threshold" type="number" min="1" max="100"
             class="w-16 flex-shrink-0 px-2 py-1 rounded-lg border text-sm text-center"
             style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
         </div>

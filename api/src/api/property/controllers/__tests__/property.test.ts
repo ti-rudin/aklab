@@ -189,7 +189,7 @@ describe('property controller', () => {
 
       expect(strapi.service).toHaveBeenCalledWith('api::property.property');
       expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith({
-        threshold: 20,
+        threshold: 0,
         city: undefined,
         property_type: undefined,
         tags: undefined,
@@ -288,14 +288,14 @@ describe('property controller', () => {
       );
     });
 
-    it('should handle non-numeric threshold gracefully (defaults to 20)', async () => {
+    it('should handle non-numeric threshold gracefully (defaults to 0)', async () => {
       strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
 
       const ctx = makeCtx({ query: { threshold: 'abc' } });
       await actions.getFocus(ctx);
 
       expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 20 })
+        expect.objectContaining({ threshold: 0 })
       );
     });
   });

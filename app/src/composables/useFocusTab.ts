@@ -3,7 +3,8 @@
  * Extracted from PropertyListView.vue.
  * Does NOT include data fetching (see usePropertyData) or CSV/bulk actions.
  */
-import { ref, reactive, computed, watch, type Ref } from 'vue'
+import { ref, reactive, computed, watch, onMounted, type Ref } from 'vue'
+import api from '@/api/strapi'
 
 /** Tags hidden from UI — city is already shown separately */
 export const HIDDEN_TAGS = ['moscow_mo']
@@ -101,6 +102,20 @@ export function useFocusTab(
     }
   } catch {}
 
+  // Загрузить threshold_percent из настроек (если нет сохранённого значения)
+  ;(async () => {
+    try {
+      const saved = localStorage.getItem('aklab-focus-filters')
+      if (!saved || !JSON.parse(saved).threshold) {
+        const res = await api.get('/setting')
+        const data = res.data?.data
+        if (data?.threshold_percent != null) {
+          focusFilters.threshold = data.threshold_percent
+        }
+      }
+    } catch {}
+  })()
+
   // Save to localStorage on change
   watch(focusFilters, (val) => {
     try {
@@ -108,8 +123,14 @@ export function useFocusTab(
     } catch {}
   }, { deep: true })
 
-  function resetFocusFilters() {
-    focusFilters.threshold = 20
+  async function resetFocusFilters() {
+    let defaultThreshold = 20
+    try {
+      const res = await api.get('/setting')
+      const data = res.data?.data
+      if (data?.threshold_percent != null) defaultThreshold = data.threshold_percent
+    } catch {}
+    focusFilters.threshold = defaultThreshold
     focusFilters.cities.moscow = true
     focusFilters.cities.mo = true
     focusFilters.cities.other = true
