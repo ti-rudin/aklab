@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.48",
+    "date": "13 июля 2026",
+    "time": "12:39",
+    "items": [
+      {
+        "text": "Revert inFocus threshold — показываем все объекты в фокусе",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.47",
     "date": "13 июля 2026",
     "time": "12:27",
