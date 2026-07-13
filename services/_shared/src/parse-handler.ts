@@ -191,8 +191,9 @@ export function createParseHandler(parser: SourceParser) {
                 const details = await parser.fetchDetails(prop.url);
                 if (details && Object.keys(details).length > 0) {
                   Object.assign(prop, details);
-                  // Пересчитываем город после fetchDetails — детальная страница может содержать адрес с "Москва"
-                  if (details.address) {
+                  // Пересчитываем город ТОЛЬКО если он ещё не определён (other).
+                  // Не перезаписываем правильно определённый город (torgi-gov regionCode, alfalot region).
+                  if (prop.city === 'other' && details.address) {
                     prop.city = detectCity(details.address + ' ' + (prop.title || ''));
                   }
                   // Fallback: если город всё ещё "other", ищем во всём доступном тексте

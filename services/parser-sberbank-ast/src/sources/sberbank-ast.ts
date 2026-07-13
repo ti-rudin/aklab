@@ -243,7 +243,13 @@ export class SberbankAstParser implements SourceParser {
         // Адрес: OrgAddressJur или textAddress из XML
         const orgAddress = getById('OrganizatorInfo_OrgAddressJur') || getXmlTag('orgaddressjur');
         const textAddress = getXmlTag('textAddress');
-        const address = textAddress || orgAddress || undefined;
+        let address = textAddress || orgAddress || undefined;
+        // Moscow fallback: если адрес не найден, ищем «Москва» в тексте страницы
+        if (!address) {
+          const allText = document.body.innerText || '';
+          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
+          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
+        }
 
         // Координаты: из XML тегов Latitude/Longitude
         const latStr = getXmlTag('Latitude') || getXmlTag('latitude');

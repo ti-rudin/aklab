@@ -263,6 +263,24 @@ export class EtprfParser implements SourceParser {
           result.deposit = getFieldValue(tab3, 'Размер задатка');
         }
 
+        // Адрес: ищем в описании или на странице
+        const allText = document.body.innerText || '';
+        const addrPatterns = [
+          /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение)[:\s]+([^\n]+?)(?:\n|$)/i,
+        ];
+        for (const re of addrPatterns) {
+          const m = allText.match(re);
+          if (m && m[1] && m[1].trim().length > 5) {
+            result.address = m[1].trim().slice(0, 300);
+            break;
+          }
+        }
+        // Fallback: ищем «Москва» на странице
+        if (!result.address) {
+          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
+          if (moscowMatch) result.address = moscowMatch[1].trim().slice(0, 300);
+        }
+
         // Координаты: на etprf.ru НЕТ координат в карточках
         result.latitude = undefined;
         result.longitude = undefined;
