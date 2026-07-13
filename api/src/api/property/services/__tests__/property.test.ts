@@ -248,6 +248,21 @@ describe('property service', () => {
       expect(result.meta.total).toBe(7);
     });
 
+    it('should exclude rejected properties from focus', async () => {
+      setupRaw(0, []);
+
+      await service.getFocusQuery({
+        threshold: 20, city: undefined, property_type: undefined, tags: undefined,
+        sort: '-focus_score', page: 1, pageSize: 20,
+      });
+
+      const firstRawCall = (strapi.db.connection.raw as ReturnType<typeof vi.fn>).mock.calls[0];
+      const sql = firstRawCall[0] as string;
+      const params = firstRawCall[1] as any[];
+      expect(sql).toContain('status != ?');
+      expect(params).toContain('rejected');
+    });
+
     it('should pass back filters in meta', async () => {
       setupRaw(0, []);
 

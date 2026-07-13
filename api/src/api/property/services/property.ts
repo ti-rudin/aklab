@@ -49,8 +49,8 @@ export default factories.createCoreService('api::property.property', ({ strapi }
     const { threshold, city, property_type: propertyType, tags: tagsParam, search: searchParam, sort: sortParam, page, pageSize } = params;
 
     // Построить SQL-запрос с фильтрами
-    const conditions: string[] = ['focus_score >= ?'];
-    const queryParams: any[] = [threshold];
+    const conditions: string[] = ['focus_score >= ?', 'status != ?'];
+    const queryParams: any[] = [threshold, 'rejected'];
 
     if (city) {
       const cities = city.split(',').map((c) => c.trim()).filter(Boolean);
