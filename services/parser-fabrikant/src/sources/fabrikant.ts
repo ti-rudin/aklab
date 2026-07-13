@@ -23,11 +23,13 @@ const MAX_PAGES = 10; // 10 карточек на страницу, 10 стр = 
 const ITEMS_PER_PAGE = 10;
 
 // Ключевые слова коммерческой недвижимости — фильтруем нерелевантные лоты
+// Проверяем TITLE, не fullText — иначе промтовары (гвозди, арматура) матчатся
+// через описание вида «нежилое помещение» в теле карточки
 const PROPERTY_KEYWORDS = [
-  'нежилое', 'нежилого', 'нежилых', 'помещение', 'помещения', 'офис', 'склад', 'здание', 'здания',
-  'сооружение', 'коммерческ',
-  'торгов', 'административн', 'производствен', 'промышленн',
-  'доля нежилого',
+ 'нежилое', 'нежилого', 'нежилых', 'помещение', 'помещения',
+ 'офис', 'склад', 'здание', 'здания', 'сооружение',
+ 'коммерческ', 'торгов', 'магазин', 'административн',
+ 'доля нежилого',
 ];
 
 // Исключаем жильё, транспорт, оборудование и прочее не-коммерческое
@@ -94,11 +96,11 @@ export class FabrikantParser implements SourceParser {
             const title = anchor?.textContent?.trim() || '';
             if (!title) continue;
 
-            const fullText = el.textContent?.toLowerCase() || '';
-            const isProperty = args.kw.some(k => fullText.includes(k));
+            const titleLower = title.toLowerCase();
+            const isProperty = args.kw.some(k => titleLower.includes(k));
             if (!isProperty) continue;
 
-            const isExcluded = args.exclude.some(k => fullText.includes(k));
+            const isExcluded = args.exclude.some(k => titleLower.includes(k));
             if (isExcluded) continue;
 
             const textSlots = el.querySelectorAll('[data-slot="text"]');
