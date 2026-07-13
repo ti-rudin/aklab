@@ -213,8 +213,14 @@ export class AlfalotParser implements SourceParser {
         const bidEndDate = document.querySelector('.bid_end_date')?.textContent?.trim();
         const auctionStart = document.querySelector('.auction_start_date')?.textContent?.trim();
 
+        let minimum_price: number | undefined;
         const auctionParts: string[] = [];
-        if (startPrice) auctionParts.push('Начальная цена: ' + startPrice);
+        if (startPrice) {
+          auctionParts.push('Начальная цена: ' + startPrice);
+          const cleaned = startPrice.replace(/[^\d,]/g, '').replace(',', '.');
+          const num = parseFloat(cleaned);
+          if (!isNaN(num) && num > 0) minimum_price = num;
+        }
         if (currentPrice) auctionParts.push('Текущая цена: ' + currentPrice);
         if (bidEndDate) auctionParts.push('Окончание: ' + bidEndDate);
         if (auctionStart) auctionParts.push('Начало торгов: ' + auctionStart);
@@ -240,6 +246,7 @@ export class AlfalotParser implements SourceParser {
           latitude: undefined, // координаты не доступны на alfalot
           longitude: undefined,
           auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
+          minimum_price,
         };
       });
 
@@ -249,6 +256,7 @@ export class AlfalotParser implements SourceParser {
         address: details.address,
         latitude: details.latitude,
         longitude: details.longitude,
+        minimum_price: details.minimum_price,
       };
     } catch (err: any) {
       logger.warn(`[alfalot] fetchDetails error for ${url}: ${err.message}`);

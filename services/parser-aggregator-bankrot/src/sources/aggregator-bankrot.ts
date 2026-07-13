@@ -247,11 +247,16 @@ export class AggregatorBankrotParser implements SourceParser {
 
         // Цена и даты: sidebar .lot-data__list
         const auctionParts: string[] = [];
+        let minimumPrice: number | undefined;
         const bidEl = document.querySelector('.lot-card__bids');
         if (bidEl) {
           const currentBid = bidEl.getAttribute('data-current-bid');
           const startBid = bidEl.getAttribute('data-start-bid');
-          if (startBid) auctionParts.push('Начальная цена: ' + startBid);
+          if (startBid) {
+            auctionParts.push('Начальная цена: ' + startBid);
+            const num = parseFloat(startBid.replace(/\s/g, '').replace(',', '.'));
+            if (!isNaN(num) && num > 0) minimumPrice = num;
+          }
           if (currentBid && currentBid !== startBid) auctionParts.push('Текущая цена: ' + currentBid);
         }
 
@@ -281,6 +286,7 @@ export class AggregatorBankrotParser implements SourceParser {
           latitude: undefined, // координаты не доступны на aggregator-bankrot
           longitude: undefined,
           auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
+          minimumPrice,
         };
       });
 
@@ -290,6 +296,7 @@ export class AggregatorBankrotParser implements SourceParser {
         address: details.address,
         latitude: details.latitude,
         longitude: details.longitude,
+        minimum_price: details.minimumPrice,
       };
     } catch (err: any) {
       logger.warn(`[aggregator-bankrot] fetchDetails error for ${url}: ${err.message}`);
