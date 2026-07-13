@@ -108,9 +108,10 @@ export default factories.createCoreController("api::property.property", ({ strap
 
     // Считаем total, inFocus, hot из одного результата
     const total = newRows?.length ?? 0;
+    const threshold = Number(ctx.query?.focusThreshold) || 20;
     let inFocus = 0, hot = 0;
     for (const row of newRows || []) {
-      if (row.focus_score > 0) inFocus++;
+      if (row.focus_score >= threshold) inFocus++;
       if (row.focus_score >= 50) hot++;
     }
 
