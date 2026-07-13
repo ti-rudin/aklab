@@ -1,5 +1,36 @@
 [
   {
+    "version": "v1.1.52",
+    "date": "13 июля 2026",
+    "time": "19:44",
+    "items": [
+      {
+        "text": "Fabrikant keyword filter — убрать generic keywords, проверять title",
+        "type": "fix"
+      },
+      {
+        "text": "Roseltorg — фильтрация строк заголовков таблицы",
+        "type": "fix"
+      },
+      {
+        "text": "Minimum_price extraction в fetchDetails (fabrikant, aggregator-bankrot, alfalot, etprf)",
+        "type": "new"
+      },
+      {
+        "text": "First_seen_at auto-set при создании объекта",
+        "type": "fix"
+      },
+      {
+        "text": "DetectCity blacklist не-московских регионов",
+        "type": "fix"
+      },
+      {
+        "text": "Убрать description из city detection fallback — ложные срабатывания",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.51",
     "date": "13 июля 2026",
     "time": "15:31",
