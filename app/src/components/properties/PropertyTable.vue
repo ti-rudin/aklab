@@ -37,6 +37,7 @@
               </th>
               <th class="text-right px-3 pb-3 font-semibold whitespace-nowrap hidden md:table-cell" style="color: var(--text-muted)">Отклонение</th>
               <th class="text-left px-3 pb-3 font-semibold whitespace-nowrap hidden lg:table-cell" style="color: var(--text-muted)">Теги</th>
+              <th class="text-center px-3 pb-3 font-semibold whitespace-nowrap w-24" style="color: var(--text-muted)">Действия</th>
             </template>
             <template v-else>
               <th class="text-left px-3 pb-3 font-semibold whitespace-nowrap hidden md:table-cell" style="color: var(--text-muted)">Источник</th>
@@ -85,6 +86,9 @@
                     <span v-for="tag in (item.tags || []).filter(t => !HIDDEN_TAGS.includes(t)).slice(0, 2)" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
                   </div>
                 </td>
+                <td class="px-3 pb-3 pt-0 text-center whitespace-nowrap" @click.stop @keydown.enter.stop>
+                  <button @click.stop="$emit('quick-reject', item)" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
+                </td>
               </template>
               <template v-else>
                 <td class="px-3 pb-3 pt-0 whitespace-nowrap hidden md:table-cell" style="color: var(--text-muted)">{{ item.source || '—' }}</td>
@@ -125,6 +129,7 @@ defineEmits<{
   (e: 'toggle-select', id: number): void
   (e: 'toggle-all'): void
   (e: 'sort', field: string): void
+  (e: 'quick-reject', item: Property): void
 }>()
 
 function isSelected(id: number) {

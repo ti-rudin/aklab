@@ -111,17 +111,21 @@ describe('PropertyCard', () => {
     expect(wrapper.text()).toContain('Торги')
   })
 
-  it('focus variant shows action buttons when selected', () => {
+  it('focus variant shows Отклонить button always', () => {
+    const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus', selected: false } })
+    expect(wrapper.text()).toContain('Отклонить')
+  })
+
+  it('focus variant shows Просмотрено and CSV only when selected', () => {
     const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus', selected: true } })
     expect(wrapper.text()).toContain('Просмотрено')
     expect(wrapper.text()).toContain('Отклонить')
     expect(wrapper.text()).toContain('CSV')
   })
 
-  it('focus variant hides action buttons when not selected', () => {
+  it('focus variant hides Просмотрено and CSV when not selected', () => {
     const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus', selected: false } })
     expect(wrapper.text()).not.toContain('Просмотрено')
-    expect(wrapper.text()).not.toContain('Отклонить')
     expect(wrapper.text()).not.toContain('CSV')
   })
 
@@ -138,11 +142,19 @@ describe('PropertyCard', () => {
     expect(wrapper.emitted('toggle-select')).toBeTruthy()
   })
 
-  it('emits bulk-status when action button is clicked', async () => {
+  it('emits quick-reject when Отклонить button is clicked', async () => {
+    const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus' } })
+    const rejectBtn = wrapper.findAll('button').find(b => b.text() === 'Отклонить')
+    expect(rejectBtn).toBeTruthy()
+    await rejectBtn!.trigger('click')
+    expect(wrapper.emitted('quick-reject')).toBeTruthy()
+  })
+
+  it('emits bulk-status when Просмотрено button is clicked (selected)', async () => {
     const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus', selected: true } })
     const buttons = wrapper.findAll('button')
-    // first button is "Просмотрено"
-    await buttons[0].trigger('click')
+    // "Отклонить" is first, "Просмотрено" is second
+    await buttons[1].trigger('click')
     expect(wrapper.emitted('bulk-status')![0]).toEqual(['viewed'])
   })
 

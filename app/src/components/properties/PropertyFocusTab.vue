@@ -147,6 +147,7 @@
       :selected="focusSelected.has(item.id)"
 
       @toggle-select="toggleFocusSelect(item.id)"
+      @quick-reject="quickReject(item)"
       @bulk-status="bulkSetStatus"
       @bulk-csv="bulkExportCSV"
     />
@@ -165,6 +166,7 @@
     @toggle-select="toggleFocusSelect"
     @toggle-all="toggleAllFocus"
     @sort="toggleFocusSort"
+    @quick-reject="quickReject"
   />
 
   <!-- Focus Pagination -->
@@ -401,6 +403,16 @@ async function bulkSetStatus(status: string) {
       return api.put(`/properties/${item.documentId}`, { data: { status } })
     }))
     focusSelected.clear()
+    await fetchFocusItems()
+  } catch (e: any) {
+    toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))
+  }
+}
+
+async function quickReject(item: { documentId: string }) {
+  try {
+    await api.put(`/properties/${item.documentId}`, { data: { status: 'rejected' } })
+    toast.success('Объект отклонён')
     await fetchFocusItems()
   } catch (e: any) {
     toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))

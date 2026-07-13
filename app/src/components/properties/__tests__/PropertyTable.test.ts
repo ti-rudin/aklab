@@ -173,4 +173,24 @@ describe('PropertyTable', () => {
     expect(wrapper.text()).toContain('Москва')
     expect(wrapper.text()).toContain('МО')
   })
+
+  it('focus variant shows Действия column with Отклонить buttons', () => {
+    const wrapper = mount(PropertyTable, { props: { items, variant: 'focus' } })
+    expect(wrapper.text()).toContain('Действия')
+    const rejectBtns = wrapper.findAll('button').filter(b => b.text() === 'Отклонить')
+    expect(rejectBtns.length).toBe(2) // one per row
+  })
+
+  it('default variant does not show Действия column', () => {
+    const wrapper = mount(PropertyTable, { props: { items, variant: 'default' } })
+    expect(wrapper.text()).not.toContain('Действия')
+  })
+
+  it('emits quick-reject when Отклонить button is clicked in table', async () => {
+    const wrapper = mount(PropertyTable, { props: { items, variant: 'focus' } })
+    const rejectBtn = wrapper.findAll('button').find(b => b.text() === 'Отклонить')
+    expect(rejectBtn).toBeTruthy()
+    await rejectBtn!.trigger('click')
+    expect(wrapper.emitted('quick-reject')![0]).toEqual([items[0]])
+  })
 })

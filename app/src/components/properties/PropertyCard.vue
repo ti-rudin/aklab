@@ -58,10 +58,12 @@
       <div class="flex flex-wrap gap-1 flex-1">
         <span v-for="tag in (item.tags || []).filter(t => !HIDDEN_TAGS.includes(t))" :key="tag" class="text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap" :style="tagStyle(tag)">{{ tagLabel(tag) }}</span>
       </div>
-      <div v-if="selected" class="flex gap-1 shrink-0">
-        <button @click.stop.prevent="$emit('bulk-status', 'viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
-        <button @click.stop.prevent="$emit('bulk-status', 'rejected')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
-        <button @click.stop.prevent="$emit('bulk-csv')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+      <div class="flex gap-1 shrink-0">
+        <button @click.stop.prevent="$emit('quick-reject')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(239,68,68,0.15); color: #ef4444">Отклонить</button>
+        <template v-if="selected">
+          <button @click.stop.prevent="$emit('bulk-status', 'viewed')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(16,185,129,0.15); color: #10b981">Просмотрено</button>
+          <button @click.stop.prevent="$emit('bulk-csv')" class="text-xs px-2 py-1 rounded-lg hover:opacity-80" style="background: rgba(79,140,255,0.15); color: #4f8cff">CSV</button>
+        </template>
       </div>
     </div>
   </router-link>
@@ -84,6 +86,7 @@ withDefaults(defineProps<{
 defineEmits<{
   (e: 'open'): void
   (e: 'toggle-select'): void
+  (e: 'quick-reject'): void
   (e: 'bulk-status', status: string): void
   (e: 'bulk-csv'): void
 }>()
