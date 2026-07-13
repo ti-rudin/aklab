@@ -207,8 +207,22 @@ export class RoseltorgParser implements SourceParser {
 
         // Адрес: ищем в тексте
         let address = '';
-        const addrMatch = allText.match(/(?:адрес|расположенн?[:\s]+)(.+?)(?:,\s*(?:общ|пл|к\/н|собств|\n))/i);
-        if (addrMatch) address = addrMatch[1].trim().slice(0, 300);
+        const addrPatterns = [
+          /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение)[:\s]+([^\n]+?)(?:\n|$)/i,
+          /(?:адрес|расположенн?[:\s]+)(.+?)(?:,\s*(?:общ|пл|к\/н|собств|\n))/i,
+        ];
+        for (const re of addrPatterns) {
+          const m = allText.match(re);
+          if (m && m[1] && m[1].trim().length > 5) {
+            address = m[1].trim().slice(0, 300);
+            break;
+          }
+        }
+        // Fallback: ищем «Москва» в тексте
+        if (!address) {
+          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
+          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
+        }
 
         // Фото
         const photoUrls: string[] = [];

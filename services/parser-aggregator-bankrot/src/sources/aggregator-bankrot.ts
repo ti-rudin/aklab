@@ -238,6 +238,12 @@ export class AggregatorBankrotParser implements SourceParser {
           const addrMatch = description.match(/адрес\s+(?:местонахождения)?:\s*(.+?)(?:\.|$)/i);
           if (addrMatch) address = addrMatch[1].trim();
         }
+        // Fallback: ищем «Москва» во всём тексте страницы
+        if (!address) {
+          const allText = document.body.innerText || '';
+          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
+          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
+        }
 
         // Цена и даты: sidebar .lot-data__list
         const auctionParts: string[] = [];

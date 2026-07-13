@@ -195,6 +195,11 @@ export function createParseHandler(parser: SourceParser) {
                   if (details.address) {
                     prop.city = detectCity(details.address + ' ' + (prop.title || ''));
                   }
+                  // Fallback: если город всё ещё "other", ищем во всём доступном тексте
+                  if (prop.city === 'other') {
+                    const searchText = [prop.title, prop.address, prop.description].filter(Boolean).join(' ');
+                    prop.city = detectCity(searchText);
+                  }
                   detailsFetched++;
                   console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
                   // Промежуточное обновление для UI
