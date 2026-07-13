@@ -244,7 +244,7 @@ export async function createProperty(props: {
   const res = await fetch(`${BASE}/properties`, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ data: restProps }),
+    body: JSON.stringify({ data: { ...restProps, first_seen_at: new Date().toISOString() } }),
   });
   if (!res.ok) {
     const body = await res.text();
