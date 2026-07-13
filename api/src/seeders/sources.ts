@@ -19,13 +19,13 @@ export async function seedSources(strapi: StrapiInstance): Promise<void> {
     {
       name: 'Федресурс',
       slug: 'fedresurs',
-      url: 'https://bankrot.fedresurs.ru',
+      url: 'https://fedresurs.ru',
       parser: 'fedresurs' as const,
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
-      is_active: false, // Qrator 403 — отложен
+      is_active: true,
       schedule: '0 3 * * *',
-      health_port: 1347,
+      health_port: 1357,
     },
     {
       name: 'ГИС Торги',

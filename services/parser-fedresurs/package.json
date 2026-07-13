@@ -1,0 +1,19 @@
+{
+  "name": "@aklab/parser-fedresurs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@aklab/service-shared": "*",
+    "@aklab/sqlite-queue": "*",
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
