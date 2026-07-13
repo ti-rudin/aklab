@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.56",
+    "date": "14 июля 2026",
+    "time": "00:52",
+    "items": [
+      {
+        "text": "Fedresurs evaluate args + Qrator networkidle wait",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.55",
     "date": "14 июля 2026",
     "time": "00:44",
