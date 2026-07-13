@@ -77,6 +77,19 @@ export class RoseltorgParser implements SourceParser {
               const title = linkEl?.textContent?.trim() || el.querySelector('td:nth-child(2)')?.textContent?.trim() || '';
               if (!title || title.length < 5) continue;
 
+              // Пропускаем строки заголовков таблицы
+              const titleLower = title.toLowerCase();
+              const headerPatterns = [
+                'минимальная цена', 'наименование', 'описание лота',
+                'описание', '№ п/п', 'лот №', 'цена', 'сроки',
+                'место', 'порядок', 'условия', 'сведения',
+                'начальная цена', 'шаг аукциона', 'обеспечение',
+                'документация', 'контакт', 'адрес объекта',
+              ];
+              if (title.length < 15 && /^\d+$/.test(title)) continue; // «1», «2» etc.
+              if (headerPatterns.some(p => titleLower.includes(p))) continue;
+              if (title.length < 10) continue;
+
               // Цена — обычно 3-4 колонка
               const cells = el.querySelectorAll('td');
               let priceText = '';
