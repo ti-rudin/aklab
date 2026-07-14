@@ -319,7 +319,8 @@ export class MetsParser implements SourceParser {
         // ─── Адрес: regex из текста описания ───
         let address = '';
         const descHtml = descEl?.innerHTML || descEl?.textContent || '';
-        const addrMatch = descHtml.match(/расположенн(?:ое|ый|ая) по адресу: (.+?)(?:<|$)/i);
+        // Расширенный regex: "расположен по адресу:", "Адрес:", "местонахождение:"
+        const addrMatch = descHtml.match(/(?:расположенн\w*\s+(?:по\s+)?адресу[:\s]+|адрес[:\s]+|местонахождение[:\s]+)([^<;]+?)(?:<|;|$)/i);
         if (addrMatch) {
           address = addrMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 300);
         }
@@ -345,16 +346,17 @@ export class MetsParser implements SourceParser {
           } catch { /* не удалось распарсить initData */ }
         }
 
-        // ─── Цена: .lot-cost-item.price .value или meta[itemprop='price'] ───
+        // ─── Цена: meta[itemprop='price'] (primary) или .lot-cost-item.price .value (fallback) ───
+        // meta[itemprop='price'] — цена текущего лота. .lot-cost-item.price .value — может быть первый лот на мульти-лот странице
         let priceText = '';
-        const priceEl = document.querySelector('.lot-cost-item.price .value');
-        if (priceEl) {
-          priceText = (priceEl.textContent || '').trim();
+        const metaPrice = document.querySelector('meta[itemprop="price"]');
+        if (metaPrice) {
+          priceText = (metaPrice.getAttribute('content') || '').trim();
         }
         if (!priceText) {
-          const metaPrice = document.querySelector('meta[itemprop="price"]');
-          if (metaPrice) {
-            priceText = (metaPrice.getAttribute('content') || '').trim();
+          const priceEl = document.querySelector('.lot-cost-item.price .value');
+          if (priceEl) {
+            priceText = (priceEl.textContent || '').trim();
           }
         }
 

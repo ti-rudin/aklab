@@ -156,12 +156,15 @@ export class AlfalotParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки табов
+      // Ждём загрузки контента (SPA может не успеть заполнить DOM)
+      // Ждём .address или описание — если SPA не заполнил, fallback на таймаут
       try {
-        await page.waitForSelector('.tab-content[data-page="lot-info"], .lot-title', { timeout: 10000 });
+        await page.waitForSelector('.address, .tab-content[data-page="lot-info"] h3', { timeout: 10000 });
       } catch {
         await page.waitForTimeout(3000);
       }
+      // Дополнительная пауза для SPA hydration
+      await page.waitForTimeout(1000);
 
       const details = await page.evaluate(() => {
         // Описание: <p> после <h3>Описание</h3> в табе lot-info
