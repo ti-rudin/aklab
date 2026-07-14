@@ -177,12 +177,15 @@ export class AggregatorBankrotParser implements SourceParser {
     }
   }
 
-  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
-    const { chromium } = await import('playwright');
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+  async fetchDetails(url: string, sharedBrowser?: any): Promise<Partial<ParsedProperty>> {
+    const browser = sharedBrowser || (await (async () => {
+      const { chromium } = await import('playwright');
+      return chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+    })());
+    const ownBrowser = !sharedBrowser;
 
     try {
       const context = await createStealthContext(browser);
@@ -302,7 +305,7 @@ export class AggregatorBankrotParser implements SourceParser {
       logger.warn(`[aggregator-bankrot] fetchDetails error for ${url}: ${err.message}`);
       return {};
     } finally {
-      await browser.close();
+      if (ownBrowser) await browser.close();
     }
   }
 }

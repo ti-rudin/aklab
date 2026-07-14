@@ -182,13 +182,28 @@ export function createParseHandler(parser: SourceParser) {
         detailsNeeded = parser.fetchDetails ? newProperties.length : 0;
         console.log(`[parse-handler:${req.source}] DETAILS: ${newProperties.length} properties, ${detailsNeeded} need detail fetching`);
 
+        // Один браузер на всю Phase 2 — вместо запуска на каждый объект
+        let sharedBrowser: any = undefined;
+        if (parser.fetchDetails && newProperties.length > 0) {
+          try {
+            const { chromium } = await import('playwright');
+            sharedBrowser = await chromium.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            });
+            console.log(`[parse-handler:${req.source}] Shared browser launched for ${newProperties.length} detail pages`);
+          } catch (err: any) {
+            logger.warn(`Failed to launch shared browser: ${err.message}. Falling back to per-request browsers.`, { correlationId: corrId });
+          }
+        }
+
         // Обрабатываем каждый объект: fetchDetails → createProperty
         for (const prop of newProperties) {
           try {
             // Загрузка детальной страницы (если парсер поддерживает)
             if (parser.fetchDetails) {
               try {
-                const details = await parser.fetchDetails(prop.url);
+                const details = await parser.fetchDetails(prop.url, sharedBrowser);
                 if (details && Object.keys(details).length > 0) {
                   // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
                   for (const [key, value] of Object.entries(details)) {
@@ -253,6 +268,12 @@ export function createParseHandler(parser: SourceParser) {
           } catch (err: any) {
             logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
           }
+        }
+
+        // Закрываем shared browser
+        if (sharedBrowser) {
+          try { await sharedBrowser.close(); } catch {}
+          console.log(`[parse-handler:${req.source}] Shared browser closed`);
         }
 
         console.log(`[parse-handler:${req.source}] DETAILS DONE: created=${created} filtered=${filtered} details=${detailsFetched}/${detailsNeeded}`);
