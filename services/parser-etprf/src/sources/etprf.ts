@@ -26,7 +26,7 @@ function extractArea(text: string): number | undefined {
   return parseFloat(match[1].replace(/\s/g, '').replace(',', '.'));
 }
 
-export class EtpRFParser implements SourceParser {
+export class EtprfParser implements SourceParser {
   name = 'etprf';
 
   async parse(depth?: number): Promise<ParsedProperty[]> {
