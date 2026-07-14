@@ -1,18 +1,17 @@
-/**
- * ЕТП РФ (sale.etprf.ru) — парсер коммерческой недвижимости.
+/***
+ * ETPRF — парсер площадки etprf.ru.
  *
- * Таблица с AJAX-пагинацией, Playwright.
- * URL: /Notification (с фильтром категории=4 для коммерческой недвижимости)
- * 20 строк на страницу, ~768 страниц.
- * Площадь из детальной страницы.
+ * SPA-сайт, jQuery + Playwright.
+ * Search: /Notification (список извещений)
+ * fetchDetails: открывает /Notification/id/{id} — 4 таба с .details-table
  */
+
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
 
 const BASE_URL = 'https://sale.etprf.ru';
 const SEARCH_URL = `${BASE_URL}/Notification`;
 const MAX_PAGES = 10;
-const MAX_AGE_HOURS = 24;
 
 function parsePrice(text: string): number | undefined {
   if (!text) return undefined;
@@ -23,15 +22,11 @@ function parsePrice(text: string): number | undefined {
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
-  if (match) {
-    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) return num;
-  }
-  return undefined;
+  if (!match) return undefined;
+  return parseFloat(match[1].replace(/\s/g, '').replace(',', '.'));
 }
 
-export class EtprfParser implements SourceParser {
+export class EtpRFParser implements SourceParser {
   name = 'etprf';
 
   async parse(depth?: number): Promise<ParsedProperty[]> {
@@ -166,14 +161,17 @@ export class EtprfParser implements SourceParser {
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки jQuery UI tabs и таблицы деталей
-      await page.waitForSelector('#Tabs13300, .details-table, #tabPage13301', { timeout: 15000 });
-      await page.waitForTimeout(1000);
+      // Ждём загрузки таблиц (details-table — актуальный селектор)
+      try {
+        await page.waitForSelector('.details-table', { timeout: 15000 });
+      } catch {
+        await page.waitForTimeout(3000);
+      }
 
       const details = await page.evaluate(() => {
-        // Утилита: найти значение поля по labelText в контейнере .details-table
-        function getFieldValue(container: Element, labelText: string): string | undefined {
-          const rows = container.querySelectorAll('tr');
+        // Утилита: найти значение поля по labelText во ВСЕХ .details-table
+        function getFieldValue(labelText: string): string | undefined {
+          const rows = document.querySelectorAll('.details-table tr');
           for (const row of Array.from(rows)) {
             const label = row.querySelector('.td-label');
             if (label && label.textContent?.trim().includes(labelText)) {
@@ -184,8 +182,8 @@ export class EtprfParser implements SourceParser {
         }
 
         // Утилита: найти email из mailto ссылки
-        function getFieldEmail(container: Element, labelText: string): string | undefined {
-          const rows = container.querySelectorAll('tr');
+        function getFieldEmail(labelText: string): string | undefined {
+          const rows = document.querySelectorAll('.details-table tr');
           for (const row of Array.from(rows)) {
             const label = row.querySelector('.td-label');
             if (label && label.textContent?.trim().includes(labelText)) {
@@ -207,80 +205,59 @@ export class EtprfParser implements SourceParser {
           address?: string;
           price?: number;
           minimum_price?: number;
-          auctionStart?: string;
-          auctionEnd?: string;
-          deposit?: string;
         } = {};
 
-        // === Вкладка 1: Основная информация (#tabPage13301) ===
-        const tab1 = document.querySelector('#tabPage13301');
-        if (tab1) {
-          // Организатор торгов
-          const organizer = getFieldValue(tab1, 'Организатор торгов');
-          // Email
-          const email = getFieldEmail(tab1, 'Адрес электронной почты');
-          // Телефон
-          const phone = getFieldValue(tab1, 'Номер контактного телефона');
+        // === Контакты: организатор + email + телефон ===
+        const organizer = getFieldValue('Организатор торгов');
+        const email = getFieldEmail('Адрес электронной почты');
+        const phone = getFieldValue('Номер контактного телефона');
+        const contactParts: string[] = [];
+        if (organizer) contactParts.push(organizer);
+        if (phone) contactParts.push(phone);
+        if (email) contactParts.push(email);
+        if (contactParts.length > 0) {
+          result.contacts = contactParts.join(', ');
+        }
 
-          const contactParts: string[] = [];
-          if (organizer) contactParts.push(organizer);
-          if (phone) contactParts.push(phone);
-          if (email) contactParts.push(email);
-          if (contactParts.length > 0) {
-            result.contacts = contactParts.join(', ');
+        // === Описание: подробное описание имущества ===
+        const detailedDesc = getFieldValue('Сведения об имуществе');
+        const briefDesc = getFieldValue('Краткие сведения об имуществе');
+        const desc = detailedDesc || briefDesc;
+        if (desc) {
+          result.description = desc.slice(0, 2000);
+        }
+
+        // === Начальная цена продажи ===
+        const priceText = getFieldValue('Начальная цена продажи');
+        if (priceText) {
+          const cleaned = priceText.replace(/[^\d,]/g, '').replace(',', '.');
+          const num = parseFloat(cleaned);
+          if (!isNaN(num) && num > 0) {
+            result.price = num;
+            result.minimum_price = num;
           }
         }
 
-        // === Вкладка 2: Описание имущества (#tabPage13305) ===
-        const tab2 = document.querySelector('#tabPage13305');
-        if (tab2) {
-          // Краткие сведения об имуществе
-          const briefDesc = getFieldValue(tab2, 'Краткие сведения об имуществе');
-          // Сведения об имуществе (подробное описание)
-          const detailedDesc = getFieldValue(tab2, 'Сведения об имуществе');
-
-          // Приоритет: подробное описание, затем краткое
-          const desc = detailedDesc || briefDesc;
-          if (desc) {
-            result.description = desc.slice(0, 2000);
-          }
-
-          // Начальная цена продажи
-          const priceText = getFieldValue(tab2, 'Начальная цена продажи');
-          if (priceText) {
-            const cleaned = priceText.replace(/[^\d,]/g, '').replace(',', '.');
-            const num = parseFloat(cleaned);
-            if (!isNaN(num) && num > 0) {
-              result.price = num;
-              result.minimum_price = num;
-            }
+        // === Адрес: ищем в описании имущества, НЕ на всей странице ===
+        // На странице есть "Почтовый адрес" организатора — это НЕ адрес объекта.
+        // Реальный адрес в поле "Сведения об имуществе" / "Краткие сведения".
+        const descForAddr = result.description || '';
+        // Паттерн 1: "Адрес: ..." из описания
+        const addrMatch = descForAddr.match(/(?:Адрес|адрес):\s*([^;]+)/i);
+        if (addrMatch && addrMatch[1] && addrMatch[1].trim().length > 5) {
+          result.address = addrMatch[1].trim().slice(0, 300);
+        }
+        // Паттерн 2: "по адресу: ..." из краткого описания
+        if (!result.address && briefDesc) {
+          const addrMatch2 = briefDesc.match(/по\s+адресу:\s*([^.]+)/i);
+          if (addrMatch2 && addrMatch2[1] && addrMatch2[1].trim().length > 5) {
+            result.address = addrMatch2[1].trim().slice(0, 300);
           }
         }
-
-        // === Вкладка 3: Информация о торгах (#tabPage13303) ===
-        const tab3 = document.querySelector('#tabPage13303');
-        if (tab3) {
-          result.auctionStart = getFieldValue(tab3, 'Начало предоставления заявок');
-          result.auctionEnd = getFieldValue(tab3, 'Окончание предоставления заявок');
-          result.deposit = getFieldValue(tab3, 'Размер задатка');
-        }
-
-        // Адрес: ищем в описании или на странице
-        const allText = document.body.innerText || '';
-        const addrPatterns = [
-          /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение)[:\s]+([^\n]+?)(?:\n|$)/i,
-        ];
-        for (const re of addrPatterns) {
-          const m = allText.match(re);
-          if (m && m[1] && m[1].trim().length > 5) {
-            result.address = m[1].trim().slice(0, 300);
-            break;
-          }
-        }
-        // Fallback: ищем «Москва» на странице
+        // Fallback: "Регион местонахождения имущества" из таблицы
         if (!result.address) {
-          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
-          if (moscowMatch) result.address = moscowMatch[1].trim().slice(0, 300);
+          const region = getFieldValue('Регион местонахождения имущества');
+          if (region) result.address = region;
         }
 
         // Координаты: на etprf.ru НЕТ координат в карточках
