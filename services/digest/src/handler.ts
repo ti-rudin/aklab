@@ -26,8 +26,9 @@ const tagLabel: Record<string, string> = {
   moscow_mo: 'МСК/МО',
 };
 
-async function fetchFocusProperties(threshold: number): Promise<any[]> {
-  const url = `${BASE}/api/properties/focus?threshold=${threshold}&pageSize=100&sort=-focus_score`;
+async function fetchFocusProperties(): Promise<any[]> {
+  // threshold=0 — все объекты в фокусе (score > 0)
+  const url = `${BASE}/api/properties/focus?threshold=0&pageSize=100&sort=-focus_score`;
   const res = await fetch(url, { headers: HEADERS });
   if (!res.ok) return [];
   const json: any = await res.json();
@@ -81,9 +82,16 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
     return { sent: false, count: 0 };
   }
 
-  const allFocus = await fetchFocusProperties(20);
+  const allFocus = await fetchFocusProperties();
+  const now = Date.now();
+  const h24 = 24 * 60 * 60 * 1000;
   const filtered = allFocus.filter((p: any) => {
+    // Свежесть: только объекты за последние 24 часа
+    const seenAt = p.first_seen_at ? Number(p.first_seen_at) : 0;
+    if (seenAt > 0 && (now - seenAt) > h24) return false;
+    // Регион
     if (!regions.includes(p.city)) return false;
+    // Цена
     if (priceFrom != null && p.price != null && p.price < Number(priceFrom)) return false;
     if (priceTo != null && p.price != null && p.price > Number(priceTo)) return false;
     return true;
