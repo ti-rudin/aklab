@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc && cp src/fedresurs_client.py dist/",
+    "build": "tsc && cp src/fedresurs_client.py dist/sources/",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },
