@@ -1,5 +1,71 @@
 [
   {
+    "version": "v1.1.58",
+    "date": "15 июля 2026",
+    "time": "00:40",
+    "items": [
+      {
+        "text": "Shared browser для Phase 2 — один Playwright на все fetchDetails (6 парсеров)",
+        "type": "perf"
+      },
+      {
+        "text": "Дайджест: threshold=0 + фильтр свежести 24 часа",
+        "type": "fix"
+      },
+      {
+        "text": "m-ets: meta[itemprop='price'] как primary (multi-lot price bug)",
+        "type": "fix"
+      },
+      {
+        "text": "m-ets: расширенный regex адреса ('Адрес:', 'местонахождение:')",
+        "type": "fix"
+      },
+      {
+        "text": "alfalot: SPA hydration — waitForSelector('.address, h3') + пауза 1s",
+        "type": "fix"
+      },
+      {
+        "text": "alfalot: regex 'адрес' → 'адрес\\w*' для дательного падежа",
+        "type": "fix"
+      },
+      {
+        "text": "etprf: fetchDetails переписан — новые селекторы .details-table",
+        "type": "fix"
+      },
+      {
+        "text": "etprf: адрес из описания имущества, не 'Почтовый адрес' организатора",
+        "type": "fix"
+      },
+      {
+        "text": "parse-handler: мерждим только non-null (Object.assign → for loop)",
+        "type": "fix"
+      },
+      {
+        "text": "sberbank-ast: убрано стоп-слово 'на право заключения'",
+        "type": "fix"
+      },
+      {
+        "text": "package-lock.json sync (fedresurs parser)",
+        "type": "fix"
+      }
+    ]
+  },
+  {
+    "version": "v1.1.57",
+    "date": "14 июля 2026",
+    "time": "23:30",
+    "items": [
+      {
+        "text": "Fedresurs parser — curl_cffi + /qauth bypass Qrator anti-bot",
+        "type": "new"
+      },
+      {
+        "text": "Fedresurs batch mode + anti-ban delays 3-6s",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.56",
     "date": "14 июля 2026",
     "time": "00:52",
