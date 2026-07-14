@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/fedresurs_client.py dist/",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
     "@aklab/service-shared": "*",
-    "@aklab/sqlite-queue": "*",
-    "playwright": "^1.60.0"
+    "@aklab/sqlite-queue": "*"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
