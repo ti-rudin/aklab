@@ -2,17 +2,18 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
-## Session handoff (v1.1.57)
-**Сделано в сессии 14 июля 2026 (fedresurs parser — curl_cffi + Qrator bypass):**
-- ✅ **Fedresurs parser создан** — Python curl_cffi + /qauth endpoint обходит Qrator anti-bot
-- ✅ **TLS fingerprinting обход** — Playwright/curl → 403, curl_cffi chrome124 → 200
-- ✅ **Batch mode** — Node.js вызывает Python subprocess через execFile, timeout 30 мин
-- ✅ **Anti-ban delays** — randomDelay 3-6 сек между запросами (как в других парсерах)
-- ✅ **Rate limit handling** — HTTP 451 → ждём 15-30 сек + re-auth + retry
-- ✅ **Deploy fix** — `git pull.rebase=true` на сервере (divergent branches)
-- ⏳ **Прокси** — исследовано: лучший вариант = Russian VPS pool (Timeweb/Beget $3-5/мес)
-- ⏳ **IP rate limit** — IP 213.184.136.218 залочен, нужен прокси для устойчивого парсинга
-- **Итого:** 3 коммита. v1.1.56→v1.1.57
+## Session handoff (v1.1.58)
+**Сделано в сессии 14 июля 2026 (полный аудит парсеров):**
+- ✅ **parse-handler fix** — `Object.assign(prop, details)` → мерждим только non-null/non-undefined. fetchDetails больше не перезаписывает Phase 1 данные undefined'ами
+- ✅ **etprf fetchDetails переписан** — jQuery UI табы `#tabPage*` удалены с сайта. Новые селекторы: `.details-table` + `.td-label`/`.td-value`. Цена (210М), адрес, описание, contacts — всё извлекается
+- ✅ **etprf address fix** — "Почтовый адрес" организатора (Ярославль) ≠ адрес объекта (Москва). Ищем адрес в описании имущества
+- ✅ **alfalot regex fix** — `адрес` → `адрес\w*` для дательного падежа ("адресу:")
+- ✅ **alfalot SPA hydration** — waitForSelector('.address, h3') вместо контейнера + пауза 1s
+- ✅ **m-ets price fix** — `meta[itemprop="price"]` как primary (multi-lot страницы брали цену первого лота)
+- ✅ **m-ets address regex** — расширен: "Адрес:", "местонахождение:", "по адресу:" + падежи
+- ✅ **sberbank-ast stop word fix** — "на право заключения" убран из глобальных stop words (фильтровал 100% лотов)
+- ✅ **Skill aklab-parsers обновлён** — детальные алгоритмы по всем 11 парсерам
+- **Итого:** 3 коммита. v1.1.57→v1.1.58
 
 ### Fedresurs — архитектура
 - Python клиент: `services/parser-fedresurs/src/fedresurs_client.py`
