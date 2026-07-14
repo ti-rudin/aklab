@@ -202,8 +202,8 @@ export class AlfalotParser implements SourceParser {
         const addressEl = document.querySelector('.address');
         let address = addressEl?.textContent?.trim() || '';
         if (!address || address.length < 5) {
-          // Парсим из описания
-          const addrMatch = description.match(/(?:адрес|расположенн?\s+по)[:\s]+([^.;]+)/i);
+          // Парсим из описания (адрес/адресу/адреса + "по адресу" / "расположен по")
+          const addrMatch = description.match(/(?:адрес\w*|расположенн?\s+по)[:\s]+([^.;]+)/i);
           if (addrMatch) address = addrMatch[1].trim();
         }
 

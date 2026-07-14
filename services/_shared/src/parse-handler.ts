@@ -190,7 +190,12 @@ export function createParseHandler(parser: SourceParser) {
               try {
                 const details = await parser.fetchDetails(prop.url);
                 if (details && Object.keys(details).length > 0) {
-                  Object.assign(prop, details);
+                  // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
+                  for (const [key, value] of Object.entries(details)) {
+                    if (value !== undefined && value !== null) {
+                      (prop as any)[key] = value;
+                    }
+                  }
                   // Пересчитываем город ТОЛЬКО если он ещё не определён (other).
                   // Не перезаписываем правильно определённый город (torgi-gov regionCode, alfalot region).
                   if (prop.city === 'other' && details.address) {
