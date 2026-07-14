@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.57",
+    "date": "15 июля 2026",
+    "time": "01:16",
+    "items": [
+      {
+        "text": "Changelog v1.1.57 + v1.1.58",
+        "type": "improvement"
+      },
+      {
+        "text": "парсер",
+        "type": "fix"
+      },
+      {
+        "text": "Дайджест — все объекты в фокусе + фильтр 24 часа",
+        "type": "fix"
+      },
+      {
+        "text": "Shared browser для Phase 2 — один Playwright на все fetchDetails",
+        "type": "improvement"
+      },
+      {
+        "text": "ЕТП РФ",
+        "type": "fix"
+      },
+      {
+        "text": "V1.1.58 sessions.md + gotchas.md (аудит парсеров)",
+        "type": "improvement"
+      },
+      {
+        "text": "Аудит парсеров — m-ets price/address, alfalot SPA hydration",
+        "type": "fix"
+      },
+      {
+        "text": "Etprf fetchDetails — актуальные селекторы + адрес из описания",
+        "type": "fix"
+      },
+      {
+        "text": "FetchDetails не перезаписывает Phase 1 данные + alfalot regex адрес",
+        "type": "fix"
+      },
+      {
+        "text": "антибан",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.58",
     "date": "15 июля 2026",
     "time": "00:40",
