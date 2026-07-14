@@ -2,6 +2,26 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.57)
+**Сделано в сессии 14 июля 2026 (fedresurs parser — curl_cffi + Qrator bypass):**
+- ✅ **Fedresurs parser создан** — Python curl_cffi + /qauth endpoint обходит Qrator anti-bot
+- ✅ **TLS fingerprinting обход** — Playwright/curl → 403, curl_cffi chrome124 → 200
+- ✅ **Batch mode** — Node.js вызывает Python subprocess через execFile, timeout 30 мин
+- ✅ **Anti-ban delays** — randomDelay 3-6 сек между запросами (как в других парсерах)
+- ✅ **Rate limit handling** — HTTP 451 → ждём 15-30 сек + re-auth + retry
+- ✅ **Deploy fix** — `git pull.rebase=true` на сервере (divergent branches)
+- ⏳ **Прокси** — исследовано: лучший вариант = Russian VPS pool (Timeweb/Beget $3-5/мес)
+- ⏳ **IP rate limit** — IP 213.184.136.218 залочен, нужен прокси для устойчивого парсинга
+- **Итого:** 3 коммита. v1.1.56→v1.1.57
+
+### Fedresurs — архитектура
+- Python клиент: `services/parser-fedresurs/src/fedresurs_client.py`
+- TS парсер: `services/parser-fedresurs/src/sources/fedresurs.ts`
+- Build: `tsc && cp src/fedresurs_client.py dist/sources/`
+- Health: :1357
+- Endpoints: `/backend/pledged-subjects` + `/backend/biddings` + `/backend/biddings/{guid}/lots`
+- Фильтр: Москва + коммерческая недвижимость (client-side)
+
 ## Session handoff (v1.1.52)
 **Сделано в сессии 13 июля 2026 (parser audit + city detection + focus engine):**
 - ✅ **detectCity blacklist** — не-московские регионы (Дагестан, Башкортостан и т.д.) → return 'other' до проверки "Москва". +7 тестов

@@ -38,12 +38,13 @@
    `GET /new/api/public/lotcards/search?lotStatus=PUBLISHED,APPLICATIONS_SUBMISSION&size=100`
    Параметр `subjectRFCode` НЕ работает как фильтр → фильтровать в коде.
    Площадь: `characteristics[].code === "totalAreaRealty"`.
-9. **Fedresurs Qrator anti-bot** — блокирует ВСЕ API-подходы:
-   `page.evaluate(fetch())` → 403, `page.request.get()` → 403,
-   `page.goto(apiUrl)` → 403. Единственный рабочий вариант —
-   перехват network response при навигации по UI-странице, но и это
-   не удалось (Qrator проверяет TLS fingerprint). Отложен до решения
-   с прокси/резидентным IP.
+9. **Fedresurs Qrator anti-bot** — обход через curl_cffi Python + `/qauth` endpoint:
+   - Playwright/curl → 403 (TLS fingerprinting). curl_cffi с `impersonate="chrome124"` → 200
+   - `/qauth` → ставит `qrator_ssid2` cookie → REST API работает
+   - PoW: MD5(challenge+nonce).startswith("00") — не нужно решать, /qauth обходит
+   - **Rate limit (HTTP 451)** — нужна пауза 3-6 сек между запросами + прокси
+   - Python subprocess вызывается из Node.js через execFile
+   - Порты: health=1357, deploy через deploy-prod.sh
 10. **Deploy: push BEFORE deploy** — `deploy-prod.sh` делает
     `git pull origin main` в самом начале. Если локальный коммит
     НЕ в origin/main — файл не попадёт на сервер. **Правило:**
