@@ -60,7 +60,7 @@ async function fetchAll(maxBiddings?: number): Promise<any> {
 
   logger.info(`[fedresurs] Calling Python client (maxBiddings=${maxBiddings || 'default'})...`);
   const { stdout, stderr } = await execFileAsync('python3', args, {
-    timeout: 600000, // 10 min
+    timeout: 1800000, // 30 min (3-6s delays * 500 biddings)
     maxBuffer: 50 * 1024 * 1024, // 50MB
   });
   if (stderr) {

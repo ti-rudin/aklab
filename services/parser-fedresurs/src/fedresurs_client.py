@@ -2,10 +2,13 @@
 """
 Fedresurs API client — curl_cffi + /qauth bypass.
 Batch mode: fetches all data in one call, outputs JSON to stdout.
+
+Anti-ban: random delays 3-6 sec between requests (matching other parsers).
 """
 import sys
 import json
 import time
+import random
 import hashlib
 from curl_cffi import requests
 
@@ -14,6 +17,16 @@ BANKROT_URL = "https://bankrot.fedresurs.ru"
 TIMEOUT = 30
 MAX_RETRIES = 3
 
+# Anti-ban delays (ms equivalent of other parsers: m-ets 1.5-3.5, sberbank 2-5+3, torgi-gov 3-6)
+DELAY_MIN = 3  # seconds
+DELAY_MAX = 6  # seconds
+
+
+def random_delay():
+    """Random delay between requests (3-6 sec, matching other parsers)."""
+    time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+
+
 def create_session():
     s = requests.Session(impersonate="chrome124")
     s.headers.update({
@@ -21,11 +34,13 @@ def create_session():
     })
     return s
 
+
 def solve_qrator(session, url=FEDRESURS_URL):
     for attempt in range(MAX_RETRIES):
         try:
             r = session.get(f"{url}/qauth", timeout=TIMEOUT)
             if r.status_code == 200 and "qrator_ssid2" in dict(session.cookies):
+                time.sleep(random.uniform(3, 5))  # Stabilize session
                 return True
             cookies = dict(session.cookies)
             if "qrator_jsr" in cookies:
@@ -42,10 +57,11 @@ def solve_qrator(session, url=FEDRESURS_URL):
                                 "pow": str(w),
                             }, timeout=TIMEOUT)
                             break
-            time.sleep(2)
-        except Exception as e:
-            time.sleep(3)
+            time.sleep(random.uniform(3, 5))
+        except Exception:
+            time.sleep(random.uniform(5, 10))
     return "qrator_ssid2" in dict(session.cookies)
+
 
 def api_get(session, path, base_url=FEDRESURS_URL, params=None):
     headers = {
@@ -55,10 +71,14 @@ def api_get(session, path, base_url=FEDRESURS_URL, params=None):
     }
     r = session.get(f"{base_url}{path}", headers=headers, params=params, timeout=TIMEOUT)
     if r.status_code in (403, 401, 451):
-        # Re-auth and retry once
+        # Rate limited or auth lost — wait longer and re-auth
+        wait = random.uniform(15, 30) if r.status_code == 451 else random.uniform(5, 10)
+        time.sleep(wait)
         solve_qrator(session, base_url)
+        random_delay()
         r = session.get(f"{base_url}{path}", headers=headers, params=params, timeout=TIMEOUT)
     return r
+
 
 def main():
     session = create_session()
@@ -86,7 +106,7 @@ def main():
         offset += limit
         if len(items) < limit:
             break
-        time.sleep(1)  # Rate limit protection
+        random_delay()
 
     # === Biddings ===
     offset = 0
@@ -104,31 +124,30 @@ def main():
         if not biddings:
             break
 
-        # Fetch lots for each bidding
         for bidding in biddings:
             if len(results["biddings"]) >= max_biddings:
                 break
             try:
+                random_delay()
                 r_lots = api_get(session, f"/backend/biddings/{bidding['guid']}/lots", params={
                     "limit": 20, "offset": 0
                 })
                 if r_lots.status_code == 200:
                     lots_data = r_lots.json()
-                    lots = lots_data.get("pageData", [])
-                    bidding["_lots"] = lots
+                    bidding["_lots"] = lots_data.get("pageData", [])
                 else:
                     bidding["_lots"] = []
             except Exception:
                 bidding["_lots"] = []
             results["biddings"].append(bidding)
-            time.sleep(0.5)
 
         offset += limit
         if len(biddings) < limit:
             break
-        time.sleep(1)
+        random_delay()
 
     print(json.dumps(results, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     main()
