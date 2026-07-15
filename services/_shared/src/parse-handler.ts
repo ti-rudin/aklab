@@ -182,16 +182,19 @@ export function createParseHandler(parser: SourceParser) {
         detailsNeeded = parser.fetchDetails ? newProperties.length : 0;
         console.log(`[parse-handler:${req.source}] DETAILS: ${newProperties.length} properties, ${detailsNeeded} need detail fetching`);
 
-        // Один браузер на всю Phase 2 — вместо запуска на каждый объект
+        // Один браузер + контекст на всю Phase 2 — вместо запуска на каждый объект
         let sharedBrowser: any = undefined;
+        let sharedContext: any = undefined;
         if (parser.fetchDetails && newProperties.length > 0) {
           try {
             const { chromium } = await import('playwright');
+            const { createStealthContext } = await import('./anti-ban');
             sharedBrowser = await chromium.launch({
               headless: true,
               args: ['--no-sandbox', '--disable-setuid-sandbox'],
             });
-            console.log(`[parse-handler:${req.source}] Shared browser launched for ${newProperties.length} detail pages`);
+            sharedContext = await createStealthContext(sharedBrowser);
+            console.log(`[parse-handler:${req.source}] Shared browser+context launched for ${newProperties.length} detail pages`);
           } catch (err: any) {
             logger.warn(`Failed to launch shared browser: ${err.message}. Falling back to per-request browsers.`, { correlationId: corrId });
           }
@@ -204,7 +207,7 @@ export function createParseHandler(parser: SourceParser) {
               // Загрузка детальной страницы (если парсер поддерживает)
               if (parser.fetchDetails) {
                 try {
-                  const details = await parser.fetchDetails(prop.url, sharedBrowser);
+                  const details = await parser.fetchDetails(prop.url, sharedContext);
                   if (details && Object.keys(details).length > 0) {
                     // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
                     for (const [key, value] of Object.entries(details)) {

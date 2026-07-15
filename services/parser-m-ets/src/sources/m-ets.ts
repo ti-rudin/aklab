@@ -258,19 +258,23 @@ export class MetsParser implements SourceParser {
     }
   }
 
-  async fetchDetails(url: string, sharedBrowser?: any): Promise<Partial<ParsedProperty>> {
-    const browser = sharedBrowser || (await (async () => {
+  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+    let ownBrowser: any = undefined;
+    let context: any;
+    if (sharedContext) {
+      context = sharedContext;
+    } else {
       const { chromium } = await import('playwright');
-      return chromium.launch({
+      ownBrowser = await chromium.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
-    })());
-    const ownBrowser = !sharedBrowser;
+      context = await createStealthContext(ownBrowser);
+    }
+    let page: any;
 
     try {
-      const context = await createStealthContext(browser);
-      const page = await context.newPage();
+      page = await context.newPage();
       await retryGoto(page, url, 3);
 
       // Ждём основные блоки страницы лота
@@ -409,7 +413,8 @@ export class MetsParser implements SourceParser {
       logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);
       return {};
     } finally {
-      if (ownBrowser) await browser.close();
+      if (page) try { await page.close(); } catch {}
+      if (ownBrowser) try { await ownBrowser.close(); } catch {}
     }
   }
 }
