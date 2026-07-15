@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.60",
+    "date": "15 июля 2026",
+    "time": "12:54",
+    "items": [
+      {
+        "text": "Fabrikant waitForSelector вместо timeout, NODE_EXTRA_CA_CERTS для torgi-gov SSL",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.59",
     "date": "15 июля 2026",
     "time": "11:42",
