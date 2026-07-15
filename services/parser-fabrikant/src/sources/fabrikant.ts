@@ -157,15 +157,16 @@ export class FabrikantParser implements SourceParser {
         logger.info(`[fabrikant] Click ${click}: ${totalCards} total cards, ${newCount} new property (all: ${allProperties.length})`);
 
         // Кликаем "Показать ещё"
-        const showMore = await page.$('button:has-text("Показать ещё")');
-        if (!showMore) {
+        try {
+          await page.waitForSelector('button:has-text("Показать ещё")', { state: 'visible', timeout: 10000 });
+        } catch {
           logger.info('[fabrikant] No "Показать ещё" button — stopping');
           break;
         }
 
         const prevCount = totalCards;
-        await showMore.click();
-        await randomDelay(2000, 4000);
+        await page.click('button:has-text("Показать ещё")');
+        await randomDelay(3000, 5000);
 
         // Ждём пока количество карточек увеличится
         try {
