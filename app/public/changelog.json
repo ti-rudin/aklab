@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.1.62",
+    "date": "15 июля 2026",
+    "time": "14:07",
+    "items": [
+      {
+        "text": "Fabrikant — waitForSelector + page.click для 'Показать ещё'",
+        "type": "fix"
+      },
+      {
+        "text": "Fabrikant — 'Показать ещё' вместо pagination (headless не рендерит кнопки страниц)",
+        "type": "fix"
+      },
+      {
+        "text": "Fabrikant — waitForSelector для пагинации, убран ранний break",
+        "type": "fix"
+      },
+      {
+        "text": "Фабрикант",
+        "type": "fix"
+      },
+      {
+        "text": "Fabrikant — click-based pagination через rc-pagination",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.61",
     "date": "15 июля 2026",
     "time": "12:59",
