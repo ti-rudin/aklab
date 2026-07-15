@@ -10,7 +10,8 @@
  *     [data-slot="badge"]   — статус, источник
  *     [data-slot="text"]    — организатор, даты, цена ("648 000,00 RUB")
  *
- * Пагинация: ?page=N (10 карточек на страницу)
+ * Пагинация: rc-pagination компонент, клики по кнопкам страниц.
+ * URL параметры ?page=N НЕ работают — сайт игнорирует их.
  */
 
 import { classifyPropertyType } from '@aklab/service-shared';
@@ -19,7 +20,7 @@ import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
-const MAX_PAGES = 10; // 10 карточек на страницу, 10 стр = 100 items
+const MAX_PAGES = 100; // 10 карточек на страницу, 100 стр = 1000 items
 const ITEMS_PER_PAGE = 10;
 
 // Ключевые слова коммерческой недвижимости — фильтруем нерелевантные лоты
@@ -45,6 +46,64 @@ const EXCLUDE_KEYWORDS = [
   'оборудовани', 'станок', 'прибор', 'инвентар',
 ];
 
+/** Извлекает карточки с текущей страницы (без навигации) */
+async function extractCards(page: any): Promise<Array<{
+  lot_id: string; title: string; price_text: string;
+  proc_number: string; link_href: string; date_text: string;
+}>> {
+  return page.evaluate((args: { kw: string[]; exclude: string[] }) => {
+    const results: Array<{
+      lot_id: string; title: string; price_text: string;
+      proc_number: string; link_href: string; date_text: string;
+    }> = [];
+
+    const cards = document.querySelectorAll('[data-slot="card"][data-id]');
+
+    for (const card of Array.from(cards)) {
+      const el = card as HTMLElement;
+      const lotId = el.getAttribute('data-id');
+      if (!lotId) continue;
+
+      const anchor = el.querySelector('[data-slot="anchor"]');
+      const title = anchor?.textContent?.trim() || '';
+      if (!title) continue;
+
+      const titleLower = title.toLowerCase();
+      const isProperty = args.kw.some(k => titleLower.includes(k));
+      if (!isProperty) continue;
+
+      const isExcluded = args.exclude.some(k => titleLower.includes(k));
+      if (isExcluded) continue;
+
+      const textSlots = el.querySelectorAll('[data-slot="text"]');
+      let priceText = '';
+      let procNumber = '';
+      let dateText = '';
+
+      for (const slot of Array.from(textSlots)) {
+        const t = slot.textContent?.trim() || '';
+        if (t.includes('RUB') && !priceText) {
+          priceText = t;
+        }
+        if (/^\d+-\d+$/.test(t) && !procNumber) {
+          procNumber = t;
+        }
+        const dateMatch = t.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+        if (dateMatch && !dateText) {
+          dateText = t;
+        }
+      }
+
+      const link = anchor as HTMLAnchorElement;
+      const href = link?.href || '';
+
+      results.push({ lot_id: lotId, title, price_text: priceText, proc_number: procNumber, link_href: href, date_text: dateText });
+    }
+
+    return results;
+  }, { kw: PROPERTY_KEYWORDS, exclude: EXCLUDE_KEYWORDS });
+}
+
 export class FabrikantParser implements SourceParser {
   name = 'fabrikant';
 
@@ -62,91 +121,27 @@ export class FabrikantParser implements SourceParser {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
+      const seenIds = new Set<string>();
+
+      // Загружаем первую страницу
+      logger.info(`[fabrikant] Loading: ${SEARCH_URL}`);
+      await retryGoto(page, SEARCH_URL, 3);
+      try {
+        await page.waitForSelector('[data-slot="card"][data-id]', { timeout: 15000 });
+      } catch {
+        await page.waitForTimeout(5000);
+      }
 
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-        const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}?page=${pageNum}`;
-        logger.info(`[fabrikant] Loading page ${pageNum}: ${url}`);
+        // Извлекаем карточки с текущей страницы
+        const pageCards = await extractCards(page);
+        let newOnPage = 0;
 
-        // Пауза между страницами (имитация человека, 3-6 сек)
-        if (pageNum > 1) {
-          await randomDelay(3000, 6000);
-        }
+        for (const p of pageCards) {
+          if (seenIds.has(p.lot_id)) continue;
+          seenIds.add(p.lot_id);
+          newOnPage++;
 
-        await retryGoto(page, url, 3);
-        // Ждём появления карточек (Next.js SSR hydration может быть медленной)
-        try {
-          await page.waitForSelector('[data-slot="card"][data-id]', { timeout: 15000 });
-        } catch {
-          await page.waitForTimeout(5000);
-        }
-
-        const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {
-          const results: Array<{
-            lot_id: string;
-            title: string;
-            price_text: string;
-            proc_number: string;
-            link_href: string;
-            date_text: string;
-          }> = [];
-
-          const cards = document.querySelectorAll('[data-slot="card"][data-id]');
-
-          for (const card of Array.from(cards)) {
-            const el = card as HTMLElement;
-            const lotId = el.getAttribute('data-id');
-            if (!lotId) continue;
-
-            const anchor = el.querySelector('[data-slot="anchor"]');
-            const title = anchor?.textContent?.trim() || '';
-            if (!title) continue;
-
-            const titleLower = title.toLowerCase();
-            const isProperty = args.kw.some(k => titleLower.includes(k));
-            if (!isProperty) continue;
-
-            const isExcluded = args.exclude.some(k => titleLower.includes(k));
-            if (isExcluded) continue;
-
-            const textSlots = el.querySelectorAll('[data-slot="text"]');
-            let priceText = '';
-            let procNumber = '';
-            let dateText = '';
-
-            for (const slot of Array.from(textSlots)) {
-              const t = slot.textContent?.trim() || '';
-              if (t.includes('RUB') && !priceText) {
-                priceText = t;
-              }
-              if (/^\d+-\d+$/.test(t) && !procNumber) {
-                procNumber = t;
-              }
-              // Ищем дату в формате DD.MM.YYYY или "X дней/часов назад"
-              const dateMatch = t.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-              if (dateMatch && !dateText) {
-                dateText = t;
-              }
-            }
-
-            const link = anchor as HTMLAnchorElement;
-            const href = link?.href || '';
-
-            results.push({
-              lot_id: lotId,
-              title,
-              price_text: priceText,
-              proc_number: procNumber,
-              link_href: href,
-              date_text: dateText,
-            });
-          }
-
-          return results;
-        }, { kw: PROPERTY_KEYWORDS, exclude: EXCLUDE_KEYWORDS, cutoff: Date.now() - 24 * 3600 * 1000 });
-
-        logger.info(`[fabrikant] Page ${pageNum}: found ${pageProperties.length} property cards`);
-
-        for (const p of pageProperties) {
           let price: number | undefined;
           if (p.price_text) {
             const cleaned = p.price_text.replace(/[^\d,]/g, '').replace(',', '.');
@@ -158,7 +153,6 @@ export class FabrikantParser implements SourceParser {
           const area = extractArea(p.title);
           const pricePerSqm = price && area ? Math.round(price / area) : undefined;
 
-          // published_at из date_text (DD.MM.YYYY → ISO)
           let publishedAt: string | undefined;
           if (p.date_text) {
             const dm = p.date_text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
@@ -181,10 +175,38 @@ export class FabrikantParser implements SourceParser {
           });
         }
 
-        if (pageProperties.length === 0) break;
+        logger.info(`[fabrikant] Page ${pageNum}: ${pageCards.length} cards, ${newOnPage} new property (total: ${allProperties.length})`);
+
+        // Пагинация кликом: ищем кнопку следующей страницы
+        const nextpageNum = pageNum + 1;
+        const nextBtn = await page.$(`.rc-pagination-item-${nextpageNum} a`);
+        if (!nextBtn) {
+          logger.info(`[fabrikant] No page ${nextpageNum} button — stopping`);
+          break;
+        }
+
+        // Запоминаем ID текущих карточек, чтобы дождаться смены
+        const oldIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('[data-slot="card"][data-id]')).map(el => el.getAttribute('data-id'))
+        );
+
+        await nextBtn.click();
+        await randomDelay(2000, 4000);
+
+        // Ждём пока карточки изменятся (макс 15 сек)
+        try {
+          await page.waitForFunction((prevIds: string[]) => {
+            const current = Array.from(document.querySelectorAll('[data-slot="card"][data-id]')).map(el => el.getAttribute('data-id'));
+            return current.length > 0 && current[0] !== prevIds[0];
+          }, oldIds, { timeout: 15000 });
+        } catch {
+          // Если карточки не изменились —可能是 последняя страница
+          logger.info(`[fabrikant] Cards didn't change after click — stopping`);
+          break;
+        }
       }
 
-      logger.info(`[fabrikant] Total: ${allProperties.length} properties`);
+      logger.info(`[fabrikant] Total: ${allProperties.length} properties from ${seenIds.size} unique cards`);
       return allProperties;
 
     } catch (err: any) {
@@ -222,20 +244,15 @@ export class FabrikantParser implements SourceParser {
       }
 
       const details = await page.evaluate(() => {
-        // Описание: ищем в тексте страницы — «Предмет договора», «Описание лота», длинные параграфы
         let description = '';
         const allText = document.body.innerText || '';
 
-        // Ищем описание лота — часто после заголовка «Лот №» идёт описание
         const lotMatch = allText.match(/Лот\s*№?\d*\.\s*(.+?)(?:\n\s*(?:Ожидается|Начальн|Статус|Предмет))/s);
         if (lotMatch && lotMatch[1].length > 20) {
           description = lotMatch[1].trim().slice(0, 2000);
         }
 
-        // Контакты: организатор из шапки
         const contactParts: string[] = [];
-
-        // Организатор — обычно «Информация об организаторе» followed by name
         const orgMatch = allText.match(/Информация\s+об\s+организаторе\s*\n\s*(.+?)(?:\n\s*\n|\n\s*Дата)/s);
         if (orgMatch) {
           const orgName = orgMatch[1].trim().split('\n')[0].trim();
@@ -244,7 +261,6 @@ export class FabrikantParser implements SourceParser {
           }
         }
 
-        // Телефон и email из текста
         const phoneMatch = allText.match(/(?:тел(?:ефон)?|phone)[:\s.]+([+\d\s()-]{7,20})/i);
         if (phoneMatch) contactParts.push('Тел: ' + phoneMatch[1].trim());
 
@@ -253,9 +269,7 @@ export class FabrikantParser implements SourceParser {
 
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес — ищем во всём тексте страницы (не только в h1)
         let address = '';
-        // Паттерн 1: «адрес: ...» или «по адресу ...»
         const addrPatterns = [
           /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение(?:\s+имущества)?)[:\s]+([^\n]+?)(?:\n|$)/i,
           /(?:адрес|расположен(?:н|ие)?)[:\s]+(.+?)(?:,\s*(?:общ|пл|к\/н|собств|$))/i,
@@ -267,13 +281,11 @@ export class FabrikantParser implements SourceParser {
             break;
           }
         }
-        // Fallback: ищем «г. Москва» или «Москва, ул.» в тексте
         if (!address) {
           const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
           if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
         }
 
-        // Начальная цена: ищем «Начальная цена: X RUB» в тексте страницы
         let minimum_price: number | undefined;
         const priceMatch = allText.match(/Начальн(?:ая\s+цена|ая\s+стоимость)[:\s]+([\d\s,.]+)\s*(?:руб|RUB|₽)?/i);
         if (priceMatch) {
@@ -282,7 +294,6 @@ export class FabrikantParser implements SourceParser {
           if (!isNaN(num) && num > 0) minimum_price = num;
         }
 
-        // Фото: ищем img в контенте (не иконки/логотипы)
         const photoUrls: string[] = [];
         const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"]');
         for (const img of Array.from(contentImgs).slice(0, 10)) {
