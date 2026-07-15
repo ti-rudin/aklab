@@ -2,6 +2,22 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.58 — browser leak fix)
+**Сделано в сессии 15 июля 2026 (Playwright memory leak + avtopoliv cleanup):**
+- ✅ **Playwright zombie processes** — на aklab-prod (213) обнаружено 211 chrome-headless-shell процессов (6.1GB RSS из 7.4GB RAM). Причина: `sharedBrowser.close()` в parse-handler.ts был НЕ в finally блоке — при падении Phase 2 браузер не закрывался
+- ✅ **parse-handler.ts fix** — `sharedBrowser.close()` перенесён в `finally` блок. Гарантированное закрытие при любом исключении
+- ✅ **Chrome cleanup** — `pkill -9 -f chrome-headless-shell` → память 7.3G → 1.4G
+- ✅ **avtopoliv-api удалён** — `pm2 delete avtopoliv-api` на s121, `pm2 save --force`. Известный баг path-to-regexp (241k рестартов). Остался только avtopoliv-front
+- ✅ **v1.1.58 задеплоен** — deploy-prod.sh, все 16 сервисов online
+- **Итого:** 1 коммит. v1.1.58 (browser leak fix)
+
+### Playwright memory leak — архитектура
+- `parse-handler.ts` Phase 2: один `chromium.launch()` на всю фазу
+- `fetchDetails(url, sharedBrowser)` — парсеры принимают общий browser
+- Fallback: если shared browser не запустился — каждый парсер свой
+- **Критично:** browser.close() ВСЕГДА в finally — иначе zombie процессы растут после каждого pipeline run
+- На проде 7.4GB RAM — 2-3 утечки и OOM
+
 ## Session handoff (v1.1.58)
 **Сделано в сессии 14 июля 2026 (полный аудит парсеров):**
 - ✅ **parse-handler fix** — `Object.assign(prop, details)` → мерждим только non-null/non-undefined. fetchDetails больше не перезаписывает Phase 1 данные undefined'ами
