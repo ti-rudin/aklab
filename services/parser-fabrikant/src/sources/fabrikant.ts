@@ -77,24 +77,7 @@ export class FabrikantParser implements SourceParser {
         try {
           await page.waitForSelector('[data-slot="card"][data-id]', { timeout: 15000 });
         } catch {
-          logger.warn(`[fabrikant] waitForSelector TIMEOUT for ${url}`);
           await page.waitForTimeout(5000);
-        }
-
-        // DEBUG: проверяем что видит браузер
-        const debugCards = await page.evaluate(() => {
-          const cards = document.querySelectorAll('[data-slot="card"][data-id]');
-          return Array.from(cards).slice(0, 5).map(el => {
-            const anchor = el.querySelector('[data-slot="anchor"]');
-            return {
-              id: el.getAttribute('data-id'),
-              title: (anchor?.textContent?.trim() || '').slice(0, 120),
-            };
-          });
-        });
-        logger.info(`[fabrikant] DEBUG: ${debugCards.length} cards sample:`);
-        for (const c of debugCards) {
-          logger.info(`[fabrikant] DEBUG card ${c.id}: "${c.title}"`);
         }
 
         const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {
