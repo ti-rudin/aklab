@@ -179,6 +179,13 @@ export class FabrikantParser implements SourceParser {
 
         // Пагинация кликом: ищем кнопку следующей страницы
         const nextpageNum = pageNum + 1;
+        // Ждём появления пагинации (rc-pagination)
+        try {
+          await page.waitForSelector('.rc-pagination', { timeout: 5000 });
+        } catch {
+          logger.info(`[fabrikant] No pagination found — stopping`);
+          break;
+        }
         const nextBtn = await page.$(`.rc-pagination-item-${nextpageNum} a`);
         if (!nextBtn) {
           logger.info(`[fabrikant] No page ${nextpageNum} button — stopping`);
