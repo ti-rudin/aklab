@@ -1,5 +1,24 @@
 [
   {
+    "version": "v1.1.59",
+    "date": "15 июля 2026",
+    "time": "11:42",
+    "items": [
+      {
+        "text": "V1.1.59 — sharedContext, cron simplification, gotchas #77-78",
+        "type": "improvement"
+      },
+      {
+        "text": "Page/context leak в fetchDetails + упрощение кронов",
+        "type": "fix"
+      },
+      {
+        "text": "Session wrap-up — Playwright browser leak gotcha #76, sessions.md update",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.58",
     "date": "15 июля 2026",
     "time": "06:09",
