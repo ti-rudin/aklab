@@ -152,13 +152,27 @@ export class SberbankAstParser implements SourceParser {
 
         // AJAX pagination — кликаем "следующая"
         const nextBtn = page.locator('span.pager-button.pagerElem').filter({ hasText: '›' }).first();
-        if (await nextBtn.count() > 0) {
+        const btnCount = await nextBtn.count();
+        if (btnCount > 0) {
           try {
+            const isVisible = await nextBtn.isVisible();
+            logger.info(`[sberbank-ast] Next page button found (visible: ${isVisible})`);
+            if (!isVisible) {
+              await page.evaluate(() => {
+                const btn = document.querySelector('span.pager-button.pagerElem');
+                if (btn) (btn as HTMLElement).scrollIntoView();
+              });
+              await page.waitForTimeout(1000);
+            }
             await nextBtn.click();
             await randomDelay(2000, 5000);
             await page.waitForTimeout(3000);
-          } catch { break; }
+          } catch (e: any) {
+            logger.warn(`[sberbank-ast] Pagination click failed: ${e.message}`);
+            break;
+          }
         } else {
+          logger.info(`[sberbank-ast] No next page button — stopping after ${pageNum} pages`);
           break;
         }
       }

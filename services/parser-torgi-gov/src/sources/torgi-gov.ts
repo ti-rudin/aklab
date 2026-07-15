@@ -219,18 +219,22 @@ export class TorgiGovParser implements SourceParser {
         pageNewCount++;
       }
 
-      // Ранний выход: если 3 страницы подряд без свежих объектов — дальше только старые
+      // Ранний выход: если 10 страниц подряд без свежих объектов — дальше только старые
       if (pageNewCount === 0) {
         consecutiveOld++;
-        if (consecutiveOld >= 3) {
-          logger.info(`[torgi-gov] 3 consecutive pages with no recent items — stopping`);
+        if (consecutiveOld >= 10) {
+          logger.info(`[torgi-gov] 10 consecutive pages with no recent items — stopping`);
           break;
         }
       } else {
         consecutiveOld = 0;
       }
 
-      if (page >= data.totalPages - 1 || items.length < 10) break;
+      if (page >= data.totalPages - 1) break;
+      if (items.length < 10) {
+        logger.info(`[torgi-gov] Page ${page}: only ${items.length} items (less than 10) — last page`);
+        break;
+      }
     }
 
     logger.info(`[torgi-gov] Query "${query}": ${results.length} properties`);
