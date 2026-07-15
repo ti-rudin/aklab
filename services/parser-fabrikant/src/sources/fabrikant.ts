@@ -73,7 +73,12 @@ export class FabrikantParser implements SourceParser {
         }
 
         await retryGoto(page, url, 3);
-        await page.waitForTimeout(3000);
+        // Ждём появления карточек (Next.js SSR hydration может быть медленной)
+        try {
+          await page.waitForSelector('[data-slot="card"][data-id]', { timeout: 15000 });
+        } catch {
+          await page.waitForTimeout(5000);
+        }
 
         const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {
           const results: Array<{
