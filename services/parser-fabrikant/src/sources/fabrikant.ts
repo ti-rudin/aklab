@@ -186,8 +186,8 @@ export class FabrikantParser implements SourceParser {
         }
 
         // Запоминаем ID текущих карточек, чтобы дождаться смены
-        const oldIds = await page.evaluate(() =>
-          Array.from(document.querySelectorAll('[data-slot="card"][data-id]')).map(el => el.getAttribute('data-id'))
+        const oldFirstId = await page.evaluate(() =>
+          document.querySelector('[data-slot="card"][data-id]')?.getAttribute('data-id') || ''
         );
 
         await nextBtn.click();
@@ -195,10 +195,10 @@ export class FabrikantParser implements SourceParser {
 
         // Ждём пока карточки изменятся (макс 15 сек)
         try {
-          await page.waitForFunction((prevIds: string[]) => {
-            const current = Array.from(document.querySelectorAll('[data-slot="card"][data-id]')).map(el => el.getAttribute('data-id'));
-            return current.length > 0 && current[0] !== prevIds[0];
-          }, oldIds, { timeout: 15000 });
+          await page.waitForFunction((prevId: string) => {
+            const current = document.querySelector('[data-slot="card"][data-id]')?.getAttribute('data-id') || '';
+            return current.length > 0 && current !== prevId;
+          }, oldFirstId, { timeout: 15000 });
         } catch {
           // Если карточки не изменились —可能是 последняя страница
           logger.info(`[fabrikant] Cards didn't change after click — stopping`);
