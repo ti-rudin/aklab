@@ -197,83 +197,86 @@ export function createParseHandler(parser: SourceParser) {
           }
         }
 
-        // Обрабатываем каждый объект: fetchDetails → createProperty
-        for (const prop of newProperties) {
-          try {
-            // Загрузка детальной страницы (если парсер поддерживает)
-            if (parser.fetchDetails) {
-              try {
-                const details = await parser.fetchDetails(prop.url, sharedBrowser);
-                if (details && Object.keys(details).length > 0) {
-                  // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
-                  for (const [key, value] of Object.entries(details)) {
-                    if (value !== undefined && value !== null) {
-                      (prop as any)[key] = value;
+        try {
+          // Обрабатываем каждый объект: fetchDetails → createProperty
+          for (const prop of newProperties) {
+            try {
+              // Загрузка детальной страницы (если парсер поддерживает)
+              if (parser.fetchDetails) {
+                try {
+                  const details = await parser.fetchDetails(prop.url, sharedBrowser);
+                  if (details && Object.keys(details).length > 0) {
+                    // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
+                    for (const [key, value] of Object.entries(details)) {
+                      if (value !== undefined && value !== null) {
+                        (prop as any)[key] = value;
+                      }
+                    }
+                    // Пересчитываем город ТОЛЬКО если он ещё не определён (other).
+                    // Не перезаписываем правильно определённый город (torgi-gov regionCode, alfalot region).
+                    if (prop.city === 'other' && details.address) {
+                      prop.city = detectCity(details.address + ' ' + (prop.title || ''));
+                    }
+                    // Fallback: если город всё ещё "other", ищем во всём доступном тексте
+                    if (prop.city === 'other') {
+                      const searchText = [prop.title, prop.address].filter(Boolean).join(' ');
+                      prop.city = detectCity(searchText);
+                    }
+                    detailsFetched++;
+                    console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
+                    // Промежуточное обновление для UI
+                    if (req.documentId) {
+                      updateSourceStats(req.documentId, {
+                        total_details_fetched: detailsFetched,
+                      }).catch(() => {});
                     }
                   }
-                  // Пересчитываем город ТОЛЬКО если он ещё не определён (other).
-                  // Не перезаписываем правильно определённый город (torgi-gov regionCode, alfalot region).
-                  if (prop.city === 'other' && details.address) {
-                    prop.city = detectCity(details.address + ' ' + (prop.title || ''));
-                  }
-                  // Fallback: если город всё ещё "other", ищем во всём доступном тексте
-                  if (prop.city === 'other') {
-                    const searchText = [prop.title, prop.address].filter(Boolean).join(' ');
-                    prop.city = detectCity(searchText);
-                  }
-                  detailsFetched++;
-                  console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
-                  // Промежуточное обновление для UI
-                  if (req.documentId) {
-                    updateSourceStats(req.documentId, {
-                      total_details_fetched: detailsFetched,
-                    }).catch(() => {});
-                  }
+                } catch (err: any) {
+                  logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
                 }
-              } catch (err: any) {
-                logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
+                // Антибан: пауза между детальными страницами (2-5 сек)
+                await randomDelay(2000, 5000);
               }
-              // Антибан: пауза между детальными страницами (2-5 сек)
-              await randomDelay(2000, 5000);
-            }
 
-            // Создание объекта в Strapi
-            const result = await createProperty({
-              source: req.source,
-              external_id: prop.external_id,
-              url: prop.url,
-              title: prop.title,
-              address: prop.address,
-              city: prop.city,
-              area_sqm: prop.area_sqm,
-              price: prop.price,
-              minimum_price: prop.minimum_price,
-              price_per_sqm: prop.price_per_sqm,
-              property_type: prop.property_type,
-              auction_type: prop.auction_type,
-              published_at_source: prop.published_at,
-              description: prop.description,
-              contacts: prop.contacts,
-              latitude: prop.latitude,
-              longitude: prop.longitude,
-              rules: req.rules,
-            });
-            if (result) created++;
-            else {
-              filtered++;
-              if (filtered <= 5 || filtered % 50 === 0) {
-                console.log(`[parse-handler:${req.source}] FILTERED #${filtered}: ${prop.external_id}`);
+              // Создание объекта в Strapi
+              const result = await createProperty({
+                source: req.source,
+                external_id: prop.external_id,
+                url: prop.url,
+                title: prop.title,
+                address: prop.address,
+                city: prop.city,
+                area_sqm: prop.area_sqm,
+                price: prop.price,
+                minimum_price: prop.minimum_price,
+                price_per_sqm: prop.price_per_sqm,
+                property_type: prop.property_type,
+                auction_type: prop.auction_type,
+                published_at_source: prop.published_at,
+                description: prop.description,
+                contacts: prop.contacts,
+                latitude: prop.latitude,
+                longitude: prop.longitude,
+                rules: req.rules,
+              });
+              if (result) created++;
+              else {
+                filtered++;
+                if (filtered <= 5 || filtered % 50 === 0) {
+                  console.log(`[parse-handler:${req.source}] FILTERED #${filtered}: ${prop.external_id}`);
+                }
               }
+            } catch (err: any) {
+              logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
             }
-          } catch (err: any) {
-            logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
           }
-        }
-
-        // Закрываем shared browser
-        if (sharedBrowser) {
-          try { await sharedBrowser.close(); } catch {}
-          console.log(`[parse-handler:${req.source}] Shared browser closed`);
+        } finally {
+          // ВАЖНО: закрываем browser в finally — гарантия освобождения памяти
+          // даже при неожиданном исключении в цикле
+          if (sharedBrowser) {
+            try { await sharedBrowser.close(); } catch {}
+            console.log(`[parse-handler:${req.source}] Shared browser closed`);
+          }
         }
 
         console.log(`[parse-handler:${req.source}] DETAILS DONE: created=${created} filtered=${filtered} details=${detailsFetched}/${detailsNeeded}`);
