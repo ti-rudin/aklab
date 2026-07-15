@@ -42,6 +42,7 @@ export class RoseltorgParser implements SourceParser {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
+      const seenIds = new Set<string>();
 
       for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         const url = pageNum === 1 ? SEARCH_URL : `${SEARCH_URL}&page=${pageNum}`;
@@ -148,8 +149,12 @@ export class RoseltorgParser implements SourceParser {
           const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
           const address = addrMatch ? addrMatch[0].trim() : '';
 
+          const extId = `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`;
+          if (seenIds.has(extId)) continue;
+          seenIds.add(extId);
+
           allProperties.push({
-            external_id: `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`,
+            external_id: extId,
             url: fullLink,
             title: card.title,
             address,

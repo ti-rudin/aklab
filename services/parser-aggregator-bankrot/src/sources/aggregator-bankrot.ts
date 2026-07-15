@@ -78,6 +78,7 @@ export class AggregatorBankrotParser implements SourceParser {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
+      const seenIds = new Set<string>();
 
       const ITEMS_PER_PAGE = 27;
       const DEFAULT_MAX_PAGES = 10;
@@ -148,8 +149,12 @@ export class AggregatorBankrotParser implements SourceParser {
           const price = parsePrice(card.price_text);
           const address = card.excerpt.match(/(?:адрес|ул\.|ул\s|город|г\.|пос\.|дер\.)[^,]*/i)?.[0]?.trim() || '';
 
+          const extId = `aggregator-bankrot-${card.lot_id}`;
+          if (seenIds.has(extId)) continue;
+          seenIds.add(extId);
+
           allProperties.push({
-            external_id: `aggregator-bankrot-${card.lot_id}`,
+            external_id: extId,
             url: card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`,
             title: card.title,
             address,

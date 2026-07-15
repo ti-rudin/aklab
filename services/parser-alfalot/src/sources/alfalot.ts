@@ -37,6 +37,7 @@ export class AlfalotParser implements SourceParser {
       const context = await createStealthContext(browser);
       const page = await context.newPage();
       const allProperties: ParsedProperty[] = [];
+      const seenIds = new Set<string>();
 
       const ITEMS_PER_PAGE = 12;
       const maxPages = depth ? Math.ceil(depth / ITEMS_PER_PAGE) : MAX_PAGES;
@@ -116,8 +117,11 @@ export class AlfalotParser implements SourceParser {
           const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
 
           const parts = [card.title, card.object_type, card.lot_number].filter(Boolean);
+          const extId = `alfalot-${card.lot_id}`;
+          if (seenIds.has(extId)) continue;
+          seenIds.add(extId);
           allProperties.push({
-            external_id: `alfalot-${card.lot_id}`,
+            external_id: extId,
             url: fullLink,
             title: card.title,
             address: card.region,
