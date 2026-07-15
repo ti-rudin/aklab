@@ -82,16 +82,19 @@ export class FabrikantParser implements SourceParser {
         }
 
         // DEBUG: проверяем что видит браузер
-        const debugInfo = await page.evaluate(() => ({
-          bodyLen: document.body.innerText.length,
-          cardCount: document.querySelectorAll('[data-slot="card"][data-id]').length,
-          allSlotCount: document.querySelectorAll('[data-slot]').length,
-          url: window.location.href,
-          snippet: document.body.innerText.slice(0, 200),
-        }));
-        logger.info(`[fabrikant] DEBUG: bodyLen=${debugInfo.bodyLen} cards=${debugInfo.cardCount} slots=${debugInfo.allSlotCount} url=${debugInfo.url}`);
-        if (debugInfo.cardCount === 0) {
-          logger.warn(`[fabrikant] DEBUG snippet: ${debugInfo.snippet.slice(0, 150)}`);
+        const debugCards = await page.evaluate(() => {
+          const cards = document.querySelectorAll('[data-slot="card"][data-id]');
+          return Array.from(cards).slice(0, 5).map(el => {
+            const anchor = el.querySelector('[data-slot="anchor"]');
+            return {
+              id: el.getAttribute('data-id'),
+              title: (anchor?.textContent?.trim() || '').slice(0, 120),
+            };
+          });
+        });
+        logger.info(`[fabrikant] DEBUG: ${debugCards.length} cards sample:`);
+        for (const c of debugCards) {
+          logger.info(`[fabrikant] DEBUG card ${c.id}: "${c.title}"`);
         }
 
         const pageProperties = await page.evaluate((args: { kw: string[]; exclude: string[]; cutoff: number }) => {
