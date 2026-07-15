@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.58",
+    "date": "15 июля 2026",
+    "time": "06:09",
+    "items": [
+      {
+        "text": "Browser.close() в finally блоке — предотвращение утечки памяти Playwright",
+        "type": "fix"
+      }
+    ]
+  },
+  {
     "version": "v1.1.57",
     "date": "15 июля 2026",
     "time": "01:16",
