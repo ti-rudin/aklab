@@ -2,6 +2,22 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.59 — page/context leak + cron simplification)
+**Сделано в сессии 15 июля 2026 (Playwright page leak fix + cron rewrite):**
+- ✅ **Playwright page/context leak** — v1.1.58 закрывал browser в finally, но каждый fetchDetails создавал page+context из browser без закрытия. На проде: 1545 pages+contexts → 198 zombie chrome → 7GB RAM → OOM. FIX: parse-handler создаёт `sharedContext` один раз для Phase 2, передаёт его парсерам. Каждый парсер: `page = await context.newPage()` → `finally { page.close() }`
+- ✅ **sharedContext pattern** — parse-handler: `sharedBrowser.launch()` → `sharedContext = browser.newPage().context()` (или `browser.newContext()`). Парсеры получают context вместо browser. Standalone fallback: парсер создаёт свой browser+context и закрывает оба
+- ✅ **6 парсеров обновлены** — alfalot, etprf, m-ets, fabrikant, roseltorg, aggregator-bankrot: fetchDetails принимает context, создаёт page, закрывает page в finally
+- ✅ **Cron simplification** — удалено 10 per-source parse crons (Source.schedule), analyze cron (08:00), digest:morning cron. Один `pipeline:daily` — проверяет каждый час, запускается в digest_time, mode='full'. `rescheduleSource` = no-op. Оставлен `cleanup:old` (03:00)
+- ✅ **583 тестов passing** — cron-registration.test.ts обновлён
+- **Итого:** pending deploy. v1.1.59 (page leak fix + cron simplification)
+
+### Playwright architecture (v1.1.59)
+- parse-handler Phase 2: `sharedBrowser.launch()` → `sharedContext = await browser.newContext()` → передаётся в fetchDetails
+- Каждый fetchDetails: `page = await context.newPage()` → работа → `finally { page.close() }`
+- parse-handler finally: `await sharedContext.close()` → `await sharedBrowser.close()`
+- Standalone mode (без sharedContext): парсер создаёт browser+context, закрывает оба в finally
+- **Правило:** page.close() в finally каждого fetchDetails. context.close() в finally parse-handler. browser.close() в finally parse-handler.
+
 ## Session handoff (v1.1.58 — browser leak fix)
 **Сделано в сессии 15 июля 2026 (Playwright memory leak + avtopoliv cleanup):**
 - ✅ **Playwright zombie processes** — на aklab-prod (213) обнаружено 211 chrome-headless-shell процессов (6.1GB RSS из 7.4GB RAM). Причина: `sharedBrowser.close()` в parse-handler.ts был НЕ в finally блоке — при падении Phase 2 браузер не закрывался
