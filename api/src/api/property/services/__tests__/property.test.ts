@@ -49,7 +49,28 @@ describe('property service', () => {
       strapi._repository.create.mockResolvedValue(created);
 
       await expect(service.upsertByIdentity(payload)).resolves.toEqual({ property: created, created: true });
-      expect(strapi._repository.create).toHaveBeenCalledWith({ data: payload });
+      expect(strapi._repository.create).toHaveBeenCalledWith({
+        data: { ...payload, tags: JSON.stringify([]) },
+      });
+    });
+
+    it('serializes JSON fields for the low-level SQLite query builder', async () => {
+      const created = { id: 43, documentId: 'doc-43' };
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue(created);
+
+      await service.upsertByIdentity({
+        ...payload,
+        photo_urls: ['https://example.test/photo.jpg'],
+      });
+
+      expect(strapi._repository.create).toHaveBeenCalledWith({
+        data: {
+          ...payload,
+          photo_urls: JSON.stringify(['https://example.test/photo.jpg']),
+          tags: JSON.stringify([]),
+        },
+      });
     });
 
     it('returns an existing property without creating a duplicate', async () => {
