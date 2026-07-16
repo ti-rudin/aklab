@@ -1,5 +1,44 @@
 [
   {
+    "version": "v1.1.71",
+    "date": "16 июля 2026",
+    "time": "23:36",
+    "items": [
+      {
+        "text": "Добавить план технических улучшений",
+        "type": "improvement"
+      },
+      {
+        "text": "Проверять scan artifact между фазами pipeline",
+        "type": "fix"
+      },
+      {
+        "text": "Scan phase сохраняет атомарный manifest с версией схемы, run/source binding, счётчиками и SHA-256 checksum;",
+        "type": "improvement"
+      },
+      {
+        "text": "Details phase отклоняет отсутствующий, устаревший или повреждённый artifact как permanent failure;",
+        "type": "improvement"
+      },
+      {
+        "text": "Phase 2 восстанавливает totals/pre-filter counters из manifest;",
+        "type": "improvement"
+      },
+      {
+        "text": "Добавлен `docs/plancodexsol.md` — план технических улучшений, по которому ведётся текущая работа.",
+        "type": "new"
+      },
+      {
+        "text": "обработчик парсинга",
+        "type": "improvement"
+      },
+      {
+        "text": "`cd services/_shared && npm run build` — passed.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.70",
     "date": "16 июля 2026",
     "time": "15:41",
