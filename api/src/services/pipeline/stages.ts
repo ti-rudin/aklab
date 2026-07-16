@@ -6,6 +6,7 @@
 import type { Job } from '@aklab/sqlite-queue';
 import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
+import { createParserRunTelemetry } from '../parser-run-telemetry';
 import { scorePropertiesBatch } from '../focusEngine';
 import { buildParseRules } from '../parseRules';
 import type { RunOptions } from './state';
@@ -17,6 +18,7 @@ export interface PipelineContext {
   /** Marks this run cancelling and requests cooperative cancellation once per job. */
   requestCancellation(jobIds: number[], message: string): Promise<void>;
   getRunId(): string;
+  getParserRunId(): number;
   recordJobIds(ids: number[]): Promise<void>;
   getSourceStats(slugs: string[]): Promise<any[]>;
 }
@@ -118,6 +120,35 @@ function sumResult(jobs: Job[], field: string): number {
     .reduce((total, job) => total + (Number((job.result as any)?.[field]) || 0), 0);
 }
 
+async function reconcileQueueFailures(
+  ctx: PipelineContext,
+  telemetry: ReturnType<typeof createParserRunTelemetry>,
+  runId: string,
+  stage: 'scan' | 'details',
+  jobs: Array<{ slug: string; id: number }>,
+  terminalJobs: Job[],
+): Promise<void> {
+  const slugByJobId = new Map(jobs.map(job => [job.id, job.slug]));
+  for (const job of terminalJobs) {
+    if (job.status !== 'failed') continue;
+    const sourceSlug = slugByJobId.get(job.id);
+    if (!sourceSlug) continue;
+    const errorMessage = job.error || 'Queue job failed after worker completion';
+    try {
+      await telemetry.reconcileSourceStageQueueFailure({
+        runId,
+        sourceSlug,
+        stage,
+        jobId: job.id,
+        cancelled: /cancel(?:led|ed|lation)/i.test(errorMessage),
+        errorMessage,
+      });
+    } catch (error: any) {
+      ctx.strapi.log.error(`[pipeline] Cannot reconcile ${stage} telemetry job ${job.id}: ${error?.message || error}`);
+    }
+  }
+}
+
 // ── Parse ───────────────────────────────────────────────────────────────────
 
 export async function parseAll(ctx: PipelineContext, depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
@@ -145,24 +176,6 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
     objects_created: 0,
   }, `Фаза 1: сканирование... (0/${total})`);
 
-  const resetData = {
-    total_details_fetched: 0,
-    total_details_needed: 0,
-    total_found: 0,
-    total_created: 0,
-    last_parse_status: null,
-    last_parse_error: null,
-  };
-  for (const source of sources) {
-    if (ctx.isCancelled()) break;
-    try {
-      await ctx.strapi.db.query('api::source.source').update({
-        where: { documentId: (source as any).documentId },
-        data: resetData,
-      });
-    } catch { /* Source progress is informational, queue result is authoritative. */ }
-  }
-
   const settings = await ctx.strapi.db.query('api::setting.setting').findOne({});
   const rules = buildParseRules(settings);
   if (filters?.priceFrom != null) rules.priceFrom = filters.priceFrom;
@@ -170,9 +183,18 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
   if (filters?.city?.length) rules.cities = filters.city;
 
   const scanJobs: Array<{ slug: string; id: number }> = [];
+  const telemetry = createParserRunTelemetry(ctx.strapi);
+  const parserRunId = ctx.getParserRunId();
   for (const source of sources) {
     if (ctx.isCancelled()) break;
     const src = source as any;
+    await telemetry.ensureSourceStage({
+      runId,
+      sourceSlug: src.slug,
+      stage: 'scan',
+      parserRunId,
+      sourceId: src.id,
+    });
     const job = qs.addToQueue(`parse-${src.slug}`, {
       source: src.slug,
       sourceId: src.id,
@@ -181,10 +203,12 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       rules,
       correlationId: scanArtifactId,
       phase: 'scan',
+      telemetryIdentityKey: `${runId}:${src.slug}:scan`,
     }, {
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${src.slug}:scan`,
     });
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: src.slug, stage: 'scan', jobId: job.id });
     scanJobs.push({ slug: src.slug, id: job.id });
     // Persist the returned id before enqueueing another source; cancel can now be exact.
     await ctx.recordJobIds([job.id]);
@@ -197,6 +221,7 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       sources_done: done,
     }, `Фаза 1: сканирование... (${done}/${total})`);
   });
+  await reconcileQueueFailures(ctx, telemetry, runId, 'scan', scanJobs, scanWait.jobs);
   errors.push(...scanWait.errors);
 
   if (ctx.isCancelled() || scanWait.timedOut) return { created: 0, errors };
@@ -209,10 +234,10 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
     return { created: 0, errors };
   }
 
-  // Source counters remain UI metrics only. They never decide phase completion.
-  const scanStats = await ctx.getSourceStats(completedScanSlugs);
-  const totalFound = scanStats.reduce((sum, source: any) => sum + (Number(source.total_found) || 0), 0);
-  const totalDetailsNeeded = scanStats.reduce((sum, source: any) => sum + (Number(source.total_details_needed) || 0), 0);
+  // Telemetry is derived only from terminal jobs of this run; Source is health summary only.
+  const completedScanJobs = scanWait.jobs.filter(job => job.status === 'completed');
+  const totalFound = sumResult(completedScanJobs, 'total');
+  const totalDetailsNeeded = sumResult(completedScanJobs, 'detailsNeeded');
   await updateState(ctx.strapi, {
     stage: 'parsing_scan_done',
     sources_done: scanJobs.length,
@@ -224,6 +249,13 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
   for (const slug of completedScanSlugs) {
     if (ctx.isCancelled()) break;
     const src = sources.find((source: any) => source.slug === slug) as any;
+    await telemetry.ensureSourceStage({
+      runId,
+      sourceSlug: slug,
+      stage: 'details',
+      parserRunId,
+      sourceId: src.id,
+    });
     const job = qs.addToQueue(`parse-${slug}`, {
       source: slug,
       sourceId: src.id,
@@ -232,10 +264,12 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       rules,
       correlationId: scanArtifactId,
       phase: 'details',
+      telemetryIdentityKey: `${runId}:${slug}:details`,
     }, {
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${slug}:details`,
     });
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: slug, stage: 'details', jobId: job.id });
     detailJobs.push({ slug, id: job.id });
     await ctx.recordJobIds([job.id]);
   }
@@ -250,6 +284,7 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       objects_created: sumResult(completed, 'created'),
     }, `Фаза 2: ${sumResult(completed, 'detailsFetched')}/${totalDetailsNeeded} деталей, ${sumResult(completed, 'created')} создано`);
   });
+  await reconcileQueueFailures(ctx, telemetry, runId, 'details', detailJobs, detailWait.jobs);
   errors.push(...detailWait.errors);
 
   const created = sumResult(detailWait.jobs, 'created');

@@ -367,6 +367,48 @@ export async function logCron(entry: {
   }
 }
 
+export type ParserRunSourceCounters = {
+  listed: number;
+  eligible: number;
+  existing: number;
+  pre_filtered: number;
+  details_attempted: number;
+  details_ok: number;
+  created: number;
+  skipped: number;
+  failed: number;
+};
+
+export async function markParserRunSourceStageRunning(identityKey: string, jobId: number): Promise<void> {
+  const res = await fetch(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/running`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ data: { job_id: jobId } }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`markParserRunSourceStageRunning failed (${res.status}): ${body}`);
+  }
+}
+
+export async function finishParserRunSourceStage(identityKey: string, payload: {
+  job_id: number;
+  status: 'success' | 'success_empty' | 'degraded' | 'blocked' | 'schema_changed' | 'failed' | 'cancelled';
+  counters: ParserRunSourceCounters;
+  error_class?: 'transient' | 'rate_limited' | 'blocked' | 'schema_changed' | 'permanent' | 'cancelled';
+  error_message?: string;
+}): Promise<void> {
+  const res = await fetch(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/terminal`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ data: payload }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`finishParserRunSourceStage failed (${res.status}): ${body}`);
+  }
+}
+
 /**
  * Получить Property по documentId (для analyzer).
  */

@@ -45,4 +45,6 @@ export interface ParseResult {
   filtered: number;
   total: number;
   detailsFetched: number;
+  /** Количество объектов, которым текущий run назначил Phase 2. */
+  detailsNeeded: number;
 }

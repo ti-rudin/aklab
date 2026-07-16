@@ -3,6 +3,7 @@ import cronRoutes from '../cron/routes/cron';
 import cronLogRoutes from '../cron-log/routes/cron-log';
 import marketReferenceRoutes from '../market-reference/routes/market-reference';
 import pipelineRoutes from '../pipeline/routes/pipeline';
+import parserRunSourceRoutes from '../parser-run-source/routes/parser-run-source';
 import propertyRoutes from '../property/routes/property';
 import settingRoutes from '../setting/routes/setting';
 import sourceRoutes from '../source/routes/source';
@@ -61,6 +62,10 @@ describe('auth boundary for UI mutations', () => {
     expect(getRoute(sourceRoutes, 'PUT', '/internal/sources/:id/stats').config)
       .toEqual({ auth: false, policies: ['global::service-token'] });
     expect(getRoute(cronLogRoutes, 'POST', '/internal/cron-logs').config)
+      .toEqual({ auth: false, policies: ['global::service-token'] });
+    expect(getRoute(parserRunSourceRoutes, 'PUT', '/internal/parser-run-sources/:identityKey/running').config)
+      .toEqual({ auth: false, policies: ['global::service-token'] });
+    expect(getRoute(parserRunSourceRoutes, 'PUT', '/internal/parser-run-sources/:identityKey/terminal').config)
       .toEqual({ auth: false, policies: ['global::service-token'] });
   });
 });

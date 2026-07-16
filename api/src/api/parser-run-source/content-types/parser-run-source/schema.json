@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "parser_run_sources",
+  "info": { "singularName": "parser-run-source", "pluralName": "parser-run-sources", "displayName": "Parser Run Source" },
+  "options": { "draftAndPublish": false },
+  "attributes": {
+    "identity_key": { "type": "string", "required": true, "unique": true },
+    "source_slug": { "type": "string", "required": true },
+    "stage": { "type": "enumeration", "enum": ["scan", "details"], "required": true },
+    "job_id": { "type": "integer" },
+    "status": { "type": "enumeration", "enum": ["queued", "running", "success", "success_empty", "degraded", "blocked", "schema_changed", "failed", "cancelled"], "required": true, "default": "queued" },
+    "listed": { "type": "integer", "default": 0, "min": 0 }, "eligible": { "type": "integer", "default": 0, "min": 0 }, "existing": { "type": "integer", "default": 0, "min": 0 }, "pre_filtered": { "type": "integer", "default": 0, "min": 0 }, "details_attempted": { "type": "integer", "default": 0, "min": 0 }, "details_ok": { "type": "integer", "default": 0, "min": 0 }, "created": { "type": "integer", "default": 0, "min": 0 }, "skipped": { "type": "integer", "default": 0, "min": 0 }, "failed": { "type": "integer", "default": 0, "min": 0 },
+    "started_at": { "type": "datetime" }, "heartbeat_at": { "type": "datetime" }, "finished_at": { "type": "datetime" },
+    "error_class": { "type": "enumeration", "enum": ["transient", "rate_limited", "blocked", "schema_changed", "permanent", "cancelled"] }, "error_message": { "type": "text" },
+    "parser_run": { "type": "relation", "relation": "manyToOne", "target": "api::parser-run.parser-run" },
+    "source": { "type": "relation", "relation": "manyToOne", "target": "api::source.source" }
+  }
+}
