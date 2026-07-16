@@ -29,19 +29,19 @@ export default {
       method: 'POST' as const,
       path: '/sources',
       handler: 'api::source.source.create',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'PUT' as const,
       path: '/sources/:id',
       handler: 'api::source.source.update',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'DELETE' as const,
       path: '/sources/:id',
       handler: 'api::source.source.delete',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
   ],
 };

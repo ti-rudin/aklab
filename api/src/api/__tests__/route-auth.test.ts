@@ -47,7 +47,10 @@ describe('auth boundary for UI mutations', () => {
   ];
 
   it.each(uiMutations)('%s requires an authenticated user', (_name, routes, method, path) => {
-    expect(getRoute(routes, method, path).config).toEqual({ auth: {}, policies: [] });
+    expect(getRoute(routes, method, path).config).toEqual({
+      auth: false,
+      policies: ['global::authenticated-user'],
+    });
   });
 
   it('keeps parser-only writes behind the service token policy', () => {

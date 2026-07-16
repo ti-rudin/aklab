@@ -23,7 +23,7 @@ export default {
       method: 'POST',
       path: '/properties/clear-new',
       handler: 'property.clearNew',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'GET',
@@ -47,7 +47,7 @@ export default {
       method: 'POST',
       path: '/properties/:id/fetch-photos',
       handler: 'property.fetchPhotos',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'GET',
@@ -72,19 +72,19 @@ export default {
       method: 'POST',
       path: '/properties',
       handler: 'property.create',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'PUT',
       path: '/properties/:id',
       handler: 'property.update',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'DELETE',
       path: '/properties/:id',
       handler: 'property.delete',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
   ],
 };
