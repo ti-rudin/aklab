@@ -14,7 +14,8 @@
 
 import { PermanentError } from '@aklab/sqlite-queue';
 import type { Job, WorkerContext } from '@aklab/sqlite-queue';
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from 'fs';
+import { createHash, randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { SourceParser, ParseResult } from './types';
@@ -44,6 +45,77 @@ const SCAN_DIR = join(tmpdir(), 'aklab-scan');
 /** Путь к файлу с результатами сканирования. */
 function getScanFilePath(source: string, correlationId: string): string {
   return join(SCAN_DIR, `${source}-${correlationId}.json`);
+}
+
+const SCAN_ARTIFACT_SCHEMA_VERSION = 1;
+
+interface ScanArtifact {
+  schemaVersion: number;
+  runId: string;
+  source: string;
+  counters: {
+    listed: number;
+    eligible: number;
+    preFiltered: number;
+    detailsNeeded: number;
+  };
+  checksum: string;
+  items: unknown[];
+}
+
+function checksumItems(items: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(items)).digest('hex');
+}
+
+function writeScanArtifact(source: string, runId: string, counters: ScanArtifact['counters'], items: unknown[]): void {
+  mkdirSync(SCAN_DIR, { recursive: true });
+  const artifact: ScanArtifact = {
+    schemaVersion: SCAN_ARTIFACT_SCHEMA_VERSION,
+    runId,
+    source,
+    counters,
+    checksum: checksumItems(items),
+    items,
+  };
+  const target = getScanFilePath(source, runId);
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(artifact), 'utf-8');
+    renameSync(temporary, target);
+  } catch (error) {
+    try { unlinkSync(temporary); } catch {}
+    throw error;
+  }
+}
+
+function readScanArtifact(source: string, runId: string): ScanArtifact {
+  const scanFilePath = getScanFilePath(source, runId);
+  if (!existsSync(scanFilePath)) {
+    throw new PermanentError(`Scan artifact is missing for ${source} (${runId})`);
+  }
+
+  let artifact: unknown;
+  try {
+    artifact = JSON.parse(readFileSync(scanFilePath, 'utf-8'));
+  } catch (error: any) {
+    throw new PermanentError(`Scan artifact manifest is invalid for ${source}: ${error.message}`);
+  }
+
+  const candidate = artifact as Partial<ScanArtifact>;
+  if (
+    !candidate ||
+    candidate.schemaVersion !== SCAN_ARTIFACT_SCHEMA_VERSION ||
+    candidate.runId !== runId ||
+    candidate.source !== source ||
+    !Array.isArray(candidate.items) ||
+    typeof candidate.checksum !== 'string' ||
+    checksumItems(candidate.items) !== candidate.checksum
+  ) {
+    throw new PermanentError(`Scan artifact manifest is invalid for ${source} (${runId})`);
+  }
+
+  try { unlinkSync(scanFilePath); } catch {}
+  return candidate as ScanArtifact;
 }
 
 function throwIfCancellationRequested(workerContext?: WorkerContext): void {
@@ -143,16 +215,20 @@ export function createParseHandler(parser: SourceParser) {
         detailsNeeded = parser.fetchDetails ? newProperties.length : 0;
         console.log(`[parse-handler:${req.source}] SCAN DONE: total=${total} new=${newProperties.length} preFiltered=${preFiltered} detailsNeeded=${detailsNeeded}`);
 
-        // Сохраняем отфильтрованный список для Phase 2
+        // Сохраняем отфильтрованный список для Phase 2 как атомарный manifest.
         try {
           throwIfCancellationRequested(workerContext);
-          mkdirSync(SCAN_DIR, { recursive: true });
-          const scanFilePath = getScanFilePath(req.source, corrId);
-          writeFileSync(scanFilePath, JSON.stringify(newProperties), 'utf-8');
-          console.log(`[parse-handler:${req.source}] SCAN: saved to ${scanFilePath}`);
+          writeScanArtifact(req.source, corrId, {
+            listed: total,
+            eligible: newProperties.length,
+            preFiltered,
+            detailsNeeded,
+          }, newProperties);
+          console.log(`[parse-handler:${req.source}] SCAN: artifact saved for ${corrId}`);
         } catch (err: any) {
           if (isCancellationError(err)) throw err;
           logger.error(`Failed to save scan results: ${err.message}`, { correlationId: corrId });
+          throw new PermanentError(`Failed to write scan artifact for ${req.source}: ${err.message}`);
         }
 
         // Обновляем статистику источника (Phase 1 результат)
@@ -196,18 +272,11 @@ export function createParseHandler(parser: SourceParser) {
       // ═══════════════════════════════════════════════════════════════
       if (phase !== 'scan') {
         throwIfCancellationRequested(workerContext);
-        const scanFilePath = getScanFilePath(req.source, corrId);
-
-        // Читаем результаты Phase 1
-        let newProperties: any[];
-        if (!existsSync(scanFilePath)) {
-          console.log(`[parse-handler:${req.source}] DETAILS: no scan file, nothing to process`);
-          newProperties = [];
-        } else {
-          newProperties = JSON.parse(readFileSync(scanFilePath, 'utf-8'));
-          // Удаляем файл после чтения
-          try { unlinkSync(scanFilePath); } catch {}
-        }
+        const artifact = readScanArtifact(req.source, corrId);
+        const newProperties = artifact.items as any[];
+        total = artifact.counters.listed;
+        preFiltered = artifact.counters.preFiltered;
+        detailsNeeded = artifact.counters.detailsNeeded;
         throwIfCancellationRequested(workerContext);
 
         detailsNeeded = parser.fetchDetails ? newProperties.length : 0;
