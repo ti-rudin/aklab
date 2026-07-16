@@ -1,5 +1,36 @@
 [
   {
+    "version": "v1.1.69",
+    "date": "16 июля 2026",
+    "time": "15:19",
+    "items": [
+      {
+        "text": "Все оставшиеся UI mutating маршруты требуют JWT: pipeline, manual cron, Sources CRUD, Settings, Properties CRUD/clear/photo fetch, MarketReference и generic cron logs.",
+        "type": "improvement"
+      },
+      {
+        "text": "Internal parser aliases по-прежнему требуют только `global::service-token`; пользовательский JWT не является service credential.",
+        "type": "improvement"
+      },
+      {
+        "text": "`minimum_price` больше не заполняется обычной начальной ценой в alfalot, aggregator-bankrot, etprf и fabrikant; его подтверждённый источник — только m-ets.",
+        "type": "improvement"
+      },
+      {
+        "text": "Локально: `npm run test` — 32 suites / 664 tests passed.",
+        "type": "improvement"
+      },
+      {
+        "text": "Isolated dev server: 32 suites / 664 tests passed.",
+        "type": "improvement"
+      },
+      {
+        "text": "Сборки четырёх затронутых parser services — passed.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.68",
     "date": "16 июля 2026",
     "time": "14:58",
