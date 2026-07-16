@@ -6,6 +6,7 @@ import { getQueueService } from '../../../services/queueService';
 import { getPipelineService } from '../../../services/pipeline';
 import { scorePropertiesBatch } from '../../../services/focusEngine';
 import type { StrapiInstance } from '../../../types/strapi';
+import { randomUUID } from 'node:crypto';
 
 function getQueue() {
   return getQueueService();
@@ -18,7 +19,6 @@ export default {
       const { slug } = ctx.params;
       const depth = ctx.request.body?.depth ?? 20;
       const qs = getQueue();
-      const corrId = `manual-parse-${Date.now()}`;
 
       // Find source by slug
       const sources = await s.entityService.findMany('api::source.source', {
@@ -36,17 +36,41 @@ export default {
         return;
       }
 
-      qs.addToQueue(`parse-${slug}`, {
+      // A legacy single-source parse is not a pipeline subrun. It must not start
+      // while the persisted pipeline lifecycle owns parsing/analyze/digest work.
+      const pipeline = getPipelineService(s);
+      const pipelineState = await pipeline.getState();
+      if (pipelineState?.status !== 'idle') {
+        ctx.status = 409;
+        ctx.body = {
+          ok: false,
+          message: 'Нельзя запустить парсинг источника: pipeline уже выполняется или отменяется',
+        };
+        return;
+      }
+
+      // Without `phase`, the legacy parse handler performs scan and details in one
+      // job. Keep this key stable so concurrent manual requests reuse that live job.
+      const phase = 'full';
+      const corrId = `manual-parse-${Date.now()}-${randomUUID()}`;
+      const job = qs.addToQueue(`parse-${slug}`, {
         source: slug,
         sourceId: source.id,
         documentId: source.documentId,
         depth,
-      }, { correlationId: corrId });
+      }, {
+        correlationId: corrId,
+        idempotencyKey: `manual:${slug}:${phase}`,
+      });
+      const reused = Boolean(job.correlation_id && job.correlation_id !== corrId);
 
       ctx.body = {
         ok: true,
         message: `Parse job enqueued for ${slug}`,
         correlationId: corrId,
+        job_id: job.id,
+        jobId: job.id,
+        reused,
       };
     } catch (err: any) {
       strapi.log.error(`[cron] parseSource error: ${err.message}`);

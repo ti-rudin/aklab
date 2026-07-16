@@ -102,10 +102,45 @@ describe('cron controller', () => {
       expect(mockQueue.addToQueue).toHaveBeenCalledWith(
         'parse-tender',
         { source: 'tender', sourceId: 1, documentId: 'doc1', depth: 20 },
-        expect.objectContaining({ correlationId: expect.stringContaining('manual-parse-') }),
+        expect.objectContaining({
+          correlationId: expect.stringContaining('manual-parse-'),
+          idempotencyKey: 'manual:tender:full',
+        }),
       );
       expect(ctx.body.ok).toBe(true);
       expect(ctx.body.message).toContain('tender');
+      expect(ctx.body.job_id).toBe('job1');
+      expect(ctx.body.jobId).toBe('job1');
+      expect(ctx.body.reused).toBe(false);
+    });
+
+    it('should reject manual parse while the persisted pipeline lifecycle is non-idle', async () => {
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
+      mockStrapi.entityService.findMany.mockResolvedValue([source]);
+      mockPipeline.getState.mockResolvedValue({ status: 'cancelling' });
+
+      const ctx = makeCtx({ params: { slug: 'tender' } });
+      await cronController.parseSource(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual(expect.objectContaining({ ok: false }));
+      expect(mockQueue.addToQueue).not.toHaveBeenCalled();
+    });
+
+    it('should report when a concurrent manual request reuses the live job', async () => {
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
+      mockStrapi.entityService.findMany.mockResolvedValue([source]);
+      mockQueue.addToQueue.mockReturnValue({ id: 42, correlation_id: 'manual-parse-earlier-request' });
+
+      const ctx = makeCtx({ params: { slug: 'tender' } });
+      await cronController.parseSource(ctx);
+
+      expect(ctx.body).toEqual(expect.objectContaining({
+        ok: true,
+        job_id: 42,
+        jobId: 42,
+        reused: true,
+      }));
     });
 
     it('should call ctx.notFound when source does not exist', async () => {
