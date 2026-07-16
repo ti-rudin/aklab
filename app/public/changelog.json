@@ -1,5 +1,20 @@
 [
   {
+    "version": "v1.1.67",
+    "date": "16 июля 2026",
+    "time": "14:51",
+    "items": [
+      {
+        "text": "`npx vitest run api/src/policies/__tests__/service-token.test.ts`: 7/7 passed.",
+        "type": "improvement"
+      },
+      {
+        "text": "После merge нужен ручной production deploy и smoke curl без service token → 401.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.66",
     "date": "16 июля 2026",
     "time": "14:41",
