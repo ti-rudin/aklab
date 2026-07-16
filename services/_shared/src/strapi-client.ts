@@ -307,7 +307,7 @@ export async function updateSourceStats(documentId: string, data: {
     }
   }
 
-  const putRes = await fetch(`${BASE}/sources/${documentId}`, {
+  const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: updateData }),
@@ -324,7 +324,7 @@ export async function updateSourceStats(documentId: string, data: {
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
   console.log(`[strapi-client:reset] docId=${documentId} → resetting ALL counters to 0`);
   try {
-    const putRes = await fetch(`${BASE}/sources/${documentId}`, {
+    const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
       method: 'PUT',
       headers: HEADERS,
       body: JSON.stringify({ data: {
@@ -357,7 +357,7 @@ export async function logCron(entry: {
   error?: string;
 }): Promise<void> {
   try {
-    await fetch(`${BASE}/cron-logs`, {
+    await fetch(`${BASE}/internal/cron-logs`, {
       method: 'POST',
       headers: HEADERS,
       body: JSON.stringify({ data: entry }),
@@ -402,7 +402,7 @@ export async function fetchSetting(): Promise<any> {
  * Обновить Property по documentId (для analyzer).
  */
 export async function updateProperty(documentId: string, fields: Record<string, any>): Promise<void> {
-  const res = await fetch(`${BASE}/properties/${documentId}`, {
+  const res = await fetch(`${BASE}/internal/properties/${documentId}`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: fields }),

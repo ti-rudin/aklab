@@ -9,6 +9,12 @@ export default {
   routes: [
     // Custom routes (must come before core to avoid conflicts)
     {
+      method: 'PUT',
+      path: '/internal/properties/:id',
+      handler: 'property.internalUpdate',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
+    {
       method: 'POST',
       path: '/properties/upsert',
       handler: 'property.upsert',

@@ -35,6 +35,7 @@ import {
   propertyExists,
   createProperty,
   updateSourceStats,
+  resetSourceDetailsCounters,
   logCron,
   fetchProperty,
   findActiveMarketReference,
@@ -294,7 +295,7 @@ describe('updateSourceStats()', () => {
     vi.restoreAllMocks();
   });
 
-  test('sends PUT with status fields directly', async () => {
+  test('sends PUT with status fields to the internal source stats alias', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ data: {} })
     );
@@ -306,7 +307,7 @@ describe('updateSourceStats()', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // only PUT
     const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toBe(`${BASE}/sources/doc-abc`);
+    expect(url).toBe(`${BASE}/internal/sources/doc-abc/stats`);
     expect(opts.method).toBe('PUT');
 
     const body = JSON.parse(opts.body).data;
@@ -372,6 +373,34 @@ describe('updateSourceStats()', () => {
   });
 });
 
+// ─── resetSourceDetailsCounters ──────────────────────────────────────────────
+
+describe('resetSourceDetailsCounters()', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('sends its counter reset through the internal source stats alias', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ data: {} })
+    );
+
+    await resetSourceDetailsCounters('doc-abc');
+
+    const [url, opts] = fetchSpy.mock.calls[0] as [string, any];
+    expect(url).toBe(`${BASE}/internal/sources/doc-abc/stats`);
+    expect(opts!.method).toBe('PUT');
+    expect(JSON.parse(opts!.body).data).toEqual({
+      total_found: 0,
+      total_created: 0,
+      total_details_fetched: 0,
+      total_details_needed: 0,
+      last_parse_status: null,
+      last_parse_error: null,
+    });
+  });
+});
+
 // ─── logCron ────────────────────────────────────────────────────────────────
 
 describe('logCron()', () => {
@@ -392,7 +421,7 @@ describe('logCron()', () => {
     });
 
     const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe(`${BASE}/cron-logs`);
+    expect(url).toBe(`${BASE}/internal/cron-logs`);
     expect(opts.method).toBe('POST');
 
     const body = JSON.parse(opts.body).data;
@@ -515,7 +544,7 @@ describe('updateProperty()', () => {
     vi.restoreAllMocks();
   });
 
-  test('sends PUT with fields to property endpoint', async () => {
+  test('sends PUT with fields to the internal property alias', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ data: {} })
     );
@@ -523,7 +552,7 @@ describe('updateProperty()', () => {
     await updateProperty('doc-1', { is_undervalued: true, deviation_percent: -15 });
 
     const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toBe(`${BASE}/properties/doc-1`);
+    expect(url).toBe(`${BASE}/internal/properties/doc-1`);
     expect(opts.method).toBe('PUT');
 
     const body = JSON.parse(opts.body).data;

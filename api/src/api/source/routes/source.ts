@@ -4,6 +4,12 @@
  */
 export default {
   routes: [
+    {
+      method: 'PUT' as const,
+      path: '/internal/sources/:id/stats',
+      handler: 'api::source.source.internalUpdateStats',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
     // Custom health check (auth: false — публичный)
     {
       method: 'GET' as const,

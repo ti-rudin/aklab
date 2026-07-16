@@ -23,6 +23,7 @@ vi.mock('@strapi/strapi', () => ({
 import * as fs from 'fs/promises';
 import propertyControllerFactory from '../property';
 import { PropertyUpsertValidationError } from '../../services/property';
+import propertyRoutes from '../../routes/property';
 
 // Build a mock strapi instance (fresh per test)
 function makeStrapi() {
@@ -31,12 +32,14 @@ function makeStrapi() {
     clearNew: vi.fn(),
     upsertByIdentity: vi.fn(),
   };
+  const mockDbQuery = {
+    findMany: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn(),
+    update: vi.fn(),
+  };
   return {
     db: {
-      query: vi.fn().mockReturnValue({
-        findMany: vi.fn().mockResolvedValue([]),
-        deleteMany: vi.fn(),
-      }),
+      query: vi.fn().mockReturnValue(mockDbQuery),
       connection: {
         raw: vi.fn(),
       },
@@ -46,6 +49,7 @@ function makeStrapi() {
     },
     service: vi.fn().mockReturnValue(mockService),
     _mockService: mockService,
+    _mockDbQuery: mockDbQuery,
   };
 }
 
@@ -144,6 +148,42 @@ describe('property controller', () => {
 
       expect(ctx.status).toBe(400);
       expect(ctx.body).toEqual({ error: 'Field "status" is not accepted by parser upsert' });
+    });
+  });
+
+  describe('internalUpdate', () => {
+    it('updates only analyzer/photo-owned fields by documentId', async () => {
+      const fields = { is_undervalued: true, deviation_percent: 12.5, photos_downloaded: false };
+      const updated = { documentId: 'property-doc', ...fields };
+      strapi._mockDbQuery.update.mockResolvedValue(updated);
+      const ctx = makeCtx({ params: { id: 'property-doc' }, request: { body: { data: fields } } });
+
+      await actions.internalUpdate(ctx);
+
+      expect(strapi.db.query).toHaveBeenCalledWith('api::property.property');
+      expect(strapi._mockDbQuery.update).toHaveBeenCalledWith({
+        where: { documentId: 'property-doc' },
+        data: fields,
+      });
+      expect(ctx.body).toEqual({ data: updated });
+    });
+
+    it('rejects empty or non-allowlisted internal update payloads before writing', async () => {
+      const ctx = makeCtx({ params: { id: 'property-doc' }, request: { body: { data: {} } } });
+
+      await actions.internalUpdate(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(strapi._mockDbQuery.update).not.toHaveBeenCalled();
+
+      const protectedFieldCtx = makeCtx({
+        params: { id: 'property-doc' },
+        request: { body: { data: { status: 'rejected' } } },
+      });
+      await actions.internalUpdate(protectedFieldCtx);
+
+      expect(protectedFieldCtx.status).toBe(400);
+      expect(strapi._mockDbQuery.update).not.toHaveBeenCalled();
     });
   });
 
@@ -247,6 +287,7 @@ describe('property controller', () => {
         city: undefined,
         property_type: undefined,
         tags: undefined,
+        search: undefined,
         sort: '-focus_score',
         page: 1,
         pageSize: 20,
@@ -351,6 +392,17 @@ describe('property controller', () => {
       expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
         expect.objectContaining({ threshold: 0 })
       );
+    });
+  });
+});
+
+describe('property internal route', () => {
+  it('uses the service-token policy for the dedicated property write alias', () => {
+    expect(propertyRoutes.routes).toContainEqual({
+      method: 'PUT',
+      path: '/internal/properties/:id',
+      handler: 'property.internalUpdate',
+      config: { auth: false, policies: ['global::service-token'] },
     });
   });
 });
