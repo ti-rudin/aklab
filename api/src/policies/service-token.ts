@@ -1,11 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
+import { errors } from '@strapi/utils';
 
 type PolicyContext = {
   request?: {
     headers?: Record<string, string | string[] | undefined>;
   };
-  status: number;
-  body: unknown;
 };
 
 function requestHeader(ctx: PolicyContext, name: string): string {
@@ -54,7 +53,5 @@ export default async function serviceToken(ctx: PolicyContext): Promise<boolean>
     return true;
   }
 
-  ctx.status = 401;
-  ctx.body = { error: 'Unauthorized' };
-  return false;
+  throw new errors.UnauthorizedError('Unauthorized');
 }

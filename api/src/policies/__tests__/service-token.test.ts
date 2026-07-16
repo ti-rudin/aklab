@@ -1,4 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@strapi/utils', () => ({
+  errors: {
+    UnauthorizedError: class UnauthorizedError extends Error {
+      constructor(message = 'Unauthorized') {
+        super(message);
+        this.name = 'UnauthorizedError';
+      }
+    },
+  },
+}));
+
 import serviceToken from '../service-token';
 
 const TEST_TOKEN = 'unit-test-service-token';
@@ -57,52 +69,42 @@ describe('service-token policy', () => {
   });
 
   it('rejects a mismatched service-token header without returning credentials', async () => {
-    const { allowed, ctx } = await authorize({
-      'X-AKLAB-Service-Token': 'wrong-unit-test-token',
-    });
+    const ctx = makeCtx({ 'X-AKLAB-Service-Token': 'wrong-unit-test-token' });
 
-    expect(allowed).toBe(false);
-    expect(ctx.status).toBe(401);
-    expect(ctx.body).toEqual({ error: 'Unauthorized' });
-    expect(JSON.stringify(ctx.body)).not.toContain(TEST_TOKEN);
+    await expect(serviceToken(ctx as any)).rejects.toMatchObject({
+      name: 'UnauthorizedError',
+      message: 'Unauthorized',
+    });
   });
 
   it('does not accept a JWT-shaped Authorization bearer value', async () => {
-    const { allowed, ctx } = await authorize({
-      Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.test.signature',
-    });
+    const ctx = makeCtx({ Authorization: 'Bearer eyJhbG...ture' });
 
-    expect(allowed).toBe(false);
-    expect(ctx.status).toBe(401);
-    expect(ctx.body).toEqual({ error: 'Unauthorized' });
+    await expect(serviceToken(ctx as any)).rejects.toMatchObject({
+      name: 'UnauthorizedError',
+      message: 'Unauthorized',
+    });
   });
 
   it('rejects requests without either service credential', async () => {
-    const { allowed, ctx } = await authorize();
-
-    expect(allowed).toBe(false);
-    expect(ctx.status).toBe(401);
-    expect(ctx.body).toEqual({ error: 'Unauthorized' });
+    await expect(serviceToken(makeCtx() as any)).rejects.toMatchObject({
+      name: 'UnauthorizedError',
+      message: 'Unauthorized',
+    });
   });
 
   it('fails closed when STRAPI_API_TOKEN is missing or malformed', async () => {
     delete process.env.STRAPI_API_TOKEN;
-    const missingEnv = await authorize({ 'X-AKLAB-Service-Token': TEST_TOKEN });
-
-    expect(missingEnv.allowed).toBe(false);
-    expect(missingEnv.ctx.status).toBe(401);
+    await expect(serviceToken(makeCtx({ 'X-AKLAB-Service-Token': TEST_TOKEN }) as any))
+      .rejects.toMatchObject({ name: 'UnauthorizedError', message: 'Unauthorized' });
 
     process.env.STRAPI_API_TOKEN = ` ${TEST_TOKEN} `;
-    const malformedEnv = await authorize({ 'X-AKLAB-Service-Token': TEST_TOKEN });
-
-    expect(malformedEnv.allowed).toBe(false);
-    expect(malformedEnv.ctx.status).toBe(401);
+    await expect(serviceToken(makeCtx({ 'X-AKLAB-Service-Token': TEST_TOKEN }) as any))
+      .rejects.toMatchObject({ name: 'UnauthorizedError', message: 'Unauthorized' });
   });
 
   it('rejects a different-length token without throwing', async () => {
-    await expect(authorize({ 'X-AKLAB-Service-Token': 'short' })).resolves.toMatchObject({
-      allowed: false,
-      ctx: { status: 401, body: { error: 'Unauthorized' } },
-    });
+    await expect(serviceToken(makeCtx({ 'X-AKLAB-Service-Token': 'short' }) as any))
+      .rejects.toMatchObject({ name: 'UnauthorizedError', message: 'Unauthorized' });
   });
 });
