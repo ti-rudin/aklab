@@ -211,7 +211,6 @@ export class EtprfParser implements SourceParser {
           longitude?: number;
           address?: string;
           price?: number;
-          minimum_price?: number;
         } = {};
 
         // === Контакты: организатор + email + телефон ===
@@ -241,7 +240,6 @@ export class EtprfParser implements SourceParser {
           const num = parseFloat(cleaned);
           if (!isNaN(num) && num > 0) {
             result.price = num;
-            result.minimum_price = num;
           }
         }
 
@@ -281,7 +279,6 @@ export class EtprfParser implements SourceParser {
         longitude: details.longitude,
         address: details.address,
         price: details.price,
-        minimum_price: details.minimum_price,
       };
     } catch (err: any) {
       logger.warn(`[etprf] fetchDetails error for ${url}: ${err.message}`);

@@ -253,13 +253,6 @@ export class FabrikantParser implements SourceParser {
           if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
         }
 
-        let minimum_price: number | undefined;
-        const priceMatch = allText.match(/Начальн(?:ая\s+цена|ая\s+стоимость)[:\s]+([\d\s,.]+)\s*(?:руб|RUB|₽)?/i);
-        if (priceMatch) {
-          const cleaned = priceMatch[1].replace(/\s/g, '').replace(',', '.');
-          const num = parseFloat(cleaned);
-          if (!isNaN(num) && num > 0) minimum_price = num;
-        }
 
         const photoUrls: string[] = [];
         const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"]');
@@ -268,10 +261,10 @@ export class FabrikantParser implements SourceParser {
           if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) photoUrls.push(src);
         }
 
-        return { description: description || undefined, contacts, address: address.length > 3 ? address : undefined, photo_urls: photoUrls.length > 0 ? photoUrls : undefined, minimum_price };
+        return { description: description || undefined, contacts, address: address.length > 3 ? address : undefined, photo_urls: photoUrls.length > 0 ? photoUrls : undefined };
       });
 
-      return { description: details.description, contacts: details.contacts, address: details.address, photo_urls: details.photo_urls, minimum_price: details.minimum_price };
+      return { description: details.description, contacts: details.contacts, address: details.address, photo_urls: details.photo_urls };
     } catch (err: any) {
       logger.warn(`[fabrikant] fetchDetails error for ${url}: ${err.message}`);
       return {};

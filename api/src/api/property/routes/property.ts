@@ -4,7 +4,6 @@
  * Core CRUD + кастомные эндпоинты.
  * НЕ используем coreRouter.routes — он вызывается до инициализации Strapi.
  */
-
 export default {
   routes: [
     // Custom routes (must come before core to avoid conflicts)
@@ -24,7 +23,7 @@ export default {
       method: 'POST',
       path: '/properties/clear-new',
       handler: 'property.clearNew',
-      config: { auth: false, policies: [] },
+      config: { auth: {}, policies: [] },
     },
     {
       method: 'GET',
@@ -48,7 +47,7 @@ export default {
       method: 'POST',
       path: '/properties/:id/fetch-photos',
       handler: 'property.fetchPhotos',
-      config: { auth: false, policies: [] },
+      config: { auth: {}, policies: [] },
     },
     {
       method: 'GET',
@@ -73,19 +72,19 @@ export default {
       method: 'POST',
       path: '/properties',
       handler: 'property.create',
-      config: { auth: false, policies: [] },
+      config: { auth: {}, policies: [] },
     },
     {
       method: 'PUT',
       path: '/properties/:id',
       handler: 'property.update',
-      config: { auth: false, policies: [] },
+      config: { auth: {}, policies: [] },
     },
     {
       method: 'DELETE',
       path: '/properties/:id',
       handler: 'property.delete',
-      config: { auth: false, policies: [] },
+      config: { auth: {}, policies: [] },
     },
   ],
 };
