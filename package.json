@@ -16,7 +16,8 @@
     "check-env": "node scripts/check-env.js",
     "health-check": "node scripts/health-check.js",
     "setup:local": "cp .env.template .env && echo 'Edit .env with your values'",
-    "build:lib": "npm -w @aklab/sqlite-queue run build"
+    "build:lib": "npm -w @aklab/sqlite-queue run build",
+    "db:migrate-property-identity": "node scripts/migrate-property-identity.js"
   },
   "engines": {
     "node": ">=22.0.0"

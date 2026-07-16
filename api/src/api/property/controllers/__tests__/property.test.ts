@@ -13,18 +13,23 @@ vi.mock('@strapi/strapi', () => ({
     createCoreController: vi.fn((_uid: string, factoryFn: any) => {
       return factoryFn;
     }),
+    createCoreService: vi.fn((_uid: string, factoryFn: any) => {
+      return factoryFn;
+    }),
   },
 }));
 
 // Import after mocks (vitest hoists vi.mock)
 import * as fs from 'fs/promises';
 import propertyControllerFactory from '../property';
+import { PropertyUpsertValidationError } from '../../services/property';
 
 // Build a mock strapi instance (fresh per test)
 function makeStrapi() {
   const mockService = {
     getFocusQuery: vi.fn(),
     clearNew: vi.fn(),
+    upsertByIdentity: vi.fn(),
   };
   return {
     db: {
@@ -90,6 +95,55 @@ describe('property controller', () => {
       await actions.clearNew(ctx);
 
       expect(ctx.body).toEqual({ deleted: 0, photosDeleted: 0 });
+    });
+  });
+
+  // =================== upsert ===================
+  describe('upsert', () => {
+    it('returns 201 for a newly created identity', async () => {
+      const property = { id: 42, documentId: 'doc-42' };
+      strapi._mockService.upsertByIdentity.mockResolvedValue({ property, created: true });
+      const data = { source: 'alfalot', external_id: 'lot-42' };
+      const ctx = makeCtx({ request: { body: { data } } });
+
+      await actions.upsert(ctx);
+
+      expect(strapi._mockService.upsertByIdentity).toHaveBeenCalledWith(data);
+      expect(ctx.status).toBe(201);
+      expect(ctx.body).toEqual({ data: property, meta: { created: true } });
+    });
+
+    it('returns the concurrent winner with created=false', async () => {
+      const property = { id: 8, documentId: 'winner' };
+      strapi._mockService.upsertByIdentity.mockResolvedValue({ property, created: false });
+      const ctx = makeCtx({ request: { body: { data: { source: 'alfalot', external_id: 'lot-42' } } } });
+
+      await actions.upsert(ctx);
+
+      expect(ctx.status).toBe(200);
+      expect(ctx.body).toEqual({ data: property, meta: { created: false } });
+    });
+
+    it('rejects missing identity fields before calling the service', async () => {
+      const ctx = makeCtx({ request: { body: { data: { source: 'alfalot', external_id: '  ' } } } });
+
+      await actions.upsert(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'source and external_id are required' });
+      expect(strapi._mockService.upsertByIdentity).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for a service-side parser payload validation error', async () => {
+      strapi._mockService.upsertByIdentity.mockRejectedValue(
+        new PropertyUpsertValidationError('Field "status" is not accepted by parser upsert'),
+      );
+      const ctx = makeCtx({ request: { body: { data: { source: 'alfalot', external_id: 'lot-42', status: 'rejected' } } } });
+
+      await actions.upsert(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Field "status" is not accepted by parser upsert' });
     });
   });
 

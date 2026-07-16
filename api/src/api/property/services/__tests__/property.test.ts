@@ -13,16 +13,20 @@ vi.mock('@strapi/strapi', () => ({
 import propertyServiceFactory from '../property';
 
 function makeStrapi() {
+  const repository = {
+    findMany: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    findOne: vi.fn().mockResolvedValue(null),
+    create: vi.fn(),
+  };
   return {
     db: {
-      query: vi.fn().mockReturnValue({
-        findMany: vi.fn().mockResolvedValue([]),
-        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-      }),
+      query: vi.fn().mockReturnValue(repository),
       connection: {
         raw: vi.fn(),
       },
     },
+    _repository: repository,
   };
 }
 
@@ -34,6 +38,71 @@ describe('property service', () => {
     strapi = makeStrapi();
     service = (propertyServiceFactory as any)({ strapi });
     vi.clearAllMocks();
+  });
+
+  describe('upsertByIdentity', () => {
+    const payload = { source: 'alfalot', external_id: 'lot-42', title: 'Склад' };
+
+    it('creates a property when no identity winner exists', async () => {
+      const created = { id: 42, documentId: 'doc-42' };
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue(created);
+
+      await expect(service.upsertByIdentity(payload)).resolves.toEqual({ property: created, created: true });
+      expect(strapi._repository.create).toHaveBeenCalledWith({ data: payload });
+    });
+
+    it('returns an existing property without creating a duplicate', async () => {
+      const existing = { id: 7, documentId: 'existing' };
+      strapi._repository.findOne.mockResolvedValue(existing);
+
+      await expect(service.upsertByIdentity(payload)).resolves.toEqual({ property: existing, created: false });
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
+
+    it('returns the concurrent unique-index winner instead of throwing', async () => {
+      const winner = { id: 8, documentId: 'winner' };
+      const conflict = Object.assign(
+        new Error('UNIQUE constraint failed: properties.source, properties.external_id'),
+        { code: 'SQLITE_CONSTRAINT_UNIQUE' },
+      );
+      strapi._repository.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+      strapi._repository.create.mockRejectedValue(conflict);
+
+      await expect(service.upsertByIdentity(payload)).resolves.toEqual({ property: winner, created: false });
+    });
+
+    it('rejects protected and unknown fields instead of passing them to Strapi', async () => {
+      await expect(service.upsertByIdentity({
+        ...payload,
+        status: 'rejected',
+        focus_score: 100,
+        arbitrary_client_field: true,
+      })).rejects.toThrow('Field "status" is not accepted by parser upsert');
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['source', 'untrusted-source'],
+      ['property_type', 'villa'],
+      ['auction_type', 'secret-sale'],
+      ['city', 'spb'],
+    ])('rejects unsupported %s enum values', async (field, value) => {
+      await expect(service.upsertByIdentity({ ...payload, [field]: value }))
+        .rejects.toThrow(`${field} has an unsupported value`);
+
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-canonical identity values rather than trimming them', async () => {
+      await expect(service.upsertByIdentity({ ...payload, external_id: ' lot-42 ' }))
+        .rejects.toThrow('external_id must not contain leading or trailing whitespace');
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
   });
 
   // =================== getFocusQuery ===================

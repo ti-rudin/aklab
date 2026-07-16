@@ -132,9 +132,32 @@ describe('createProperty()', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 
     const [url, opts] = (globalThis.fetch as any).mock.calls[1];
-    expect(url).toBe(`${BASE}/properties`);
+    expect(url).toBe(`${BASE}/properties/upsert`);
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body).data.source).toBe('tender');
+  });
+
+  test('treats an upsert conflict winner as an existing property, not a new create', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+      .mockResolvedValueOnce(mockJsonResponse({ data: { id: 42 }, meta: { created: false } }));
+
+    const result = await createProperty({
+      source: 'tender',
+      external_id: 'ext-concurrent',
+      url: 'https://example.com/concurrent',
+      title: 'Склад',
+      address: 'addr',
+      city: 'moscow',
+      price: 1000,
+      area_sqm: 10,
+      price_per_sqm: 100,
+      property_type: 'warehouse',
+      auction_type: 'bankruptcy',
+    });
+
+    expect(result).toBeNull();
+    expect((globalThis.fetch as any).mock.calls[1][0]).toBe(`${BASE}/properties/upsert`);
   });
 
   test('auto-calculates price_per_sqm when missing', async () => {

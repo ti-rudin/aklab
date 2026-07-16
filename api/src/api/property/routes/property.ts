@@ -10,6 +10,12 @@ export default {
     // Custom routes (must come before core to avoid conflicts)
     {
       method: 'POST',
+      path: '/properties/upsert',
+      handler: 'property.upsert',
+      config: { auth: false, policies: [] },
+    },
+    {
+      method: 'POST',
       path: '/properties/clear-new',
       handler: 'property.clearNew',
       config: { auth: false, policies: [] },

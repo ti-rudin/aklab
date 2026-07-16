@@ -241,7 +241,9 @@ export async function createProperty(props: {
     return null;
   }
 
-  const res = await fetch(`${BASE}/properties`, {
+  // DB-backed identity upsert closes the check-then-create race: another parser
+  // may win after propertyExists(), in which case the endpoint returns it safely.
+  const res = await fetch(`${BASE}/properties/upsert`, {
     method: 'POST',
     headers: HEADERS,
     body: JSON.stringify({ data: { ...restProps, first_seen_at: new Date().toISOString() } }),
@@ -250,7 +252,11 @@ export async function createProperty(props: {
     const body = await res.text();
     throw new Error(`createProperty failed (${res.status}): ${body}`);
   }
-  const data = (await res.json()) as StrapiResponse<any>;
+  const data = (await res.json()) as StrapiResponse<any> & { meta?: { created?: boolean } };
+  if (data.meta?.created === false) {
+    logger.warn(`Skipping concurrent duplicate: "${restProps.title}" source=${restProps.source} ext=${restProps.external_id}`);
+    return null;
+  }
   return data.data;
 }
 

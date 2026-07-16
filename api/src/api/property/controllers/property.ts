@@ -7,6 +7,7 @@
 import { factories } from "@strapi/strapi";
 import * as path from "path";
 import { getQueueService } from '../../../services/queueService';
+import { PropertyUpsertValidationError } from '../services/property';
 
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**
@@ -16,6 +17,34 @@ export default factories.createCoreController("api::property.property", ({ strap
   async clearNew(ctx) {
     const result = await strapi.service('api::property.property').clearNew();
     ctx.body = result;
+  },
+
+  /**
+   * POST /api/properties/upsert
+   * Parser-only identity upsert. The service returns the concurrent winner
+   * instead of leaking a SQLite unique-constraint exception to a worker.
+   */
+  async upsert(ctx) {
+    const data = ctx.request?.body?.data;
+    if (!data || typeof data.source !== 'string' || !data.source.trim()
+      || typeof data.external_id !== 'string' || !data.external_id.trim()) {
+      ctx.status = 400;
+      ctx.body = { error: 'source and external_id are required' };
+      return;
+    }
+
+    try {
+      const result = await strapi.service('api::property.property').upsertByIdentity(data);
+      ctx.status = result.created ? 201 : 200;
+      ctx.body = { data: result.property, meta: { created: result.created } };
+    } catch (error) {
+      if (error instanceof PropertyUpsertValidationError) {
+        ctx.status = 400;
+        ctx.body = { error: error.message };
+        return;
+      }
+      throw error;
+    }
   },
 
   /**

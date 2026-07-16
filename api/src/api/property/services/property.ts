@@ -40,7 +40,160 @@ const ALLOWED_SORTS: Record<string, string> = {
   createdAt: 'created_at',
 };
 
-export default factories.createCoreService('api::property.property', ({ strapi }) => ({
+const PROPERTY_UID = 'api::property.property';
+
+// Keep this list aligned with the parser payload assembled by
+// services/_shared/src/parse-handler.ts.  It is intentionally narrower than
+// the content type: public parser upsert must never set workflow, scoring,
+// local-media, or manual-review fields.
+const PARSER_OWNED_FIELDS = new Set([
+  'source',
+  'external_id',
+  'url',
+  'title',
+  'address',
+  'city',
+  'area_sqm',
+  'price',
+  'minimum_price',
+  'price_per_sqm',
+  'property_type',
+  'auction_type',
+  'published_at_source',
+  'description',
+  'contacts',
+  'photo_urls',
+  'latitude',
+  'longitude',
+  // Existing parser workers supply this ingestion timestamp. It is parser
+  // owned; all workflow/scoring timestamps remain outside the allowlist.
+  'first_seen_at',
+]);
+
+// Explicit values from content-types/property/schema.json.  Keep the runtime
+// route independent from JSON-module compiler settings while making schema
+// changes require an intentional allowlist update here.
+const PROPERTY_SCHEMA_ENUMS = {
+  source: new Set([
+    'fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow',
+    'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf',
+    'sberbank-ast', 'm-ets',
+  ]),
+  property_type: new Set([
+    'office', 'warehouse', 'retail', 'production', 'free_purpose',
+    'apartment', 'land', 'other',
+  ]),
+  auction_type: new Set(['bankruptcy', 'privatization', 'marketplace']),
+  city: new Set(['moscow', 'mo', 'other']),
+};
+
+const REQUIRED_PARSER_STRING_FIELDS = ['source', 'external_id', 'title'] as const;
+const OPTIONAL_PARSER_STRING_FIELDS = [
+  'url', 'address', 'published_at_source', 'description', 'contacts', 'first_seen_at',
+] as const;
+const OPTIONAL_PARSER_NUMBER_FIELDS = [
+  'area_sqm', 'price', 'minimum_price', 'price_per_sqm', 'latitude', 'longitude',
+] as const;
+
+export class PropertyUpsertValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PropertyUpsertValidationError';
+  }
+}
+
+function validateParserUpsertData(data: unknown): Record<string, any> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new PropertyUpsertValidationError('data must be an object');
+  }
+
+  const input = data as Record<string, unknown>;
+  for (const field of Object.keys(input)) {
+    if (!PARSER_OWNED_FIELDS.has(field)) {
+      throw new PropertyUpsertValidationError(`Field "${field}" is not accepted by parser upsert`);
+    }
+  }
+
+  for (const field of REQUIRED_PARSER_STRING_FIELDS) {
+    const value = input[field];
+    if (typeof value !== 'string' || value === '') {
+      throw new PropertyUpsertValidationError(`${field} is required`);
+    }
+  }
+
+  // Canonical identity is a database invariant too. Reject, rather than
+  // silently trim, so the caller cannot create an identity different from the
+  // one it submitted.
+  for (const field of ['source', 'external_id'] as const) {
+    if (input[field] !== (input[field] as string).trim()) {
+      throw new PropertyUpsertValidationError(`${field} must not contain leading or trailing whitespace`);
+    }
+  }
+
+  for (const field of OPTIONAL_PARSER_STRING_FIELDS) {
+    if (input[field] !== undefined && typeof input[field] !== 'string') {
+      throw new PropertyUpsertValidationError(`${field} must be a string`);
+    }
+  }
+  for (const field of OPTIONAL_PARSER_NUMBER_FIELDS) {
+    if (input[field] !== undefined && (typeof input[field] !== 'number' || !Number.isFinite(input[field]))) {
+      throw new PropertyUpsertValidationError(`${field} must be a finite number`);
+    }
+  }
+  if (input.photo_urls !== undefined
+    && (!Array.isArray(input.photo_urls) || input.photo_urls.some((url) => typeof url !== 'string'))) {
+    throw new PropertyUpsertValidationError('photo_urls must be an array of strings');
+  }
+
+  for (const field of Object.keys(PROPERTY_SCHEMA_ENUMS) as Array<keyof typeof PROPERTY_SCHEMA_ENUMS>) {
+    const value = input[field];
+    if (value !== undefined && (typeof value !== 'string' || !PROPERTY_SCHEMA_ENUMS[field].has(value))) {
+      throw new PropertyUpsertValidationError(`${field} has an unsupported value`);
+    }
+  }
+
+  // Build a fresh object from the checked keys; never pass a client object
+  // through to Strapi's ORM.
+  return Object.fromEntries(Object.keys(input).map((field) => [field, input[field]]));
+}
+
+function isIdentityUniqueViolation(error: unknown): boolean {
+  const candidate = error as { code?: string; message?: string } | undefined;
+  const code = candidate?.code || '';
+  const message = candidate?.message || '';
+  return (code === 'SQLITE_CONSTRAINT' || code === 'SQLITE_CONSTRAINT_UNIQUE')
+    && /properties\.(source|external_id)|source, external_id/i.test(message);
+}
+
+export default factories.createCoreService(PROPERTY_UID, ({ strapi }) => ({
+  /**
+   * Concurrency-safe create-or-return-existing for parser writes.
+   * The database unique index is the authority: a concurrent winner is read
+   * after its constraint error instead of surfacing a duplicate/500.
+   */
+  async upsertByIdentity(data: Record<string, any>): Promise<{ property: any; created: boolean }> {
+    const parserData = validateParserUpsertData(data);
+    const source = parserData.source;
+    const externalId = parserData.external_id;
+
+    const repository = strapi.db.query(PROPERTY_UID);
+    const where = { source, external_id: externalId };
+    const existing = await repository.findOne({ where });
+    if (existing) return { property: existing, created: false };
+
+    try {
+      const property = await repository.create({
+        data: parserData,
+      });
+      return { property, created: true };
+    } catch (error) {
+      if (!isIdentityUniqueViolation(error)) throw error;
+      const winner = await repository.findOne({ where });
+      if (winner) return { property: winner, created: false };
+      throw error;
+    }
+  },
+
   /**
    * Построить SQL-запрос для getFocus с фильтрами, сортировкой, пагинацией.
    */
