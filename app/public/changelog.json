@@ -1,5 +1,36 @@
 [
   {
+    "version": "v1.1.70",
+    "date": "16 июля 2026",
+    "time": "15:41",
+    "items": [
+      {
+        "text": "UI mutating routes переведены на `global::authenticated-user`: policy проверяет Users & Permissions JWT и возвращает supported Strapi policy denial (403) без exception.",
+        "type": "improvement"
+      },
+      {
+        "text": "Публичная регистрация выключается persistently на bootstrap; сейчас на production также выключена.",
+        "type": "improvement"
+      },
+      {
+        "text": "Parser-only internal aliases остаются строго за service token.",
+        "type": "improvement"
+      },
+      {
+        "text": "Локально: `npm run test` — 34 suites / 670 tests passed.",
+        "type": "improvement"
+      },
+      {
+        "text": "Isolated dev server: 34 suites / 670 tests passed.",
+        "type": "improvement"
+      },
+      {
+        "text": "API production build запускается отдельной проверкой на isolated dev worktree.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.69",
     "date": "16 июля 2026",
     "time": "15:19",
