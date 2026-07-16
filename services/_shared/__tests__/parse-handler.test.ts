@@ -3,6 +3,9 @@
  * Mocks strapi-client and logger; tests the orchestration logic.
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 // ── Set required env vars before config module loads ──
 process.env.STRAPI_URL = 'http://localhost:1338';
@@ -229,6 +232,30 @@ describe('createParseHandler()', () => {
     expect(logCron).toHaveBeenCalledWith(expect.objectContaining({
       error: 'boom',
     }));
+  });
+
+  test('fails details phase when its scan artifact is missing', async () => {
+    const parser = makeParser([]);
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'missing-artifact-source',
+      documentId: 'doc-src-1',
+      correlationId: `missing-artifact-${Date.now()}`,
+      phase: 'details',
+    }))).rejects.toThrow('Scan artifact is missing');
+  });
+
+  test('rejects a legacy array artifact instead of silently processing it', async () => {
+    const source = 'legacy-artifact-source';
+    const correlationId = `legacy-artifact-${Date.now()}`;
+    const scanDir = join(tmpdir(), 'aklab-scan');
+    mkdirSync(scanDir, { recursive: true });
+    writeFileSync(join(scanDir, `${source}-${correlationId}.json`), JSON.stringify(defaultProps));
+
+    const handler = createParseHandler(makeParser([]));
+    await expect(handler(makeJob({ source, documentId: 'doc-src-1', correlationId, phase: 'details' })))
+      .rejects.toThrow('Scan artifact manifest is invalid');
   });
 
   test('calls updateSourceStats with success data on success', async () => {
