@@ -1,5 +1,44 @@
 [
   {
+    "version": "v1.1.65",
+    "date": "16 июля 2026",
+    "time": "14:31",
+    "items": [
+      {
+        "text": "Lease/heartbeat/idempotency/cancellation в SQLite queue и run-aware pipeline",
+        "type": "improvement"
+      },
+      {
+        "text": "Identity upsert + manual audit-first dedup migration",
+        "type": "improvement"
+      },
+      {
+        "text": "Service-token boundary и internal worker aliases с field allowlists",
+        "type": "improvement"
+      },
+      {
+        "text": "Hardening photo-fetcher, digest и analyzer cache",
+        "type": "improvement"
+      },
+      {
+        "text": "Isolated dev-server: 30 suites, 633 tests passed",
+        "type": "improvement"
+      },
+      {
+        "text": "Production preflight: JWT_SECRET .env совпадает с PM2 env; 14 workers имеют STRAPI_API_TOKEN",
+        "type": "improvement"
+      },
+      {
+        "text": "Migration identity не запускалась",
+        "type": "improvement"
+      },
+      {
+        "text": "DNS rebinding Playwright требует pinned egress proxy; photo-fetcher не считать полностью закрытым",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.64",
     "date": "15 июля 2026",
     "time": "16:17",
