@@ -29,6 +29,12 @@ PM2-процессы на проде (213.184.136.221): 15 процессов (a
 analyzer, digest, photo-fetcher). На dev (192.168.11.151): аналогично + рядом
 `todoit-api`, `todoit-app` — это другой проект, не трогай.
 
+### Run-scoped parser telemetry (v1.1.71)
+
+Pipeline telemetry хранится отдельно от агрегированного `Source`: `parser_run` идентифицируется immutable `run_id`, `parser_run_source` — `identity_key = runId:sourceSlug:stage`. Строка этапа создаётся `queued` **до enqueue**, получает реальный numeric `job_id` после enqueue, worker переводит её `running`, затем посылает exact terminal counters через internal aliases с `global::service-token`.
+
+После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Production v1.1.71 deployed 2026-07-16; runtime E2E pipeline telemetry ещё не запускалась намеренно, поскольку это write-нагрузка.
+
 ### Домены
 
 **Prod (213.184.136.221):**

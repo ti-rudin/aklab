@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.71 — run-scoped parser telemetry)
+**Сделано 16 июля 2026:**
+- ✅ Добавлены `parser_runs` и `parser_run_sources`: immutable `run_id` и `identity_key = runId:sourceSlug:stage`; source-stage создаётся до enqueue, затем получает точный numeric SQLite Queue `job_id`.
+- ✅ Lifecycle: `queued → running → terminal`. Worker отправляет running/terminal snapshot через service-token protected internal aliases; контроллер валидирует allowlist, exact counters и ownership job ID.
+- ✅ После `waitForJobs()` SQLite Queue terminal state authoritative: queue failure/cancellation исправляет преждевременный worker success.
+- ✅ Документация: `docs/run-scoped-parser-telemetry.md`; tests 87/87 + API/shared/Strapi builds passed.
+- ✅ PR #31 merged (`b1bcf7d`), production deploy v1.1.71 (`7ccc111`) successful; domains: API 204, frontend 200.
+- ⚠️ Не запускали production pipeline специально: фактическая E2E telemetry verification остаётся отдельным действием, так как создаёт нагрузку и writes.
+
 ## Session handoff (v1.1.59 — page/context leak + cron simplification)
 **Сделано в сессии 15 июля 2026 (Playwright page leak fix + cron rewrite):**
 - ✅ **Playwright page/context leak** — v1.1.58 закрывал browser в finally, но каждый fetchDetails создавал page+context из browser без закрытия. На проде: 1545 pages+contexts → 198 zombie chrome → 7GB RAM → OOM. FIX: parse-handler создаёт `sharedContext` один раз для Phase 2, передаёт его парсерам. Каждый парсер: `page = await context.newPage()` → `finally { page.close() }`
