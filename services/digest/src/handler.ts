@@ -1,4 +1,5 @@
-import type { Job } from '@aklab/sqlite-queue';
+import { PermanentError } from '@aklab/sqlite-queue';
+import type { Job, WorkerContext } from '@aklab/sqlite-queue';
 import nodemailer from 'nodemailer';
 import { fetchSetting, logCron } from '@aklab/service-shared';
 import { config } from './config';
@@ -26,12 +27,22 @@ const tagLabel: Record<string, string> = {
   moscow_mo: 'МСК/МО',
 };
 
-async function fetchFocusProperties(): Promise<any[]> {
+function throwIfCancellationRequested(workerContext?: WorkerContext): void {
+  if (workerContext?.isCancellationRequested() || workerContext?.isLeaseValid?.() === false) {
+    throw new PermanentError('Digest job cancelled or lease lost before the next side effect');
+  }
+}
+
+async function fetchFocusProperties(workerContext?: WorkerContext): Promise<any[]> {
   // threshold=0 — все объекты в фокусе (score > 0)
   const url = `${BASE}/api/properties/focus?threshold=0&pageSize=100&sort=-focus_score`;
+  throwIfCancellationRequested(workerContext);
   const res = await fetch(url, { headers: HEADERS });
+  throwIfCancellationRequested(workerContext);
   if (!res.ok) return [];
+  throwIfCancellationRequested(workerContext);
   const json: any = await res.json();
+  throwIfCancellationRequested(workerContext);
   return json.data || [];
 }
 
@@ -64,14 +75,17 @@ function tableHeader(): string {
   </tr></thead>`;
 }
 
-export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count: number }> {
+// workerContext is optional for direct/manual legacy invocations.
+export async function handleDigestJob(job: Job, workerContext?: WorkerContext): Promise<{ sent: boolean; count: number }> {
   const req = job.data as DigestRequest;
   const corrId = req.correlationId || job.correlation_id || `digest-${Date.now()}`;
   const startedAt = new Date().toISOString();
 
   logger.info(`Digest triggered for ${req.date}`, { correlationId: corrId });
 
+  throwIfCancellationRequested(workerContext);
   const setting = await fetchSetting().catch(() => null);
+  throwIfCancellationRequested(workerContext);
   const regions: string[] = setting?.monitored_regions || ['moscow', 'mo'];
   const priceFrom = setting?.price_from;
   const priceTo = setting?.price_to;
@@ -82,7 +96,9 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
     return { sent: false, count: 0 };
   }
 
-  const allFocus = await fetchFocusProperties();
+  throwIfCancellationRequested(workerContext);
+  const allFocus = await fetchFocusProperties(workerContext);
+  throwIfCancellationRequested(workerContext);
   const now = Date.now();
   const h24 = 24 * 60 * 60 * 1000;
   const filtered = allFocus.filter((p: any) => {
@@ -147,18 +163,22 @@ export async function handleDigestJob(job: Job): Promise<{ sent: boolean; count:
       secure: true,
       auth: { user: config.smtp.user, pass: config.smtp.pass },
     });
+    throwIfCancellationRequested(workerContext);
     await transporter.sendMail({
       from: config.smtp.from,
       to: smtpTo,
       subject: `AKLAB: ${filtered.length} объектов в фокусе (скор ${avgScore}) — ${req.date}`,
       html,
     });
+    throwIfCancellationRequested(workerContext);
     logger.info(`Email sent: ${hot.length} hot + ${regular.length} regular`, { correlationId: corrId });
   } catch (err: any) {
     logger.error(`Email send failed: ${err.message}`, { correlationId: corrId });
     throw err;
   }
 
+  throwIfCancellationRequested(workerContext);
   await logCron({ name: 'digest-send', started_at: startedAt, finished_at: new Date().toISOString(), items_processed: filtered.length }).catch(() => {});
+  throwIfCancellationRequested(workerContext);
   return { sent: true, count: filtered.length };
 }

@@ -14,8 +14,7 @@ vi.mock('../../../../services/queueService', () => ({
 
 // --- Mock pipeline service ---
 const mockPipeline = {
-  analyze: vi.fn(),
-  digest: vi.fn(),
+  start: vi.fn(),
   getState: vi.fn(),
   updateState: vi.fn(),
   resetState: vi.fn(),
@@ -80,8 +79,8 @@ describe('cron controller', () => {
       update: vi.fn(),
     });
     // Default pipeline mock returns
-    mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
-    mockPipeline.digest.mockResolvedValue({ sent: true, errors: [] });
+    mockPipeline.start.mockResolvedValue('run-123');
+    mockPipeline.getState.mockResolvedValue({ status: 'idle' });
     // @ts-ignore
     global.strapi = mockStrapi;
   });
@@ -142,66 +141,66 @@ describe('cron controller', () => {
 
   // =================== analyzeAll ===================
   describe('analyzeAll', () => {
-    it('should delegate to pipeline.analyze and return result', async () => {
-      mockPipeline.analyze.mockResolvedValue({ undervalued: 2, errors: [] });
-
+    it('should start an asynchronous analyze lifecycle and return its run id', async () => {
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockPipeline.analyze).toHaveBeenCalledWith(
-        expect.objectContaining({}),
-      );
+      expect(mockPipeline.start).toHaveBeenCalledWith('analyze', 20, expect.objectContaining({}), 'manual');
       expect(ctx.body.ok).toBe(true);
-      expect(ctx.body.undervalued).toBe(2);
-      expect(ctx.body.message).toContain('2');
+      expect(ctx.body.run_id).toBe('run-123');
+      expect(ctx.body.runId).toBe('run-123');
+      expect(ctx.body.message).toContain('mode=analyze');
     });
 
-    it('should pass threshold from body to pipeline.analyze', async () => {
-      mockPipeline.analyze.mockResolvedValue({ undervalued: 1, errors: [] });
-
+    it('should pass threshold from body to the analyze lifecycle', async () => {
       const ctx = makeCtx({ request: { body: { threshold: 30 } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockPipeline.analyze).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 30 }),
+      expect(mockPipeline.start).toHaveBeenCalledWith(
+        'analyze', 20, expect.objectContaining({ threshold: 30 }), 'manual',
       );
       expect(ctx.body.filters.threshold).toBe(30);
     });
 
     it('should apply price range filters', async () => {
-      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
-
       const ctx = makeCtx({ request: { body: { priceFrom: 100000, priceTo: 500000 } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockPipeline.analyze).toHaveBeenCalledWith(
-        expect.objectContaining({ priceFrom: 100000, priceTo: 500000 }),
+      expect(mockPipeline.start).toHaveBeenCalledWith(
+        'analyze', 20, expect.objectContaining({ priceFrom: 100000, priceTo: 500000 }), 'manual',
       );
     });
 
     it('should apply city filter (array)', async () => {
-      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
-
       const ctx = makeCtx({ request: { body: { city: ['moscow', 'spb'] } } });
       await cronController.analyzeAll(ctx);
 
-      expect(mockPipeline.analyze).toHaveBeenCalledWith(
-        expect.objectContaining({ city: ['moscow', 'spb'] }),
+      expect(mockPipeline.start).toHaveBeenCalledWith(
+        'analyze', 20, expect.objectContaining({ city: ['moscow', 'spb'] }), 'manual',
       );
     });
 
-    it('should handle empty properties list', async () => {
-      mockPipeline.analyze.mockResolvedValue({ undervalued: 0, errors: [] });
-
+    it('should keep the existing default depth for the analyze lifecycle', async () => {
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
 
-      expect(ctx.body.ok).toBe(true);
-      expect(ctx.body.undervalued).toBe(0);
+      expect(mockPipeline.start).toHaveBeenCalledWith('analyze', 20, expect.anything(), 'manual');
+    });
+
+    it('should pass force to the lifecycle without resetting properties in the controller', async () => {
+      const query = mockStrapi.db.query('api::property.property');
+      const ctx = makeCtx({ request: { body: { force: true } } });
+      await cronController.analyzeAll(ctx);
+
+      expect(mockPipeline.start).toHaveBeenCalledWith(
+        'analyze', 20, expect.objectContaining({ force: true }), 'manual',
+      );
+      expect(query.findMany).not.toHaveBeenCalled();
+      expect(query.update).not.toHaveBeenCalled();
     });
 
     it('should call ctx.internalServerError on exception', async () => {
-      mockPipeline.analyze.mockRejectedValue(new Error('db boom'));
+      mockPipeline.start.mockRejectedValue(new Error('db boom'));
 
       const ctx = makeCtx({ request: { body: {} } });
       await cronController.analyzeAll(ctx);
@@ -212,30 +211,19 @@ describe('cron controller', () => {
 
   // =================== sendDigest ===================
   describe('sendDigest', () => {
-    it('should delegate to pipeline.digest and return result', async () => {
-      mockPipeline.digest.mockResolvedValue({ sent: true, errors: [] });
-
+    it('should start an asynchronous digest lifecycle and return its run id', async () => {
       const ctx = makeCtx();
       await cronController.sendDigest(ctx);
 
-      expect(mockPipeline.digest).toHaveBeenCalled();
+      expect(mockPipeline.start).toHaveBeenCalledWith('digest', 20, undefined, 'manual');
       expect(ctx.body.ok).toBe(true);
-      expect(ctx.body.sent).toBe(true);
-    });
-
-    it('should return ok=false when digest is disabled', async () => {
-      mockPipeline.digest.mockResolvedValue({ sent: false, errors: [] });
-
-      const ctx = makeCtx();
-      await cronController.sendDigest(ctx);
-
-      expect(ctx.body.ok).toBe(false);
-      expect(ctx.body.sent).toBe(false);
-      expect(ctx.body.message).toContain('отключён');
+      expect(ctx.body.run_id).toBe('run-123');
+      expect(ctx.body.runId).toBe('run-123');
+      expect(ctx.body.message).toContain('mode=digest');
     });
 
     it('should call ctx.internalServerError on exception', async () => {
-      mockPipeline.digest.mockRejectedValue(new Error('smtp err'));
+      mockPipeline.start.mockRejectedValue(new Error('smtp err'));
 
       const ctx = makeCtx();
       await cronController.sendDigest(ctx);
@@ -314,6 +302,16 @@ describe('cron controller', () => {
       expect(scorePropertiesBatch).toHaveBeenCalledWith(
         expect.objectContaining({ threshold: 10 }),
       );
+    });
+
+    it('should reject manual score while a pipeline lifecycle is non-idle', async () => {
+      mockPipeline.getState.mockResolvedValue({ status: 'running' });
+      const ctx = makeCtx({ request: { body: { threshold: 10 } } });
+      await cronController.scoreProperties(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body.ok).toBe(false);
+      expect(scorePropertiesBatch).not.toHaveBeenCalled();
     });
 
     it('should return early with message when no active rules', async () => {

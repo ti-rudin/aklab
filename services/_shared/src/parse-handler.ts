@@ -12,7 +12,8 @@
  * Если phase не указан — выполняет обе фазы последовательно (backward compat).
  */
 
-import type { Job } from '@aklab/sqlite-queue';
+import { PermanentError } from '@aklab/sqlite-queue';
+import type { Job, WorkerContext } from '@aklab/sqlite-queue';
 import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -45,22 +46,35 @@ function getScanFilePath(source: string, correlationId: string): string {
   return join(SCAN_DIR, `${source}-${correlationId}.json`);
 }
 
+function throwIfCancellationRequested(workerContext?: WorkerContext): void {
+  if (workerContext?.isCancellationRequested() || workerContext?.isLeaseValid?.() === false) {
+    throw new PermanentError('Parse job cancelled or lease lost before the next side effect');
+  }
+}
+
+function isCancellationError(error: any): boolean {
+  return error instanceof PermanentError && error.message.includes('cancelled');
+}
+
 /**
  * Создаёт generic handler для парсера.
  * Каждый парсер передаёт свой экземпляр SourceParser.
  */
 export function createParseHandler(parser: SourceParser) {
-  return async function handleParseJob(job: Job): Promise<ParseResult> {
+  // workerContext is optional for direct/manual legacy invocations of parser handlers.
+  return async function handleParseJob(job: Job, workerContext?: WorkerContext): Promise<ParseResult> {
     const req = job.data as ParseRequest;
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 20;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, preFiltered = 0, detailsFetched = 0, detailsNeeded = 0;
     let errorMsg: string | undefined;
+    let cancelled = false;
 
     const phase: string | undefined = req.phase; // undefined = обе фазы
 
     try {
+      throwIfCancellationRequested(workerContext);
       // ═══════════════════════════════════════════════════════════════
       // ФАЗА 1: СКАНИРОВАНИЕ
       // Парсинг списков + дедупликация + предфильтр
@@ -69,12 +83,16 @@ export function createParseHandler(parser: SourceParser) {
       if (phase !== 'details') {
         // Сброс счётчиков перед новым запуском
         if (req.documentId) {
+          throwIfCancellationRequested(workerContext);
           console.log(`[parse-handler:${req.source}] SCAN: resetting counters`);
           await resetSourceDetailsCounters(req.documentId);
+          throwIfCancellationRequested(workerContext);
         }
 
         // Парсинг списков (без загрузки деталей)
+        throwIfCancellationRequested(workerContext);
         const properties = await parser.parse(depth);
+        throwIfCancellationRequested(workerContext);
         total = properties.length;
         console.log(`[parse-handler:${req.source}] SCAN: parsed ${total} items (depth=${depth})`);
 
@@ -83,12 +101,15 @@ export function createParseHandler(parser: SourceParser) {
         let consecutiveDuplicates = 0;
 
         for (const prop of properties) {
+          throwIfCancellationRequested(workerContext);
           // Depth limit
           if (newProperties.length >= depth) break;
 
           try {
             // Проверка дубликата в Strapi
+            throwIfCancellationRequested(workerContext);
             if (await propertyExists(req.source, prop.external_id)) {
+              throwIfCancellationRequested(workerContext);
               consecutiveDuplicates++;
               if (consecutiveDuplicates === 1 || consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
                 console.log(`[parse-handler:${req.source}] DUP #${consecutiveDuplicates}: ${prop.external_id}`);
@@ -99,6 +120,7 @@ export function createParseHandler(parser: SourceParser) {
               }
               continue;
             }
+            throwIfCancellationRequested(workerContext);
             consecutiveDuplicates = 0;
 
             // Предфильтр: city, stop words, commercial type, price, area
@@ -113,6 +135,7 @@ export function createParseHandler(parser: SourceParser) {
 
             newProperties.push(prop);
           } catch (err: any) {
+            if (isCancellationError(err)) throw err;
             logger.warn(`Existence check failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
           }
         }
@@ -122,34 +145,40 @@ export function createParseHandler(parser: SourceParser) {
 
         // Сохраняем отфильтрованный список для Phase 2
         try {
+          throwIfCancellationRequested(workerContext);
           mkdirSync(SCAN_DIR, { recursive: true });
           const scanFilePath = getScanFilePath(req.source, corrId);
           writeFileSync(scanFilePath, JSON.stringify(newProperties), 'utf-8');
           console.log(`[parse-handler:${req.source}] SCAN: saved to ${scanFilePath}`);
         } catch (err: any) {
+          if (isCancellationError(err)) throw err;
           logger.error(`Failed to save scan results: ${err.message}`, { correlationId: corrId });
         }
 
         // Обновляем статистику источника (Phase 1 результат)
         if (req.documentId) {
+          throwIfCancellationRequested(workerContext);
           await updateSourceStats(req.documentId, {
             total_found: total,
             total_details_needed: detailsNeeded,
           }).catch(() => {});
+          throwIfCancellationRequested(workerContext);
         }
 
         // Если это ТОЛЬКО scan — возвращаем результат
         if (phase === 'scan') {
           // ВАЖНО: устанавливаем success, иначе pipeline не считает источник завершённым
           if (req.documentId) {
+            throwIfCancellationRequested(workerContext);
+            // Counters were written once above; this update is status-only.
             await updateSourceStats(req.documentId, {
               last_parse_status: 'success',
               last_parse_error: undefined,
               last_parsed_at: new Date().toISOString(),
-              total_found: total,
-              total_details_needed: detailsNeeded,
             }).catch(() => {});
+            throwIfCancellationRequested(workerContext);
           }
+          throwIfCancellationRequested(workerContext);
           await logCron({
             name: `scan-${req.source}`,
             started_at: startedAt,
@@ -166,6 +195,7 @@ export function createParseHandler(parser: SourceParser) {
       // Чтение отфильтрованного списка + fetchDetails + createProperty
       // ═══════════════════════════════════════════════════════════════
       if (phase !== 'scan') {
+        throwIfCancellationRequested(workerContext);
         const scanFilePath = getScanFilePath(req.source, corrId);
 
         // Читаем результаты Phase 1
@@ -178,6 +208,7 @@ export function createParseHandler(parser: SourceParser) {
           // Удаляем файл после чтения
           try { unlinkSync(scanFilePath); } catch {}
         }
+        throwIfCancellationRequested(workerContext);
 
         detailsNeeded = parser.fetchDetails ? newProperties.length : 0;
         console.log(`[parse-handler:${req.source}] DETAILS: ${newProperties.length} properties, ${detailsNeeded} need detail fetching`);
@@ -187,6 +218,7 @@ export function createParseHandler(parser: SourceParser) {
         let sharedContext: any = undefined;
         if (parser.fetchDetails && newProperties.length > 0) {
           try {
+            throwIfCancellationRequested(workerContext);
             const { chromium } = await import('playwright');
             const { createStealthContext } = await import('./anti-ban');
             sharedBrowser = await chromium.launch({
@@ -194,8 +226,18 @@ export function createParseHandler(parser: SourceParser) {
               args: ['--no-sandbox', '--disable-setuid-sandbox'],
             });
             sharedContext = await createStealthContext(sharedBrowser);
+            throwIfCancellationRequested(workerContext);
             console.log(`[parse-handler:${req.source}] Shared browser+context launched for ${newProperties.length} detail pages`);
           } catch (err: any) {
+            if (isCancellationError(err)) {
+              if (sharedContext) {
+                try { await sharedContext.close(); } catch {}
+              }
+              if (sharedBrowser) {
+                try { await sharedBrowser.close(); } catch {}
+              }
+              throw err;
+            }
             logger.warn(`Failed to launch shared browser: ${err.message}. Falling back to per-request browsers.`, { correlationId: corrId });
           }
         }
@@ -203,11 +245,14 @@ export function createParseHandler(parser: SourceParser) {
         try {
           // Обрабатываем каждый объект: fetchDetails → createProperty
           for (const prop of newProperties) {
+            throwIfCancellationRequested(workerContext);
             try {
               // Загрузка детальной страницы (если парсер поддерживает)
               if (parser.fetchDetails) {
                 try {
+                  throwIfCancellationRequested(workerContext);
                   const details = await parser.fetchDetails(prop.url, sharedContext);
+                  throwIfCancellationRequested(workerContext);
                   if (details && Object.keys(details).length > 0) {
                     // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
                     for (const [key, value] of Object.entries(details)) {
@@ -229,19 +274,24 @@ export function createParseHandler(parser: SourceParser) {
                     console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
                     // Промежуточное обновление для UI
                     if (req.documentId) {
+                      throwIfCancellationRequested(workerContext);
                       updateSourceStats(req.documentId, {
                         total_details_fetched: detailsFetched,
                       }).catch(() => {});
                     }
                   }
                 } catch (err: any) {
+                  if (isCancellationError(err)) throw err;
                   logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
                 }
                 // Антибан: пауза между детальными страницами (2-5 сек)
+                throwIfCancellationRequested(workerContext);
                 await randomDelay(2000, 5000);
+                throwIfCancellationRequested(workerContext);
               }
 
               // Создание объекта в Strapi
+              throwIfCancellationRequested(workerContext);
               const result = await createProperty({
                 source: req.source,
                 external_id: prop.external_id,
@@ -262,6 +312,7 @@ export function createParseHandler(parser: SourceParser) {
                 longitude: prop.longitude,
                 rules: req.rules,
               });
+              throwIfCancellationRequested(workerContext);
               if (result) created++;
               else {
                 filtered++;
@@ -270,12 +321,16 @@ export function createParseHandler(parser: SourceParser) {
                 }
               }
             } catch (err: any) {
+              if (isCancellationError(err)) throw err;
               logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
             }
           }
         } finally {
           // ВАЖНО: закрываем browser в finally — гарантия освобождения памяти
-          // даже при неожиданном исключении в цикле
+          // even if a detail request or cancellation path throws.
+          if (sharedContext) {
+            try { await sharedContext.close(); } catch {}
+          }
           if (sharedBrowser) {
             try { await sharedBrowser.close(); } catch {}
             console.log(`[parse-handler:${req.source}] Shared browser closed`);
@@ -286,9 +341,10 @@ export function createParseHandler(parser: SourceParser) {
       }
 
     } catch (err: any) {
+      cancelled = isCancellationError(err);
       errorMsg = err.message;
-      logger.error(`Parse failed: ${err.message}`, { correlationId: corrId });
-      if (req.documentId) {
+      if (!cancelled) logger.error(`Parse failed: ${err.message}`, { correlationId: corrId });
+      if (req.documentId && !cancelled) {
         await updateSourceStats(req.documentId, {
           last_parse_status: 'error',
           last_parse_error: err.message,
@@ -297,18 +353,22 @@ export function createParseHandler(parser: SourceParser) {
       }
       throw err;
     } finally {
-      await logCron({
-        name: `parse-${req.source}`,
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
-        items_processed: created,
-        error: errorMsg,
-      }).catch(() => {});
+      // Cancellation is a cooperative queue outcome, not a late cron-side effect.
+      if (!cancelled) {
+        await logCron({
+          name: `parse-${req.source}`,
+          started_at: startedAt,
+          finished_at: new Date().toISOString(),
+          items_processed: created,
+          error: errorMsg,
+        }).catch(() => {});
+      }
     }
 
     // Финальное обновление статистики источника
     if (req.documentId) {
       try {
+        throwIfCancellationRequested(workerContext);
         console.log(`[parse-handler:${req.source}] FINAL: total=${total} created=${created} filtered=${filtered} preFiltered=${preFiltered} details=${detailsFetched}/${detailsNeeded}`);
         await updateSourceStats(req.documentId, {
           last_parse_status: 'success',
@@ -319,7 +379,9 @@ export function createParseHandler(parser: SourceParser) {
           total_details_fetched: detailsFetched,
           total_details_needed: detailsNeeded,
         });
+        throwIfCancellationRequested(workerContext);
       } catch (err: any) {
+        if (isCancellationError(err)) throw err;
         logger.warn(`Stats update failed: ${err.message}`, { correlationId: corrId });
       }
     }

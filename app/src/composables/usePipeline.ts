@@ -2,6 +2,7 @@ import { reactive, computed, onUnmounted } from 'vue'
 import api from '@/api/strapi'
 
 interface PipelineServerState {
+  run_id?: string | null
   status?: string
   stage?: string
   message?: string
@@ -24,6 +25,7 @@ export function usePipeline() {
   // Pipeline state
   // ========================
   const state = reactive({
+    run_id: null as string | null,
     status: 'idle' as string,
     stage: 'idle' as string,
     message: '',
@@ -93,6 +95,7 @@ export function usePipeline() {
   function updateState(serverState: PipelineServerState | undefined) {
     if (!serverState) return
     Object.assign(state, {
+      run_id: serverState.run_id || null,
       status: serverState.status || 'idle',
       stage: serverState.stage || 'idle',
       message: serverState.message || '',
@@ -169,6 +172,30 @@ export function usePipeline() {
   // Actions
   // ========================
 
+  function isTerminalState(serverState: PipelineServerState): boolean {
+    return serverState.status === 'idle' && ['done', 'done_with_errors', 'cancelled', 'error'].includes(serverState.stage || '')
+  }
+
+  /**
+   * Follow a run returned by an asynchronous endpoint. SSE updates the local
+   * state immediately; status polling remains the durable fallback if an SSE
+   * event is lost during a reconnect.
+   */
+  async function waitForTerminal(runId: string): Promise<PipelineServerState> {
+    connectSSE()
+    while (true) {
+      const res = await api.get('/pipeline/status', { params: { _t: Date.now() } })
+      const serverState = res.data?.state as PipelineServerState | undefined
+      if (res.data?.ok && serverState) {
+        updateState(serverState)
+        if (serverState.run_id === runId && isTerminalState(serverState)) {
+          return serverState
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 1_000))
+    }
+  }
+
   /**
    * Start the full pipeline. Caller builds filters object from UI state.
    */
@@ -183,12 +210,17 @@ export function usePipeline() {
 
   async function cancel() {
     try {
-      await api.post('/pipeline/cancel')
-      // Immediately reset local state
-      updateState({ status: 'idle', stage: 'cancelled', message: 'Пайплайн отменён' })
-      stopPolling()
-      if (eventSource) { eventSource.close(); eventSource = null }
-    } catch { /* ok */ }
+      const res = await api.post('/pipeline/cancel')
+      // The lifecycle owns cancellation: it remains cancelling until its jobs are terminal.
+      if (res.data?.state) updateState(res.data.state)
+    } catch {
+      // A response can fail after the server accepted the request; retain local state and
+      // reconcile it with the durable lifecycle rather than manufacturing a terminal one.
+      try {
+        const res = await api.get('/pipeline/status')
+        if (res.data?.ok && res.data.state) updateState(res.data.state)
+      } catch { /* retain current state */ }
+    }
   }
 
   async function reset() {
@@ -241,6 +273,7 @@ export function usePipeline() {
     isDigestDone,
     parseStage,
     start,
+    waitForTerminal,
     cancel,
     reset,
     cleanup,

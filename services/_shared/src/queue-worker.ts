@@ -4,13 +4,13 @@
  */
 
 import { SqliteQueue } from '@aklab/sqlite-queue';
-import type { Job } from '@aklab/sqlite-queue';
+import type { Job, WorkerContext } from '@aklab/sqlite-queue';
 import { config } from './config';
 import { logger } from './logger';
 
 let queue: SqliteQueue | null = null;
 
-export function startQueueWorker(handler: (job: Job) => Promise<any>): void {
+export function startQueueWorker(handler: (job: Job, workerContext: WorkerContext) => Promise<any>): void {
   queue = new SqliteQueue(config.queue.dbPath, { disableTimers: true });
   queue.process(config.queueName, handler, { concurrency: 2 });
   logger.info(`Queue worker started — listening on ${config.queueName}`);

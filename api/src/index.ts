@@ -47,14 +47,14 @@ export default {
       strapi.log.error(`[bootstrap] registerCrons failed: ${err.message}`);
     }
 
-    // Pipeline recovery: if state says 'running' after restart, reset it
-    // (the polling loop was lost when the process restarted)
+    // Pipeline recovery never clears a persisted active lifecycle on restart:
+    // external workers can still own live queue leases for that run.
     try {
       const pipeline = getPipelineService(strapi as any);
       const state = await pipeline.getState();
-      if (state.status === 'running') {
-        strapi.log.warn('[bootstrap] Pipeline was running before restart — resetting state');
-        await pipeline.resetState();
+      if (state.status === 'running' || state.status === 'cancelling') {
+        strapi.log.warn(`[bootstrap] Recovering persisted pipeline lifecycle: status=${state.status}, run_id=${state.run_id || 'missing'}`);
+        await pipeline.recoverAfterRestart();
       }
     } catch (err: any) {
       strapi.log.error(`[bootstrap] Pipeline recovery failed: ${err.message}`);

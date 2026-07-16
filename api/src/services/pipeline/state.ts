@@ -29,6 +29,10 @@ export type PipelineStage =
 export type PipelineStatus = 'idle' | 'running' | 'cancelling';
 
 export interface PipelineState {
+  /** Stable identifier of the currently reported run. */
+  run_id: string | null;
+  /** Queue jobs owned by run_id; used for run-scoped cancellation/recovery. */
+  job_ids: number[];
   status: PipelineStatus;
   stage: PipelineStage;
   message: string;
@@ -62,6 +66,8 @@ export interface RunOptions {
 
 export function emptyState(): PipelineState {
   return {
+    run_id: null,
+    job_ids: [],
     status: 'idle',
     stage: 'idle',
     message: '',
@@ -86,9 +92,17 @@ export async function getState(strapi: StrapiInstance): Promise<PipelineState> {
   try {
     const setting = await strapi.db.query('api::setting.setting').findOne({});
     if (setting?.pipeline_state) {
-      return typeof setting.pipeline_state === 'string'
+      const stored = typeof setting.pipeline_state === 'string'
         ? JSON.parse(setting.pipeline_state)
         : setting.pipeline_state;
+      // States written before run-aware orchestration do not contain run metadata.
+      // Normalize on read so existing Setting rows remain compatible after deploy.
+      return {
+        ...emptyState(),
+        ...stored,
+        run_id: stored?.run_id ?? null,
+        job_ids: Array.isArray(stored?.job_ids) ? stored.job_ids : [],
+      };
     }
   } catch { /* ok */ }
   return emptyState();
@@ -128,6 +142,34 @@ export async function updateState(strapi: StrapiInstance, patch: Partial<Pipelin
 
   // SSE broadcast
   broadcastSSE('progress', updated);
+}
+
+/**
+ * Atomically claim the persisted lifecycle only while it is idle. `db.query()`
+ * cannot expose an affected-row count here, so use Strapi's documented Knex
+ * connection with SQLite's supported UPDATE ... RETURNING primitive instead.
+ */
+export async function tryAcquireIdleState(strapi: StrapiInstance, nextState: PipelineState): Promise<boolean> {
+  const setting = await strapi.db.query('api::setting.setting').findOne({});
+  if (!setting) return false;
+
+  const result = await strapi.db.connection.raw(
+    `UPDATE setting
+       SET pipeline_state = ?, updated_at = ?
+     WHERE id = ?
+       AND (pipeline_state IS NULL OR json_extract(pipeline_state, '$.status') = 'idle')
+     RETURNING id`,
+    [JSON.stringify(nextState), nextState.updated_at, setting.id],
+  );
+  const rows = Array.isArray(result?.rows)
+    ? result.rows
+    : Array.isArray(result)
+      ? result
+      : [];
+  if (rows.length !== 1) return false;
+
+  broadcastSSE('progress', nextState);
+  return true;
 }
 
 export async function resetState(strapi: StrapiInstance): Promise<void> {

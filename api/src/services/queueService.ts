@@ -86,7 +86,13 @@ export class QueueService {
   addToQueue(
     queueName: string,
     data: any,
-    opts?: { delay?: number; correlationId?: string; priority?: number; maxAttempts?: number }
+    opts?: {
+      delay?: number;
+      correlationId?: string;
+      idempotencyKey?: string;
+      priority?: number;
+      maxAttempts?: number;
+    }
   ): Job {
     return this.queue.add(queueName, data, opts);
   }
@@ -112,8 +118,18 @@ export class QueueService {
     return this.queue.getDetailedStats();
   }
 
+  /** Получить конкретную job без привязки к агрегированной статистике очереди. */
+  getJob(id: number): Job | null {
+    return this.queue.getJob(id);
+  }
+
+  /** Request cooperative cancellation for one run-owned job. */
+  requestCancellation(id: number): boolean {
+    return this.queue.requestCancellation(id);
+  }
+
   /**
-   * Очистить все pending/active задачи в очереди (для pipeline cancel).
+   * Очистить все pending/active задачи в очереди (для legacy callers only).
    */
   clearQueue(queueName: string): number {
     return this.queue.clearQueue(queueName);
