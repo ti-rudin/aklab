@@ -8,6 +8,7 @@ export default defineConfig({
       'api/src/services/**/__tests__/**/*.test.ts',
       'api/src/cron/**/__tests__/**/*.test.ts',
       'api/src/api/**/__tests__/**/*.test.ts',
+      'api/src/policies/**/__tests__/**/*.test.ts',
     ],
     exclude: [
       '**/e2e/**',

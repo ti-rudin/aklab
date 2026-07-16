@@ -1,10 +1,17 @@
 import { timingSafeEqual } from 'node:crypto';
 
 type PolicyContext = {
-  get(name: string): string;
+  request?: {
+    headers?: Record<string, string | string[] | undefined>;
+  };
   status: number;
   body: unknown;
 };
+
+function requestHeader(ctx: PolicyContext, name: string): string {
+  const value = ctx.request?.headers?.[name];
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
 
 function configuredServiceToken(): string | null {
   const token = process.env.STRAPI_API_TOKEN;
@@ -35,8 +42,8 @@ function matchesToken(candidate: unknown, expected: string): boolean {
 
 export default async function serviceToken(ctx: PolicyContext): Promise<boolean> {
   const expectedToken = configuredServiceToken();
-  const serviceToken = ctx.get('x-aklab-service-token');
-  const authorization = ctx.get('authorization');
+  const serviceToken = requestHeader(ctx, 'x-aklab-service-token');
+  const authorization = requestHeader(ctx, 'authorization');
 
   const validServiceHeader = expectedToken !== null && matchesToken(serviceToken, expectedToken);
   const validCompatibilityBearer = expectedToken !== null

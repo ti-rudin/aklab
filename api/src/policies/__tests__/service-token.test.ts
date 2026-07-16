@@ -11,7 +11,9 @@ function makeCtx(headers: Record<string, string> = {}) {
   return {
     status: 200,
     body: undefined as unknown,
-    get: vi.fn((name: string) => normalizedHeaders[name.toLowerCase()] ?? ''),
+    // Strapi wraps Koa context with Object.assign(), so policies receive
+    // the request object, not Koa's prototype get() helper.
+    request: { headers: normalizedHeaders },
   };
 }
 
