@@ -1,10 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
-import { errors } from '@strapi/utils';
 
 type PolicyContext = {
   request?: {
     headers?: Record<string, string | string[] | undefined>;
   };
+  status: number;
+  body: unknown;
 };
 
 function requestHeader(ctx: PolicyContext, name: string): string {
@@ -53,5 +54,9 @@ export default async function serviceToken(ctx: PolicyContext): Promise<boolean>
     return true;
   }
 
-  throw new errors.UnauthorizedError('Unauthorized');
+  // Strapi converts a false policy result into PolicyError (HTTP 403).
+  // That is its supported fail-closed response for a route policy.
+  ctx.status = 403;
+  ctx.body = { error: 'Forbidden' };
+  return false;
 }
