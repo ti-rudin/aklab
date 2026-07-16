@@ -15,6 +15,7 @@ import * as path from 'path';
 import { fetchProperty, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 import { getExtractor, type ExtractedPhoto } from './sources/extractors';
+import { createPinnedHttpsProxy } from './pinned-proxy';
 import {
   assertAllowedDetailUrl,
   fetchPublicImage,
@@ -51,8 +52,10 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
   }
 
   const { chromium } = await import('playwright');
+  const egressProxy = await createPinnedHttpsProxy();
   const browser = await chromium.launch({
     headless: true,
+    proxy: { server: egressProxy.server },
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
@@ -147,5 +150,6 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
     throw err;
   } finally {
     await browser.close();
+    await egressProxy.close();
   }
 }

@@ -90,10 +90,10 @@ function hostMatches(hostname: string, allowedHost: string): boolean {
  * Validate a URL immediately before an outbound request. DNS is intentionally
  * resolved on every call so a redirect cannot bypass the public-address check.
  */
-export async function assertPublicHttpsUrl(
+export async function resolvePublicHttpsUrl(
   value: string,
   options: { allowedHosts?: readonly string[]; lookup?: Lookup } = {},
-): Promise<URL> {
+): Promise<{ url: URL; addresses: LookupResult[] }> {
   let url: URL;
   try {
     url = new URL(value);
@@ -121,7 +121,14 @@ export async function assertPublicHttpsUrl(
     throw new UnsafeUrlError(`URL host ${url.hostname} does not resolve only to public addresses`);
   }
 
-  return url;
+  return { url, addresses };
+}
+
+export async function assertPublicHttpsUrl(
+  value: string,
+  options: { allowedHosts?: readonly string[]; lookup?: Lookup } = {},
+): Promise<URL> {
+  return (await resolvePublicHttpsUrl(value, options)).url;
 }
 
 export async function assertAllowedDetailUrl(value: string, source: string, lookup?: Lookup): Promise<URL> {
