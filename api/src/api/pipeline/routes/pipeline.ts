@@ -7,19 +7,19 @@ export default {
       method: 'POST',
       path: '/pipeline/start',
       handler: 'pipeline.start',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'POST',
       path: '/pipeline/cancel',
       handler: 'pipeline.cancel',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'POST',
       path: '/pipeline/reset',
       handler: 'pipeline.reset',
-      config: { auth: {}, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'GET',

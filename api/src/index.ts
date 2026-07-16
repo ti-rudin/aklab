@@ -3,6 +3,7 @@ import { runSeeders } from './seeders';
 import { getQueueService } from './services/queueService';
 import { registerCrons } from './cron';
 import { getPipelineService } from './services/pipeline';
+import { disablePublicRegistration } from './services/registration';
 import type { StrapiInstance } from './types/strapi';
 
 export default {
@@ -34,6 +35,8 @@ export default {
     if (missing.length > 0) {
       throw new Error(`Missing required environment variables: ${missing.join(', ')}. Check api/.env`);
     }
+
+    await disablePublicRegistration(strapi as any);
 
     try {
       await runSeeders(strapi as any);
