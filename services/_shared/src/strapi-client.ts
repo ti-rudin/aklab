@@ -18,6 +18,7 @@ const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
   'Content-Type': 'application/json',
   Authorization: `Bearer ${config.strapi.apiToken}`,
+  'X-AKLAB-Service-Token': config.strapi.apiToken,
 };
 
 /**

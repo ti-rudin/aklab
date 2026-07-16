@@ -35,32 +35,128 @@ function throwIfCancellationRequested(workerContext?: WorkerContext): void {
 
 async function fetchFocusProperties(workerContext?: WorkerContext): Promise<any[]> {
   // threshold=0 — все объекты в фокусе (score > 0)
-  const url = `${BASE}/api/properties/focus?threshold=0&pageSize=100&sort=-focus_score`;
-  throwIfCancellationRequested(workerContext);
-  const res = await fetch(url, { headers: HEADERS });
-  throwIfCancellationRequested(workerContext);
-  if (!res.ok) return [];
-  throwIfCancellationRequested(workerContext);
-  const json: any = await res.json();
-  throwIfCancellationRequested(workerContext);
-  return json.data || [];
+  const pageSize = 100;
+  const properties: any[] = [];
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const url = `${BASE}/api/properties/focus?threshold=0&pageSize=${pageSize}&page=${page}&sort=-focus_score`;
+    throwIfCancellationRequested(workerContext);
+    const res = await fetch(url, { headers: HEADERS });
+    throwIfCancellationRequested(workerContext);
+    if (!res.ok) {
+      throw new Error(`Focus properties request failed with HTTP ${res.status}`);
+    }
+    throwIfCancellationRequested(workerContext);
+    const json: any = await res.json();
+    throwIfCancellationRequested(workerContext);
+
+    if (!Array.isArray(json?.data)) {
+      throw new Error('Focus properties response contained no data array');
+    }
+
+    properties.push(...json.data);
+    const totalPages = Number(json?.meta?.totalPages);
+    hasNextPage = Number.isInteger(totalPages)
+      ? page < totalPages
+      : json.data.length === pageSize;
+    page += 1;
+  }
+
+  return properties;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#39;';
+      default: return char;
+    }
+  });
+}
+
+function displayText(value: unknown, fallback = '—'): string {
+  return value === null || value === undefined || value === '' ? fallback : String(value);
+}
+
+function parseStoredIsoTimestamp(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value ? timestamp : null;
+}
+
+function formatNumber(value: unknown, suffix: string): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toLocaleString('ru-RU')}${suffix}` : '—';
+}
+
+function formatScore(value: unknown): string {
+  const score = Number(value);
+  return Number.isFinite(score) ? String(score) : '—';
+}
+
+function safeHttpsUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function labelsForTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return tags.map((tag) => tagLabel[String(tag)] || String(tag));
 }
 
 function propertyRow(p: any): string {
-  const tags = (p.tags || []).map((t: string) =>
-    `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:8px;font-size:11px;background:#e0e7ff;color:#3730a3">${tagLabel[t] || t}</span>`
+  const title = displayText(p.title);
+  const href = safeHttpsUrl(p.url);
+  const titleHtml = href
+    ? `<a href="${escapeHtml(href)}">${escapeHtml(title)}</a>`
+    : escapeHtml(title);
+  const tags = labelsForTags(p.tags).map((tag) =>
+    `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:8px;font-size:11px;background:#e0e7ff;color:#3730a3">${escapeHtml(tag)}</span>`
   ).join(' ');
+  const city = cityLabel[String(p.city)] || displayText(p.city);
+  const score = Number(p.focus_score);
   return `
     <tr>
-      <td style="padding:8px;border-bottom:1px solid #eee"><a href="${p.url || '#'}">${p.title}</a></td>
-      <td style="padding:8px;border-bottom:1px solid #eee">${cityLabel[p.city] || p.city}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.area_sqm ? p.area_sqm + ' м²' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price ? Number(p.price).toLocaleString('ru-RU') + ' ₽' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${p.price_per_sqm ? Number(p.price_per_sqm).toLocaleString('ru-RU') + ' ₽/м²' : '—'}</td>
-      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;color:${(p.focus_score || 0) >= 50 ? '#ef4444' : '#f59e0b'}">${p.focus_score ?? '—'}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${titleHtml}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(city)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${escapeHtml(formatNumber(p.area_sqm, ' м²'))}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${escapeHtml(formatNumber(p.price, ' ₽'))}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${escapeHtml(formatNumber(p.price_per_sqm, ' ₽/м²'))}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;color:${Number.isFinite(score) && score >= 50 ? '#ef4444' : '#f59e0b'}">${escapeHtml(formatScore(p.focus_score))}</td>
       <td style="padding:8px;border-bottom:1px solid #eee">${tags || '—'}</td>
     </tr>
   `;
+}
+
+function propertyText(p: any): string {
+  const title = displayText(p.title);
+  const city = cityLabel[String(p.city)] || displayText(p.city);
+  const tags = labelsForTags(p.tags);
+  const href = safeHttpsUrl(p.url);
+  return [
+    title,
+    city,
+    formatNumber(p.area_sqm, ' м²'),
+    formatNumber(p.price, ' ₽'),
+    formatNumber(p.price_per_sqm, ' ₽/м²'),
+    `скор ${formatScore(p.focus_score)}`,
+    tags.length > 0 ? `теги: ${tags.join(', ')}` : null,
+    href,
+  ].filter(Boolean).join(' | ');
 }
 
 function tableHeader(): string {
@@ -102,9 +198,9 @@ export async function handleDigestJob(job: Job, workerContext?: WorkerContext): 
   const now = Date.now();
   const h24 = 24 * 60 * 60 * 1000;
   const filtered = allFocus.filter((p: any) => {
-    // Свежесть: только объекты за последние 24 часа
-    const seenAt = p.first_seen_at ? Number(p.first_seen_at) : 0;
-    if (seenAt > 0 && (now - seenAt) > h24) return false;
+    // Свежесть: только валидные ISO timestamps за последние 24 часа.
+    const seenAt = parseStoredIsoTimestamp(p.first_seen_at);
+    if (seenAt === null || seenAt > now || now - seenAt > h24) return false;
     // Регион
     if (!regions.includes(p.city)) return false;
     // Цена
@@ -149,12 +245,20 @@ export async function handleDigestJob(job: Job, workerContext?: WorkerContext): 
 
   const html = `
     <div style="font-family:sans-serif;max-width:900px;margin:0 auto">
-      <h2 style="color:#333">AKLAB: Объекты в фокусе — ${req.date}</h2>
+      <h2 style="color:#333">AKLAB: Объекты в фокусе — ${escapeHtml(req.date)}</h2>
       <p style="color:#666">В фокусе: <strong>${filtered.length}</strong> объектов · Средний скор: <strong>${avgScore}</strong></p>
       <p style="color:#666;font-size:13px">🔥 Горячее (скор ≥ 50): ${hot.length} · 📋 Обычное (20-49): ${regular.length}</p>
       ${sectionsHtml}
       <p style="color:#999;font-size:12px;margin-top:24px">AKLAB — мониторинг коммерческой недвижимости</p>
     </div>`;
+  const text = [
+    `AKLAB: Объекты в фокусе — ${displayText(req.date)}`,
+    `В фокусе: ${filtered.length} объектов · Средний скор: ${avgScore}`,
+    `Горячее (скор ≥ 50): ${hot.length} · Обычное (20-49): ${regular.length}`,
+    hot.length > 0 ? `\nГорячее:\n${hot.map(propertyText).join('\n')}` : null,
+    regular.length > 0 ? `\nОбычное:\n${regular.map(propertyText).join('\n')}` : null,
+    '\nAKLAB — мониторинг коммерческой недвижимости',
+  ].filter(Boolean).join('\n');
 
   try {
     const transporter = nodemailer.createTransport({
@@ -168,8 +272,9 @@ export async function handleDigestJob(job: Job, workerContext?: WorkerContext): 
       from: config.smtp.from,
       to: smtpTo,
       subject: `AKLAB: ${filtered.length} объектов в фокусе (скор ${avgScore}) — ${req.date}`,
+      text,
       html,
-    });
+    } as any);
     throwIfCancellationRequested(workerContext);
     logger.info(`Email sent: ${hot.length} hot + ${regular.length} regular`, { correlationId: corrId });
   } catch (err: any) {

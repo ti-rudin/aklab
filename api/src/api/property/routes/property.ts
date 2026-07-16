@@ -12,7 +12,7 @@ export default {
       method: 'POST',
       path: '/properties/upsert',
       handler: 'property.upsert',
-      config: { auth: false, policies: [] },
+      config: { auth: false, policies: ['global::service-token'] },
     },
     {
       method: 'POST',
