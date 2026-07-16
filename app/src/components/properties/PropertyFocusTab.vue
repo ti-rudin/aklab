@@ -9,7 +9,7 @@
   <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
     <button
       @click="recalculateScore"
-      :disabled="scoringLoading"
+      :disabled="scoringLoading || pipelineRunning"
       class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
       style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
     >
@@ -216,9 +216,11 @@ import { useFocusTab } from '@/composables/useFocusTab'
 import { cityLabel, typeLabel } from '@/utils/formatters'
 import { useToast } from '@/composables/useToast'
 import { buildFocusParams, buildAnalyzeBody } from '@/composables/useFocusParams'
+import { usePipeline } from '@/composables/usePipeline'
 
 const router = useRouter()
 const toast = useToast()
+const { isRunning: pipelineRunning, waitForTerminal, checkOnMount: checkPipelineOnMount } = usePipeline()
 
 const {
   focusProperties: focusItems,
@@ -304,29 +306,40 @@ const scoringLoading = ref(false)
 const analyzeProgress = ref<{ total: number; analyzed: number; remaining: number; undervalued: number; done: boolean } | null>(null)
 
 async function recalculateScore() {
+  if (pipelineRunning.value) {
+    toast.error('Pipeline уже выполняется или отменяется')
+    return
+  }
+
   scoringLoading.value = true
   analyzeProgress.value = null
   try {
-    // Шаг 1: Анализ (deviation от эталонов) — force=true для пересчёта
+    // /cron/analyze создаёт lifecycle; score выполняется внутри его terminal flow.
     const analyzeBody = buildAnalyzeBody(focusFilters, { force: true })
-    await api.post('/cron/analyze', analyzeBody)
-
-    // Поллинг прогресса анализа
-    for (let i = 0; i < 120; i++) { // макс 2 мин (120 × 1с)
-      await new Promise(r => setTimeout(r, 1000))
-      try {
-        const { data } = await api.get('/cron/analyze-progress')
-        analyzeProgress.value = data
-        if (data.done) break
-      } catch { /* DB может быть занят — retry */ }
+    const { data: started } = await api.post('/cron/analyze', analyzeBody)
+    const runId = started?.run_id || started?.runId
+    if (!started?.ok || typeof runId !== 'string') {
+      throw new Error(started?.message || 'Сервер не вернул идентификатор запуска анализа')
     }
 
-    // Шаг 2: Scoring (focus_score + tags)
-    const scoreBody = buildAnalyzeBody(focusFilters, { threshold: focusFilters.threshold })
-    await api.post('/cron/score', scoreBody)
+    const terminal = await waitForTerminal(runId)
+    analyzeProgress.value = {
+      total: Number(terminal.analyze_total || 0),
+      analyzed: Number(terminal.analyze_done || 0),
+      remaining: Math.max(0, Number(terminal.analyze_total || 0) - Number(terminal.analyze_done || 0)),
+      undervalued: Number(terminal.undervalued_count || 0),
+      done: true,
+    }
+    if (terminal.stage === 'cancelled' || terminal.stage === 'error') {
+      throw new Error(terminal.message || 'Pipeline анализа не завершился успешно')
+    }
 
-    // Обновляем список
+    // Focus scoring is part of the analyse lifecycle; do not start /cron/score
+    // concurrently with its queue-owned analyzer jobs.
     await fetchFocusItems()
+    if (terminal.stage === 'done_with_errors') {
+      toast.error(terminal.message || 'Анализ завершён с ошибками; показаны доступные результаты')
+    }
   } catch (e: any) {
     toast.error('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
   } finally {
@@ -442,6 +455,7 @@ defineExpose({ total: focusTotal })
 // ========================
 onMounted(() => {
   activeTab.value = 'focus'
+  void checkPipelineOnMount()
   fetchFocusItems()
 })
 </script>

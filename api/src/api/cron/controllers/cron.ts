@@ -6,6 +6,7 @@ import { getQueueService } from '../../../services/queueService';
 import { getPipelineService } from '../../../services/pipeline';
 import { scorePropertiesBatch } from '../../../services/focusEngine';
 import type { StrapiInstance } from '../../../types/strapi';
+import { randomUUID } from 'node:crypto';
 
 function getQueue() {
   return getQueueService();
@@ -18,7 +19,6 @@ export default {
       const { slug } = ctx.params;
       const depth = ctx.request.body?.depth ?? 20;
       const qs = getQueue();
-      const corrId = `manual-parse-${Date.now()}`;
 
       // Find source by slug
       const sources = await s.entityService.findMany('api::source.source', {
@@ -36,17 +36,41 @@ export default {
         return;
       }
 
-      qs.addToQueue(`parse-${slug}`, {
+      // A legacy single-source parse is not a pipeline subrun. It must not start
+      // while the persisted pipeline lifecycle owns parsing/analyze/digest work.
+      const pipeline = getPipelineService(s);
+      const pipelineState = await pipeline.getState();
+      if (pipelineState?.status !== 'idle') {
+        ctx.status = 409;
+        ctx.body = {
+          ok: false,
+          message: 'Нельзя запустить парсинг источника: pipeline уже выполняется или отменяется',
+        };
+        return;
+      }
+
+      // Without `phase`, the legacy parse handler performs scan and details in one
+      // job. Keep this key stable so concurrent manual requests reuse that live job.
+      const phase = 'full';
+      const corrId = `manual-parse-${Date.now()}-${randomUUID()}`;
+      const job = qs.addToQueue(`parse-${slug}`, {
         source: slug,
         sourceId: source.id,
         documentId: source.documentId,
         depth,
-      }, { correlationId: corrId });
+      }, {
+        correlationId: corrId,
+        idempotencyKey: `manual:${slug}:${phase}`,
+      });
+      const reused = Boolean(job.correlation_id && job.correlation_id !== corrId);
 
       ctx.body = {
         ok: true,
         message: `Parse job enqueued for ${slug}`,
         correlationId: corrId,
+        job_id: job.id,
+        jobId: job.id,
+        reused,
       };
     } catch (err: any) {
       strapi.log.error(`[cron] parseSource error: ${err.message}`);
@@ -67,48 +91,21 @@ export default {
       const threshold = body.threshold ? Number(body.threshold) : null;
       const force = body.force === true;
 
-      // Force mode: сбросить is_undervalued для пересчёта (keep inline for now)
-      if (force) {
-        const resetWhere: any = { status: 'new' };
-        if (priceFrom !== null && !isNaN(priceFrom)) {
-          resetWhere.price = { ...(resetWhere.price || {}), $gte: priceFrom };
-        }
-        if (priceTo !== null && !isNaN(priceTo)) {
-          resetWhere.price = { ...(resetWhere.price || {}), $lte: priceTo };
-        }
-        if (cityFilter && Array.isArray(cityFilter) && cityFilter.length > 0) {
-          resetWhere.city = { $in: cityFilter };
-        }
-
-        const toReset = await s.db.query('api::property.property').findMany({
-          where: resetWhere,
-          select: ['documentId'],
-        });
-
-        let resetCount = 0;
-        for (const prop of toReset || []) {
-          await s.db.query('api::property.property').update({
-            where: { documentId: prop.documentId },
-            data: { is_undervalued: null, deviation: null, price_per_sqm_ref: null },
-          });
-          resetCount++;
-        }
-        strapi.log.info(`[cron] Force reset ${resetCount} properties (is_undervalued → null)`);
-      }
-
-      // Delegate analysis to PipelineService
-      const analyzeResult = await pipeline.analyze({
+      const filters = {
         city: cityFilter || undefined,
         priceFrom: priceFrom != null && !isNaN(priceFrom) ? priceFrom : undefined,
         priceTo: priceTo != null && !isNaN(priceTo) ? priceTo : undefined,
         threshold: threshold != null && !isNaN(threshold) ? threshold : undefined,
-      });
+        force,
+      };
+      const depth = 20;
+      const runId = await pipeline.start('analyze', depth, filters, 'manual');
 
       ctx.body = {
         ok: true,
-        message: `Analysis complete: ${analyzeResult.undervalued} undervalued`,
-        undervalued: analyzeResult.undervalued,
-        errors: analyzeResult.errors,
+        run_id: runId,
+        runId,
+        message: `Pipeline started: mode=analyze, depth=${depth}`,
         filters: { priceFrom, priceTo, city: cityFilter, threshold, force },
       };
     } catch (err: any) {
@@ -122,14 +119,14 @@ export default {
       const s = strapi as unknown as StrapiInstance;
       const pipeline = getPipelineService(s);
 
-      // Delegate digest to PipelineService (it checks digest_enabled internally)
-      const digestResult = await pipeline.digest();
+      const depth = 20;
+      const runId = await pipeline.start('digest', depth, undefined, 'manual');
 
       ctx.body = {
-        ok: digestResult.sent,
-        message: digestResult.sent ? 'Digest sent' : 'Дайджест отключён в настройках',
-        sent: digestResult.sent,
-        errors: digestResult.errors,
+        ok: true,
+        run_id: runId,
+        runId,
+        message: `Pipeline started: mode=digest, depth=${depth}`,
       };
     } catch (err: any) {
       strapi.log.error(`[cron] sendDigest error: ${err.message}`);
@@ -176,6 +173,13 @@ export default {
   async scoreProperties(ctx: any) {
     try {
       const s = strapi as unknown as StrapiInstance;
+      const pipeline = getPipelineService(s);
+      const pipelineState = await pipeline.getState();
+      if (pipelineState?.status !== 'idle') {
+        ctx.status = 409;
+        ctx.body = { ok: false, message: 'Нельзя пересчитать score: pipeline уже выполняется или отменяется' };
+        return;
+      }
       const body = ctx.request?.body || {};
       let threshold = body.threshold ? Number(body.threshold) : null;
       const cityFilter: string[] | null = body.city || null;

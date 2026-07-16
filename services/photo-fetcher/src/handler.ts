@@ -15,6 +15,12 @@ import * as path from 'path';
 import { fetchProperty, updateProperty, logCron } from '@aklab/service-shared';
 import { logger } from './utils/logger';
 import { getExtractor, type ExtractedPhoto } from './sources/extractors';
+import {
+  assertAllowedDetailUrl,
+  fetchPublicImage,
+  installDetailNavigationGuard,
+  readValidatedImage,
+} from './ssrf';
 
 export interface PhotoFetchRequest {
   documentId: string;
@@ -51,15 +57,21 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
   });
 
   try {
+    // The request payload can originate from a Property record. Validate the
+    // persisted URL against the parser's egress boundary before Chromium sees it.
+    const detailUrl = await assertAllowedDetailUrl(req.url, req.source);
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       locale: 'ru-RU',
+      // Route interception does not reliably govern Service Worker egress.
+      serviceWorkers: 'block',
     });
     const page = await context.newPage();
+    await installDetailNavigationGuard(page, req.source);
 
     // Navigate to detail page
-    logger.info(`Loading ${req.url}`, { correlationId: corrId });
-    await page.goto(req.url, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT });
+    logger.info(`Loading ${detailUrl}`, { correlationId: corrId });
+    await page.goto(detailUrl.toString(), { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT });
     await page.waitForTimeout(3000);
 
     // Extract photos using source-specific extractor
@@ -85,20 +97,14 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
     for (let i = 0; i < toDownload.length; i++) {
       try {
         const photo = toDownload[i];
-        const res = await fetch(photo.url);
+        const res = await fetchPublicImage(photo.url);
         if (!res.ok) {
           logger.warn(`Photo ${i} fetch failed (${res.status}): ${photo.url}`, { correlationId: corrId });
           continue;
         }
 
-        const contentType = res.headers.get('content-type') || '';
-        let ext = '.jpg';
-        if (contentType.includes('png')) ext = '.png';
-        else if (contentType.includes('webp')) ext = '.webp';
-        else if (contentType.includes('gif')) ext = '.gif';
-
-        const filename = `${i}${ext}`;
-        const buffer = Buffer.from(await res.arrayBuffer());
+        const { buffer, extension } = await readValidatedImage(res);
+        const filename = `${i}${extension}`;
         await fs.writeFile(path.join(photosDir, filename), buffer);
         downloaded.push(`/photos/${req.documentId}/${filename}`);
       } catch (err: any) {
@@ -114,8 +120,11 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
       });
       logger.info(`Saved ${downloaded.length} photos for ${req.documentId}`, { correlationId: corrId });
     } else {
-      await updateProperty(req.documentId, { photos_downloaded: true });
-      logger.info(`All photo downloads failed for ${req.documentId}`, { correlationId: corrId });
+      // A page with no extracted images is a confirmed empty result; download
+      // failures are not. Keep the property retryable and remove the empty
+      // directory rather than permanently recording a false success.
+      await fs.rm(photosDir, { recursive: true, force: true }).catch(() => {});
+      logger.warn(`All photo downloads failed for ${req.documentId}; leaving it retryable`, { correlationId: corrId });
     }
 
     await logCron({

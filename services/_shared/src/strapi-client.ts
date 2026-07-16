@@ -18,6 +18,7 @@ const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
   'Content-Type': 'application/json',
   Authorization: `Bearer ${config.strapi.apiToken}`,
+  'X-AKLAB-Service-Token': config.strapi.apiToken,
 };
 
 /**
@@ -241,7 +242,9 @@ export async function createProperty(props: {
     return null;
   }
 
-  const res = await fetch(`${BASE}/properties`, {
+  // DB-backed identity upsert closes the check-then-create race: another parser
+  // may win after propertyExists(), in which case the endpoint returns it safely.
+  const res = await fetch(`${BASE}/properties/upsert`, {
     method: 'POST',
     headers: HEADERS,
     body: JSON.stringify({ data: { ...restProps, first_seen_at: new Date().toISOString() } }),
@@ -250,7 +253,11 @@ export async function createProperty(props: {
     const body = await res.text();
     throw new Error(`createProperty failed (${res.status}): ${body}`);
   }
-  const data = (await res.json()) as StrapiResponse<any>;
+  const data = (await res.json()) as StrapiResponse<any> & { meta?: { created?: boolean } };
+  if (data.meta?.created === false) {
+    logger.warn(`Skipping concurrent duplicate: "${restProps.title}" source=${restProps.source} ext=${restProps.external_id}`);
+    return null;
+  }
   return data.data;
 }
 
@@ -300,7 +307,7 @@ export async function updateSourceStats(documentId: string, data: {
     }
   }
 
-  const putRes = await fetch(`${BASE}/sources/${documentId}`, {
+  const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: updateData }),
@@ -317,7 +324,7 @@ export async function updateSourceStats(documentId: string, data: {
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
   console.log(`[strapi-client:reset] docId=${documentId} → resetting ALL counters to 0`);
   try {
-    const putRes = await fetch(`${BASE}/sources/${documentId}`, {
+    const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
       method: 'PUT',
       headers: HEADERS,
       body: JSON.stringify({ data: {
@@ -350,7 +357,7 @@ export async function logCron(entry: {
   error?: string;
 }): Promise<void> {
   try {
-    await fetch(`${BASE}/cron-logs`, {
+    await fetch(`${BASE}/internal/cron-logs`, {
       method: 'POST',
       headers: HEADERS,
       body: JSON.stringify({ data: entry }),
@@ -395,7 +402,7 @@ export async function fetchSetting(): Promise<any> {
  * Обновить Property по documentId (для analyzer).
  */
 export async function updateProperty(documentId: string, fields: Record<string, any>): Promise<void> {
-  const res = await fetch(`${BASE}/properties/${documentId}`, {
+  const res = await fetch(`${BASE}/internal/properties/${documentId}`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: fields }),

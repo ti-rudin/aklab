@@ -55,10 +55,31 @@ function makeJob(data: any) {
 
 // We need to mock global fetch for fetchFocusProperties
 const mockFetch = vi.fn();
+const FRESH_FIRST_SEEN_AT = new Date().toISOString();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  global.fetch = mockFetch;
+  global.fetch = (async (...args: Parameters<typeof fetch>) => {
+    const response = await mockFetch(...args);
+    if (!response?.ok) return response;
+
+    return {
+      ...response,
+      json: async () => {
+        const body = await response.json();
+        return {
+          ...body,
+          data: Array.isArray(body?.data)
+            ? body.data.map((property: any) => (
+              property.first_seen_at === undefined
+                ? { ...property, first_seen_at: FRESH_FIRST_SEEN_AT }
+                : property
+            ))
+            : body?.data,
+        };
+      },
+    };
+  }) as typeof fetch;
 });
 
 describe('handleDigestJob', () => {
@@ -305,17 +326,16 @@ describe('handleDigestJob', () => {
     ).rejects.toThrow('SMTP connection failed');
   });
 
-  it('should handle when fetchFocusProperties returns non-ok response', async () => {
+  it('should throw when focus endpoint returns a non-ok response', async () => {
     mockedFetchSetting.mockResolvedValue({ monitored_regions: ['moscow'] });
     mockFetch.mockResolvedValue({
       ok: false,
       status: 500,
     });
 
-    const result = await handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }));
-
-    // fetchFocusProperties returns [] on non-ok
-    expect(result).toEqual({ sent: false, count: 0 });
+    await expect(
+      handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }))
+    ).rejects.toThrow('500');
   });
 
   it('should include date in email subject', async () => {
@@ -334,5 +354,107 @@ describe('handleDigestJob', () => {
     const mailArg = mockSendMail.mock.calls[0][0];
     expect(mailArg.subject).toContain('2025-06-30');
     expect(mailArg.html).toContain('2025-06-30');
+  });
+
+  it('paginates focus results beyond the first 100 records', async () => {
+    mockedFetchSetting.mockResolvedValue({ monitored_regions: ['moscow'] });
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      city: 'moscow',
+      focus_score: 60,
+      title: `Property ${index + 1}`,
+      tags: [],
+      url: 'https://example.com/property',
+    }));
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: firstPage, meta: { totalPages: 2 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          data: [{ city: 'moscow', focus_score: 60, title: 'Property 101', tags: [], url: 'https://example.com/101' }],
+          meta: { totalPages: 2 },
+        }),
+      });
+
+    const result = await handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }));
+
+    expect(result).toEqual({ sent: true, count: 101 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(String(mockFetch.mock.calls[0][0])).toContain('page=1');
+    expect(String(mockFetch.mock.calls[1][0])).toContain('page=2');
+  });
+
+  it('throws when the focus request fails at the network or JSON layer', async () => {
+    mockedFetchSetting.mockResolvedValue({ monitored_regions: ['moscow'] });
+    mockFetch.mockRejectedValueOnce(new Error('network unavailable'));
+
+    await expect(
+      handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }))
+    ).rejects.toThrow('network unavailable');
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.reject(new Error('invalid JSON')),
+    });
+
+    await expect(
+      handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }))
+    ).rejects.toThrow('invalid JSON');
+  });
+
+  it('excludes missing, invalid, old, and future first_seen_at values', async () => {
+    mockedFetchSetting.mockResolvedValue({ monitored_regions: ['moscow'] });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [
+          { city: 'moscow', focus_score: 60, title: 'Missing', tags: [], first_seen_at: null },
+          { city: 'moscow', focus_score: 60, title: 'Invalid', tags: [], first_seen_at: 'not-an-iso-timestamp' },
+          { city: 'moscow', focus_score: 60, title: 'Old', tags: [], first_seen_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() },
+          { city: 'moscow', focus_score: 60, title: 'Future', tags: [], first_seen_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() },
+          { city: 'moscow', focus_score: 60, title: 'Fresh', tags: [], first_seen_at: FRESH_FIRST_SEEN_AT },
+        ],
+      }),
+    });
+
+    const result = await handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }));
+
+    expect(result).toEqual({ sent: true, count: 1 });
+    expect(mockSendMail.mock.calls[0][0].html).toContain('Fresh');
+    expect(mockSendMail.mock.calls[0][0].html).not.toContain('Missing');
+  });
+
+  it('escapes scraped text, rejects unsafe hrefs, and sends a text alternative', async () => {
+    mockedFetchSetting.mockResolvedValue({ monitored_regions: ['moscow'] });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [{
+          city: 'moscow',
+          focus_score: 60,
+          title: '<img src=x onerror=alert(1)>',
+          tags: ['</span><script>alert(1)</script>'],
+          url: 'javascript:alert(1)',
+        }, {
+          city: 'moscow',
+          focus_score: 60,
+          title: 'Safe link',
+          tags: [],
+          url: 'https://example.com/safe',
+        }],
+      }),
+    });
+
+    await handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }));
+
+    const mailArg = mockSendMail.mock.calls[0][0];
+    expect(mailArg.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(mailArg.html).toContain('&lt;/span&gt;&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(mailArg.html).not.toContain('<img');
+    expect(mailArg.html).not.toContain('href="javascript:');
+    expect(mailArg.html).toContain('href="https://example.com/safe"');
+    expect(mailArg.text).toContain('<img src=x onerror=alert(1)>');
   });
 });

@@ -2,11 +2,12 @@
  * SQLite Queue Worker — поллинг очереди и обработка задач
  */
 
+import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import type { Job, JobRow, WorkerOptions } from './types';
+import type { Job, JobHandler, JobRow, WorkerContext, WorkerOptions } from './types';
 import { PermanentError } from './types';
 
-type JobHandler = (job: Job) => Promise<any>;
+const CANCELLATION_ERROR = 'cancelled';
 
 export class Worker {
   private db: Database.Database;
@@ -14,6 +15,9 @@ export class Worker {
   private handler: JobHandler;
   private concurrency: number;
   private pollInterval: number;
+  private leaseDurationMs: number;
+  private heartbeatIntervalMs: number;
+  private workerId: string;
   private activeCount: number = 0;
   private pollTimer: NodeJS.Timeout | null = null;
   private stopped: boolean = false;
@@ -23,6 +27,9 @@ export class Worker {
   private stmtComplete: Database.Statement;
   private stmtFail: Database.Statement;
   private stmtRetry: Database.Statement;
+  private stmtHeartbeat: Database.Statement;
+  private stmtCancellationRequested: Database.Statement;
+  private stmtLeaseValid: Database.Statement;
 
   constructor(db: Database.Database, queueName: string, handler: JobHandler, opts?: WorkerOptions) {
     this.db = db;
@@ -30,11 +37,17 @@ export class Worker {
     this.handler = handler;
     this.concurrency = opts?.concurrency ?? 1;
     this.pollInterval = opts?.pollInterval ?? 200;
+    this.leaseDurationMs = opts?.leaseDurationMs ?? parseInt(process.env.QUEUE_LEASE_DURATION_MS || '300000', 10);
+    this.heartbeatIntervalMs = opts?.heartbeatIntervalMs ?? Math.max(10, Math.floor(this.leaseDurationMs / 2));
+    this.workerId = `worker:${randomUUID()}`;
 
-    // Атомарный захват задачи: UPDATE + RETURNING вместо SELECT + UPDATE (race condition fix)
+    // Atomic claim: a fresh owner and lease token are persisted with the state
+    // transition, so an old worker can never complete another worker's claim.
     this.stmtFetch = db.prepare(`
       UPDATE jobs
-      SET status = 'active', started_at = ?, attempts = attempts + 1
+      SET status = 'active', started_at = ?, attempts = attempts + 1,
+          locked_by = ?, lease_token = ?, lease_expires_at = ?, heartbeat_at = ?,
+          lease_duration_ms = ?, cancellation_requested_at = NULL
       WHERE id = (
         SELECT id FROM jobs
         WHERE queue = ? AND status = 'pending' AND (scheduled_at IS NULL OR scheduled_at <= ?)
@@ -44,25 +57,52 @@ export class Worker {
       RETURNING *
     `);
 
-    // Оставлен для обратной совместимости, но не используется в poll()
+    // Retained for private backwards compatibility. poll() uses stmtFetch above.
     this.stmtClaim = db.prepare(`
-      UPDATE jobs SET status = 'active', started_at = ?, attempts = attempts + 1
+      UPDATE jobs
+      SET status = 'active', started_at = ?, attempts = attempts + 1,
+          locked_by = ?, lease_token = ?, lease_expires_at = ?, heartbeat_at = ?,
+          lease_duration_ms = ?, cancellation_requested_at = NULL
       WHERE id = ? AND status = 'pending'
     `);
 
     this.stmtComplete = db.prepare(`
-      UPDATE jobs SET status = 'completed', result = ?, completed_at = ?
-      WHERE id = ? AND status = 'active'
+      UPDATE jobs
+      SET status = 'completed', result = ?, completed_at = ?,
+          locked_by = NULL, lease_token = NULL, lease_expires_at = NULL, heartbeat_at = NULL
+      WHERE id = ? AND status = 'active' AND lease_token = ?
+        AND cancellation_requested_at IS NULL
     `);
 
     this.stmtFail = db.prepare(`
-      UPDATE jobs SET status = 'failed', error = ?, completed_at = ?
-      WHERE id = ? AND status = 'active'
+      UPDATE jobs
+      SET status = 'failed', error = ?, completed_at = ?,
+          locked_by = NULL, lease_token = NULL, lease_expires_at = NULL, heartbeat_at = NULL
+      WHERE id = ? AND status = 'active' AND lease_token = ?
     `);
 
     this.stmtRetry = db.prepare(`
-      UPDATE jobs SET status = 'pending', error = ?, scheduled_at = ?
-      WHERE id = ? AND status = 'active'
+      UPDATE jobs
+      SET status = 'pending', error = ?, scheduled_at = ?,
+          locked_by = NULL, lease_token = NULL, lease_expires_at = NULL, heartbeat_at = NULL
+      WHERE id = ? AND status = 'active' AND lease_token = ?
+        AND cancellation_requested_at IS NULL
+    `);
+
+    this.stmtHeartbeat = db.prepare(`
+      UPDATE jobs
+      SET heartbeat_at = ?, lease_expires_at = ? + COALESCE(lease_duration_ms, ?)
+      WHERE id = ? AND status = 'active' AND lease_token = ?
+    `);
+    this.stmtCancellationRequested = db.prepare(`
+      SELECT 1 FROM jobs
+      WHERE id = ? AND status = 'active' AND lease_token = ?
+        AND cancellation_requested_at IS NOT NULL
+    `);
+    this.stmtLeaseValid = db.prepare(`
+      SELECT 1 FROM jobs
+      WHERE id = ? AND status = 'active' AND lease_token = ?
+        AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
     `);
 
     this.start();
@@ -77,43 +117,39 @@ export class Worker {
 
     try {
       const now = Date.now();
-      // Атомарный захват: UPDATE ... RETURNING * (одна операция, без race condition)
-      const row = this.stmtFetch.get(now, this.queueName, now) as JobRow | undefined;
+      const leaseToken = randomUUID();
+      const row = this.stmtFetch.get(
+        now,
+        this.workerId,
+        leaseToken,
+        now + this.leaseDurationMs,
+        now,
+        this.leaseDurationMs,
+        this.queueName,
+        now
+      ) as JobRow | undefined;
       if (!row) return;
 
       this.activeCount++;
-
       const job = this.rowToJob(row);
       job.status = 'active';
       job.started_at = now;
+      job.leaseToken = leaseToken;
 
-      this.handler(job)
-        .then((result) => {
-          try {
-            this.stmtComplete.run(JSON.stringify(result), Date.now(), job.id);
-          } catch (err) {
-            console.error(`[SqliteQueue] Failed to save result for job ${job.id}:`, err);
-          }
-        })
-        .catch((err: Error) => {
-          try {
-            const errorMsg = err.message || String(err);
-            const isPermanent = err instanceof PermanentError || (err as Error & { permanent?: boolean })?.permanent === true;
+      const context: WorkerContext = {
+        leaseToken,
+        heartbeat: () => this.heartbeat(job.id, leaseToken),
+        isCancellationRequested: () => this.isCancellationRequested(job.id, leaseToken),
+        isLeaseValid: () => this.isLeaseValid(job.id, leaseToken),
+      };
+      const heartbeatTimer = setInterval(() => context.heartbeat(), this.heartbeatIntervalMs);
 
-            if (!isPermanent && job.attempts < job.max_attempts) {
-              // Retry с exponential backoff (только temporary ошибки)
-              const delayMs = Math.pow(2, job.attempts) * 1000;
-              const retryAt = Date.now() + delayMs;
-              this.stmtRetry.run(errorMsg, retryAt, job.id);
-            } else {
-              // PermanentError или исчерпаны попытки — сразу fail
-              this.stmtFail.run(errorMsg, Date.now(), job.id);
-            }
-          } catch (dbErr) {
-            console.error(`[SqliteQueue] Failed to update failed job ${job.id}:`, dbErr);
-          }
-        })
+      Promise.resolve()
+        .then(() => this.handler(job, context))
+        .then((result) => this.completeOrCancel(job, leaseToken, result))
+        .catch((err: Error) => this.failOrRetry(job, leaseToken, err))
         .finally(() => {
+          clearInterval(heartbeatTimer);
           this.activeCount--;
         });
     } catch (err) {
@@ -124,12 +160,74 @@ export class Worker {
     }
   }
 
+  private completeOrCancel(job: Job, leaseToken: string, result: any): void {
+    try {
+      if (this.isCancellationRequested(job.id, leaseToken)) {
+        this.failCancelled(job.id, leaseToken);
+        return;
+      }
+
+      const completed = this.stmtComplete.run(JSON.stringify(result), Date.now(), job.id, leaseToken);
+      // Cancellation can race a successful handler between the check and UPDATE.
+      if (completed.changes === 0 && this.isCancellationRequested(job.id, leaseToken)) {
+        this.failCancelled(job.id, leaseToken);
+      }
+    } catch (err) {
+      console.error(`[SqliteQueue] Failed to save result for job ${job.id}:`, err);
+    }
+  }
+
+  private failOrRetry(job: Job, leaseToken: string, err: Error): void {
+    try {
+      if (this.isCancellationRequested(job.id, leaseToken)) {
+        this.failCancelled(job.id, leaseToken);
+        return;
+      }
+
+      const errorMsg = err.message || String(err);
+      const isPermanent = err instanceof PermanentError || (err as Error & { permanent?: boolean })?.permanent === true;
+
+      if (!isPermanent && job.attempts < job.max_attempts) {
+        // Retry с exponential backoff (только temporary ошибки).
+        const delayMs = Math.pow(2, job.attempts) * 1000;
+        const retryAt = Date.now() + delayMs;
+        const retried = this.stmtRetry.run(errorMsg, retryAt, job.id, leaseToken);
+        if (retried.changes === 0 && this.isCancellationRequested(job.id, leaseToken)) {
+          this.failCancelled(job.id, leaseToken);
+        }
+      } else {
+        this.stmtFail.run(errorMsg, Date.now(), job.id, leaseToken);
+      }
+    } catch (dbErr) {
+      console.error(`[SqliteQueue] Failed to update failed job ${job.id}:`, dbErr);
+    }
+  }
+
+  private failCancelled(jobId: number, leaseToken: string): void {
+    this.stmtFail.run(CANCELLATION_ERROR, Date.now(), jobId, leaseToken);
+  }
+
+  private heartbeat(jobId: number, leaseToken: string): boolean {
+    const now = Date.now();
+    // New claims persist lease_duration_ms; this worker default is only for legacy rows.
+    return this.stmtHeartbeat.run(now, now, this.leaseDurationMs, jobId, leaseToken).changes > 0;
+  }
+
+  private isCancellationRequested(jobId: number, leaseToken: string): boolean {
+    return Boolean(this.stmtCancellationRequested.get(jobId, leaseToken));
+  }
+
+  private isLeaseValid(jobId: number, leaseToken: string): boolean {
+    return Boolean(this.stmtLeaseValid.get(jobId, leaseToken, Date.now()));
+  }
+
   private rowToJob(row: JobRow): Job {
     return {
       ...row,
       status: row.status as Job['status'],
       data: JSON.parse(row.data),
       result: row.result ? JSON.parse(row.result) : null,
+      leaseToken: row.lease_token,
     };
   }
 
@@ -141,9 +239,7 @@ export class Worker {
     }
   }
 
-  /**
-   * Graceful stop — прекращаем брать новые задачи и ждём завершения активных
-   */
+  /** Graceful stop — прекращаем брать новые задачи и ждём завершения активных */
   async gracefulStop(timeoutMs = 15000): Promise<void> {
     this.stopped = true;
     if (this.pollTimer) {
@@ -151,7 +247,6 @@ export class Worker {
       this.pollTimer = null;
     }
 
-    // Ждём завершения активных задач с таймаутом
     const deadline = Date.now() + timeoutMs;
     while (this.activeCount > 0 && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 200));

@@ -7,6 +7,29 @@
 import { factories } from "@strapi/strapi";
 import * as path from "path";
 import { getQueueService } from '../../../services/queueService';
+import { PropertyUpsertValidationError } from '../services/property';
+
+const INTERNAL_PROPERTY_FIELDS = new Set([
+  'is_undervalued',
+  'deviation_percent',
+  'manual_price_per_sqm',
+  'photos',
+  'photos_downloaded',
+]);
+
+function internalPayload(ctx: any, allowedFields: Set<string>): Record<string, unknown> | null {
+  const data = ctx.request?.body?.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null;
+  }
+
+  const fields = Object.keys(data);
+  if (fields.length === 0 || fields.some((field) => !allowedFields.has(field))) {
+    return null;
+  }
+
+  return data as Record<string, unknown>;
+}
 
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
   /**
@@ -16,6 +39,59 @@ export default factories.createCoreController("api::property.property", ({ strap
   async clearNew(ctx) {
     const result = await strapi.service('api::property.property').clearNew();
     ctx.body = result;
+  },
+
+  /**
+   * POST /api/properties/upsert
+   * Parser-only identity upsert. The service returns the concurrent winner
+   * instead of leaking a SQLite unique-constraint exception to a worker.
+   */
+  async upsert(ctx) {
+    const data = ctx.request?.body?.data;
+    if (!data || typeof data.source !== 'string' || !data.source.trim()
+      || typeof data.external_id !== 'string' || !data.external_id.trim()) {
+      ctx.status = 400;
+      ctx.body = { error: 'source and external_id are required' };
+      return;
+    }
+
+    try {
+      const result = await strapi.service('api::property.property').upsertByIdentity(data);
+      ctx.status = result.created ? 201 : 200;
+      ctx.body = { data: result.property, meta: { created: result.created } };
+    } catch (error) {
+      if (error instanceof PropertyUpsertValidationError) {
+        ctx.status = 400;
+        ctx.body = { error: error.message };
+        return;
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * PUT /api/internal/properties/:id
+   * Service-only updates for analyzer and photo-fetcher fields.
+   */
+  async internalUpdate(ctx) {
+    const data = internalPayload(ctx, INTERNAL_PROPERTY_FIELDS);
+    if (!data) {
+      ctx.status = 400;
+      ctx.body = { error: 'Invalid internal property update payload' };
+      return;
+    }
+
+    const updated = await strapi.db.query('api::property.property').update({
+      where: { documentId: ctx.params.id },
+      data,
+    });
+    if (!updated) {
+      ctx.status = 404;
+      ctx.body = { error: 'Property not found' };
+      return;
+    }
+
+    ctx.body = { data: updated };
   },
 
   /**

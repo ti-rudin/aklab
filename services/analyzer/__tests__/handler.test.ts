@@ -296,4 +296,42 @@ describe('handleAnalyzeJob', () => {
 
     expect(result).toEqual({ analyzed: true, undervalued: false });
   });
+
+  it('should not reuse a cached market reference in the next analyzer job', async () => {
+    mockedFetchProperty.mockResolvedValue({
+      documentId: 'prop-1',
+      city: 'moscow',
+      property_type: 'office',
+      price_per_sqm: 100000,
+    });
+    mockedFindRef
+      .mockResolvedValueOnce({ price_per_sqm: 100000 })
+      .mockResolvedValueOnce({ price_per_sqm: 200000 });
+    mockedFetchSetting.mockResolvedValue({ threshold_percent: 20 });
+
+    await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
+    const result = await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
+
+    expect(mockedFindRef).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ analyzed: true, undervalued: true });
+    expect(mockedUpdateProperty).toHaveBeenLastCalledWith('prop-1', {
+      is_undervalued: true,
+      deviation_percent: 50,
+      manual_price_per_sqm: 200000,
+    });
+  });
+
+  it('should query a missing market reference again in the next analyzer job', async () => {
+    mockedFetchProperty.mockResolvedValue({
+      documentId: 'prop-1',
+      city: 'moscow',
+      property_type: 'office',
+    });
+    mockedFindRef.mockResolvedValue(null);
+
+    await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
+    await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
+
+    expect(mockedFindRef).toHaveBeenCalledTimes(2);
+  });
 });

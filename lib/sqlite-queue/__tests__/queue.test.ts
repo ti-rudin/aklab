@@ -1,8 +1,14 @@
 /**
  * Unit tests for @aklab/sqlite-queue
- * Uses in-memory SQLite (`:memory:`) — no temp files needed.
+ * Uses in-memory SQLite by default; the startup migration test uses a cleaned-up
+ * temporary file to exercise shared queue.db initialization.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import Database from 'better-sqlite3';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SqliteQueue, PermanentError } from '../index';
 import type { Job } from '../types';
 
@@ -92,6 +98,36 @@ describe('idempotent add()', () => {
 
     expect(j2.id).not.toBe(j1.id);
   });
+
+  test('returns one logical job per idempotencyKey while keeping pipeline stages distinct', () => {
+    // Target API: idempotencyKey is queue-scoped and does not reuse correlationId.
+    const add = (queue as any).add.bind(queue);
+    const scan = add('pipeline', { stage: 'scan', version: 1 }, { idempotencyKey: 'run:source:scan' });
+    const duplicateScan = add('pipeline', { stage: 'scan', version: 2 }, { idempotencyKey: 'run:source:scan' });
+    const details = add('pipeline', { stage: 'details' }, { idempotencyKey: 'run:source:details' });
+
+    expect(duplicateScan.id).toBe(scan.id);
+    expect(duplicateScan.data).toEqual({ stage: 'scan', version: 1 });
+    expect(details.id).not.toBe(scan.id);
+  });
+
+  test('retries after an idempotency winner becomes terminal instead of returning it', () => {
+    const original = queue.add('terminal-idempotency', { version: 1 }, { idempotencyKey: 'run:terminal' });
+    const db = (queue as any).db;
+    const stmtAdd = (queue as any).stmtAdd;
+
+    vi.spyOn(stmtAdd, 'run').mockImplementationOnce(() => {
+      db.prepare("UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?")
+        .run(Date.now(), original.id);
+      throw Object.assign(new Error('unique constraint'), { code: 'SQLITE_CONSTRAINT_UNIQUE' });
+    });
+
+    const retry = queue.add('terminal-idempotency', { version: 2 }, { idempotencyKey: 'run:terminal' });
+
+    expect(retry.id).not.toBe(original.id);
+    expect(retry.status).toBe('pending');
+    expect(retry.data).toEqual({ version: 2 });
+  });
 });
 
 // ─── getJob() ───────────────────────────────────────────────────────────────
@@ -108,6 +144,70 @@ describe('getJob()', () => {
 
   test('returns null for non-existent ID', () => {
     expect(queue.getJob(999)).toBeNull();
+  });
+});
+
+// ─── schema startup migration ───────────────────────────────────────────────
+
+describe('schema startup migration', () => {
+  test('lets two instances initialize the same legacy file-backed database', () => {
+    const dbPath = join(tmpdir(), `aklab-sqlite-queue-${randomUUID()}.db`);
+    let first: SqliteQueue | undefined;
+    let second: SqliteQueue | undefined;
+
+    try {
+      const legacy = new Database(dbPath);
+      legacy.exec(`
+        CREATE TABLE jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          queue TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          data TEXT NOT NULL,
+          result TEXT,
+          error TEXT,
+          attempts INTEGER DEFAULT 0,
+          max_attempts INTEGER DEFAULT 3,
+          correlation_id TEXT,
+          created_at INTEGER NOT NULL,
+          started_at INTEGER,
+          completed_at INTEGER,
+          scheduled_at INTEGER,
+          priority INTEGER DEFAULT 0
+        );
+      `);
+      legacy.close();
+
+      first = new SqliteQueue(dbPath, { disableTimers: true });
+      second = new SqliteQueue(dbPath, { disableTimers: true });
+
+      const columns = (first as any).db.prepare('PRAGMA table_info(jobs)').all()
+        .map((column: { name: string }) => column.name);
+      const indexes = (first as any).db.prepare('PRAGMA index_list(jobs)').all()
+        .map((index: { name: string }) => index.name);
+
+      expect(columns).toEqual(expect.arrayContaining([
+        'idempotency_key',
+        'locked_by',
+        'lease_token',
+        'lease_expires_at',
+        'lease_duration_ms',
+        'heartbeat_at',
+        'cancellation_requested_at',
+      ]));
+      expect(indexes).toEqual(expect.arrayContaining([
+        'idx_jobs_queue_status',
+        'idx_jobs_correlation_id',
+        'idx_jobs_cleanup',
+        'idx_jobs_queue_idempotency_active',
+      ]));
+      expect(second.add('shared-startup', { ok: true }).status).toBe('pending');
+    } finally {
+      first?.close();
+      second?.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+    }
   });
 });
 
@@ -335,6 +435,41 @@ describe('cancelJob()', () => {
 
     expect(result).toBe(false);
   });
+
+  test('keeps an active job non-terminal until its handler acknowledges cooperative cancellation', async () => {
+    vi.useFakeTimers();
+    const handlerStarted = deferred<Job>();
+    const acknowledgeCancellation = deferred<void>();
+    let worker: { stop(): void } | undefined;
+
+    try {
+      const job = queue.add('cooperative-cancel', {}, { maxAttempts: 1 });
+      worker = queue.process('cooperative-cancel', async (activeJob) => {
+        handlerStarted.resolve(activeJob);
+        await acknowledgeCancellation.promise;
+        return { handler: 'returned after cancellation' };
+      }, { pollInterval: 1 });
+
+      await vi.advanceTimersByTimeAsync(1);
+      await handlerStarted.promise;
+
+      // Target API: requesting cancellation is non-terminal for a running job.
+      expect((queue as any).requestCancellation).toEqual(expect.any(Function));
+      (queue as any).requestCancellation(job.id);
+      expect(queue.getJob(job.id)!.status).toBe('active');
+
+      acknowledgeCancellation.resolve();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(queue.getJob(job.id)!.status).toBe('failed');
+      expect(queue.getJob(job.id)!.error).toBe('cancelled');
+    } finally {
+      worker?.stop();
+      acknowledgeCancellation.resolve();
+      await Promise.resolve();
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ─── clean() / retention ────────────────────────────────────────────────────
@@ -422,6 +557,147 @@ describe('recoverStaleJobs()', () => {
     const job = queue.getJob(1)!;
     expect(job.status).toBe('active'); // still active, not stale
   });
+
+  test('does not requeue a heartbeated lease or let a second worker invoke its handler', async () => {
+    vi.useFakeTimers();
+    const firstHandlerStarted = deferred<Job>();
+    const releaseFirstHandler = deferred<void>();
+    const secondHandler = vi.fn(async () => ({ worker: 'second' }));
+    let firstWorker: { stop(): void } | undefined;
+    let secondWorker: { stop(): void } | undefined;
+
+    try {
+      const job = queue.add('lease-protected', {});
+      firstWorker = queue.process('lease-protected', async (activeJob) => {
+        firstHandlerStarted.resolve(activeJob);
+        await releaseFirstHandler.promise;
+        return { worker: 'first' };
+      }, {
+        pollInterval: 1,
+        // Target API: workers obtain and renew a lease while their handler is alive.
+        leaseDurationMs: 60_000,
+      } as any);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const activeJob = await firstHandlerStarted.promise;
+      const leaseToken = (activeJob as any).leaseToken;
+
+      expect((queue as any).heartbeat).toEqual(expect.any(Function));
+      expect(leaseToken).toEqual(expect.any(String));
+      expect((queue as any).heartbeat(activeJob.id, leaseToken)).toBe(true);
+
+      // started_at alone is stale; the current lease heartbeat must take precedence.
+      const db = (queue as any).db;
+      db.prepare('UPDATE jobs SET started_at = ? WHERE id = ?').run(Date.now() - 10 * 60_000, job.id);
+      (queue as any).recoverStaleJobs();
+
+      secondWorker = queue.process('lease-protected', secondHandler, { pollInterval: 1 });
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(queue.getJob(job.id)!.status).toBe('active');
+      expect(secondHandler).not.toHaveBeenCalled();
+    } finally {
+      firstWorker?.stop();
+      secondWorker?.stop();
+      releaseFirstHandler.resolve();
+      await Promise.resolve();
+      vi.useRealTimers();
+    }
+  });
+
+  test('renews a worker lease by its persisted duration instead of staleTimeoutMin', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const handlerStarted = deferred<{ job: Job; heartbeat: () => boolean }>();
+    const releaseHandler = deferred<void>();
+    let worker: { stop(): void } | undefined;
+
+    try {
+      const job = queue.add('worker-lease-duration', {});
+      worker = queue.process('worker-lease-duration', async (activeJob, context) => {
+        handlerStarted.resolve({ job: activeJob, heartbeat: context.heartbeat });
+        await releaseHandler.promise;
+        return { done: true };
+      }, {
+        pollInterval: 1,
+        heartbeatIntervalMs: 60_000,
+        leaseDurationMs: 2_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(1);
+      const active = await handlerStarted.promise;
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(active.heartbeat()).toBe(true);
+      let persisted = queue.getJob(job.id)!;
+      expect(persisted.lease_duration_ms).toBe(2_000);
+      expect(persisted.lease_expires_at).toBe(Date.now() + 2_000);
+
+      await vi.advanceTimersByTimeAsync(250);
+      expect(queue.heartbeat(job.id, active.job.leaseToken!)).toBe(true);
+      persisted = queue.getJob(job.id)!;
+      expect(persisted.lease_expires_at).toBe(Date.now() + 2_000);
+      expect(persisted.lease_expires_at).not.toBe(Date.now() + 60_000);
+    } finally {
+      worker?.stop();
+      releaseHandler.resolve();
+      await Promise.resolve();
+      vi.useRealTimers();
+    }
+  });
+
+  test('reports an old context lease as invalid after stale recovery and re-claim', async () => {
+    vi.useFakeTimers();
+    const firstHandlerStarted = deferred<{ job: Job; isLeaseValid: () => boolean }>();
+    const releaseFirstHandler = deferred<void>();
+    const secondHandlerStarted = deferred<Job>();
+    const releaseSecondHandler = deferred<void>();
+    let firstWorker: { stop(): void } | undefined;
+    let secondWorker: { stop(): void } | undefined;
+
+    try {
+      const job = queue.add('lease-validity', {});
+      firstWorker = queue.process('lease-validity', async (activeJob, context) => {
+        firstHandlerStarted.resolve({
+          job: activeJob,
+          isLeaseValid: context.isLeaseValid!,
+        });
+        await releaseFirstHandler.promise;
+        return { worker: 'first' };
+      }, {
+        pollInterval: 1,
+        leaseDurationMs: 60_000,
+        heartbeatIntervalMs: 60_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(1);
+      const first = await firstHandlerStarted.promise;
+      expect(first.isLeaseValid()).toBe(true);
+
+      const db = (queue as any).db;
+      db.prepare('UPDATE jobs SET lease_expires_at = ? WHERE id = ?').run(Date.now() - 1, job.id);
+      (queue as any).recoverStaleJobs();
+
+      secondWorker = queue.process('lease-validity', async (activeJob) => {
+        secondHandlerStarted.resolve(activeJob);
+        await releaseSecondHandler.promise;
+        return { worker: 'second' };
+      }, { pollInterval: 1, leaseDurationMs: 60_000, heartbeatIntervalMs: 60_000 });
+      await vi.advanceTimersByTimeAsync(1);
+      const second = await secondHandlerStarted.promise;
+
+      expect(second.leaseToken).not.toBe(first.job.leaseToken);
+      expect(queue.getJob(job.id)!.status).toBe('active');
+      expect(first.isLeaseValid()).toBe(false);
+    } finally {
+      firstWorker?.stop();
+      secondWorker?.stop();
+      releaseFirstHandler.resolve();
+      releaseSecondHandler.resolve();
+      await Promise.resolve();
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ─── addAndWait() RPC pattern ───────────────────────────────────────────────
@@ -490,4 +766,18 @@ describe('close()', () => {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

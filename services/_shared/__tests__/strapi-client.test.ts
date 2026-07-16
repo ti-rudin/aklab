@@ -35,6 +35,7 @@ import {
   propertyExists,
   createProperty,
   updateSourceStats,
+  resetSourceDetailsCounters,
   logCron,
   fetchProperty,
   findActiveMarketReference,
@@ -132,9 +133,32 @@ describe('createProperty()', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 
     const [url, opts] = (globalThis.fetch as any).mock.calls[1];
-    expect(url).toBe(`${BASE}/properties`);
+    expect(url).toBe(`${BASE}/properties/upsert`);
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body).data.source).toBe('tender');
+  });
+
+  test('treats an upsert conflict winner as an existing property, not a new create', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+      .mockResolvedValueOnce(mockJsonResponse({ data: { id: 42 }, meta: { created: false } }));
+
+    const result = await createProperty({
+      source: 'tender',
+      external_id: 'ext-concurrent',
+      url: 'https://example.com/concurrent',
+      title: 'Склад',
+      address: 'addr',
+      city: 'moscow',
+      price: 1000,
+      area_sqm: 10,
+      price_per_sqm: 100,
+      property_type: 'warehouse',
+      auction_type: 'bankruptcy',
+    });
+
+    expect(result).toBeNull();
+    expect((globalThis.fetch as any).mock.calls[1][0]).toBe(`${BASE}/properties/upsert`);
   });
 
   test('auto-calculates price_per_sqm when missing', async () => {
@@ -271,7 +295,7 @@ describe('updateSourceStats()', () => {
     vi.restoreAllMocks();
   });
 
-  test('sends PUT with status fields directly', async () => {
+  test('sends PUT with status fields to the internal source stats alias', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ data: {} })
     );
@@ -283,7 +307,7 @@ describe('updateSourceStats()', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1); // only PUT
     const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toBe(`${BASE}/sources/doc-abc`);
+    expect(url).toBe(`${BASE}/internal/sources/doc-abc/stats`);
     expect(opts.method).toBe('PUT');
 
     const body = JSON.parse(opts.body).data;
@@ -349,6 +373,34 @@ describe('updateSourceStats()', () => {
   });
 });
 
+// ─── resetSourceDetailsCounters ──────────────────────────────────────────────
+
+describe('resetSourceDetailsCounters()', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('sends its counter reset through the internal source stats alias', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ data: {} })
+    );
+
+    await resetSourceDetailsCounters('doc-abc');
+
+    const [url, opts] = fetchSpy.mock.calls[0] as [string, any];
+    expect(url).toBe(`${BASE}/internal/sources/doc-abc/stats`);
+    expect(opts!.method).toBe('PUT');
+    expect(JSON.parse(opts!.body).data).toEqual({
+      total_found: 0,
+      total_created: 0,
+      total_details_fetched: 0,
+      total_details_needed: 0,
+      last_parse_status: null,
+      last_parse_error: null,
+    });
+  });
+});
+
 // ─── logCron ────────────────────────────────────────────────────────────────
 
 describe('logCron()', () => {
@@ -369,7 +421,7 @@ describe('logCron()', () => {
     });
 
     const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe(`${BASE}/cron-logs`);
+    expect(url).toBe(`${BASE}/internal/cron-logs`);
     expect(opts.method).toBe('POST');
 
     const body = JSON.parse(opts.body).data;
@@ -492,7 +544,7 @@ describe('updateProperty()', () => {
     vi.restoreAllMocks();
   });
 
-  test('sends PUT with fields to property endpoint', async () => {
+  test('sends PUT with fields to the internal property alias', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ data: {} })
     );
@@ -500,7 +552,7 @@ describe('updateProperty()', () => {
     await updateProperty('doc-1', { is_undervalued: true, deviation_percent: -15 });
 
     const [url, opts] = (globalThis.fetch as any).mock.calls[0];
-    expect(url).toBe(`${BASE}/properties/doc-1`);
+    expect(url).toBe(`${BASE}/internal/properties/doc-1`);
     expect(opts.method).toBe('PUT');
 
     const body = JSON.parse(opts.body).data;
