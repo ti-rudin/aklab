@@ -16,18 +16,23 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "overrides": {
+    "nodemailer": "9.0.3",
+    "hls.js": "1.6.16"
+  },
   "dependencies": {
     "@aklab/parse-rules": "file:../lib/parse-rules",
-    "@strapi/plugin-cloud": "5.44.0",
-    "@strapi/plugin-documentation": "^5.44.0",
-    "@strapi/plugin-users-permissions": "5.44.0",
-    "@strapi/provider-email-nodemailer": "^5.44.0",
-    "@strapi/strapi": "5.44.0",
+    "@strapi/plugin-cloud": "5.50.2",
+    "@strapi/plugin-documentation": "5.50.2",
+    "@strapi/plugin-users-permissions": "5.50.2",
+    "@strapi/provider-email-nodemailer": "5.50.2",
+    "@strapi/strapi": "5.50.2",
     "better-sqlite3": "12.8.0",
-    "node-cron": "^3.0.3",
+    "hls.js": "1.6.16",
+    "node-cron": "4.6.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "react-router-dom": "^6.0.0",
+    "react-router-dom": "^6.30.3",
     "styled-components": "^6.0.0",
     "zod": "^4.4.3"
   },

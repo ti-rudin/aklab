@@ -26,9 +26,13 @@
   "license": "ISC",
   "description": "AKLAB — мониторинг коммерческой недвижимости (торги по банкротству)",
   "dependencies": {
-    "@strapi/provider-email-nodemailer": "^5.47.1",
+    "@strapi/provider-email-nodemailer": "5.50.2",
     "dotenv": "^17.4.2",
-    "nodemailer": "^8.0.10"
+    "nodemailer": "9.0.3"
+  },
+  "overrides": {
+    "nodemailer": "9.0.3",
+    "undici": "7.28.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
