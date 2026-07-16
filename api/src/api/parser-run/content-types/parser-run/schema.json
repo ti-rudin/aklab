@@ -1,0 +1,16 @@
+{
+  "kind": "collectionType",
+  "collectionName": "parser_runs",
+  "info": { "singularName": "parser-run", "pluralName": "parser-runs", "displayName": "Parser Run" },
+  "options": { "draftAndPublish": false },
+  "attributes": {
+    "run_id": { "type": "string", "required": true, "unique": true },
+    "mode": { "type": "enumeration", "enum": ["full", "parse", "analyze", "digest"], "required": true },
+    "trigger": { "type": "enumeration", "enum": ["manual", "cron"], "required": true },
+    "status": { "type": "enumeration", "enum": ["running", "cancelling", "succeeded", "degraded", "failed", "cancelled"], "required": true, "default": "running" },
+    "started_at": { "type": "datetime", "required": true },
+    "heartbeat_at": { "type": "datetime" },
+    "finished_at": { "type": "datetime" },
+    "error_summary": { "type": "text" }
+  }
+}

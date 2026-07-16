@@ -41,6 +41,8 @@ import {
   findActiveMarketReference,
   fetchSetting,
   updateProperty,
+  markParserRunSourceStageRunning,
+  finishParserRunSourceStage,
 } from '../src/strapi-client';
 
 const BASE = 'http://localhost:1338/api';
@@ -568,5 +570,54 @@ describe('updateProperty()', () => {
     await expect(
       updateProperty('doc-1', { bad_field: true })
     ).rejects.toThrow('updateProperty failed (422)');
+  });
+});
+
+// ─── parser run source stage aliases ─────────────────────────────────────────
+
+describe('markParserRunSourceStageRunning()', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('marks the exact queue job running through the service-token alias', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockJsonResponse({ data: {} }));
+
+    await markParserRunSourceStageRunning('run-1:fabrikant:scan', 41);
+
+    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
+    expect(url).toBe(`${BASE}/internal/parser-run-sources/run-1%3Afabrikant%3Ascan/running`);
+    expect(opts.method).toBe('PUT');
+    expect(opts.headers['X-AKLAB-Service-Token']).toBe('test-token-123');
+    expect(JSON.parse(opts.body)).toEqual({ data: { job_id: 41 } });
+  });
+});
+
+// ─── finishParserRunSourceStage ──────────────────────────────────────────────
+
+describe('finishParserRunSourceStage()', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('sends a terminal snapshot only to the service-token protected alias', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockJsonResponse({ data: {} }));
+    const counters = { listed: 10, eligible: 4, existing: 3, pre_filtered: 3, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0 };
+
+    await finishParserRunSourceStage('run-1:fabrikant:scan', { job_id: 41, status: 'success', counters });
+
+    const [url, opts] = (globalThis.fetch as any).mock.calls[0];
+    expect(url).toBe(`${BASE}/internal/parser-run-sources/run-1%3Afabrikant%3Ascan/terminal`);
+    expect(opts.method).toBe('PUT');
+    expect(opts.headers['X-AKLAB-Service-Token']).toBe('test-token-123');
+    expect(JSON.parse(opts.body)).toEqual({ data: { job_id: 41, status: 'success', counters } });
+  });
+
+  test('throws when the terminal alias rejects the snapshot', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockJsonResponse({ error: 'Conflict' }, 409));
+    const counters = { listed: 0, eligible: 0, existing: 0, pre_filtered: 0, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0 };
+
+    await expect(finishParserRunSourceStage('run-1:fabrikant:scan', { job_id: 41, status: 'success_empty', counters }))
+      .rejects.toThrow('finishParserRunSourceStage failed (409)');
   });
 });

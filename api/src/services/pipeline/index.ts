@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
+import { createParserRunTelemetry } from '../parser-run-telemetry';
 import { broadcastSSE } from '../pipeline-sse';
 import type { PipelineState, RunOptions } from './state';
 import { getState, updateState, resetState, emptyState, tryAcquireIdleState } from './state';
@@ -19,6 +20,7 @@ export type { PipelineStage, PipelineStatus, PipelineState } from './state';
 export class PipelineService implements PipelineContext {
   strapi: StrapiInstance;
   private activeRunId: string | null = null;
+  private activeParserRunId: number | null = null;
   private cancelRequestedRunId: string | null = null;
   private activeJobIds = new Set<number>();
   /** Prevent duplicate cancellation requests when cancel and a stage deadline race. */
@@ -143,6 +145,20 @@ export class PipelineService implements PipelineContext {
     this.cancelRequestedRunId = null;
     this.activeJobIds.clear();
     this.cancellationRequestedJobIds.clear();
+    try {
+      const parserRun = await createParserRunTelemetry(this.strapi).ensureParserRun({ runId, mode, trigger });
+      if (!Number.isSafeInteger(parserRun?.id)) throw new Error('Parser run telemetry row has no numeric id');
+      this.activeParserRunId = parserRun.id;
+    } catch (err: any) {
+      this.activeRunId = null;
+      this.activeParserRunId = null;
+      await this.updateState({
+        status: 'idle',
+        stage: 'error',
+        errors: [`Parser telemetry: ${err?.message || err}`],
+      }, 'Не удалось создать telemetry-запись запуска');
+      throw err;
+    }
     return runId;
   }
 
@@ -171,6 +187,7 @@ export class PipelineService implements PipelineContext {
   private async executeRun(runId: string, mode: PipelineMode, depth: number, filters?: RunOptions['filters']): Promise<void> {
     const allErrors: string[] = [];
     let releaseLifecycle = false;
+    let parserRunStatus: 'succeeded' | 'degraded' | 'failed' | 'cancelled' | null = null;
 
     try {
       if ((mode === 'full' || mode === 'parse') && !this.isCancelled()) {
@@ -214,6 +231,16 @@ export class PipelineService implements PipelineContext {
           errors: [],
         }, '✓ Пайплайн завершён');
       }
+      parserRunStatus = this.isCancelled() ? 'cancelled' : (allErrors.length > 0 ? 'degraded' : 'succeeded');
+      try {
+        await createParserRunTelemetry(this.strapi).finishParserRun({
+          runId,
+          status: parserRunStatus,
+          ...(allErrors.length ? { errorSummary: allErrors.join('\n') } : {}),
+        });
+      } catch (telemetryError: any) {
+        this.strapi.log.error(`[pipeline] Cannot finish parser telemetry ${runId}: ${telemetryError?.message || telemetryError}`);
+      }
       broadcastSSE('done', await this.getState());
       releaseLifecycle = true;
     } catch (err: any) {
@@ -225,11 +252,22 @@ export class PipelineService implements PipelineContext {
         stage: cancelled ? 'cancelled' : 'error',
         errors: allErrors,
       }, cancelled ? 'Пайплайн отменён' : `Ошибка: ${err.message}`);
+      parserRunStatus = cancelled ? 'cancelled' : 'failed';
+      try {
+        await createParserRunTelemetry(this.strapi).finishParserRun({
+          runId,
+          status: parserRunStatus,
+          errorSummary: allErrors.join('\n'),
+        });
+      } catch (telemetryError: any) {
+        this.strapi.log.error(`[pipeline] Cannot finish parser telemetry ${runId}: ${telemetryError?.message || telemetryError}`);
+      }
       broadcastSSE(cancelled ? 'done' : 'error', await this.getState());
       releaseLifecycle = true;
     } finally {
       if (releaseLifecycle && this.activeRunId === runId) {
         this.activeRunId = null;
+        this.activeParserRunId = null;
         this.cancelRequestedRunId = null;
         this.activeJobIds.clear();
         this.cancellationRequestedJobIds.clear();
@@ -242,6 +280,11 @@ export class PipelineService implements PipelineContext {
   getRunId(): string {
     if (!this.activeRunId) throw new Error('Pipeline run is not active');
     return this.activeRunId;
+  }
+
+  getParserRunId(): number {
+    if (!this.activeParserRunId) throw new Error('Parser run telemetry is not active');
+    return this.activeParserRunId;
   }
 
   async recordJobIds(ids: number[]): Promise<void> {

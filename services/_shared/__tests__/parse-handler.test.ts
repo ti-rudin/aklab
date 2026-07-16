@@ -39,6 +39,8 @@ vi.mock('../src/strapi-client', () => ({
   logCron: vi.fn().mockResolvedValue(undefined),
   updateSourceStats: vi.fn().mockResolvedValue(undefined),
   resetSourceDetailsCounters: vi.fn().mockResolvedValue(undefined),
+  finishParserRunSourceStage: vi.fn().mockResolvedValue(undefined),
+  markParserRunSourceStageRunning: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/anti-ban', () => ({
@@ -46,7 +48,7 @@ vi.mock('../src/anti-ban', () => ({
 }));
 
 import { createParseHandler } from '../src/parse-handler';
-import { propertyExists, createProperty, logCron, updateSourceStats } from '../src/strapi-client';
+import { propertyExists, createProperty, logCron, updateSourceStats, finishParserRunSourceStage, markParserRunSourceStageRunning } from '../src/strapi-client';
 import { randomDelay } from '../src/anti-ban';
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser } from '../src/types';
@@ -127,10 +129,38 @@ describe('createParseHandler()', () => {
     const job = makeJob({ source: 'tender', documentId: 'doc-src-1' });
     const result = await handler(job);
 
-    expect(result).toEqual({ created: 2, filtered: 0, total: 2, detailsFetched: 0 });
+    expect(result).toEqual({ created: 2, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0 });
     expect(parser.parse).toHaveBeenCalledTimes(1);
     expect(propertyExists).toHaveBeenCalledTimes(2);
     expect(createProperty).toHaveBeenCalledTimes(2);
+  });
+
+  test('writes an exact terminal telemetry snapshot when the pipeline provides an identity', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+
+    await createParseHandler(makeParser(defaultProps))(makeJob({
+      source: 'tender',
+      documentId: 'doc-src-1',
+      telemetryIdentityKey: 'run-1:tender:scan',
+    }));
+
+    expect(markParserRunSourceStageRunning).toHaveBeenCalledWith('run-1:tender:scan', 1);
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith('run-1:tender:scan', {
+      job_id: 1,
+      status: 'success',
+      counters: {
+        listed: 2,
+        eligible: 2,
+        existing: 0,
+        pre_filtered: 0,
+        details_attempted: 0,
+        details_ok: 0,
+        created: 2,
+        skipped: 0,
+        failed: 0,
+      },
+    });
   });
 
   test('skips already existing properties', async () => {
@@ -141,7 +171,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 2, detailsFetched: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0 });
     expect(createProperty).not.toHaveBeenCalled();
   });
 
@@ -154,7 +184,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 1, filtered: 1, total: 2, detailsFetched: 0 });
+    expect(result).toEqual({ created: 1, filtered: 1, total: 2, detailsFetched: 0, detailsNeeded: 0 });
   });
 
   test('logs error and re-throws when parser.parse() fails', async () => {
@@ -310,7 +340,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 });
     expect(propertyExists).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({

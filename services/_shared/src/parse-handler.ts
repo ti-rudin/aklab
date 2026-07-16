@@ -19,7 +19,7 @@ import { createHash, randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { SourceParser, ParseResult } from './types';
-import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters } from './strapi-client';
+import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters, markParserRunSourceStageRunning, finishParserRunSourceStage } from './strapi-client';
 import type { ParseRules } from './strapi-client';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
@@ -34,6 +34,8 @@ export interface ParseRequest {
   rules?: ParseRules;
   /** Если указан — выполняет только одну фазу. undefined = обе (backward compat). */
   phase?: 'scan' | 'details';
+  /** Identity of the server-created telemetry row; only present for pipeline-owned jobs. */
+  telemetryIdentityKey?: string;
 }
 
 /** Порог последовательных дубликатов для smart stop. */
@@ -56,6 +58,7 @@ interface ScanArtifact {
   counters: {
     listed: number;
     eligible: number;
+    existing: number;
     preFiltered: number;
     detailsNeeded: number;
   };
@@ -140,12 +143,37 @@ export function createParseHandler(parser: SourceParser) {
     const depth = req.depth ?? 20;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, preFiltered = 0, detailsFetched = 0, detailsNeeded = 0;
+    let existing = 0, detailsAttempted = 0, detailsOk = 0, skipped = 0, itemFailures = 0;
+    let telemetrySent = false;
+    const finishTelemetry = async (status: 'success' | 'success_empty' | 'failed' | 'cancelled', errorMessage?: string) => {
+      if (!req.telemetryIdentityKey || telemetrySent) return;
+      await finishParserRunSourceStage(req.telemetryIdentityKey, {
+        job_id: job.id,
+        status,
+        counters: {
+          listed: total,
+          eligible: Math.max(0, total - existing - preFiltered),
+          existing,
+          pre_filtered: preFiltered,
+          details_attempted: detailsAttempted,
+          details_ok: detailsOk,
+          created,
+          skipped,
+          failed: itemFailures,
+        },
+        ...(errorMessage ? { error_message: errorMessage.slice(0, 1_000) } : {}),
+      });
+      telemetrySent = true;
+    };
     let errorMsg: string | undefined;
     let cancelled = false;
 
     const phase: string | undefined = req.phase; // undefined = обе фазы
 
     try {
+      if (req.telemetryIdentityKey) {
+        await markParserRunSourceStageRunning(req.telemetryIdentityKey, job.id);
+      }
       throwIfCancellationRequested(workerContext);
       // ═══════════════════════════════════════════════════════════════
       // ФАЗА 1: СКАНИРОВАНИЕ
@@ -182,6 +210,7 @@ export function createParseHandler(parser: SourceParser) {
             throwIfCancellationRequested(workerContext);
             if (await propertyExists(req.source, prop.external_id)) {
               throwIfCancellationRequested(workerContext);
+              existing++;
               consecutiveDuplicates++;
               if (consecutiveDuplicates === 1 || consecutiveDuplicates >= SMART_STOP_THRESHOLD) {
                 console.log(`[parse-handler:${req.source}] DUP #${consecutiveDuplicates}: ${prop.external_id}`);
@@ -221,6 +250,7 @@ export function createParseHandler(parser: SourceParser) {
           writeScanArtifact(req.source, corrId, {
             listed: total,
             eligible: newProperties.length,
+            existing,
             preFiltered,
             detailsNeeded,
           }, newProperties);
@@ -262,7 +292,8 @@ export function createParseHandler(parser: SourceParser) {
             items_processed: newProperties.length,
           }).catch(() => {});
           console.log(`[parse-handler:${req.source}] SCAN RETURN: total=${total} new=${newProperties.length} detailsNeeded=${detailsNeeded}`);
-          return { created: 0, filtered: preFiltered, total, detailsFetched: 0 };
+          await finishTelemetry(total === 0 ? 'success_empty' : 'success');
+          return { created: 0, filtered: preFiltered, total, detailsFetched: 0, detailsNeeded };
         }
       }
 
@@ -275,6 +306,7 @@ export function createParseHandler(parser: SourceParser) {
         const artifact = readScanArtifact(req.source, corrId);
         const newProperties = artifact.items as any[];
         total = artifact.counters.listed;
+        existing = artifact.counters.existing;
         preFiltered = artifact.counters.preFiltered;
         detailsNeeded = artifact.counters.detailsNeeded;
         throwIfCancellationRequested(workerContext);
@@ -319,8 +351,10 @@ export function createParseHandler(parser: SourceParser) {
               // Загрузка детальной страницы (если парсер поддерживает)
               if (parser.fetchDetails) {
                 try {
+                  detailsAttempted++;
                   throwIfCancellationRequested(workerContext);
                   const details = await parser.fetchDetails(prop.url, sharedContext);
+                  detailsOk++;
                   throwIfCancellationRequested(workerContext);
                   if (details && Object.keys(details).length > 0) {
                     // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
@@ -385,12 +419,14 @@ export function createParseHandler(parser: SourceParser) {
               if (result) created++;
               else {
                 filtered++;
+                skipped++;
                 if (filtered <= 5 || filtered % 50 === 0) {
                   console.log(`[parse-handler:${req.source}] FILTERED #${filtered}: ${prop.external_id}`);
                 }
               }
             } catch (err: any) {
               if (isCancellationError(err)) throw err;
+              itemFailures++;
               logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
             }
           }
@@ -419,6 +455,11 @@ export function createParseHandler(parser: SourceParser) {
           last_parse_error: err.message,
           last_parsed_at: new Date().toISOString(),
         }).catch(() => {});
+      }
+      try {
+        await finishTelemetry(cancelled ? 'cancelled' : 'failed', err.message);
+      } catch (telemetryError: any) {
+        logger.warn(`Telemetry terminal update failed: ${telemetryError.message}`, { correlationId: corrId });
       }
       throw err;
     } finally {
@@ -456,6 +497,7 @@ export function createParseHandler(parser: SourceParser) {
     }
 
     console.log(`[parse-handler:${req.source}] DONE: created=${created} filtered=${filtered} preFiltered=${preFiltered} total=${total} details=${detailsFetched}/${detailsNeeded}`);
-    return { created, filtered, total, detailsFetched };
+    await finishTelemetry(total === 0 ? 'success_empty' : 'success');
+    return { created, filtered, total, detailsFetched, detailsNeeded };
   };
 }
