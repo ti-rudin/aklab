@@ -29,11 +29,15 @@ PM2-процессы на проде (213.184.136.221): 15 процессов (a
 analyzer, digest, photo-fetcher). На dev (192.168.11.151): аналогично + рядом
 `todoit-api`, `todoit-app` — это другой проект, не трогай.
 
-### Run-scoped parser telemetry (v1.1.71)
+### Run-scoped parser telemetry и production проверки (v1.1.71–v1.1.73)
 
 Pipeline telemetry хранится отдельно от агрегированного `Source`: `parser_run` идентифицируется immutable `run_id`, `parser_run_source` — `identity_key = runId:sourceSlug:stage`. Строка этапа создаётся `queued` **до enqueue**, получает реальный numeric `job_id` после enqueue, worker переводит её `running`, затем посылает exact terminal counters через internal aliases с `global::service-token`.
 
-После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Production v1.1.71 deployed 2026-07-16; runtime E2E pipeline telemetry ещё не запускалась намеренно, поскольку это write-нагрузка.
+После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Runtime E2E подтверждён production runs 2026-07-17: terminal telemetry internal calls 200, workers корректно завершают source stages.
+
+**SQLite boundary rules:**
+- `strapi.db.query().create()` не делает REST JSON transform: для property parser upsert сериализовать `tags` и `photo_urls`, иначе `better-sqlite3` даёт `500`.
+- Raw focus query отдаёт `first_seen_at` epoch milliseconds, REST путь — ISO. Digest freshness parser обязан поддерживать оба формата; production v1.1.73 подтвердил email `2 hot + 27 regular` после fix.
 
 ### Домены
 

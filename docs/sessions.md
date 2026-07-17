@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.73 — production pipeline recovery)
+**Сделано 17 июля 2026:**
+- ✅ Production hotfix `v1.1.72` (`b3d32dd`): `POST /properties/upsert` через `strapi.db.query().create()` передавал JSON default `tags=[]` raw-массивом в `better-sqlite3` → `500` на каждой валидной записи. Перед ORM boundary сериализуются `tags` и `photo_urls`; RED regression test, 80 targeted tests, API TypeScript и Strapi build прошли.
+- ✅ Manual pipeline `08e751dc-a5e9-44e8-aa77-da1b2a2c0416` после v1.1.72: создано 35 объектов, обработано 35, `undervalued=6`, без errors. Но digest ошибочно написал `No focus properties`.
+- ✅ Production hotfix `v1.1.73` (`0e00456`): raw focus SQL возвращает `first_seen_at` как SQLite epoch milliseconds, а digest freshness-filter принимал только ISO. Digest теперь принимает strict ISO и positive safe epoch milliseconds, старые/future/invalid записи по-прежнему отсекаются. RED test + 19/19 digest tests + digest build + CI прошли.
+- ✅ Manual verification run `725b64cf-08b8-4782-a08a-6088399d4763`: 10/10 sources, 29 объектов созданы и проанализированы, `undervalued=2`, pipeline без errors; digest подтвердил `Email sent: 2 hot + 27 regular`.
+- ✅ После каждого deploy PM2 logs очищены по явной команде пользователя; API health `204`, frontend `200`, все 16 процессов online.
+- ⚠️ Server-local diagnostics/lockfile изменения сохранены нетронутыми: `package-lock.json`, `check-pipeline*.js`, `clear-queue.js`, `fix-sources.js`, тестовые scripts и broken symlink.
+
 ## Session handoff (v1.1.71 — run-scoped parser telemetry)
 **Сделано 16 июля 2026:**
 - ✅ Добавлены `parser_runs` и `parser_run_sources`: immutable `run_id` и `identity_key = runId:sourceSlug:stage`; source-stage создаётся до enqueue, затем получает точный numeric SQLite Queue `job_id`.
