@@ -85,6 +85,13 @@ function displayText(value: unknown, fallback = '—'): string {
 }
 
 function parseStoredIsoTimestamp(value: unknown): number | null {
+  // `getFocusQuery()` reads SQLite datetime values through a raw query, which
+  // exposes them as epoch milliseconds rather than the REST ISO representation.
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 && Number.isFinite(new Date(value).getTime())
+      ? value
+      : null;
+  }
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
     return null;
   }
