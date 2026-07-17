@@ -415,14 +415,17 @@ describe('handleDigestJob', () => {
           { city: 'moscow', focus_score: 60, title: 'Old', tags: [], first_seen_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() },
           { city: 'moscow', focus_score: 60, title: 'Future', tags: [], first_seen_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() },
           { city: 'moscow', focus_score: 60, title: 'Fresh', tags: [], first_seen_at: FRESH_FIRST_SEEN_AT },
+          // The focus endpoint's raw SQLite query returns this production shape.
+          { city: 'moscow', focus_score: 60, title: 'SQLite epoch', tags: [], first_seen_at: Date.now() },
         ],
       }),
     });
 
     const result = await handleDigestJob(makeJob({ date: '2025-01-15', smtpTo: 'user@test.com' }));
 
-    expect(result).toEqual({ sent: true, count: 1 });
+    expect(result).toEqual({ sent: true, count: 2 });
     expect(mockSendMail.mock.calls[0][0].html).toContain('Fresh');
+    expect(mockSendMail.mock.calls[0][0].html).toContain('SQLite epoch');
     expect(mockSendMail.mock.calls[0][0].html).not.toContain('Missing');
   });
 

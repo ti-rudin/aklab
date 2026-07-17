@@ -2,6 +2,10 @@
 
 > Извлечено из docs/compact-doc.md. Нумерация сохранена.
 
+## Hotfix — digest freshness + SQLite timestamp (v1.1.72)
+
+`GET /api/properties/focus` использует raw SQLite query и возвращает `first_seen_at` как epoch milliseconds, хотя REST path даёт ISO. Digest должен принимать оба корректных представления; ISO-only проверка отбрасывает все свежие focus-объекты и пишет `No focus properties` при ненулевом `undervalued_count`. Не менять порог как workaround: добавить RED-тест с epoch timestamp, затем безопасно валидировать `positive safe integer → Date` и сохранить фильтры old/future.
+
 ## Hotfix — parser identity upsert + SQLite JSON (v1.1.71)
 
 `strapi.db.query().create()` обходит REST JSON-transform Strapi. Если передать raw array в JSON-колонку (`tags`, `photo_urls`), `better-sqlite3` выдаёт `SQLite3 can only bind numbers, strings, bigints, buffers, and null`, а parser получает `POST /properties/upsert → 500`. Перед `repository.create()` сериализовать JSON-поля: `tags: JSON.stringify([])`, `photo_urls: JSON.stringify(photo_urls)`. Покрыть это unit-тестом; иначе валидные московские объекты могут пройти фильтры, но не попасть в БД.
