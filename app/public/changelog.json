@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.72",
+    "date": "17 июля 2026",
+    "time": "10:46",
+    "items": [
+      {
+        "text": "Итоги telemetry деплоя",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.71",
     "date": "16 июля 2026",
     "time": "23:36",
