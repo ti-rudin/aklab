@@ -1,5 +1,32 @@
 [
   {
+    "version": "v1.1.73",
+    "date": "17 июля 2026",
+    "time": "11:59",
+    "items": [
+      {
+        "text": "Accepts positive safe epoch-milliseconds alongside strict ISO timestamp;",
+        "type": "improvement"
+      },
+      {
+        "text": "Сохраняет фильтры missing/invalid/old/future;",
+        "type": "improvement"
+      },
+      {
+        "text": "RED regression test reproduces production payload;",
+        "type": "improvement"
+      },
+      {
+        "text": "Documented gotcha.",
+        "type": "improvement"
+      },
+      {
+        "text": "Git diff --check passed.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.72",
     "date": "17 июля 2026",
     "time": "10:46",
