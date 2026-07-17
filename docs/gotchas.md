@@ -2,6 +2,10 @@
 
 > Извлечено из docs/compact-doc.md. Нумерация сохранена.
 
+## Hotfix — parser identity upsert + SQLite JSON (v1.1.71)
+
+`strapi.db.query().create()` обходит REST JSON-transform Strapi. Если передать raw array в JSON-колонку (`tags`, `photo_urls`), `better-sqlite3` выдаёт `SQLite3 can only bind numbers, strings, bigints, buffers, and null`, а parser получает `POST /properties/upsert → 500`. Перед `repository.create()` сериализовать JSON-поля: `tags: JSON.stringify([])`, `photo_urls: JSON.stringify(photo_urls)`. Покрыть это unit-тестом; иначе валидные московские объекты могут пройти фильтры, но не попасть в БД.
+
 ## Strapi 5 — gotchas (для новой сессии)
 
 1. **Структура v5 layout** (отличается от v4):

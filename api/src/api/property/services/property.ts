@@ -181,9 +181,19 @@ export default factories.createCoreService(PROPERTY_UID, ({ strapi }) => ({
     const existing = await repository.findOne({ where });
     if (existing) return { property: existing, created: false };
 
+    const createData = {
+      ...parserData,
+      // `strapi.db.query()` bypasses Strapi's REST JSON transformer. SQLite
+      // therefore receives raw arrays unless we serialize them at this ORM boundary.
+      tags: JSON.stringify([]),
+      ...(parserData.photo_urls !== undefined
+        ? { photo_urls: JSON.stringify(parserData.photo_urls) }
+        : {}),
+    };
+
     try {
       const property = await repository.create({
-        data: parserData,
+        data: createData,
       });
       return { property, created: true };
     } catch (error) {
