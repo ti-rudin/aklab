@@ -146,6 +146,8 @@ const workerApps = [
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
       STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+      // Node fetch trusts the Russian CA chain used by torgi.gov.ru.
+      NODE_EXTRA_CA_CERTS: '/usr/local/share/ca-certificates/russian-ca-chain.pem',
     },
   },
 ];

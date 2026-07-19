@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.75 — восстановление фотографий ГИС Торги)
+**Сделано 19 июля 2026:**
+- ✅ Production-логи показали причину spinner: `photo-fetcher` падал с `net::ERR_CERT_AUTHORITY_INVALID`, потому что Chromium не использует `NODE_EXTRA_CA_CERTS`; после retry `photos_downloaded` оставался `false`.
+- ✅ Для `torgi-gov` Playwright заменён на официальный lot API: compound ID → `/new/api/public/lotcards/{id}` → валидированные `lotImages` → `/new/image-preview/v1/{fileId}?disposition=inline`.
+- ✅ В env `aklab-photo-fetcher-prod` добавлена Russian CA chain для Node TLS; глобальное отключение TLS-проверки не используется.
+- ✅ Добавлены retry для временных `429/5xx`; полный провал скачивания теперь бросает ошибку и активирует retry очереди.
+- ✅ На реальном production endpoint проверены 5/5 оригиналов: HTTP 200, MIME совпадает с magic bytes. Resize-вариант не используется из-за наблюдавшихся `503` и MIME/magic mismatch.
+- ✅ Tests photo-fetcher 13/13 и TypeScript build прошли.
+
 ## Session handoff (v1.1.74 — исправление ссылок ГИС Торги)
 **Сделано 19 июля 2026:**
 - ✅ Найдена причина неработающих ссылок: устаревший маршрут `/new/public/lots/reg/lot-card/{notice}/{lot}` отдавал HTTP 200, но после SPA hydration показывал внутреннюю страницу 404.
