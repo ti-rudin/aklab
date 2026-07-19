@@ -43,6 +43,8 @@ Pipeline telemetry хранится отдельно от агрегирован
 
 Публичная карточка torgi.gov.ru использует маршрут `/new/public/lots/lot/{noticeNumber}_{lotNumber}`. Устаревший `/new/public/lots/reg/lot-card/{noticeNumber}/{lotNumber}` возвращает HTTP 200 со SPA-страницей 404, поэтому URL-аудит обязан проверять hydrated DOM/body. В production исправлены все 149 существующих ссылок; parser генерирует новый формат.
 
+**Фотографии (v1.1.75):** Chromium не доверяет российской CA-цепочке через `NODE_EXTRA_CA_CERTS`, поэтому `photo-fetcher` не открывает карточку Torgi через Playwright. Использовать lot API `/new/api/public/lotcards/{compoundId}`, валидировать `lotImages` как 24-символьные hex ID и скачивать оригиналы с `/new/image-preview/v1/{fileId}?disposition=inline`. Не добавлять `resize=600x600!`: production возвращал временные 503 и встречался MIME/magic mismatch. Node worker обязан иметь `NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/russian-ca-chain.pem`; TLS verification не отключать.
+
 ### Домены
 
 **Prod (213.184.136.221):**
