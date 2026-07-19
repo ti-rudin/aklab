@@ -39,6 +39,10 @@ Pipeline telemetry хранится отдельно от агрегирован
 - `strapi.db.query().create()` не делает REST JSON transform: для property parser upsert сериализовать `tags` и `photo_urls`, иначе `better-sqlite3` даёт `500`.
 - Raw focus query отдаёт `first_seen_at` epoch milliseconds, REST путь — ISO. Digest freshness parser обязан поддерживать оба формата; production v1.1.73 подтвердил email `2 hot + 27 regular` после fix.
 
+### Ссылки ГИС Торги (v1.1.74)
+
+Публичная карточка torgi.gov.ru использует маршрут `/new/public/lots/lot/{noticeNumber}_{lotNumber}`. Устаревший `/new/public/lots/reg/lot-card/{noticeNumber}/{lotNumber}` возвращает HTTP 200 со SPA-страницей 404, поэтому URL-аудит обязан проверять hydrated DOM/body. В production исправлены все 149 существующих ссылок; parser генерирует новый формат.
+
 ### Домены
 
 **Prod (213.184.136.221):**
@@ -227,9 +231,9 @@ deploy-prod.sh + бамп версии).
 Не трогать без необходимости. Если менять — только переменные, не
 формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
 
-## Текущее состояние (июль 2026, v1.1.59)
+## Текущее состояние (июль 2026, v1.1.74)
 
-Версия: 1.1.59 (Playwright page leak fix + cron simplification)
+Версия: 1.1.74 (исправлены публичные ссылки ГИС Торги; все существующие записи обновлены)
 - **Инфраструктура (24.06.2026):**
   - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
   - **Dev:** 192.168.11.151 (rudin), бывший prod

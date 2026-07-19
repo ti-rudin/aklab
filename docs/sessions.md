@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.74 — исправление ссылок ГИС Торги)
+**Сделано 19 июля 2026:**
+- ✅ Найдена причина неработающих ссылок: устаревший маршрут `/new/public/lots/reg/lot-card/{notice}/{lot}` отдавал HTTP 200, но после SPA hydration показывал внутреннюю страницу 404.
+- ✅ Подтверждён актуальный маршрут на реальном production DOM: `/new/public/lots/lot/{notice}_{lot}`.
+- ✅ Парсер `torgi-gov` генерирует новый URL и извлекает compound lot ID для detail API; добавлены регрессионные тесты, 25/25 targeted tests и parser build прошли.
+- ✅ PR #34 merged, production deploy v1.1.74 успешен; API 204, frontend 200, PM2 16/16 online.
+- ✅ После отдельного SQLite backup атомарно обновлены URL всех 149 существующих `torgi-gov` объектов: current=149, legacy=0, missing=0; `PRAGMA integrity_check=ok`.
+- **Инсайт:** HTTP 200 для SPA route не доказывает существование страницы — проверять hydrated DOM/body на внутренний 404.
+
 ## Session handoff (v1.1.73 — production pipeline recovery)
 **Сделано 17 июля 2026:**
 - ✅ Production hotfix `v1.1.72` (`b3d32dd`): `POST /properties/upsert` через `strapi.db.query().create()` передавал JSON default `tags=[]` raw-массивом в `better-sqlite3` → `500` на каждой валидной записи. Перед ORM boundary сериализуются `tags` и `photo_urls`; RED regression test, 80 targeted tests, API TypeScript и Strapi build прошли.
