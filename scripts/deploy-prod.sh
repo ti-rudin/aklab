@@ -244,7 +244,9 @@ if [ "$NEED_INSTALL" = "true" ]; then
   log "npm install api/..."
   # Link local workspace packages for api/ (not in root workspaces)
   mkdir -p api/node_modules/@aklab
-  ln -sf ../../../lib/parse-rules api/node_modules/@aklab/parse-rules
+  # -n: do not follow an existing symlink-to-directory and create a recursive
+  # lib/parse-rules/parse-rules link inside the workspace package.
+  ln -sfn ../../../lib/parse-rules api/node_modules/@aklab/parse-rules
   (cd api && npm install --include=dev 2>&1 | tail -3)
   log "npm install app/..."
   (cd app && npm install 2>&1 | tail -3)
