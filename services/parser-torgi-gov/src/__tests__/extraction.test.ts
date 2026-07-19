@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildTorgiLotUrl, extractTorgiLotId } from '../sources/torgi-gov';
 
 /**
  * Тесты extraction-логики parser-torgi-gov.
@@ -69,6 +70,19 @@ const baseLotItem = {
 };
 
 // --- Tests ---
+
+describe('torgi-gov: source URL', () => {
+  it('builds the current public lot route from the compound lot id', () => {
+    expect(buildTorgiLotUrl('21000005000000031466_1')).toBe(
+      'https://torgi.gov.ru/new/public/lots/lot/21000005000000031466_1',
+    );
+  });
+  it('extracts the compound lot id from the current public route', () => {
+    expect(
+      extractTorgiLotId('https://torgi.gov.ru/new/public/lots/lot/21000005000000031466_1'),
+    ).toBe('21000005000000031466_1');
+  });
+});
 
 describe('torgi-gov: extractAddress', () => {
   it('should extract address from lotDescription with "по адресу"', () => {

@@ -13,11 +13,19 @@ import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
 const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
-const BASE_URL = 'https://torgi.gov.ru/new/public/lots/reg';
+const PUBLIC_LOT_URL = 'https://torgi.gov.ru/new/public/lots/lot';
 const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
 const ITEMS_PER_PAGE = 10;
 
 const MOSCOW_REGIONS = new Set(['77', '50']);
+
+export function buildTorgiLotUrl(lotId: string): string {
+  return `${PUBLIC_LOT_URL}/${lotId}`;
+}
+
+export function extractTorgiLotId(url: string): string | undefined {
+  return url.match(/\/lots\/lot\/(\d+_\d+)(?:[/?#]|$)/)?.[1];
+}
 
 function extractAddress(item: any): string {
   const desc = item.lotDescription || item.lotName || '';
@@ -66,19 +74,17 @@ export class TorgiGovParser implements SourceParser {
 
   async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
     // torgi.gov.ru — Angular SPA, HTML пустой. Используем JSON API.
-    // URL: https://torgi.gov.ru/new/public/lots/reg/lot-card/{noticeNumber}/{lotNumber}
+    // URL: https://torgi.gov.ru/new/public/lots/lot/{noticeNumber}_{lotNumber}
     // API: GET https://torgi.gov.ru/new/api/public/lotcards/{noticeNumber}_{lotNumber}
 
     try {
-      const urlMatch = url.match(/lot-card\/(\d+)\/(\d+)/);
-      if (!urlMatch) {
-        logger.warn(`[torgi-gov] Cannot extract noticeNumber/lotNumber from URL: ${url}`);
+      const lotId = extractTorgiLotId(url);
+      if (!lotId) {
+        logger.warn(`[torgi-gov] Cannot extract lot ID from URL: ${url}`);
         return {};
       }
 
-      const noticeNumber = urlMatch[1];
-      const lotNumber = urlMatch[2];
-      const apiUrl = `https://torgi.gov.ru/new/api/public/lotcards/${noticeNumber}_${lotNumber}`;
+      const apiUrl = `https://torgi.gov.ru/new/api/public/lotcards/${lotId}`;
 
       logger.info(`[torgi-gov] fetchDetails via JSON API: ${apiUrl}`);
 
@@ -200,11 +206,9 @@ export class TorgiGovParser implements SourceParser {
         }
 
         const lotId = item.id || `${item.noticeNumber}_${item.lotNumber}`;
-        const noticeNum = item.noticeNumber || '';
-
         results.push({
           external_id: `torgi-gov-${lotId}`,
-          url: `${BASE_URL}/lot-card/${noticeNum}/${item.lotNumber || 1}`,
+          url: buildTorgiLotUrl(lotId),
           title: lotName || description.substring(0, 200),
           address: extractAddress(item),
           city: regionCode === '77' ? 'moscow' : regionCode === '50' ? 'mo' : 'other',
