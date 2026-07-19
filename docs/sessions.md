@@ -10,6 +10,9 @@
 - ✅ Добавлены retry для временных `429/5xx`; полный провал скачивания теперь бросает ошибку и активирует retry очереди.
 - ✅ На реальном production endpoint проверены 5/5 оригиналов: HTTP 200, MIME совпадает с magic bytes. Resize-вариант не используется из-за наблюдавшихся `503` и MIME/magic mismatch.
 - ✅ Tests photo-fetcher 13/13 и TypeScript build прошли.
+- ✅ PR #36 merged, production deploy v1.1.75 успешен; контрольная карточка сохранила и отобразила 5/5 локальных фото, API 204, frontend 200, PM2 16/16 online.
+- ✅ Production worktree очищен: устаревшие diagnostic/destructive scripts удалены, SQLite backup перенесён в `/home/rudin/backups/aklab-prod/` с mode 600.
+- ✅ PR #37 исправил повторный `ln -sf` workspace-link (`ln -sfn`) и синхронизировал `package-lock.json`; production и local `main` clean/synced.
 
 ## Session handoff (v1.1.74 — исправление ссылок ГИС Торги)
 **Сделано 19 июля 2026:**
