@@ -599,10 +599,18 @@ cd /Users/aleksandrrudin/github.nosync/aklab/app && npm run type-check
 
 Выпуск сделать через additive feature flag `MULTIUSER_ENABLED`, по умолчанию `false` для первого старта новой схемы.
 
-### Wave A — foundation, feature off
+Контракт flag:
 
-1. Backup production SQLite и private/public property photo storage.
-2. Деплой exact SHA с новыми additive schemas, services, tests и feature flag off.
+- единственный source of truth — env API-процесса `MULTIUSER_ENABLED`; отсутствующее/пустое/невалидное значение означает `false`;
+- API и cron читают одну типизированную helper-функцию, а не разбирают env независимо;
+- workers не получают второй env flag: новая семантика включается только versioned queue payload, поставленным API;
+- frontend не имеет отдельного `VITE_MULTIUSER_ENABLED`: он получает `multiuserEnabled` и role capabilities из authenticated `/me/context`;
+- при `false` новые tables/services могут существовать, но новый пользовательский/cron contract не активен; при частичной конфигурации система остаётся на legacy path fail-closed.
+
+### Wave A — local/dev foundation, feature off
+
+1. Создать и проверить backup SQLite и property photo storage только целевого dev-окружения.
+2. Выполнить dev deploy exact SHA с новыми additive schemas, services, tests и feature flag off.
 3. Перезапуск создаёт новые таблицы/relations, но старый пользовательский контракт продолжает работать.
 4. Проверить health, PM2 без env/secrets, schema presence и отсутствие ошибок lifecycle.
 
@@ -626,7 +634,7 @@ cd /Users/aleksandrrudin/github.nosync/aklab/app && npm run type-check
 
 ### Wave D — production cutover только по отдельной команде пользователя
 
-1. Подтвердить exact SHA, backups, migration report и dev acceptance.
+1. После отдельной команды создать и проверить production backups, затем подтвердить exact SHA, migration report и dev acceptance.
 2. Включить feature flag и выполнить immutable manual deploy по AKLAB skill.
 3. Проверить health, authenticated smoke, no-auth denial, private media, profile target counts, digest telemetry и PM2 statuses.
 4. Не отправлять тестовые письма реальным пользователям без явного согласования; использовать test recipient/controlled manual run.
