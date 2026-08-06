@@ -223,9 +223,16 @@ describe('pure user filter snapshot contract', () => {
     expect(matchesProfile(scanProfile, { city: 'moscow', property_type: 'warehouse' }, 'scan')).toBe(false);
     expect(matchesProfile(scanProfile, { city: 'moscow', property_type: 'office', price: 2_001 }, 'scan')).toBe(false);
     expect(matchesProfile(scanProfile, { city: 'moscow', property_type: 'office', price: '2_000' }, 'details')).toBe(false);
-    expect(matchesProfile(scanProfile, { city: null, property_type: 'office', price: 1_000, area_sqm: 10 }, 'details')).toBe(false);
+    expect(matchesProfile(scanProfile, {
+      city: null,
+      property_type: null,
+      price: null,
+      area_sqm: null,
+      title: null,
+    }, 'details')).toBe(true);
     expect(matchesProfile(profile({ priceFrom: null, priceTo: null }), { city: 'moscow', property_type: 'office', price: 'unknown' }, 'details')).toBe(false);
     expect(matchesProfile(profile({ priceFrom: null, priceTo: null }), { city: 'moscow', property_type: 'office', price: -1 }, 'details')).toBe(false);
+    expect(matchesProfile(profile({ priceFrom: null, priceTo: null }), { city: 'moscow', property_type: 'office', price: null }, 'details')).toBe(true);
   });
 
   it('checks stop words in all available scan and details text', () => {
@@ -234,8 +241,8 @@ describe('pure user filter snapshot contract', () => {
 
     expect(matchesProfile(stopProfile, { ...withoutStopWord, title: 'Офис' }, 'scan')).toBe(true);
     expect(matchesProfile(stopProfile, withoutStopWord, 'details')).toBe(true);
-    expect(matchesProfile(stopProfile, { ...withoutStopWord, title: null }, 'details')).toBe(false);
-    expect(matchesProfile(profile(), { city: 'moscow', property_type: 'office', title: null }, 'details')).toBe(false);
+    expect(matchesProfile(stopProfile, { ...withoutStopWord, title: null }, 'details')).toBe(true);
+    expect(matchesProfile(profile(), { city: 'moscow', property_type: 'office', title: null }, 'details')).toBe(true);
     expect(matchesProfile(stopProfile, { ...withoutStopWord, title: 'Продажа' , description: 'ЗЕМЕЛЬНЫЙ УЧАСТОК' }, 'scan')).toBe(false);
     expect(matchesProfile(stopProfile, { ...withoutStopWord, title: 'Офис', address: 'Москва', description: 'ЗЕМЕЛЬНЫЙ УЧАСТОК' }, 'details')).toBe(false);
   });

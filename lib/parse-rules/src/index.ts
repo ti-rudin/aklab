@@ -311,7 +311,9 @@ function matchPhase(option: FilterMatchPhaseOption | undefined): FilterMatchPhas
 
 function candidateValue(candidate: RecordValue, keys: readonly string[]): { present: boolean; value: unknown } {
   for (const key of keys) {
-    if (candidate[key] !== undefined) return { present: true, value: candidate[key] };
+    if (candidate[key] !== undefined && candidate[key] !== null) {
+      return { present: true, value: candidate[key] };
+    }
   }
   return { present: false, value: undefined };
 }
@@ -345,7 +347,7 @@ function matchesRange(
 
 function matchesStopWords(stopWords: readonly string[], candidate: RecordValue): boolean {
   const textValues = TEXT_KEYS
-    .filter(key => candidate[key] !== undefined)
+    .filter(key => candidate[key] !== undefined && candidate[key] !== null)
     .map(key => candidate[key]);
   if (textValues.some(value => typeof value !== 'string')) return false;
   if (stopWords.length === 0) return true;
