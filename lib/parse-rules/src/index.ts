@@ -67,6 +67,7 @@ export interface UserFilterSnapshot {
   schemaVersion: 1;
   scope: 'all' | 'single';
   createdAt: string;
+  windowEndAt: string;
   profiles: UserParseProfile[];
   hash: string;
 }
@@ -106,8 +107,8 @@ function isRecord(value: unknown): value is RecordValue {
 }
 
 function normalizeId(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new TypeError(`${field} must be a non-negative safe integer`);
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${field} must be a positive safe integer`);
   }
   return value;
 }
@@ -121,8 +122,8 @@ function normalizeVersion(value: unknown): number {
 
 function normalizeNullableNumber(value: unknown, field: string): number | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError(`${field} must be a finite number or null`);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(`${field} must be a finite non-negative number or null`);
   }
   return value;
 }
@@ -181,12 +182,29 @@ function snapshotPayload(input: unknown): Omit<UserFilterSnapshot, 'hash'> {
   if (!isRecord(input)) throw new TypeError('snapshot must be an object');
   if (input.schemaVersion !== 1) throw new TypeError('snapshot schemaVersion must be 1');
   if (input.scope !== 'all' && input.scope !== 'single') throw new TypeError('snapshot scope is invalid');
-  if (typeof input.createdAt !== 'string' || input.createdAt.length === 0) {
-    throw new TypeError('snapshot createdAt must be a non-empty string');
+  if (!isIsoDateTime(input.createdAt)) {
+    throw new TypeError('snapshot createdAt must be a valid ISO datetime string');
+  }
+  if (!isIsoDateTime(input.windowEndAt)) {
+    throw new TypeError('snapshot windowEndAt must be a valid ISO datetime string');
   }
   if (!Array.isArray(input.profiles)) throw new TypeError('snapshot profiles must be an array');
 
-  const profiles = input.profiles.map(profilePayload).sort((left, right) => (
+  const profiles = input.profiles.map(profilePayload);
+  if (input.scope === 'single' && profiles.length !== 1) {
+    throw new RangeError('single snapshot scope requires exactly one profile');
+  }
+
+  const userIds = new Set<number>();
+  const profileIds = new Set<number>();
+  for (const profile of profiles) {
+    if (userIds.has(profile.userId)) throw new TypeError('snapshot contains duplicate userId');
+    if (profileIds.has(profile.profileId)) throw new TypeError('snapshot contains duplicate profileId');
+    userIds.add(profile.userId);
+    profileIds.add(profile.profileId);
+  }
+
+  profiles.sort((left, right) => (
     left.userId - right.userId ||
     left.profileId - right.profileId ||
     left.version - right.version
@@ -196,8 +214,47 @@ function snapshotPayload(input: unknown): Omit<UserFilterSnapshot, 'hash'> {
     schemaVersion: 1,
     scope: input.scope,
     createdAt: input.createdAt,
+    windowEndAt: input.windowEndAt,
     profiles,
   };
+}
+
+const ISO_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
+
+function isIsoDateTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = ISO_DATETIME_PATTERN.exec(value);
+  if (!match) return false;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fractionText, zone] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const milliseconds = Number((fractionText || '').slice(0, 3).padEnd(3, '0') || 0);
+  const offsetHour = zone === 'Z' ? 0 : Number(zone.slice(1, 3));
+  const offsetMinute = zone === 'Z' ? 0 : Number(zone.slice(4, 6));
+
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return false;
+  if (zone !== 'Z' && (offsetHour > 23 || offsetMinute > 59)) return false;
+
+  const utcDate = new Date(0);
+  utcDate.setUTCFullYear(year, month - 1, day);
+  utcDate.setUTCHours(hour, minute, second, milliseconds);
+  if (
+    utcDate.getUTCFullYear() !== year ||
+    utcDate.getUTCMonth() !== month - 1 ||
+    utcDate.getUTCDate() !== day ||
+    utcDate.getUTCHours() !== hour ||
+    utcDate.getUTCMinutes() !== minute ||
+    utcDate.getUTCSeconds() !== second ||
+    utcDate.getUTCMilliseconds() !== milliseconds
+  ) return false;
+
+  const offset = (offsetHour * 60 + offsetMinute) * (zone === 'Z' || zone[0] === '+' ? 1 : -1);
+  return Date.parse(value) === utcDate.getTime() - offset * 60_000;
 }
 
 /** Normalize a snapshot and recompute its integrity hash. */
@@ -254,7 +311,7 @@ function matchPhase(option: FilterMatchPhaseOption | undefined): FilterMatchPhas
 
 function candidateValue(candidate: RecordValue, keys: readonly string[]): { present: boolean; value: unknown } {
   for (const key of keys) {
-    if (candidate[key] !== undefined && candidate[key] !== null) return { present: true, value: candidate[key] };
+    if (candidate[key] !== undefined) return { present: true, value: candidate[key] };
   }
   return { present: false, value: undefined };
 }
@@ -263,11 +320,10 @@ function matchesEnum(
   profileValues: readonly string[],
   candidate: RecordValue,
   keys: readonly string[],
-  phase: FilterMatchPhase,
 ): boolean {
   if (profileValues.length === 0) return false;
   const candidateField = candidateValue(candidate, keys);
-  if (!candidateField.present) return phase === 'scan';
+  if (!candidateField.present) return true;
   if (typeof candidateField.value !== 'string') return false;
   return profileValues.includes(candidateField.value.trim().toLowerCase());
 }
@@ -277,24 +333,23 @@ function matchesRange(
   to: number | null,
   candidate: RecordValue,
   keys: readonly string[],
-  phase: FilterMatchPhase,
 ): boolean {
-  if (from === null && to === null) return true;
   const candidateField = candidateValue(candidate, keys);
-  if (!candidateField.present) return phase === 'scan';
-  if (typeof candidateField.value !== 'number' || !Number.isFinite(candidateField.value)) return false;
+  if (!candidateField.present) return true;
+  if (typeof candidateField.value !== 'number' || !Number.isFinite(candidateField.value) || candidateField.value < 0) return false;
+  if (from === null && to === null) return true;
   if (from !== null && candidateField.value < from) return false;
   if (to !== null && candidateField.value > to) return false;
   return true;
 }
 
 function matchesStopWords(stopWords: readonly string[], candidate: RecordValue): boolean {
+  const textValues = TEXT_KEYS
+    .filter(key => candidate[key] !== undefined)
+    .map(key => candidate[key]);
+  if (textValues.some(value => typeof value !== 'string')) return false;
   if (stopWords.length === 0) return true;
-  const availableText = TEXT_KEYS
-    .map(key => candidate[key])
-    .filter((value): value is string => typeof value === 'string')
-    .join(' ')
-    .toLowerCase();
+  const availableText = textValues.join(' ').toLowerCase();
   return !stopWords.some(stopWord => availableText.includes(stopWord));
 }
 
@@ -307,12 +362,10 @@ export function matchesProfile(
   try {
     const normalized = profilePayload(profile);
     if (!isRecord(candidate)) return false;
-    const resolvedPhase = matchPhase(phase);
-
-    return matchesEnum(normalized.regions, candidate, ['region', 'city'], resolvedPhase)
-      && matchesEnum(normalized.propertyTypes, candidate, ['propertyType', 'property_type'], resolvedPhase)
-      && matchesRange(normalized.priceFrom, normalized.priceTo, candidate, ['price'], resolvedPhase)
-      && matchesRange(normalized.areaFrom, normalized.areaTo, candidate, ['area_sqm', 'area'], resolvedPhase)
+    return matchesEnum(normalized.regions, candidate, ['region', 'city'])
+      && matchesEnum(normalized.propertyTypes, candidate, ['propertyType', 'property_type'])
+      && matchesRange(normalized.priceFrom, normalized.priceTo, candidate, ['price', 'minimum_price'])
+      && matchesRange(normalized.areaFrom, normalized.areaTo, candidate, ['area_sqm', 'area'])
       && matchesStopWords(normalized.stopWords, candidate);
   } catch {
     // Invalid persisted input must never widen a user scope.
@@ -327,9 +380,13 @@ export function matchesSnapshot(
   phase?: FilterMatchPhaseOption,
 ): boolean {
   try {
-    const normalized = normalizeUserFilterSnapshot(snapshot);
-    if (typeof snapshot.hash === 'string' && snapshot.hash !== normalized.hash) return false;
-    return normalized.profiles.some(profile => matchesProfile(profile, candidate, phase));
+    if (!isRecord(snapshot) || typeof snapshot.hash !== 'string' || !/^[0-9a-f]{64}$/i.test(snapshot.hash)) {
+      return false;
+    }
+    const payload = snapshotPayload(snapshot);
+    const computedHash = sha256(canonicalJson(payload));
+    if (snapshot.hash.toLowerCase() !== computedHash) return false;
+    return payload.profiles.some(profile => matchesProfile(profile, candidate, phase));
   } catch {
     return false;
   }

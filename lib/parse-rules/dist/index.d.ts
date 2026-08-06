@@ -47,6 +47,7 @@ export interface UserFilterSnapshot {
     schemaVersion: 1;
     scope: 'all' | 'single';
     createdAt: string;
+    windowEndAt: string;
     profiles: UserParseProfile[];
     hash: string;
 }
