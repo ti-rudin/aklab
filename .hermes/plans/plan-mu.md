@@ -114,9 +114,11 @@
 
 ### 3.3 Комментарии и события
 
-Обновить `api/src/api/user-comment/content-types/user-comment/schema.json`:
+Обновить `api/src/api/user-comment/content-types/user-comment/schema.json` двухфазно:
 
-- добавить required relation `author` → `plugin::users-permissions.user`;
+- в additive schema добавить nullable relation `author` → `plugin::users-permissions.user`;
+- закрыть generic comment writes, выполнить transactional backfill и проверить `comments_without_author=0`;
+- только после backfill gate включить application-level required invariant в ownership-safe controller; не делать relation schema-required до совместимой миграции существующих rows;
 - оставить relation на `Property`;
 - чтение/создание/изменение/удаление разрешать только автору;
 - AKLAB Admin не получает неявный доступ к чужим комментариям через обычный пользовательский endpoint.

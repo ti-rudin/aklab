@@ -186,11 +186,16 @@ describe('multi-user additive schema contract', () => {
     });
   });
 
-  it('adds a required author relation to comments without removing existing fields', () => {
+  it('adds a nullable migration-stage author relation without removing existing fields', () => {
     const comments = schema('api/src/api/user-comment/content-types/user-comment/schema.json');
     expect(comments.attributes).toHaveProperty('property');
     expect(comments.attributes).toHaveProperty('text');
-    expectRelation(comments.attributes.author, 'manyToOne', 'plugin::users-permissions.user');
+    expect(comments.attributes.author).toMatchObject({
+      type: 'relation',
+      relation: 'manyToOne',
+      target: 'plugin::users-permissions.user',
+    });
+    expect(comments.attributes.author?.required).not.toBe(true);
   });
 
   it('adds profile-scoped parser telemetry without removing legacy fields or adding PII', () => {
