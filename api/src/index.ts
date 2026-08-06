@@ -4,6 +4,7 @@ import { getQueueService } from './services/queueService';
 import { registerCrons } from './cron';
 import { getPipelineService } from './services/pipeline';
 import { disablePublicRegistration } from './services/registration';
+import { registerUserLifecycleSubscriber } from './services/user-lifecycle';
 import type { StrapiInstance } from './types/strapi';
 
 export default {
@@ -36,6 +37,7 @@ export default {
       throw new Error(`Missing required environment variables: ${missing.join(', ')}. Check api/.env`);
     }
 
+    registerUserLifecycleSubscriber(strapi as any);
     await disablePublicRegistration(strapi as any);
 
     try {
