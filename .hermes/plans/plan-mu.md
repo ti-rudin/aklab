@@ -232,7 +232,7 @@ matchesSnapshot = profileA OR profileB OR ...
 Реализовать два явных actor type:
 
 - пользователь с JWT и Users & Permissions role;
-- внутренний service actor с постоянным `SERVICE_TOKEN`.
+- внутренний service actor с существующим `STRAPI_API_TOKEN`, проверяемым текущей `global::service-token` policy; второе имя секрета не вводить.
 
 AKLAB Admin policy должна проверять фактическую роль из БД, а не доверять role из request body/localStorage. Маршруты должны различать user JWT и service actor; обычный пользователь не может выдать себя за другого через `userId` в query/body.
 
@@ -261,7 +261,7 @@ Idempotent seeder создаёт роль `AKLAB Admin`, но не назнач�
 
 - `afterCreate`: idempotent `ensureProfile`;
 - `beforeDelete/beforeDeleteMany`: блокировать hard delete и объяснять, что аккаунт нужно блокировать;
-- guard не должен мешать rollback-скрипту с явным operational override.
+- bypass/operational override для hard delete не добавлять: rollback не удаляет additive данные и выполняется откатом exact SHA.
 
 ### Task 5. Добавить безопасную миграционную команду
 
