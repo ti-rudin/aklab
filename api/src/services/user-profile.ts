@@ -24,11 +24,6 @@ const ALLOWED_PROFILE_FIELDS = [
   'digest_enabled',
 ] as const;
 
-// Keep the persisted/input contract in one normalizer: 128 canonical words,
-// each no longer than 256 characters after trim/lowercase/deduplication.
-const MAX_STOP_WORDS = 128;
-const MAX_STOP_WORD_LENGTH = 256;
-
 type AllowedProfileField = (typeof ALLOWED_PROFILE_FIELDS)[number];
 type ProfileRecord = Record<string, unknown>;
 type Query = {
@@ -261,9 +256,6 @@ function normalizeStringArray(value: unknown, malformed: boolean): string[] {
     const parsed = parseStoredArray(value);
     if (parsed.some(item => typeof item !== 'string')) throw new Error('invalid');
     const normalized = [...new Set(parsed.map(item => (item as string).trim().toLowerCase()).filter(Boolean))].sort();
-    if (normalized.length > MAX_STOP_WORDS || normalized.some(item => item.length > MAX_STOP_WORD_LENGTH)) {
-      throw new Error('invalid');
-    }
     return normalized;
   } catch (error) {
     if (error instanceof UserProfileError) {
@@ -327,6 +319,14 @@ function valueOrCurrent(input: ProfileRecord, field: AllowedProfileField, curren
   return hasOwn(input, field) ? input[field] : currentValue ?? current[field];
 }
 
+function normalizeCandidateProfile(candidate: UserParseProfile): UserParseProfile {
+  try {
+    return normalizeUserParseProfile(candidate);
+  } catch {
+    throw new UserProfileValidationError();
+  }
+}
+
 /** Validate and replace only filter/digest fields, using optimistic versioning. */
 export async function replaceUserProfile(
   strapi: StrapiLike,
@@ -357,6 +357,18 @@ export async function replaceUserProfile(
   assertOrderedRange(priceFrom, priceTo, false);
   assertOrderedRange(areaFrom, areaTo, false);
   const stopWords = normalizeStringArray(valueOrCurrent(input, 'stop_words', existing, current.stopWords), false);
+  const candidate = normalizeCandidateProfile({
+    userId,
+    profileId: current.profileId,
+    version: currentVersion,
+    regions,
+    propertyTypes,
+    priceFrom,
+    priceTo,
+    areaFrom,
+    areaTo,
+    stopWords,
+  });
   const currentDigestEmail = normalizeStoredEmail(existing.digest_email);
   const currentDigestEnabled = normalizeBoolean(existing.digest_enabled, true);
   const digestEmail = normalizeInputEmail(valueOrCurrent(input, 'digest_email', existing, currentDigestEmail));
@@ -370,13 +382,13 @@ export async function replaceUserProfile(
     left.length === right.length && left.every((value, index) => value === right[index])
   );
   if (
-    sameArray(regions, current.regions)
-    && sameArray(propertyTypes, current.propertyTypes)
-    && priceFrom === current.priceFrom
-    && priceTo === current.priceTo
-    && areaFrom === current.areaFrom
-    && areaTo === current.areaTo
-    && sameArray(stopWords, current.stopWords)
+    sameArray(candidate.regions, current.regions)
+    && sameArray(candidate.propertyTypes, current.propertyTypes)
+    && candidate.priceFrom === current.priceFrom
+    && candidate.priceTo === current.priceTo
+    && candidate.areaFrom === current.areaFrom
+    && candidate.areaTo === current.areaTo
+    && sameArray(candidate.stopWords, current.stopWords)
     && digestEmail === currentDigestEmail
     && digestEnabled === currentDigestEnabled
   ) {
@@ -388,13 +400,13 @@ export async function replaceUserProfile(
   const updated = await strapi.db.query(PROFILE_UID).update({
     where: { id: current.profileId, profile_version: currentVersion },
     data: {
-      regions,
-      property_types: propertyTypes,
-      price_from: priceFrom,
-      price_to: priceTo,
-      area_from: areaFrom,
-      area_to: areaTo,
-      stop_words: stopWords,
+      regions: candidate.regions,
+      property_types: candidate.propertyTypes,
+      price_from: candidate.priceFrom,
+      price_to: candidate.priceTo,
+      area_from: candidate.areaFrom,
+      area_to: candidate.areaTo,
+      stop_words: candidate.stopWords,
       digest_email: digestEmail,
       digest_enabled: digestEnabled,
       profile_version: currentVersion + 1,
