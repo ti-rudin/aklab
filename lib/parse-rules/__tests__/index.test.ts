@@ -65,6 +65,52 @@ describe('pure user filter snapshot contract', () => {
     expect(normalized).not.toHaveProperty('username');
   });
 
+  it('enforces canonical cardinality and string-length boundaries without counting duplicates or empty items', () => {
+    const exactly128 = Array.from({ length: 128 }, (_, index) => ` Word-${index} `);
+    const normalized = normalizeUserParseProfile(profile({ stopWords: [
+      ...Array.from({ length: 129 }, () => '  repeated '),
+      ...Array.from({ length: 129 }, () => '   '),
+      ...Array.from({ length: 127 }, (_, index) => ` unique-${index} `),
+    ] }));
+
+    expect(normalized.stopWords).toHaveLength(128);
+    expect(normalized.stopWords).not.toContain('');
+    expect(normalizeUserParseProfile(profile({ stopWords: exactly128 })).stopWords).toHaveLength(128);
+    expect(() => normalizeUserParseProfile(profile({
+      stopWords: [...exactly128, 'word-128'],
+    }))).toThrowError(new RangeError('stopWords exceeds maximum of 128 unique items'));
+
+    const exactly256 = ` ${'A'.repeat(256)} `;
+    expect(normalizeUserParseProfile(profile({ stopWords: [exactly256] })).stopWords).toEqual(['a'.repeat(256)]);
+    expect(() => normalizeUserParseProfile(profile({ stopWords: ['b'.repeat(257)] })))
+      .toThrowError(new RangeError('stopWords items must be at most 256 characters'));
+  });
+
+  it('enforces the shared limits for snapshot normalization and hashing and fails closed in profile matching', () => {
+    const invalidProfile = profile({
+      stopWords: Array.from({ length: 129 }, (_, index) => `item-${index}`),
+    });
+    const invalidSnapshot = {
+      schemaVersion: 1 as const,
+      scope: 'all' as const,
+      createdAt: '2026-08-07T10:00:00.000Z',
+      windowEndAt: '2026-08-07T11:00:00.000Z',
+      profiles: [invalidProfile],
+    };
+
+    expect(() => createUserFilterSnapshot(invalidSnapshot)).toThrowError(
+      new RangeError('stopWords exceeds maximum of 128 unique items'),
+    );
+    expect(() => hashSnapshot(invalidSnapshot)).toThrowError(
+      new RangeError('stopWords exceeds maximum of 128 unique items'),
+    );
+    expect(matchesProfile(invalidProfile, {
+      city: 'moscow',
+      property_type: 'office',
+      price: 10,
+    })).toBe(false);
+  });
+
   it('canonicalizes object keys and profile order and computes a deterministic SHA-256 hash', () => {
     const first = snapshot(
       profile({ userId: 2, profileId: 20, version: 2, regions: ['mo'], propertyTypes: ['warehouse'] }),

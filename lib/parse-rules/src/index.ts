@@ -50,6 +50,9 @@ export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
 export const REGION_VALUES: readonly Region[] = Object.values(Region);
 export const PROPERTY_TYPE_VALUES: readonly PropertyType[] = Object.values(PropertyType);
 
+const MAX_CANONICAL_ARRAY_ITEMS = 128;
+const MAX_CANONICAL_STRING_LENGTH = 256;
+
 export interface UserParseProfile {
   userId: number;
   profileId: number;
@@ -132,10 +135,19 @@ function normalizeStringArray(value: unknown, field: string): string[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new TypeError(`${field} must be an array`);
 
-  return [...new Set(value.map(item => {
+  const normalized = [...new Set(value.map(item => {
     if (typeof item !== 'string') throw new TypeError(`${field} must contain strings`);
     return item.trim().toLowerCase();
   }).filter(Boolean))].sort();
+
+  if (normalized.some(item => item.length > MAX_CANONICAL_STRING_LENGTH)) {
+    throw new RangeError(`${field} items must be at most ${MAX_CANONICAL_STRING_LENGTH} characters`);
+  }
+  if (normalized.length > MAX_CANONICAL_ARRAY_ITEMS) {
+    throw new RangeError(`${field} exceeds maximum of ${MAX_CANONICAL_ARRAY_ITEMS} unique items`);
+  }
+
+  return normalized;
 }
 
 function normalizeEnumArray<T extends string>(value: unknown, field: string, allowed: readonly T[]): T[] {
