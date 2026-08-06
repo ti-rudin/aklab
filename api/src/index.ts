@@ -5,6 +5,7 @@ import { registerCrons } from './cron';
 import { getPipelineService } from './services/pipeline';
 import { disablePublicRegistration } from './services/registration';
 import { registerUserLifecycleSubscriber } from './services/user-lifecycle';
+import { ensureAklabAdminRole } from './services/aklab-admin-role';
 import type { StrapiInstance } from './types/strapi';
 
 export default {
@@ -39,6 +40,7 @@ export default {
 
     registerUserLifecycleSubscriber(strapi as any);
     await disablePublicRegistration(strapi as any);
+    await ensureAklabAdminRole(strapi as any);
 
     try {
       await runSeeders(strapi as any);
