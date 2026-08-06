@@ -201,7 +201,7 @@ matchesSnapshot = profileA OR profileB OR ...
 - новый `lib/parse-rules/src/index.test.ts` или подключённый Vitest test target;
 - `lib/parse-rules/package.json` — добавить реальный `test` script, если выбран Vitest.
 
-Сначала зафиксировать в тестах OR-семантику, границы диапазонов, enums, stop words, unknown fields и hash. Затем реализовать минимальные pure-функции и собрать library.
+Сначала зафиксировать в тестах OR-семантику, границы диапазонов, enums, stop words, unknown fields и hash. Затем реализовать минимальные pure-функции и собрать library. Legacy permissive contract для property data сохраняется: если `city/property_type/price/area/text` реально отсутствует, само отсутствие не отсекает объект ни на scan, ни на details; если поле присутствует, известное значение обязано соответствовать профилю. Fail-closed относится к пустому/невалидному профилю, ID/version/range, scope/cardinality, duplicate profile identity, snapshot hash/version и повреждённому payload, а не к отсутствующим данным самого объявления.
 
 ### Task 2. Добавить additive schemas и индексы
 
