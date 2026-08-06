@@ -29,7 +29,12 @@ export default async function aklabAdmin(ctx: PolicyContext): Promise<boolean> {
         populate: { role: true },
       });
 
-    if (!freshUser || freshUser.blocked || freshUser.confirmed === false || !freshUser.role) {
+    if (
+      !freshUser
+      || freshUser.blocked !== false
+      || freshUser.confirmed !== true
+      || !freshUser.role
+    ) {
       return false;
     }
 

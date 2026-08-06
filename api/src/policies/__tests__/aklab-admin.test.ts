@@ -77,7 +77,12 @@ describe('aklab-admin policy', () => {
     for (const freshUser of [
       null,
       { id: 7, blocked: true, confirmed: true, role: { type: 'aklab_admin' } },
+      { id: 7, blocked: undefined, confirmed: true, role: { type: 'aklab_admin' } },
+      { id: 7, blocked: null, confirmed: true, role: { type: 'aklab_admin' } },
       { id: 7, blocked: false, confirmed: false, role: { type: 'aklab_admin' } },
+      { id: 7, blocked: false, confirmed: undefined, role: { type: 'aklab_admin' } },
+      { id: 7, blocked: false, confirmed: null, role: { type: 'aklab_admin' } },
+      { id: 7, blocked: false, confirmed: 'true', role: { type: 'aklab_admin' } },
       { id: 7, blocked: false, confirmed: true, role: null },
       { id: 7, blocked: false, confirmed: true },
       { id: 7, blocked: false, confirmed: true, role: { type: 'authenticated' } },
