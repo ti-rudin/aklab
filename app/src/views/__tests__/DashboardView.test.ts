@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import DashboardView from '../DashboardView.vue'
+import StatCard from '@/components/ui/StatCard.vue'
 
 vi.mock('@/api/strapi', () => ({ default: { get: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -31,6 +32,7 @@ const mockTopProperties = [
     city: 'moscow',
     focus_score: 85,
     tags: ['undervalued', 'has_minimum_price'],
+    source: 'torgi-gov',
   },
   {
     documentId: 'p2',
@@ -77,6 +79,18 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('3')
   })
 
+  it('передаёт пресеты фильтров в кликабельные счётчики «Горячие» и «Новые»', async () => {
+    const wrapper = await mountAndWait()
+    const cards = wrapper.findAllComponents(StatCard)
+
+    expect(cards.find(card => card.props('title') === 'Горячие (≥50)')?.props('to')).toBe(
+      '/properties?tab=focus&threshold=50',
+    )
+    expect(cards.find(card => card.props('title') === 'Новые 24ч')?.props('to')).toBe(
+      '/properties?status=new&newSince=24h',
+    )
+  })
+
   // ── Скелетоны ─────────────────────────────────────────────────
   it('отображает скелетоны пока loading=true', async () => {
     // Don't resolve the api promises — keep loading=true
@@ -109,6 +123,7 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('🔥 Горячие объекты')
     expect(wrapper.text()).toContain('Горячий склад')
     expect(wrapper.text()).toContain('Офис в центре')
+    expect(wrapper.text()).toContain('Источник: torgi-gov')
     // tagLabel('undervalued') → 'Недооценённый' (from formatters.ts)
     expect(wrapper.text()).toContain('Недооценённый')
     // score badge

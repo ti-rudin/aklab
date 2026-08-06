@@ -19,8 +19,8 @@
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatCard title="Всего объектов" :value="stats.total" icon="🏢" to="/properties" />
         <StatCard title="В фокусе" :value="stats.inFocus" icon="🎯" to="/properties#focus" color="var(--accent)" />
-        <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" color="var(--score-hot)" />
-        <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" color="var(--success)" />
+        <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" to="/properties?tab=focus&threshold=50" color="var(--score-hot)" />
+        <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" to="/properties?status=new&newSince=24h" color="var(--success)" />
       </div>
 
       <!-- Bar chart: property types -->
@@ -55,6 +55,7 @@
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium truncate" style="color: var(--text-main)">{{ p.title }}</p>
               <p class="text-xs truncate" style="color: var(--text-muted)">{{ p.address || p.city }}</p>
+              <p class="text-xs truncate" style="color: var(--text-muted)">Источник: {{ p.source || 'не указан' }}</p>
             </div>
             <div class="hidden sm:flex gap-1 flex-shrink-0">
               <BaseBadge v-for="tag in (p.tags || []).filter(t => !HIDDEN_TAGS.includes(t)).slice(0, 3)" :key="tag" size="sm">
@@ -104,6 +105,7 @@ interface TopProperty {
   address: string | null
   city: string
   focus_score: number
+  source?: string | null
   tags: string[]
 }
 
