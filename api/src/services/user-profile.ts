@@ -24,6 +24,11 @@ const ALLOWED_PROFILE_FIELDS = [
   'digest_enabled',
 ] as const;
 
+// Keep the persisted/input contract in one normalizer: 128 canonical words,
+// each no longer than 256 characters after trim/lowercase/deduplication.
+const MAX_STOP_WORDS = 128;
+const MAX_STOP_WORD_LENGTH = 256;
+
 type AllowedProfileField = (typeof ALLOWED_PROFILE_FIELDS)[number];
 type ProfileRecord = Record<string, unknown>;
 type Query = {
@@ -255,7 +260,11 @@ function normalizeStringArray(value: unknown, malformed: boolean): string[] {
   try {
     const parsed = parseStoredArray(value);
     if (parsed.some(item => typeof item !== 'string')) throw new Error('invalid');
-    return [...new Set(parsed.map(item => (item as string).trim().toLowerCase()).filter(Boolean))].sort();
+    const normalized = [...new Set(parsed.map(item => (item as string).trim().toLowerCase()).filter(Boolean))].sort();
+    if (normalized.length > MAX_STOP_WORDS || normalized.some(item => item.length > MAX_STOP_WORD_LENGTH)) {
+      throw new Error('invalid');
+    }
+    return normalized;
   } catch (error) {
     if (error instanceof UserProfileError) {
       if (malformed) throw error;
@@ -336,8 +345,6 @@ export async function replaceUserProfile(
   if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
     throw new UserProfileConflictError(expectedVersion as number, currentVersion);
   }
-  if (currentVersion >= Number.MAX_SAFE_INTEGER) throw new UserProfileValidationError();
-
   const regions = normalizeInputArray(valueOrCurrent(input, 'regions', existing, current.regions), REGION_VALUES);
   const propertyTypes = normalizeInputArray(
     valueOrCurrent(input, 'property_types', existing, current.propertyTypes),
@@ -350,15 +357,36 @@ export async function replaceUserProfile(
   assertOrderedRange(priceFrom, priceTo, false);
   assertOrderedRange(areaFrom, areaTo, false);
   const stopWords = normalizeStringArray(valueOrCurrent(input, 'stop_words', existing, current.stopWords), false);
-  const digestEmail = normalizeInputEmail(valueOrCurrent(input, 'digest_email', existing, null));
+  const currentDigestEmail = normalizeStoredEmail(existing.digest_email);
+  const currentDigestEnabled = normalizeBoolean(existing.digest_enabled, true);
+  const digestEmail = normalizeInputEmail(valueOrCurrent(input, 'digest_email', existing, currentDigestEmail));
   const digestEnabled = normalizeBoolean(
-    valueOrCurrent(input, 'digest_enabled', existing, false),
+    valueOrCurrent(input, 'digest_enabled', existing, currentDigestEnabled),
     false,
   );
   if (digestEnabled && !digestEmail) throw new UserProfileValidationError();
 
-  return strapi.db.query(PROFILE_UID).update({
-    where: { id: current.profileId },
+  const sameArray = (left: readonly string[], right: readonly string[]): boolean => (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
+  if (
+    sameArray(regions, current.regions)
+    && sameArray(propertyTypes, current.propertyTypes)
+    && priceFrom === current.priceFrom
+    && priceTo === current.priceTo
+    && areaFrom === current.areaFrom
+    && areaTo === current.areaTo
+    && sameArray(stopWords, current.stopWords)
+    && digestEmail === currentDigestEmail
+    && digestEnabled === currentDigestEnabled
+  ) {
+    return existing;
+  }
+
+  if (currentVersion >= Number.MAX_SAFE_INTEGER) throw new UserProfileValidationError();
+
+  const updated = await strapi.db.query(PROFILE_UID).update({
+    where: { id: current.profileId, profile_version: currentVersion },
     data: {
       regions,
       property_types: propertyTypes,
@@ -372,6 +400,14 @@ export async function replaceUserProfile(
       profile_version: currentVersion + 1,
     },
   });
+
+  if (updated !== null && updated !== undefined) return updated;
+
+  const fresh = await getUserProfile(strapi, userId);
+  if (!isRecord(fresh)) throw new UserProfileNotFoundError();
+  const freshProfile = toCanonicalProfile(fresh);
+  const requestedVersion = expectedVersion === undefined ? currentVersion : expectedVersion as number;
+  throw new UserProfileConflictError(requestedVersion, freshProfile.version);
 }
 
 function normalizeNow(now?: Date | string): string {
@@ -393,7 +429,7 @@ async function findActiveUsers(strapi: StrapiLike): Promise<ProfileRecord[]> {
   let users: unknown;
   try {
     users = await strapi.db.query(USER_UID).findMany({
-      where: { blocked: false, confirmed: { $ne: false } },
+      where: { blocked: false, confirmed: true },
       orderBy: { id: 'asc' },
     });
   } catch {
@@ -401,7 +437,7 @@ async function findActiveUsers(strapi: StrapiLike): Promise<ProfileRecord[]> {
   }
   if (!Array.isArray(users)) throw safeSnapshotError();
 
-  const active = users.filter(user => isRecord(user) && user.blocked === false && user.confirmed !== false) as ProfileRecord[];
+  const active = users.filter(user => isRecord(user) && user.blocked === false && user.confirmed === true) as ProfileRecord[];
   const seen = new Set<number>();
   for (const user of active) {
     const id = activeUserId(user);
@@ -428,9 +464,12 @@ async function findProfilesForUsers(strapi: StrapiLike, userIds: number[]): Prom
   const activeIds = new Set(userIds);
   const byUserId = new Map<number, ProfileRecord>();
   for (const value of profiles) {
-    if (!isRecord(value) || typeof value.user_id !== 'number' || !activeIds.has(value.user_id)) continue;
-    if (byUserId.has(value.user_id)) throw safeSnapshotError();
-    byUserId.set(value.user_id, value);
+    if (!isRecord(value) || !Number.isSafeInteger(value.user_id) || (value.user_id as number) <= 0) {
+      throw safeSnapshotError();
+    }
+    const userId = value.user_id as number;
+    if (!activeIds.has(userId) || byUserId.has(userId)) throw safeSnapshotError();
+    byUserId.set(userId, value);
   }
   return byUserId;
 }
@@ -488,7 +527,7 @@ export async function buildSingleUserSnapshot(
   } catch {
     throw new UserProfileUnavailableError();
   }
-  if (!isRecord(user) || user.blocked !== false || user.confirmed === false) {
+  if (!isRecord(user) || user.blocked !== false || user.confirmed !== true) {
     throw new UserProfileUnavailableError();
   }
 
