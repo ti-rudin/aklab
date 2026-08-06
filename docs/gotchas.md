@@ -53,20 +53,18 @@
    - **Rate limit (HTTP 451)** — нужна пауза 3-6 сек между запросами + прокси
    - Python subprocess вызывается из Node.js через execFile
    - Порты: health=1357, deploy через deploy-prod.sh
-10. **Deploy: push BEFORE deploy** — `deploy-prod.sh` делает
-    `git pull origin main` в самом начале. Если локальный коммит
-    НЕ в origin/main — файл не попадёт на сервер. **Правило:**
-    всегда `git push origin main` ДО запуска deploy. Иначе придётся
-    делать pull + rebuild app вручную на сервере.
+10. **Deploy: immutable exact SHA** — release (version, root
+    `package-lock.json`, changelog) готовится и commit/push-ится до SSH,
+    обычно workflow `deploy-prod.yml`. `deploy-prod.sh --ref <SHA>` требует
+    branch `main`, clean `git status --porcelain` и exact совпадение SHA с
+    `origin/main`; затем делает только fast-forward. Скрипт **никогда не
+    stash-ит, reset-ит, commit-ит или push-ит tracked-файлы**. Dirty tree —
+    fail-closed: снять `git status`/diff, выяснить источник и исправить его
+    отдельным Git commit, не применять `checkout -- .` вслепую.
 11. **Vite и public/ файлы** — Vite копирует `app/public/` → `app/dist/`
-    при build. Если файл появился в public/ после build — нужно
-    пересобирать: `cd app && npm run build`. Deploy-prod.sh делает
-    это автоматически (build на шаге 6), но только если файл уже
-    в репо на момент git pull.
-12. **Changelog.json: build vs generate** — deploy-prod.sh генерирует
-    changelog.json ПОСЛЕ build app (шаг 9 vs шаг 6). Нужно копировать
-    `app/public/changelog.json` → `app/dist/changelog.json` после
-    генерации. Иначе dist содержит старую версию.
+    при build. Changelog обязан быть уже в release commit до build; deploy
+    копирует этот commit-артефакт в dist только после успешного health.
+    Нельзя генерировать `changelog.json` на сервере после build.
 13. **Strapi 5 custom routes + auth** — если заменить `createCoreRouter`
     на explicit routes с `config: { auth: {} }`, Users-Permissions
     требует явного grant для КАЖДОГО action. Без этого — 500 на всех

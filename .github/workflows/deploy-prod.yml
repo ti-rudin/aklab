@@ -62,6 +62,9 @@ jobs:
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "📦 Version: $CURRENT → $NEW"
 
+          # Keep the root lockfile metadata in the same immutable release commit.
+          npm install --package-lock-only --ignore-scripts
+
           # Generate changelog items (AI first, fallback to rule-based)
           ITEMS=$(node scripts/generate-changelog-ai.js "$NEW" 2>/tmp/changelog-ai.log || echo '')
           if [ -z "$ITEMS" ] || [ "$ITEMS" = '[]' ]; then
@@ -91,13 +94,15 @@ jobs:
           fi
 
       - name: Commit & push [release]
+        id: release
         run: |
           VERSION="${{ steps.prep.outputs.version }}"
           git config user.email "deploy@aklab.tirobots.ru"
           git config user.name "AKLAB Deploy"
-          git add package.json api/package.json app/package.json app/public/changelog.json
-          git commit -m "[release] v${VERSION} -- Deploy production [skip ci]" || echo "Nothing to commit"
+          git add package.json package-lock.json app/public/changelog.json
+          git commit -m "[release] v${VERSION} -- Deploy production [skip ci]"
           git push origin main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Deploy via deploy-prod.sh
         id: deploy
@@ -112,7 +117,7 @@ jobs:
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
             cd ~/aklab
-            bash scripts/deploy-prod.sh --ci
+            bash scripts/deploy-prod.sh --ref "${{ steps.release.outputs.sha }}"
 
       - name: Verify production
         run: |

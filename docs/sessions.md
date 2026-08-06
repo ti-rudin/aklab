@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (immutable production deploy — pending merge/deploy)
+**Сделано 6 августа 2026:**
+- ✅ Найден и воспроизведён source dirty production Git: server-side release path поднимал root `package.json`, `npm install` менял две version metadata строки в `package-lock.json`, но release commit lockfile не добавлял.
+- ✅ `deploy-prod.sh` переведён на immutable/fail-closed contract: dirty `git status --porcelain`, неверная branch или race с `--ref` останавливают deploy; stash/reset/commit/push удалены. Git-фаза — только `fetch` + `merge --ff-only` exact release SHA.
+- ✅ Dependency install использует `npm ci` и запускается при tracked lockfile diff; deploy больше не генерирует version/changelog на сервере.
+- ✅ `deploy-prod.yml` готовит release до SSH: version + root `package-lock.json` + changelog в одном `[release]` commit, передаёт resulting SHA в `deploy-prod.sh --ref`.
+- ✅ Добавлен shell regression test `scripts/__tests__/deploy-git-preflight.test.sh`: dirty tree отказывается без stash/HEAD mutation; clean tree fast-forward-ится до exact SHA.
+- ⏳ Изменения ещё не merged и не задеплоены на production; production продолжает v1.1.77. Перед следующим release прогнать CI, merge и выполнить штатный deploy workflow.
+
 ## Session handoff (v1.1.76–v1.1.77 — security gate и фильтры dashboard)
 **Сделано 6 августа 2026:**
 - ✅ Runtime-аудиты разделены по root/app/api; поддерживаемые обновления Strapi 5 и frontend-зависимостей сняли устранимые High/Critical. Полный тестовый прогон 702/702, app type-check и builds прошли.
