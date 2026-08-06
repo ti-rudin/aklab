@@ -6,6 +6,7 @@ const HARD_DELETE_MESSAGE = 'Hard deletion of users is disabled; block the user 
 
 type ProfileQuery = {
   findOne: (params?: unknown) => Promise<unknown>;
+  create: (params: { data: Record<string, unknown> }) => Promise<unknown>;
 };
 
 type UserLifecycleStrapi = {
@@ -14,9 +15,6 @@ type UserLifecycleStrapi = {
     lifecycles: {
       subscribe: (subscriber: UserLifecycleSubscriber) => void;
     };
-  };
-  entityService: {
-    create: (uid: string, params: { data: Record<string, unknown> }) => Promise<unknown>;
   };
 };
 
@@ -90,7 +88,7 @@ export async function ensureUserProfile(
   if (existing) return existing;
 
   try {
-    return await strapi.entityService.create(PROFILE_UID, { data: profileDefaults(userId) });
+    return await query.create({ data: profileDefaults(userId) });
   } catch (error) {
     if (!isUniqueConstraintError(error)) throw error;
 

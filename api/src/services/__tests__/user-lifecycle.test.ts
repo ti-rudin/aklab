@@ -10,6 +10,7 @@ const USER_UID = 'plugin::users-permissions.user';
 function makeStrapi() {
   const profileQuery = {
     findOne: vi.fn(),
+    create: vi.fn(),
   };
 
   return {
@@ -21,9 +22,6 @@ function makeStrapi() {
       lifecycles: {
         subscribe: vi.fn(),
       },
-    },
-    entityService: {
-      create: vi.fn(),
     },
     log: {
       info: vi.fn(),
@@ -47,7 +45,7 @@ describe('ensureUserProfile', () => {
     }
 
     expect(strapi.profileQuery.findOne).not.toHaveBeenCalled();
-    expect(strapi.entityService.create).not.toHaveBeenCalled();
+    expect(strapi.profileQuery.create).not.toHaveBeenCalled();
   });
 
   it('returns the existing profile found by scalar user_id without creating another', async () => {
@@ -57,17 +55,17 @@ describe('ensureUserProfile', () => {
 
     await expect(ensureUserProfile(strapi as any, 7)).resolves.toBe(existing);
     expect(strapi.profileQuery.findOne).toHaveBeenCalledWith({ where: { user_id: 7 } });
-    expect(strapi.entityService.create).not.toHaveBeenCalled();
+    expect(strapi.profileQuery.create).not.toHaveBeenCalled();
   });
 
   it('creates exactly one profile with safe defaults when none exists', async () => {
     const strapi = makeStrapi();
     const created = { id: 12, user_id: 7 };
     strapi.profileQuery.findOne.mockResolvedValue(null);
-    strapi.entityService.create.mockResolvedValue(created);
+    strapi.profileQuery.create.mockResolvedValue(created);
 
     await expect(ensureUserProfile(strapi as any, 7)).resolves.toBe(created);
-    expect(strapi.entityService.create).toHaveBeenCalledWith(PROFILE_UID, {
+    expect(strapi.profileQuery.create).toHaveBeenCalledWith({
       data: {
         user: 7,
         user_id: 7,
@@ -94,7 +92,7 @@ describe('ensureUserProfile', () => {
     const uniqueError = Object.assign(new Error('UNIQUE constraint failed: user_profiles.user_id'), {
       code: 'SQLITE_CONSTRAINT_UNIQUE',
     });
-    strapi.entityService.create.mockRejectedValue(uniqueError);
+    strapi.profileQuery.create.mockRejectedValue(uniqueError);
 
     await expect(ensureUserProfile(strapi as any, 7)).resolves.toBe(winner);
     expect(strapi.profileQuery.findOne).toHaveBeenCalledTimes(2);
@@ -104,7 +102,7 @@ describe('ensureUserProfile', () => {
     const strapi = makeStrapi();
     strapi.profileQuery.findOne.mockResolvedValue(null);
     const databaseError = new Error('database is locked');
-    strapi.entityService.create.mockRejectedValue(databaseError);
+    strapi.profileQuery.create.mockRejectedValue(databaseError);
 
     await expect(ensureUserProfile(strapi as any, 7)).rejects.toBe(databaseError);
     expect(strapi.profileQuery.findOne).toHaveBeenCalledTimes(1);
@@ -130,7 +128,7 @@ describe('user lifecycle subscriber', () => {
   it('provisions afterCreate from the result ID without retaining or forwarding user PII', async () => {
     const strapi = makeStrapi();
     strapi.profileQuery.findOne.mockResolvedValue(null);
-    strapi.entityService.create.mockResolvedValue({ id: 1 });
+    strapi.profileQuery.create.mockResolvedValue({ id: 1 });
     registerUserLifecycleSubscriber(strapi as any);
     const subscriber = strapi.db.lifecycles.subscribe.mock.calls[0][0];
 
@@ -139,13 +137,12 @@ describe('user lifecycle subscriber', () => {
       params: { data: { email: 'secret@example.com', username: 'secret' } },
     });
 
-    expect(strapi.entityService.create).toHaveBeenCalledWith(
-      PROFILE_UID,
+    expect(strapi.profileQuery.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ user: 7, user_id: 7 }),
       }),
     );
-    const payload = strapi.entityService.create.mock.calls[0][1].data;
+    const payload = strapi.profileQuery.create.mock.calls[0][0].data;
     expect(payload).not.toHaveProperty('email');
     expect(payload).not.toHaveProperty('username');
   });
