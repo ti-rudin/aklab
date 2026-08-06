@@ -67,7 +67,8 @@
 
 Создать `api/src/api/user-profile/content-types/user-profile/schema.json`:
 
-- `user`: one-to-one → `plugin::users-permissions.user`, required/unique;
+- `user`: one-to-one → `plugin::users-permissions.user`, required;
+- `user_id`: integer required/unique — scalar ownership key для DB-level uniqueness и fail-closed запросов;
 - `regions`: JSON string array;
 - `property_types`: JSON string array;
 - `price_from`, `price_to`: decimal nullable;
@@ -93,9 +94,13 @@
 
 - `user`: many-to-one → `plugin::users-permissions.user`, required;
 - `property`: many-to-one → `api::property.property`, required;
+- `user_id`: integer required — scalar ownership key;
+- `property_document_id`: string required — стабильный scalar identity объекта;
+- `identity_key`: string required/unique, канонический `${userId}:${propertyDocumentId}`;
 - `status`: enum `in_progress | viewed | rejected`, required;
-- уникальный составной индекс `(user_id, property_id)`;
-- индексы `(user_id, status)` и `property_id`.
+- индексы `(user_id, status)` и `property_document_id`.
+
+В текущем Strapi 5 relation-поля физически хранятся в `*_lnk` таблицах, поэтому content-type `indexes` не может честно обеспечить составную уникальность двух relations. DB-инвариант `user + property` обеспечивает unique `identity_key`; scalar keys и relation links создаются/обновляются только одной приватной service-функцией в одной транзакции. Core CRUD для профилей/states не публикуется. Migration и tests обязаны проверять отсутствие расхождений scalar keys ↔ relation links.
 
 Сделать таблицу разреженной:
 
@@ -210,7 +215,8 @@ matchesSnapshot = profileA OR profileB OR ...
 Требования:
 
 - все изменения схемы additive;
-- составная уникальность `user + property` проверяется БД, а не только кодом;
+- уникальность `user + property` проверяется БД через канонический unique `identity_key`, поскольку relations хранятся в link tables;
+- schema tests и migration verification проверяют scalar keys, relation links и отсутствие drift;
 - не создавать профиль или state через публичные core CRUD routes.
 
 ### Task 3. Создать actor, role и policy слой
