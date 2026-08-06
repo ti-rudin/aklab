@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { resolveInvestMosregSourceUrl } from '../sources/source-url';
 
 /**
  * Тесты extraction-логики parser-invest-mosreg.
@@ -369,5 +370,15 @@ describe('invest-mosreg: toProperty', () => {
     };
     const prop = toProperty(place, 'Покупка');
     expect(prop.title.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('invest-mosreg: source URL', () => {
+  it('should use a valid object website link instead of the generic map', () => {
+    expect(resolveInvestMosregSourceUrl({
+      fields: [
+        { id: 307, name: 'Ссылка на сайт', value: 'https://maksimikha.ru/' },
+      ],
+    })).toBe('https://maksimikha.ru/');
   });
 });

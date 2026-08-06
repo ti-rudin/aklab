@@ -12,6 +12,7 @@
 import { classifyPropertyType } from '@aklab/service-shared';
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
+import { resolveInvestMosregSourceUrl } from './source-url';
 
 const BASE_URL = 'https://invest.mosreg.ru';
 const API_PLACES = `${BASE_URL}/aapi/map/places/`;
@@ -103,7 +104,7 @@ function toProperty(place: MapPlace, menuName: string): ParsedProperty {
 
   return {
     external_id: `invest-mosreg-${place.uid || place.id}`,
-    url: `${BASE_URL}/investor/map`,
+    url: resolveInvestMosregSourceUrl(place),
     title: place.name.slice(0, 300),
     address: address || municipality || '',
     city: 'mo',

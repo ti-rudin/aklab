@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { resolveInvestmoscowSourceUrl } from '../sources/source-url';
 
 /**
  * Тесты extraction-логики parser-investmoscow.
@@ -431,5 +432,22 @@ describe('investmoscow: toProperty', () => {
     const tender = { id: 1, name: 'A'.repeat(500), address: 'addr' };
     const prop = toProperty(tender, 'cat');
     expect(prop.title.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('investmoscow: source URL', () => {
+  it('should prefer a valid platformLink over the broken portal tender URL', () => {
+    expect(resolveInvestmoscowSourceUrl({
+      id: 20139204,
+      url: '/tender/20139204',
+      platformLink: 'https://www.roseltorg.ru/procedure/22000136940000000012',
+    })).toBe('https://www.roseltorg.ru/procedure/22000136940000000012');
+  });
+
+  it('should reject a non-HTTP portal URL instead of persisting it', () => {
+    expect(resolveInvestmoscowSourceUrl({
+      id: 1,
+      url: 'httpx://evil.test/path',
+    })).toBe('https://investmoscow.ru/tenders');
   });
 });

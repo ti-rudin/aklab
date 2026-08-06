@@ -9,6 +9,7 @@
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay, classifyPropertyType } from '@aklab/service-shared';
+import { resolveInvestmoscowSourceUrl } from './source-url';
 
 const BASE_URL = 'https://investmoscow.ru';
 
@@ -105,7 +106,6 @@ function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] 
 function toProperty(tender: Record<string, unknown>, categoryLabel: string): ParsedProperty {
   const id = String(tender.id ?? '');
   const name = String(tender.name ?? '');
-  const url = String(tender.url ?? '');
   const address = String(tender.address ?? tender.shortAddress ?? tender.objectAddress ?? '');
   const area = typeof tender.objectArea === 'number' ? tender.objectArea : undefined;
   const price = typeof tender.startPrice === 'number' ? tender.startPrice : undefined;
@@ -129,7 +129,7 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
 
   return {
     external_id: `investmoscow-${id}`,
-    url: url.startsWith('http') ? url : `${BASE_URL}${url}`,
+    url: resolveInvestmoscowSourceUrl(tender),
     title: titleText.slice(0, 300),
     address: address ? `${region}${district ? ', ' + district : ''}, ${address}` : '',
     city: 'moscow',
