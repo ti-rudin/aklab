@@ -567,25 +567,25 @@ Smoke должен работать минимум с двумя test users и �
 
 ```bash
 cd /Users/aleksandrrudin/github.nosync/aklab
-npm run build:libs
-npm run test:services
-npm run build:services
-npm run test:api
-npm run test:app
-npm run build:api
-npm run build:app
-npm audit --audit-level=high
+STRAPI_API_TOKEN=synthetic-test-token npm test
+npm run build --workspaces --if-present
+cd api && npm run test && npm run build
+cd ../app && npm run test:unit -- --run && npm run type-check && npm run build
+cd .. && npm audit --audit-level=high
+cd api && npm audit --audit-level=high
+cd ../app && npm audit --audit-level=high
 ```
 
 Дополнительно точечно:
 
 ```bash
-cd app && npm run type-check
-cd app && npm run test:unit -- --run
-cd api && npm run test
-cd services/_shared && npm test
-cd services/digest && npm test
+cd /Users/aleksandrrudin/github.nosync/aklab/lib/parse-rules && npm test && npm run build
+cd /Users/aleksandrrudin/github.nosync/aklab/services/_shared && npm test && npm run build
+cd /Users/aleksandrrudin/github.nosync/aklab/services/digest && npm test && npm run build
+cd /Users/aleksandrrudin/github.nosync/aklab/app && npm run type-check
 ```
+
+Не использовать несуществующие root aliases `build:libs`, `test:services`, `build:services`, `test:api`, `test:app`, `build:api` или `build:app`: фактический root manifest их не объявляет.
 
 Перед коммитом проверить `git diff --check`, отсутствие секретов и отсутствие непредусмотренных lockfile churn. При изменении file/workspace-зависимостей следовать repository gotchas и пересобирать `lib` до services.
 
