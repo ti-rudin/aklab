@@ -2,6 +2,14 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.79 — manual immutable deploy, GitHub Actions disabled)
+**Сделано 6 августа 2026:**
+- ✅ По явной команде пользователя все workflows AKLAB вручную отключены в GitHub: `CI — Tests`, `Deploy — Dev`, `Deploy — Prod`. Дальнейший release path — только ручная проверка → PR/merge → exact SHA deploy.
+- ✅ Manual release `v1.1.78` прошёл `npm test` с синтетическим `STRAPI_API_TOKEN`, API/app builds и `git diff --check`; PR #44 merged (`d696a06`).
+- ⚠️ Первый запуск загрузил legacy версию `deploy-prod.sh` в память до `git pull`, поэтому он выполнил старый server-side release `v1.1.79` (`e78c3aa`) и снова оставил root lockfile dirty. Это не повторный bug immutable script: bash исполнял файл, прочитанный до обновления.
+- ✅ Root lockfile metadata синхронизирован отдельным PR #45 (`bd39175`) после exact blob-сверки. Server worktree был fast-forward-нут только после доказательства равенства local lockfile и target blob; stash/reset не использовались.
+- ✅ Новый immutable script затем успешно применён с `--ref bd39175`: API domain 204, frontend domain 200, PM2 16/16 online, production Git clean `main...origin/main`, version `1.1.79`.
+
 ## Session handoff (immutable production deploy — pending merge/deploy)
 **Сделано 6 августа 2026:**
 - ✅ Найден и воспроизведён source dirty production Git: server-side release path поднимал root `package.json`, `npm install` менял две version metadata строки в `package-lock.json`, но release commit lockfile не добавлял.

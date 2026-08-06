@@ -168,20 +168,28 @@ fast-forward; несовпадение `--ref` с текущим `origin/main` �
 PM2, проверяет health и делает rollback к предыдущему SHA при ошибке. Дай
 foreground-таймаут минимум 300s.
 
-### CI/CD (GitHub Actions)
+### Manual release и deploy (GitHub Actions отключены)
 
-**Workflows** (`.github/workflows/`):
-- `ci.yml` — тесты на PR в main/dev (build + typecheck)
-- `deploy-dev.yml` — ручной деплой на dev (backup → build → health → smoke → email)
-- `deploy-prod.yml` — manual-only workflow: на GitHub создаёт и push-ит immutable `[release]` commit (version + root lockfile + changelog), фиксирует его SHA и передаёт SHA серверу. Сервер не имеет права делать release commit.
+Все три workflow GitHub Actions (`CI — Tests`, `Deploy — Dev`, `Deploy — Prod`)
+отключены вручную. Release и production deploy выполняются оператором, только
+после явной команды пользователя.
 
-**Скрипты:**
-- `scripts/deploy-prod.sh` — immutable production applier. Флаги: `--ref <SHA>` (обязателен из CI для защиты от race), `--force` (повторный `npm ci`)
-- `scripts/generate-changelog-ai.js` — AI changelog через Xiaomi MiMo. Fallback: `generate-changelog.js`
-- `scripts/notify-deploy.sh` — email на `a@rudin.ru`
+1. В feature/release-ветке вручную выполнить tests, API/app build и `git diff --check`.
+2. Подготовить version, root `package-lock.json` и `app/public/changelog.json` в одном release commit.
+3. Создать/проверить PR и merge в `main`; зафиксировать resulting merge SHA.
+4. На сервере проверить чистый `git status --porcelain`, затем выполнить:
+   ```bash
+   bash scripts/deploy-prod.sh --ref <merge-sha>
+   ```
+5. Подтвердить domain health, PM2 и exact SHA на сервере.
 
-**SSH ключ для CI:** `~/.ssh/aklab-ci` (ed25519, `github-actions-aklab`)
-**GitHub Secrets:** `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PORT` (+ PROD аналоги), `XIAOMIMIMO_API_KEY`
+`deploy-prod.sh` остаётся immutable production applier: `--ref <SHA>` защищает
+от race, `--force` запускает повторный `npm ci`. GitHub Actions не является
+частью release path.
+
+SSH ключ и GitHub Secrets для прежних workflows сохранены в GitHub, но не используются,
+пока workflows отключены. Не удалять secrets без отдельной команды: это изменит
+возможность аварийно восстановить automation.
 **Branch protection:** нет ни на `main`, ни на `dev`. PR workflow: dev → main.
 
 ### После успешного деплоя — в локали:
