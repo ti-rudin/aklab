@@ -39,18 +39,24 @@ describe('authenticated-user policy', () => {
     expect(ctx.state.user).toBe(user);
   });
 
-  it('rejects missing, blocked, and unconfirmed users', async () => {
+  it('rejects missing, blocked, unconfirmed, and malformed active states', async () => {
     getToken.mockResolvedValue({ id: 7 });
-    const ctx = { request: { header: {} }, state: {} };
 
-    fetchAuthenticatedUser.mockResolvedValueOnce(null);
-    await expect(authenticatedUser(ctx as any)).resolves.toBe(false);
-
-    fetchAuthenticatedUser.mockResolvedValueOnce({ id: 7, blocked: true, confirmed: true });
-    await expect(authenticatedUser(ctx as any)).resolves.toBe(false);
-
-    fetchAuthenticatedUser.mockResolvedValueOnce({ id: 7, blocked: false, confirmed: false });
-    await expect(authenticatedUser(ctx as any)).resolves.toBe(false);
+    for (const user of [
+      null,
+      { id: 7, blocked: true, confirmed: true },
+      { id: 7, blocked: false, confirmed: false },
+      { id: 7, blocked: undefined, confirmed: true },
+      { id: 7, blocked: null, confirmed: true },
+      { id: 7, blocked: false, confirmed: undefined },
+      { id: 7, blocked: false, confirmed: null },
+      { id: 7, blocked: false, confirmed: 'true' },
+    ]) {
+      fetchAuthenticatedUser.mockResolvedValueOnce(user);
+      const ctx = { request: { header: {} }, state: {} as Record<string, unknown> };
+      await expect(authenticatedUser(ctx as any)).resolves.toBe(false);
+      expect(ctx.state).not.toHaveProperty('user');
+    }
   });
 
   it('does not let malformed JWT verification errors escape as 500', async () => {
