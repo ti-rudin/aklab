@@ -400,7 +400,9 @@ Artifact contract:
 - bump schema version;
 - добавить `filterSnapshotHash` и scope metadata без email/username;
 - details stage отклоняет artifact/job при несовпадении hash/version;
-- checksum и атомарная запись остаются обязательными.
+- checksum и атомарная запись остаются обязательными;
+- details retry повторно читает тот же validated artifact: удалять artifact сразу после чтения запрещено;
+- artifact удаляется только после успешного terminal completion details stage либо отдельной verified cleanup-процедурой после исчерпания retry; ошибка после чтения не должна уничтожать handoff.
 
 Проверить все service-token вызовы после закрытия публичных routes. Внутренние parser/analyzer/photo-worker операции не должны случайно попасть под персональный JWT scope.
 
@@ -419,7 +421,7 @@ Artifact contract:
 2. Для каждого `userId` непосредственно перед постановкой/выполнением отправки загрузить текущие `blocked`, `digest_enabled` и `digest_email`. Если пользователь заблокирован, выключил дайджест или не имеет валидного email — зафиксировать `skipped` и не выполнять side effect.
 3. Для отбора объектов использовать именно фильтры пользователя из сохранённого run snapshot, поэтому изменение регионов/типов/ranges/stop words во время pipeline применяется только со следующего run. Изменение `digest_enabled` или email действует сразу как delivery safety control.
 4. Создать отдельную job с idempotency key `${runId}:digest:${userId}`.
-5. Digest query выполняется через API/service actor, но получает и валидирует filter profile из run snapshot; используется тот же property scope, окно `first_seen_at >= now-24h` и общий focus threshold.
+5. Digest query выполняется через internal API/service actor с `X-AKLAB-Service-Token` (и только документированным compatibility bearer при необходимости), получает и валидирует filter profile из run snapshot; используется тот же property scope, окно `first_seen_at >= now-24h` и фактический глобальный `Setting.threshold_percent`, а не hardcoded `0`.
 6. Job не логирует email полностью; использовать masked recipient.
 7. Результаты агрегируются в `scheduled/sent/skipped/failed`; ошибка одного получателя не отменяет письма остальным, но приводит к `done_with_errors`.
 8. Cron обрабатывает всех пользователей из `all` snapshot.
