@@ -2,6 +2,13 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.76–v1.1.77 — security gate и фильтры dashboard)
+**Сделано 6 августа 2026:**
+- ✅ Runtime-аудиты разделены по root/app/api; поддерживаемые обновления Strapi 5 и frontend-зависимостей сняли устранимые High/Critical. Полный тестовый прогон 702/702, app type-check и builds прошли.
+- ⚠️ Для четырёх residual High в актуальном Strapi 5 пользователь явно одобрил узкое release-исключение: upstream фиксирует `vite@5.4.21` и вложенный `@strapi/upload → sharp@0.34.5`; не применялись downgrade, `--force` или overrides.
+- ✅ PR #39 merged, deploy v1.1.76 успешен: API 204, frontend 200, PM2 16/16 online.
+- ✅ Dashboard: в горячих объектах отображается `source`; счётчик «Горячие (≥50)» открывает вкладку фокуса с порогом 50, «Новые 24ч» — список со статусом `new` и `first_seen_at` за 24 часа. PR #40 merged, deploy v1.1.77 успешен: API 204, frontend 200, PM2 16/16 online.
+
 ## Session handoff (v1.1.75 — восстановление фотографий ГИС Торги)
 **Сделано 19 июля 2026:**
 - ✅ Production-логи показали причину spinner: `photo-fetcher` падал с `net::ERR_CERT_AUTHORITY_INVALID`, потому что Chromium не использует `NODE_EXTRA_CA_CERTS`; после retry `photos_downloaded` оставался `false`.
