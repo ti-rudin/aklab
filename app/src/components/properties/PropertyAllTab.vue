@@ -58,6 +58,9 @@
       </div>
       <button @click="handleResetFilters" class="px-3 py-1.5 radius-md border text-sm hover:opacity-80 self-end" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
     </div>
+    <p v-if="newSinceHours" class="text-xs" style="color: var(--text-muted)">
+      Период: последние {{ newSinceHours }} ч.
+    </p>
   </div>
 
   <!-- Loading -->
@@ -137,6 +140,7 @@ const route = useRoute()
 
 const { properties: items, loading, total, fetchProperties } = usePropertyData()
 const { filters, searchQuery, resetFilters } = usePropertyFilters()
+const newSinceHours = ref(0)
 
 // ========================
 // View mode (persisted)
@@ -248,6 +252,9 @@ async function fetchItems() {
   if (filters.property_type.length) f.property_type = { $in: filters.property_type }
   if (filters.priceFrom) f.price = { ...f.price, $gte: filters.priceFrom }
   if (filters.priceTo) f.price = { ...f.price, $lte: filters.priceTo }
+  if (newSinceHours.value > 0) {
+    f.first_seen_at = { $gte: new Date(Date.now() - newSinceHours.value * 60 * 60 * 1000).toISOString() }
+  }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.trim()
     f.$or = [
@@ -261,6 +268,7 @@ async function fetchItems() {
 
 function handleResetFilters() {
   resetFilters()
+  newSinceHours.value = 0
   sort.field = 'createdAt'
   sort.direction = 'desc'
   page.value = 1
@@ -304,6 +312,9 @@ defineExpose({ refresh, total })
 onMounted(() => {
   // Read all query params from URL
   const q = route.query
+  const newSince = q.newSince === '24h' ? 24 : 0
+  newSinceHours.value = newSince
+  if (q.status === 'new' || q.status === 'viewed' || q.status === 'rejected') filters.status = q.status
   if (q.property_type) filters.property_type = Array.isArray(q.property_type) ? q.property_type as string[] : (q.property_type as string).split(',')
   if (q.city) filters.city = Array.isArray(q.city) ? q.city as string[] : (q.city as string).split(',')
   if (q.priceFrom) filters.priceFrom = Number(q.priceFrom)
@@ -317,6 +328,8 @@ onMounted(() => {
 // ========================
 watch(filters, () => {
   const query: Record<string, string> = {}
+  if (filters.status) query.status = filters.status
+  if (newSinceHours.value === 24) query.newSince = '24h'
   if (filters.property_type.length) query.property_type = filters.property_type.join(',')
   if (filters.city.length) query.city = filters.city.join(',')
   if (filters.priceFrom != null) query.priceFrom = String(filters.priceFrom)

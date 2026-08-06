@@ -140,7 +140,7 @@ async function executeClearNew() {
 // Lifecycle
 // ========================
 onMounted(() => {
-  if (route.hash === '#focus') {
+  if (route.query.tab === 'focus' || route.hash === '#focus') {
     activeTab.value = 'focus'
   }
 })

@@ -204,7 +204,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import api from '@/api/strapi'
 import SkeletonTable from '@/components/SkeletonTable.vue'
 import PropertyCard from '@/components/properties/PropertyCard.vue'
@@ -219,6 +219,7 @@ import { buildFocusParams, buildAnalyzeBody } from '@/composables/useFocusParams
 import { usePipeline } from '@/composables/usePipeline'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const { isRunning: pipelineRunning, waitForTerminal, checkOnMount: checkPipelineOnMount } = usePipeline()
 
@@ -454,6 +455,10 @@ defineExpose({ total: focusTotal })
 // Lifecycle
 // ========================
 onMounted(() => {
+  const threshold = Number(route.query.threshold)
+  if (Number.isFinite(threshold) && threshold >= 1 && threshold <= 100) {
+    focusFilters.threshold = threshold
+  }
   activeTab.value = 'focus'
   void checkPipelineOnMount()
   fetchFocusItems()
