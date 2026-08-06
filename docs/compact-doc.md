@@ -148,30 +148,35 @@ pm2 stop ecosystem-local.config.js    # остановить
 
 ### Деплой (ТОЛЬКО по команде пользователя, не автоматически)
 
-```bash
-# Prod (213.184.136.221)
-ssh -p 5733 root@213.184.136.221 'su - rudin -c "source ~/.nvm/nvm.sh && cd ~/aklab && bash scripts/deploy-prod.sh"'
+Release готовится **до** production: CI/manual workflow создаёт отдельный
+`[release]` commit с version, `package-lock.json` и `app/public/changelog.json`.
+Сервер применяет только уже существующий exact SHA и никогда не создаёт Git
+коммиты.
 
-# Dev (192.168.11.151) — вручную:
-ssh rudin@192.168.11.151 'source ~/.nvm/nvm.sh && cd ~/aklab && git pull origin dev && cd api && npm run build && cd ../app && npm run build && pm2 restart aklab-api aklab-app'
+```bash
+# Prod (213.184.136.221); SHA — уже merged release из origin/main
+ssh -p 5733 root@213.184.136.221 'su - rudin -c "source ~/.nvm/nvm.sh && cd ~/aklab && bash scripts/deploy-prod.sh --ref <release-sha>"'
 ```
 
-Скрипт сам: git pull → bump patch-версии (1.0.X) → build (api 140s +
-app 3s) → PM2 restart → health check 190s → **генерация changelog** →
-release-коммит → push origin. Дай foreground-таймаут минимум 300s.
+`deploy-prod.sh` fail-closed: до `fetch/merge` требует `main` и полностью
+чистый `git status --porcelain`; он **не** делает stash/reset/commit/push.
+При dirty worktree deploy останавливается, сохраняет diff для расследования и
+ничего не перезаписывает. После Git preflight используется только
+fast-forward; несовпадение `--ref` с текущим `origin/main` останавливает race.
 
-**Всегда логируй в файл** (`> /tmp/deploy.log 2>&1`) и читай файл через
-`tail`. Иначе теряешь вывод и не понимаешь, упало или прошло.
+Скрипт использует `npm ci` при изменении lockfiles, собирает, перезапускает
+PM2, проверяет health и делает rollback к предыдущему SHA при ошибке. Дай
+foreground-таймаут минимум 300s.
 
 ### CI/CD (GitHub Actions)
 
 **Workflows** (`.github/workflows/`):
 - `ci.yml` — тесты на PR в main/dev (build + typecheck)
 - `deploy-dev.yml` — ручной деплой на dev (backup → build → health → smoke → email)
-- `deploy-prod.yml` — **авто-деплой при push в main** + ручной запуск с confirm. Deploy-prod.sh → verify → email. Release-коммит с `[skip ci]` чтобы избежать рекурсии.
+- `deploy-prod.yml` — manual-only workflow: на GitHub создаёт и push-ит immutable `[release]` commit (version + root lockfile + changelog), фиксирует его SHA и передаёт SHA серверу. Сервер не имеет права делать release commit.
 
 **Скрипты:**
-- `scripts/deploy-prod.sh` — полный деплой. Флаги: `--ci` (email вместо Telegram), `--force` (npm install)
+- `scripts/deploy-prod.sh` — immutable production applier. Флаги: `--ref <SHA>` (обязателен из CI для защиты от race), `--force` (повторный `npm ci`)
 - `scripts/generate-changelog-ai.js` — AI changelog через Xiaomi MiMo. Fallback: `generate-changelog.js`
 - `scripts/notify-deploy.sh` — email на `a@rudin.ru`
 

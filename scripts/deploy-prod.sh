@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Деплой AKLAB в production
-# Usage: ./scripts/deploy-prod.sh [--force] [--ci]
+# Usage: ./scripts/deploy-prod.sh [--force] [--ref <release-sha>]
+# The release (version, changelog and commits) must already be in origin/main.
 
 set -euo pipefail
 
@@ -12,6 +13,8 @@ export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/nul
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
+# shellcheck source=lib/deploy-git-preflight.sh
+source "$PROJECT_ROOT/scripts/lib/deploy-git-preflight.sh"
 
 # === Сервисный манифест ===
 PARSER_SLUGS=$(node -e "const s=require('./services/services.json'); console.log(s.parsers.map(p=>p.slug).join(' '))")
@@ -26,12 +29,21 @@ if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && [ -f .env ]; then
 fi
 
 FORCE=false
-CI_MODE=false
-for arg in "$@"; do
-  case $arg in
+EXPECTED_SHA=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --force) FORCE=true ;;
-    --ci) CI_MODE=true ;;
+    --ref)
+      [ "$#" -ge 2 ] || { echo "[ERROR] --ref требует SHA" >&2; exit 2; }
+      EXPECTED_SHA="$2"
+      shift
+      ;;
+    --ci)
+      echo "[WARN] --ci устарел: deploy всегда применяет уже подготовленный release" >&2
+      ;;
+    *) echo "[ERROR] Неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 # Цвета
@@ -98,11 +110,7 @@ rollback() {
       log "DB восстановлен из backup"
     fi
     pm2 restart $PM2_NAMES 2>/dev/null || true
-    if [ "$CI_MODE" = "true" ]; then
-      bash "$PROJECT_ROOT/scripts/notify-deploy.sh" failure prod "unknown" "" "Rollback to ${ROLLBACK_SHA:0:8}"
-    else
-      notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
-    fi
+    notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
 }
 trap rollback ERR
@@ -125,50 +133,15 @@ if [ -f ".env" ]; then
   fi
 fi
 
-# === Step 1: Checkout main and git pull ===
-# Discard uncommitted local changes (package-lock.json, etc.) that block git pull
-if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-  warn "Local changes detected — stashing before checkout"
-  git stash --include-untracked 2>/dev/null || git checkout -- . 2>/dev/null || true
-fi
-
-log "Checkout main..."
-CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "main" ]; then
-  # Stash local changes if any
-  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-    log "Stashing local changes before checkout..."
-    git stash
-  fi
-  git checkout main
-fi
-log "Git pull..."
+# === Step 1: Fail-closed Git preflight ===
+# Production never stashes, resets, commits, or pushes tracked files. A release
+# must be prepared and merged before it reaches this host.
 ROLLBACK_SHA=$(git rev-parse HEAD)
 log "Rollback SHA: ${ROLLBACK_SHA:0:8}"
-if [ "$CI_MODE" = "true" ]; then
-  # CI mode: discard local changes (version bump & changelog are committed by CI)
-  git reset --hard HEAD 2>/dev/null || true
-fi
-git pull origin main
-
-# === Step 1.5: Bump patch version (local only) ===
-if [ "$CI_MODE" != "true" ]; then
-  CURRENT_VERSION=$(node -e "console.log(require('./package.json').version)")
-  log "Bump version ${CURRENT_VERSION} → next patch..."
-  NEW_VERSION=$(node -e "
-    const fs = require('fs');
-    const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-    const parts = pkg.version.split('.').map(Number);
-    parts[2]++;
-    pkg.version = parts.join('.');
-    fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-    console.log(pkg.version);
-  ")
-  log "New version: ${NEW_VERSION}"
-else
-  NEW_VERSION=$(node -e "console.log(require('./package.json').version)")
-  log "CI mode: version ${NEW_VERSION} (bumped by CI workflow)"
-fi
+DEPLOY_SHA=$(ensure_deploy_git_preflight "$EXPECTED_SHA")
+log "Deploy SHA: ${DEPLOY_SHA:0:8}"
+NEW_VERSION=$(node -e "console.log(require('./package.json').version)")
+log "Prepared release version: ${NEW_VERSION}"
 
 # === Step 2: Pre-flight ===
 log "Pre-flight checks..."
@@ -227,29 +200,26 @@ if [ "$NEED_INSTALL" != "true" ]; then
   done
 fi
 
-# Сравниваем hash package-lock.json
+# Install only when a tracked lockfile changed in the prepared release.
 if [ "$NEED_INSTALL" != "true" ]; then
-  LOCK_HASH_BEFORE=$(grep -v '"version"' "$PROJECT_ROOT/package-lock.json" 2>/dev/null | sha256sum | cut -d' ' -f1 || echo "")
-  git checkout HEAD -- package-lock.json 2>/dev/null || true
-  LOCK_HASH_AFTER=$(grep -v '"version"' "$PROJECT_ROOT/package-lock.json" 2>/dev/null | sha256sum | cut -d' ' -f1 || echo "")
-
-  if [ "$LOCK_HASH_BEFORE" != "$LOCK_HASH_AFTER" ] || [ "$FORCE" = "true" ]; then
+  if ! git diff --quiet "$ROLLBACK_SHA"..HEAD -- package-lock.json api/package-lock.json app/package-lock.json || [ "$FORCE" = "true" ]; then
     NEED_INSTALL=true
+    log "Lockfile изменился в release — install обязателен"
   fi
 fi
 
 if [ "$NEED_INSTALL" = "true" ]; then
-  log "npm install (root + workspaces)..."
-  npm install --include=dev 2>&1 | tail -5
-  log "npm install api/..."
+  log "npm ci (root + workspaces)..."
+  npm ci --include=dev 2>&1 | tail -5
+  log "npm ci api/..."
   # Link local workspace packages for api/ (not in root workspaces)
   mkdir -p api/node_modules/@aklab
   # -n: do not follow an existing symlink-to-directory and create a recursive
   # lib/parse-rules/parse-rules link inside the workspace package.
   ln -sfn ../../../lib/parse-rules api/node_modules/@aklab/parse-rules
-  (cd api && npm install --include=dev 2>&1 | tail -3)
-  log "npm install app/..."
-  (cd app && npm install 2>&1 | tail -3)
+  (cd api && npm ci --include=dev 2>&1 | tail -3)
+  log "npm ci app/..."
+  (cd app && npm ci 2>&1 | tail -3)
   log "Install Playwright system deps + chromium..."
   npx playwright install-deps chromium 2>&1 | tail -3 || true
   npx playwright install chromium 2>&1 | tail -3
@@ -266,12 +236,12 @@ if [ "$NEED_INSTALL" = "true" ]; then
      [ -d "$target" ] || ln -sf "$dir" "$target" 2>/dev/null || true
    done
 else
-  log "package-lock.json не изменился — пропускаем npm install"
+  log "Lockfiles не изменились — пропускаем npm ci"
   # app/ и api/ не в workspaces — проверяем их node_modules отдельно
   if [ ! -d "api/node_modules" ] || [ ! -d "app/node_modules" ]; then
-    log "node_modules отсутствует в api/ или app/ — install обязателен"
-    (cd api && npm install --include=dev 2>&1 | tail -3)
-    (cd app && npm install 2>&1 | tail -3)
+    log "node_modules отсутствует в api/ или app/ — npm ci обязателен"
+    (cd api && npm ci --include=dev 2>&1 | tail -3)
+    (cd app && npm ci 2>&1 | tail -3)
   fi
 fi
 
@@ -371,82 +341,27 @@ for svc_port in $HEALTH_CHECKS; do
 done
 
 
-# === Step 9: Generate changelog (local only — CI handles this) ===
-if [ "$CI_MODE" != "true" ]; then
-log "Генерация changelog..."
+# === Step 9: Use the changelog already committed with the release ===
 CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
-CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog-ai.js" "$NEW_VERSION" 2>/tmp/changelog-ai.log || echo '')
-
-if [ -z "$CHANGELOG_ITEMS" ] || [ "$CHANGELOG_ITEMS" = '[]' ]; then
-  log "AI changelog пуст — fallback на rule-based"
-  CHANGELOG_ITEMS=$(node "$PROJECT_ROOT/scripts/generate-changelog.js" "$NEW_VERSION" 2>/tmp/changelog-gen.log || echo '')
+if [ ! -f "$CHANGELOG_JSON" ]; then
+  err "Release changelog отсутствует: $CHANGELOG_JSON"
+  exit 1
 fi
+cp "$CHANGELOG_JSON" "$PROJECT_ROOT/app/dist/changelog.json"
+log "Release changelog.json → dist/"
 
-if [ -n "$CHANGELOG_ITEMS" ] && [ "$CHANGELOG_ITEMS" != '[{"text":"Улучшения стабильности и производительности","type":"improvement"}]' ]; then
-  # Дата и время по Москве (UTC+3), русские названия месяцев
-  MOSCOW_DATE=$(node -e "
-    const d = new Date();
-    const msk = new Date(d.toLocaleString('en-US', {timeZone:'Europe/Moscow'}));
-    const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-    process.stdout.write(msk.getDate() + ' ' + months[msk.getMonth()] + ' ' + msk.getFullYear());
-  ")
-  CHANGELOG_TIME=$(node -e "
-    const d = new Date();
-    const msk = new Date(d.toLocaleString('en-US', {timeZone:'Europe/Moscow'}));
-    process.stdout.write(String(msk.getHours()).padStart(2,'0') + ':' + String(msk.getMinutes()).padStart(2,'0'));
-  ")
-  CHANGELOG_DATE="$MOSCOW_DATE"
-
-  # Добавляем новую запись в начало changelog.json
-  node -e "
-    const fs = require('fs');
-    const items = JSON.parse(process.argv[1]);
-    const changelog = JSON.parse(fs.readFileSync('$CHANGELOG_JSON', 'utf8'));
-    changelog.unshift({
-      version: 'v$NEW_VERSION',
-      date: '$CHANGELOG_DATE',
-      time: '$CHANGELOG_TIME',
-      items: items
-    });
-    fs.writeFileSync('$CHANGELOG_JSON', JSON.stringify(changelog, null, 2) + '\n');
-  " "$CHANGELOG_ITEMS"
-  log "changelog.json обновлён: v${NEW_VERSION}"
-else
-  log "Changelog: fallback (нет коммитов для генерации)"
-fi
-
-# Копируем changelog.json в dist (build уже был на шаге 6)
-cp "$CHANGELOG_JSON" "$PROJECT_ROOT/app/dist/changelog.json" 2>/dev/null && log "changelog.json → dist/"
-else
-  log "CI mode: changelog generated by CI workflow"
-  # Копируем changelog.json в dist (пришёл из CI через git pull)
-  cp "$PROJECT_ROOT/app/public/changelog.json" "$PROJECT_ROOT/app/dist/changelog.json" 2>/dev/null && log "changelog.json → dist/"
-fi
-
-# === Step 10: Git commit (local only — CI handles this) ===
+# === Step 10: Immutable-worktree assertion ===
 VERSION=$(node -e "console.log(require('./package.json').version)")
 log "Version: $VERSION"
-
-if [ "$CI_MODE" != "true" ]; then
-# Ensure git identity for CI environments
-git config user.email "deploy@aklab.tirobots.ru" 2>/dev/null || true
-git config user.name "AKLAB Deploy" 2>/dev/null || true
-
-git add package.json api/package.json app/package.json app/public/changelog.json
-git commit -m "[release] v${VERSION} -- Deploy production" || warn "Git commit не удался"
-git push origin main || warn "Git push не удался (проверьте права)"
-else
-  log "CI mode: git commit/push handled by CI workflow"
+if [ -n "$(git status --porcelain)" ]; then
+  err "Deploy изменил tracked worktree; refusing to leave production Git dirty"
+  git status --short >&2
+  exit 1
 fi
 
 # === Done ===
 log "Deploy завершён успешно!"
 
-CHANGELOG_JSON="$PROJECT_ROOT/app/public/changelog.json"
-
-if [ "$CI_MODE" = "true" ]; then
-  # В CI-режиме — email вместо Telegram
-  bash "$PROJECT_ROOT/scripts/notify-deploy.sh" success prod "$VERSION" "$CHANGELOG_JSON"
-else
-  notify "✅ AKLAB v${VERSION} задеплоен"
-fi
+# CI invokes this script and is responsible for email notification.
+# Direct SSH deploys keep the existing Telegram notification.
+notify "✅ AKLAB v${VERSION} задеплоен"
