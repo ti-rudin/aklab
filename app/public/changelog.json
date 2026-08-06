@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.78",
+    "date": "6 августа 2026",
+    "time": "19:03",
+    "items": [
+      {
+        "text": "Record immutable deploy merge",
+        "type": "improvement"
+      },
+      {
+        "text": "Make production deploy immutable",
+        "type": "fix"
+      },
+      {
+        "text": "Синхронизировать версию корневого lockfile",
+        "type": "improvement"
+      },
+      {
+        "text": "Итоги security и dashboard релизов",
+        "type": "improvement"
+      },
+      {
+        "text": "Production deploy fail-closed на dirty worktree без stash/reset/commit/push",
+        "type": "improvement"
+      },
+      {
+        "text": "CI готовит version, root lockfile и changelog в immutable release commit",
+        "type": "improvement"
+      },
+      {
+        "text": "Deploy получает exact release SHA и использует fast-forward + npm ci",
+        "type": "improvement"
+      },
+      {
+        "text": "`bash scripts/__tests__/deploy-git-preflight.test.sh`",
+        "type": "improvement"
+      },
+      {
+        "text": "`bash -n` для deploy scripts",
+        "type": "improvement"
+      },
+      {
+        "text": "`npm ci --dry-run` для root/api/app",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.77",
     "date": "6 августа 2026",
     "time": "17:31",
