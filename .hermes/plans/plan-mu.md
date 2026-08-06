@@ -84,7 +84,7 @@
 - непустые и дедуплицированные массивы;
 - `from <= to`;
 - неотрицательные диапазоны;
-- trim/lowercase/dedup стоп-слов и разумные лимиты количества/длины;
+- trim/lowercase/dedup стоп-слов, затем не более 128 canonical unique значений и не более 256 символов в каждом значении; ровно 128/256 допустимо, 129/257 отклоняется;
 - `digest_enabled=true` допустим только с валидным `digest_email`;
 - `profile_version` увеличивается при каждом содержательном изменении;
 - update выполняется optimistic DB predicate по scalar `id + profile_version`; pre-read comparison без version в `where` недостаточен, а zero-row update возвращает typed conflict и не считается успехом.
@@ -256,8 +256,8 @@ Idempotent seeder создаёт роль `AKLAB Admin`, но не назнач�
 - `getMyProfile(actor)`;
 - `updateMyProfile(actor, input)`;
 - admin list/get/update профилей;
-- `buildAllActiveSnapshot()` по всем `blocked=false` пользователям независимо от `digest_enabled`;
-- `buildSingleUserSnapshot(targetUserId)` только для неблокированного пользователя;
+- `buildAllActiveSnapshot()` только по exact active users (`blocked=false`, `confirmed=true`) независимо от `digest_enabled`; missing/null/string active flags fail-closed;
+- `buildSingleUserSnapshot(targetUserId)` только для exact active пользователя (`blocked=false`, `confirmed=true`);
 - канонизация и SHA-256 snapshot;
 - текущий профиль меняется сразу для UI, но активный pipeline продолжает использовать сохранённый snapshot.
 
