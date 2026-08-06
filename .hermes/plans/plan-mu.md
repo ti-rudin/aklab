@@ -382,8 +382,8 @@ Scope repository должен fail closed и иметь один SQL/DTO contrac
 
 Режимы:
 
-- cron: `buildAllActiveSnapshot()`;
-- manual admin: обязательный `targetUserId`, `buildSingleUserSnapshot()`;
+- cron: `buildAllActiveSnapshot()`; `scope='all'` может содержать пустой `profiles`, что означает no-op;
+- manual admin: обязательный `targetUserId`, `buildSingleUserSnapshot()`; если целевой профиль не ready/пустой, builder возвращает `null`, parser run получает `profile_scope='none'` и terminal `done`, а не невалидный пустой `scope='single'` snapshot;
 - произвольные `filters` из request body удалить;
 - `depth` брать из глобального Setting либо валидированного admin input;
 - snapshot записать в parser run и pipeline state до постановки первой job;
