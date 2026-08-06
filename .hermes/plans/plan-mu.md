@@ -168,6 +168,7 @@ interface UserFilterSnapshot {
   schemaVersion: 1
   scope: 'all' | 'single'
   createdAt: string
+  windowEndAt: string
   profiles: UserParseProfile[]
   hash: string
 }
@@ -311,6 +312,15 @@ npm run multiuser:migrate -- --target-user-email=<email> --backup=<path>
 - detail по `documentId`, не подходящий профилю, возвращает 404, а не 403, чтобы не подтверждать существование объекта;
 - service actor получает отдельный явно unscoped path, не пользовательский scope.
 
+Scope repository должен fail closed и иметь один SQL/DTO contract для list/count/detail/focus/stats/digest:
+
+- параметризованный SQLite/Query Builder без string interpolation и без fallback на unscoped query;
+- scalar profile predicates и join `user_property_states.user_id + property_document_id` применяются до pagination;
+- stop words используют `LOWER(COALESCE(title,''))`/`description`, экранируют `%`, `_` и escape-char;
+- list и count выполняют один и тот же predicate; application-side post-filter после pagination запрещён;
+- user DTO строится allowlist-ом и не включает inverse states, profile IDs, authors или чужие relations;
+- произвольный `populate` от user JWT запрещён.
+
 Добавить индексы для profile predicates и state join; измерить query plan на production-like SQLite fixture. Не дублировать правила между list/focus/stats/digest.
 
 ### Task 7. Перевести Property API на персональный контракт
@@ -333,6 +343,13 @@ npm run multiuser:migrate -- --target-user-email=<email> --backup=<path>
 - глобальную retention cleanup сделать отдельной admin/cron операцией, если она нужна;
 - `PropertyEvent` отдавать только после проверки доступности связанного объекта текущему пользователю;
 - photo/geocode/fetch endpoints также проверяют scope объекта.
+
+При `MULTIUSER_ENABLED=true` legacy generic Property/PropertyEvent routes не должны оставаться параллельным обходом:
+
+- user-facing list/detail/focus/stats работают только через custom scoped controllers и allowlist DTO;
+- core update/delete/create, generic populate, `clear-new` и unscoped event reads для обычного JWT отключены;
+- internal service routes имеют отдельный `/internal/*` path и только `global::service-token` policy;
+- ownership/scope predicate входит в DB query до чтения/изменения; post-filter уже загруженной чужой записи запрещён.
 
 ### Task 8. Реализовать персональные статусы и комментарии
 
@@ -371,6 +388,13 @@ npm run multiuser:migrate -- --target-user-email=<email> --backup=<path>
 - queue jobs получают snapshot/hash как immutable input;
 - профиль, изменённый во время run, применяется только со следующего pipeline;
 - если snapshot пуст, terminal state должен быть успешным `done` с объяснением, без обхода источников.
+
+Pipeline control/telemetry contract:
+
+- `start/cancel/reset/status` доступны только AKLAB Admin; обычный JWT не видит pipeline telemetry и `filter_snapshot`;
+- `targetUserId` принимается только после server-side admin check и повторной проверки target `blocked=false`;
+- service actor использует отдельные internal endpoints, а не OR-auth на пользовательском route;
+- `filter_snapshot` хранится для server-side audit, но user/admin response по умолчанию отдаёт только hash/scope/counters без полного profile payload.
 
 ### Task 10. Перевести Phase 1/Phase 2 на OR профилей
 
@@ -421,13 +445,15 @@ Artifact contract:
 2. Для каждого `userId` непосредственно перед постановкой/выполнением отправки загрузить текущие `blocked`, `digest_enabled` и `digest_email`. Если пользователь заблокирован, выключил дайджест или не имеет валидного email — зафиксировать `skipped` и не выполнять side effect.
 3. Для отбора объектов использовать именно фильтры пользователя из сохранённого run snapshot, поэтому изменение регионов/типов/ranges/stop words во время pipeline применяется только со следующего run. Изменение `digest_enabled` или email действует сразу как delivery safety control.
 4. Создать отдельную job с idempotency key `${runId}:digest:${userId}`.
-5. Digest query выполняется через internal API/service actor с `X-AKLAB-Service-Token` (и только документированным compatibility bearer при необходимости), получает и валидирует filter profile из run snapshot; используется тот же property scope, окно `first_seen_at >= now-24h` и фактический глобальный `Setting.threshold_percent`, а не hardcoded `0`.
+5. Digest query выполняется через internal API/service actor с `X-AKLAB-Service-Token` (и только документированным compatibility bearer при необходимости), получает и валидирует filter profile из run snapshot; используется тот же property scope, фиксированное окно `windowEndAt - 24h <= first_seen_at < windowEndAt` и фактический глобальный `Setting.threshold_percent`, а не hardcoded `0` или текущее время worker-а.
 6. Job не логирует email полностью; использовать masked recipient.
 7. Результаты агрегируются в `scheduled/sent/skipped/failed`; ошибка одного получателя не отменяет письма остальным, но приводит к `done_with_errors`.
 8. Cron обрабатывает всех пользователей из `all` snapshot.
 9. Manual single-user run рассматривает только выбранного пользователя.
 
 Не читать `Setting.smtp_to` и `Setting.digest_enabled` после cutover.
+
+`first_seen_at` в v1 означает глобальную новизну canonical Property. Если новый/изменённый профиль впервые начинает видеть старый объект вне зафиксированного 24-часового окна, такой объект доступен в UI как персонально необработанный, но не попадает в digest задним числом. Per-user `first_visible_at`/cursor отложен и не должен возникнуть неявно.
 
 ### Task 12. Закрыть API и медиа
 
@@ -441,6 +467,8 @@ Artifact contract:
 - глобальные mutations и telemetry — только AKLAB Admin;
 - убрать public read permission на `Setting`, `Property`, `PropertyEvent` и другие data endpoints;
 - CORS не считать механизмом авторизации.
+
+Закрытие выполняется атомарно с включением flag: новые scoped routes не считаются готовыми, пока legacy generic routes дают тот же data surface. `Property.user_states`, `UserComment.author`, parser snapshot и иные ownership/telemetry relations никогда не сериализуются через generic populate; user DTO — только allowlist.
 
 Фотографии:
 
@@ -606,6 +634,7 @@ cd /Users/aleksandrrudin/github.nosync/aklab/app && npm run type-check
 - единственный source of truth — env API-процесса `MULTIUSER_ENABLED`; отсутствующее/пустое/невалидное значение означает `false`;
 - API и cron читают одну типизированную helper-функцию, а не разбирают env независимо;
 - workers не получают второй env flag: новая семантика включается только versioned queue payload, поставленным API;
+- multi-user jobs используют отдельные request types `parse-source-v2`, `analyze-property-v2`, `digest-send-v2` и обязательный `payloadSchemaVersion`; старые consumers не регистрируют эти types, а новые fail closed на неподдерживаемой версии;
 - frontend не имеет отдельного `VITE_MULTIUSER_ENABLED`: он получает `multiuserEnabled` и role capabilities из authenticated `/me/context`;
 - при `false` новые tables/services могут существовать, но новый пользовательский/cron contract не активен; при частичной конфигурации система остаётся на legacy path fail-closed.
 
@@ -657,12 +686,13 @@ Rollback trigger:
 Порядок:
 
 1. Остановить новый запуск pipeline/digest штатной cancel-процедурой.
-2. Поставить `MULTIUSER_ENABLED=false` и откатить приложение на предыдущий exact SHA.
-3. Legacy `Setting` и `Property.status` сохранены, поэтому старый read path доступен.
-4. Новые additive tables не удалять во время аварийного rollback.
-5. При повреждении канонических данных восстановить SQLite из pre-migration backup.
-6. Private photo migration выполняется копированием; public originals удалять только отдельной cleanup-волной после стабильного production acceptance.
-7. После стабилизации провести read-only forensic comparison и только затем повторять cutover.
+2. Проверить по queue/run telemetry, что нет active `*-v2` jobs; pending/retry v2 jobs отменить по exact run/correlation ID и сохранить counts как evidence.
+3. Поставить `MULTIUSER_ENABLED=false` и только затем откатить приложение на предыдущий exact SHA; legacy worker не должен получить v2 job.
+4. Legacy `Setting` и `Property.status` сохранены, поэтому старый read path доступен.
+5. Новые additive tables не удалять во время аварийного rollback.
+6. При повреждении канонических данных восстановить SQLite из pre-migration backup.
+7. Private photo migration выполняется копированием; public originals удалять только отдельной cleanup-волной после стабильного production acceptance.
+8. После стабилизации провести read-only forensic comparison и только затем повторять cutover.
 
 ## 9. Definition of Done
 
