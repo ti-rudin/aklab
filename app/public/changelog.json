@@ -1,5 +1,52 @@
 [
   {
+    "version": "v1.1.76",
+    "date": "6 августа 2026",
+    "time": "16:38",
+    "items": [
+      {
+        "text": "Обновить поддерживаемые зависимости безопасности",
+        "type": "improvement"
+      },
+      {
+        "text": "Исправить ссылки на источники объектов",
+        "type": "fix"
+      },
+      {
+        "text": "Итоги восстановления ГИС Торги",
+        "type": "improvement"
+      },
+      {
+        "text": "Strapi и официальные плагины обновлены до 5.51.2;",
+        "type": "new"
+      },
+      {
+        "text": "Обновлены axios, postcss и sharp;",
+        "type": "new"
+      },
+      {
+        "text": "Применены только совместимые обновления npm без force и неподдерживаемых overrides.",
+        "type": "new"
+      },
+      {
+        "text": "Npm ci в root/api/app;",
+        "type": "improvement"
+      },
+      {
+        "text": "Сборки sqlite-queue, parse-rules, API и frontend;",
+        "type": "improvement"
+      },
+      {
+        "text": "STRAPI_API_TOKEN=test npx vitest run: 702/702;",
+        "type": "improvement"
+      },
+      {
+        "text": "Root audit: 0 high/critical; app audit: 0 high/critical; API: 4 high, 0 critical.",
+        "type": "improvement"
+      }
+    ]
+  },
+  {
     "version": "v1.1.75",
     "date": "19 июля 2026",
     "time": "11:57",
