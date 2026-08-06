@@ -9,7 +9,7 @@
 - ✅ Dependency install использует `npm ci` и запускается при tracked lockfile diff; deploy больше не генерирует version/changelog на сервере.
 - ✅ `deploy-prod.yml` готовит release до SSH: version + root `package-lock.json` + changelog в одном `[release]` commit, передаёт resulting SHA в `deploy-prod.sh --ref`.
 - ✅ Добавлен shell regression test `scripts/__tests__/deploy-git-preflight.test.sh`: dirty tree отказывается без stash/HEAD mutation; clean tree fast-forward-ится до exact SHA.
-- ⏳ Изменения ещё не merged и не задеплоены на production; production продолжает v1.1.77. Перед следующим release прогнать CI, merge и выполнить штатный deploy workflow.
+- ✅ PR #42 merged (`1c72969`); changes are in `main`, но ещё не задеплоены на production. Production продолжает v1.1.77; следующий release обязан пройти штатный deploy workflow.
 
 ## Session handoff (v1.1.76–v1.1.77 — security gate и фильтры dashboard)
 **Сделано 6 августа 2026:**
