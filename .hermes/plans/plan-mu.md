@@ -365,6 +365,8 @@ Scope repository должен fail closed и иметь один SQL/DTO contrac
 - batch endpoint для bulk status вместо N параллельных PUT;
 - `GET/POST/PUT/DELETE /api/me/properties/:documentId/comments...` только для автора и только если property входит в текущий profile scope;
 - relation `author` всегда берётся из `ctx.state.user`, никогда из body;
+- required `author` schema не деплоится без backward-compatible create controller: даже при `MULTIUSER_ENABLED=false` legacy create получает author из проверенного JWT, поскольку старый frontend его не отправляет;
+- существующие comments без author до migration не выдаются новым scoped read path; cutover запрещён до полного backfill и orphan=0;
 - пользователь A не видит и не меняет status/comment пользователя B;
 - блокировка пользователя сохраняет rows, но исключает доступ.
 
