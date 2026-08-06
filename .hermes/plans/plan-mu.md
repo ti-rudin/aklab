@@ -86,7 +86,8 @@
 - неотрицательные диапазоны;
 - trim/lowercase/dedup стоп-слов и разумные лимиты количества/длины;
 - `digest_enabled=true` допустим только с валидным `digest_email`;
-- `profile_version` увеличивается при каждом содержательном изменении.
+- `profile_version` увеличивается при каждом содержательном изменении;
+- update выполняется optimistic DB predicate по scalar `id + profile_version`; pre-read comparison без version в `where` недостаточен, а zero-row update возвращает typed conflict и не считается успехом.
 
 ### 3.2 `user-property-state`
 
