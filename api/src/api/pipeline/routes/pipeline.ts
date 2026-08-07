@@ -1,6 +1,4 @@
-/**
- * Pipeline routes — SSE-based pipeline orchestrator.
- */
+/** Pipeline routes — admin-only controls and authenticated status polling. */
 export default {
   routes: [
     {
@@ -25,12 +23,6 @@ export default {
       method: 'GET',
       path: '/pipeline/status',
       handler: 'pipeline.status',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
-    },
-    {
-      method: 'GET',
-      path: '/pipeline/stream',
-      handler: 'pipeline.stream',
       config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
     },
   ],

@@ -1,11 +1,8 @@
-/**
- * Pipeline controller — SSE-based run-aware orchestration.
- */
+/** Pipeline controller — run-aware orchestration with status polling. */
 
 import type { StrapiInstance } from '../../../types/strapi';
 import { getPipelineService } from '../../../services/pipeline';
 import type { PipelineMode } from '../../../services/pipeline';
-import { registerSSEClient } from '../../../services/pipeline-sse';
 import { sanitizePipelineState, validateDepth } from '../../../services/pipeline/state';
 
 function getPipeline() {
@@ -123,23 +120,5 @@ export default {
       ctx.body = { ok: false, code: 'PIPELINE_ERROR', message: 'Не удалось получить состояние pipeline.' };
       ctx.status = 500;
     }
-  },
-
-  async stream(ctx: any) {
-    const cleanup = registerSSEClient(ctx.res);
-    const pingInterval = setInterval(() => {
-      try {
-        ctx.res.write(`:ping\n\n`);
-      } catch {
-        clearInterval(pingInterval);
-        cleanup();
-      }
-    }, 30000);
-
-    ctx.res.on('close', () => {
-      clearInterval(pingInterval);
-      cleanup();
-    });
-    ctx.respond = false;
   },
 };

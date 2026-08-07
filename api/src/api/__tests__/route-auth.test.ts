@@ -110,7 +110,6 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'pipeline', method: 'POST', path: '/pipeline/cancel', handler: 'pipeline.cancel', config: ADMIN_CONFIG },
   { resource: 'pipeline', method: 'POST', path: '/pipeline/reset', handler: 'pipeline.reset', config: ADMIN_CONFIG },
   { resource: 'pipeline', method: 'GET', path: '/pipeline/status', handler: 'pipeline.status', config: ADMIN_CONFIG },
-  { resource: 'pipeline', method: 'GET', path: '/pipeline/stream', handler: 'pipeline.stream', config: ADMIN_CONFIG },
 
   { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/running', handler: 'api::parser-run-source.parser-run-source.markRunningInternal', config: SERVICE_CONFIG },
   { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/terminal', handler: 'api::parser-run-source.parser-run-source.finishInternal', config: SERVICE_CONFIG },

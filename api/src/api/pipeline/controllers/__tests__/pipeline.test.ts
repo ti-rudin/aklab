@@ -11,10 +11,6 @@ vi.mock('../../../../services/pipeline', () => ({
   getPipelineService: vi.fn(() => mockPipeline),
 }));
 
-vi.mock('../../../../../services/pipeline-sse', () => ({
-  registerSSEClient: vi.fn(),
-}));
-
 import pipelineController from '../pipeline';
 
 (globalThis as any).strapi = { log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
