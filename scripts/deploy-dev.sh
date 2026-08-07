@@ -58,7 +58,8 @@ if [ -n "$EXPLICIT_ROLLBACK_SHA" ]; then
 elif [ -s "$LAST_SUCCESS_FILE" ]; then
   ROLLBACK_SHA="$(tr -d '[:space:]' < "$LAST_SUCCESS_FILE")"
 else
-  ROLLBACK_SHA="$CHECKOUT_SHA"
+  err "No recorded last-success SHA; first deploy requires --rollback-ref <exact LKG SHA>"
+  false
 fi
 [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || { err "Rollback SHA must be exact 40-character lowercase hex"; false; }
 git cat-file -e "${ROLLBACK_SHA}^{commit}" 2>/dev/null || { err "Rollback SHA is not a local commit"; false; }
@@ -69,15 +70,21 @@ PARSER_SLUGS=$(node -e "const s=require('./services/services.json'); console.log
 ALL_SERVICE_SLUGS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug).join(' '))")
 PM2_NAMES=$(node -e "const s=require('./services/services.json'); const all=[...s.core,...s.parsers,...s.workers]; console.log(all.map(p=>p.pm2_name).join(' '))")
 HEALTH_CHECKS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug+':'+p.health_port).join(' '))")
+RUNTIME_ARTIFACT_PATHS=(api/dist app/dist lib/sqlite-queue/dist services/_shared/dist)
+for svc in $ALL_SERVICE_SLUGS; do
+  RUNTIME_ARTIFACT_PATHS+=("services/$svc/dist")
+done
+ARTIFACT_BACKUP_DIR=""
+PRESERVE_ARTIFACT_BACKUP=false
 
 record_last_success() {
   local sha="$1" tmp
-  mkdir -p "$STATE_DIR"
-  chmod 700 "$STATE_DIR"
+  mkdir -p "$STATE_DIR" || return 1
+  chmod 700 "$STATE_DIR" || return 1
   tmp="$LAST_SUCCESS_FILE.tmp.$$"
-  printf '%s\n' "$sha" > "$tmp"
-  chmod 600 "$tmp"
-  mv "$tmp" "$LAST_SUCCESS_FILE"
+  printf '%s\n' "$sha" > "$tmp" || return 1
+  chmod 600 "$tmp" || return 1
+  mv "$tmp" "$LAST_SUCCESS_FILE" || return 1
 }
 
 verify_runtime_health() {
@@ -114,37 +121,90 @@ verify_runtime_health() {
   if [ "$failed_health" -ne 0 ]; then err "$label: $failed_health service health checks failed"; return 1; fi
 }
 
+create_artifact_backup() {
+  local tmp
+  mkdir -p "$STATE_DIR" || return 1
+  chmod 700 "$STATE_DIR" || return 1
+  tmp="$(mktemp -d "$STATE_DIR/runtime-artifacts.XXXXXX")" || return 1
+  if ! snapshot_deploy_artifacts "$tmp" "${RUNTIME_ARTIFACT_PATHS[@]}"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  PRESERVE_ARTIFACT_BACKUP=false
+  ARTIFACT_BACKUP_DIR="$tmp"
+  log "Pre-deploy runtime artifacts snapshotted"
+}
+
+cleanup_artifact_backup() {
+  if [ "$PRESERVE_ARTIFACT_BACKUP" = true ]; then
+    return 0
+  fi
+  if [ -n "$ARTIFACT_BACKUP_DIR" ] && [ -d "$ARTIFACT_BACKUP_DIR" ]; then
+    rm -rf "$ARTIFACT_BACKUP_DIR" || return 1
+  fi
+  ARTIFACT_BACKUP_DIR=""
+}
+
+run_rollback_rebuild() {
+  local path
+  git reset --hard "$ROLLBACK_SHA" || return 1
+  npm ci --include=dev 2>&1 | tail -5 || return 1
+  mkdir -p api/node_modules/@aklab || return 1
+  ln -sfn ../../../lib/parse-rules api/node_modules/@aklab/parse-rules || return 1
+  (cd api && npm ci --include=dev 2>&1 | tail -3) || return 1
+  (cd app && npm ci 2>&1 | tail -3) || return 1
+  npm rebuild better-sqlite3 2>&1 | tail -3 || true
+  (cd api && npm rebuild better-sqlite3 2>&1 | tail -3) || true
+  for path in "${RUNTIME_ARTIFACT_PATHS[@]}"; do
+    rm -rf "$path" || return 1
+  done
+  (cd lib/sqlite-queue && npm run build 2>&1 | tail -3) || return 1
+  (cd services/_shared && npm run build 2>&1 | tail -3) || return 1
+  (cd api && npm run build 2>&1 | tail -3) || return 1
+  (cd app && npm run build 2>&1 | tail -3) || return 1
+  for svc in $ALL_SERVICE_SLUGS; do
+    (cd "services/$svc" && npm run build 2>&1 | tail -3) || return 1
+  done
+  pm2 startOrRestart ecosystem.config.js >/dev/null || return 1
+  pm2 save >/dev/null || return 1
+  verify_runtime_health rollback || return 1
+  record_last_success "$ROLLBACK_SHA" || return 1
+}
+
+restore_predeploy_runtime() {
+  if [ -z "$ARTIFACT_BACKUP_DIR" ] || [ ! -d "$ARTIFACT_BACKUP_DIR" ]; then
+    err "Pre-deploy runtime artifact snapshot is unavailable"
+    return 1
+  fi
+  git reset --hard "$ROLLBACK_SHA" || return 1
+  restore_deploy_artifacts "$ARTIFACT_BACKUP_DIR" "${RUNTIME_ARTIFACT_PATHS[@]}" || return 1
+  pm2 startOrRestart ecosystem.config.js >/dev/null || return 1
+  pm2 save >/dev/null || return 1
+}
+
 rollback() {
   trap - ERR
-  local failed_sha
-  failed_sha="$(git rev-parse HEAD 2>/dev/null || true)"
-  if [ -z "$ROLLBACK_SHA" ] || [ "$failed_sha" = "$ROLLBACK_SHA" ]; then
+  err "Rollback приложения на ${ROLLBACK_SHA:0:8}; DB/backups/additive rows не удаляются"
+  if run_rollback_rebuild; then
+    if ! cleanup_artifact_backup; then
+      warn "Rollback succeeded but runtime artifact snapshot cleanup failed"
+    fi
+    log "Rollback accepted: sha=$ROLLBACK_SHA"
     return
   fi
 
-  err "Rollback приложения на ${ROLLBACK_SHA:0:8}; DB/backups/additive rows не удаляются"
-  git reset --hard "$ROLLBACK_SHA"
-  npm ci --include=dev 2>&1 | tail -5
-  mkdir -p api/node_modules/@aklab
-  ln -sfn ../../../lib/parse-rules api/node_modules/@aklab/parse-rules
-  (cd api && npm ci --include=dev 2>&1 | tail -3)
-  (cd app && npm ci 2>&1 | tail -3)
-  npm rebuild better-sqlite3 2>&1 | tail -3 || true
-  (cd api && npm rebuild better-sqlite3 2>&1 | tail -3) || true
-  (cd lib/sqlite-queue && npm run build 2>&1 | tail -3)
-  (cd services/_shared && npm run build 2>&1 | tail -3)
-  (cd api && npm run build 2>&1 | tail -3)
-  (cd app && npm run build 2>&1 | tail -3)
-  for svc in $ALL_SERVICE_SLUGS; do
-    (cd "services/$svc" && npm run build 2>&1 | tail -3)
-  done
-  pm2 start ecosystem.config.js >/dev/null
-  pm2 save >/dev/null
-  verify_runtime_health rollback
-  record_last_success "$ROLLBACK_SHA"
-  log "Rollback accepted: sha=$ROLLBACK_SHA"
+  err "Clean rollback rebuild failed; restoring pre-deploy runtime artifacts"
+  if restore_predeploy_runtime; then
+    log "Pre-deploy runtime artifacts restored after rollback build failure"
+    if ! cleanup_artifact_backup; then
+      warn "Fallback restore succeeded but runtime artifact snapshot cleanup failed"
+    fi
+  else
+    PRESERVE_ARTIFACT_BACKUP=true
+    err "Pre-deploy runtime artifact restore was incomplete; snapshot retained for manual recovery"
+  fi
+  return 1
 }
-trap rollback ERR
 
 # Wave A must start with the feature disabled. Do not normalize case/whitespace.
 if [ -f .env ] && grep -qx 'MULTIUSER_ENABLED=true' .env; then
@@ -153,8 +213,11 @@ if [ -f .env ] && grep -qx 'MULTIUSER_ENABLED=true' .env; then
 fi
 
 CURRENT_NODE_VER="$(node -v 2>/dev/null | sed 's/^v//')"
-PM2_DAEMON_NODE="$(pm2 report 2>/dev/null | grep 'node version' | awk '{print $NF}' || echo unknown)"
-if [ "$PM2_DAEMON_NODE" != unknown ] && [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
+if ! PM2_DAEMON_NODE="$(pm2 report 2>/dev/null | parse_pm2_daemon_node_version)"; then
+  err "Cannot determine one authoritative PM2 daemon Node version"
+  false
+fi
+if [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
   err "PM2 daemon Node v${PM2_DAEMON_NODE} != current v${CURRENT_NODE_VER}"
   err "Shared dev daemon also owns TODOIT; refusing automatic pm2 update"
   false
@@ -178,6 +241,10 @@ if [ -f api/.tmp/data.db ]; then
   chmod 600 "$BASELINE_BACKUP"
   log "Baseline backup verified: path=$BASELINE_BACKUP bytes=$(wc -c < "$BASELINE_BACKUP" | tr -d ' ') sha256=$(sha256sum "$BASELINE_BACKUP" | cut -d' ' -f1) integrity=ok"
 fi
+
+create_artifact_backup
+trap rollback ERR
+trap 'cleanup_artifact_backup || true' EXIT
 
 NEED_INSTALL=false
 for dir in node_modules api/node_modules app/node_modules lib/sqlite-queue/node_modules services/_shared/node_modules; do
@@ -227,7 +294,7 @@ for svc in $ALL_SERVICE_SLUGS; do
 done
 
 log "Start AKLAB PM2 processes"
-pm2 start ecosystem.config.js
+pm2 startOrRestart ecosystem.config.js
 pm2 save
 
 log "Health checks"
@@ -241,4 +308,8 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 record_last_success "$DEPLOY_SHA"
+trap - ERR
+if ! cleanup_artifact_backup; then
+  warn "Deploy succeeded but runtime artifact snapshot cleanup failed"
+fi
 log "Deploy dev complete: sha=$EXPECTED_SHA flag=OFF"
