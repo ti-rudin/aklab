@@ -10,6 +10,11 @@ export const PROPERTY_UID = 'api::property.property';
 export type UserPropertyStateStatus = 'new' | 'in_progress' | 'viewed' | 'rejected';
 export type StoredUserPropertyStateStatus = Exclude<UserPropertyStateStatus, 'new'>;
 
+export interface UserPropertyStateBatchItem {
+  documentId: string;
+  status: UserPropertyStateStatus;
+}
+
 export interface UserPropertyStateDto {
   status: UserPropertyStateStatus;
   property_document_id: string;
@@ -74,6 +79,7 @@ export class UserPropertyStateMalformedError extends UserPropertyStateError {
 }
 
 const MAX_DOCUMENT_ID_LENGTH = 256;
+const MAX_BATCH_ITEMS = 100;
 const STATE_ROW_LIMIT = 2;
 const STORED_STATUS_SET = new Set<StoredUserPropertyStateStatus>(['in_progress', 'viewed', 'rejected']);
 const ALL_STATUS_SET = new Set<UserPropertyStateStatus>(['new', 'in_progress', 'viewed', 'rejected']);
@@ -107,6 +113,28 @@ function normalizeStatus(value: unknown): UserPropertyStateStatus {
     throw new UserPropertyStateValidationError();
   }
   return value as UserPropertyStateStatus;
+}
+
+function normalizeBatchItems(value: unknown): UserPropertyStateBatchItem[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_BATCH_ITEMS) {
+    throw new UserPropertyStateValidationError();
+  }
+
+  const seen = new Set<string>();
+  return value.map((item) => {
+    if (
+      !isRecord(item)
+      || Object.keys(item).length !== 2
+      || !Object.prototype.hasOwnProperty.call(item, 'documentId')
+      || !Object.prototype.hasOwnProperty.call(item, 'status')
+    ) {
+      throw new UserPropertyStateValidationError();
+    }
+    const documentId = normalizeDocumentId(item.documentId);
+    if (seen.has(documentId)) throw new UserPropertyStateValidationError();
+    seen.add(documentId);
+    return { documentId, status: normalizeStatus(item.status) };
+  });
 }
 
 function relationId(value: unknown): number | null {
@@ -170,6 +198,12 @@ function assertStateRow(
   return value;
 }
 
+function mutationSucceeded(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== 0;
+}
+
+type UserPropertyStateContext = { userId: number; documentId: string; propertyId: number };
+
 export class UserPropertyStateService {
   private readonly scopeRepository: UserPropertyStateVisibilityRepository;
 
@@ -188,7 +222,7 @@ export class UserPropertyStateService {
     return this.strapi.db.query(USER_PROPERTY_STATE_UID);
   }
 
-  private async context(userId: unknown, documentId: unknown): Promise<{ userId: number; documentId: string; propertyId: number }> {
+  private async context(userId: unknown, documentId: unknown): Promise<UserPropertyStateContext> {
     assertUserId(userId);
     const normalizedDocumentId = normalizeDocumentId(documentId);
 
@@ -220,8 +254,8 @@ export class UserPropertyStateService {
       where: { identity_key: `${userId}:${documentId}` },
       select: ['id', 'identity_key', 'user_id', 'property_document_id', 'status'],
       populate: {
-        user: { fields: ['id'] },
-        property: { fields: ['id', 'documentId'] },
+        user: { select: ['id'] },
+        property: { select: ['id', 'documentId'] },
       },
       limit: STATE_ROW_LIMIT,
     });
@@ -237,9 +271,10 @@ export class UserPropertyStateService {
     return row ? toDto(row) : virtualState(context.documentId);
   }
 
-  async put(userId: unknown, documentId: unknown, status: unknown): Promise<UserPropertyStateDto> {
-    const normalizedStatus = normalizeStatus(status);
-    const context = await this.context(userId, documentId);
+  private async putWithContext(
+    context: UserPropertyStateContext,
+    normalizedStatus: UserPropertyStateStatus,
+  ): Promise<UserPropertyStateDto> {
     const existing = await this.findState(context.userId, context.documentId, context.propertyId);
 
     if (normalizedStatus === 'new') {
@@ -251,7 +286,7 @@ export class UserPropertyStateService {
           property_document_id: context.documentId,
         },
       });
-      if (deleted === null || deleted === undefined) throw new UserPropertyStateConflictError();
+      if (!mutationSucceeded(deleted)) throw new UserPropertyStateConflictError();
       return virtualState(context.documentId);
     }
 
@@ -264,7 +299,7 @@ export class UserPropertyStateService {
         },
         data: { status: normalizedStatus },
       });
-      if (updated === null || updated === undefined) throw new UserPropertyStateConflictError();
+      if (!mutationSucceeded(updated)) throw new UserPropertyStateConflictError();
       return { status: normalizedStatus, property_document_id: context.documentId };
     }
 
@@ -279,14 +314,50 @@ export class UserPropertyStateService {
           status: normalizedStatus,
         },
       });
-      if (created === null || created === undefined) throw new UserPropertyStateConflictError();
+      if (!mutationSucceeded(created)) throw new UserPropertyStateConflictError();
       return { status: normalizedStatus, property_document_id: context.documentId };
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       const winner = await this.findState(context.userId, context.documentId, context.propertyId);
-      if (winner) return toDto(winner);
+      if (winner) {
+        if (winner.status === normalizedStatus) return toDto(winner);
+        const updated = await this.stateQuery().update({
+          where: {
+            id: winner.id,
+            user_id: context.userId,
+            property_document_id: context.documentId,
+          },
+          data: { status: normalizedStatus },
+        });
+        if (!mutationSucceeded(updated)) throw new UserPropertyStateConflictError();
+        return { status: normalizedStatus, property_document_id: context.documentId };
+      }
       throw error;
     }
+  }
+
+  async put(userId: unknown, documentId: unknown, status: unknown): Promise<UserPropertyStateDto> {
+    const normalizedStatus = normalizeStatus(status);
+    const context = await this.context(userId, documentId);
+    return this.putWithContext(context, normalizedStatus);
+  }
+
+  async putBatch(userId: unknown, items: unknown): Promise<UserPropertyStateDto[]> {
+    assertUserId(userId);
+    const normalizedItems = normalizeBatchItems(items);
+    const contexts: UserPropertyStateContext[] = [];
+
+    // Resolve every visibility/property context before any state read/write. This
+    // makes a failed preflight unable to leave an earlier item partially applied.
+    for (const item of normalizedItems) {
+      contexts.push(await this.context(userId, item.documentId));
+    }
+
+    const result: UserPropertyStateDto[] = [];
+    for (let index = 0; index < normalizedItems.length; index += 1) {
+      result.push(await this.putWithContext(contexts[index], normalizedItems[index].status));
+    }
+    return result;
   }
 
   async remove(userId: unknown, documentId: unknown): Promise<UserPropertyStateDto> {
@@ -301,7 +372,7 @@ export class UserPropertyStateService {
         property_document_id: context.documentId,
       },
     });
-    if (deleted === null || deleted === undefined) throw new UserPropertyStateConflictError();
+    if (!mutationSucceeded(deleted)) throw new UserPropertyStateConflictError();
     return virtualState(context.documentId);
   }
 }

@@ -48,6 +48,9 @@ function makeService() {
     get: vi.fn().mockResolvedValue({ status: 'new', property_document_id: 'property-1' }),
     put: vi.fn().mockResolvedValue({ status: 'viewed', property_document_id: 'property-1' }),
     remove: vi.fn().mockResolvedValue({ status: 'new', property_document_id: 'property-1' }),
+    putBatch: vi.fn().mockResolvedValue([
+      { status: 'viewed', property_document_id: 'property-1' },
+    ]),
   };
 }
 
@@ -60,26 +63,33 @@ describe('user property state routes', () => {
   it('exposes exactly the three authenticated custom routes and no generic CRUD/list/public route', () => {
     expect(stateRoutes.routes).toEqual([
       {
+        method: 'PUT',
+        path: '/me/properties/statuses',
+        handler: 'user-property-state.putStatuses',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
         method: 'GET',
-        path: '/me/properties/:documentId/state',
+        path: '/me/properties/:documentId/status',
         handler: 'user-property-state.getState',
         config: { auth: false, policies: ['global::authenticated-user'] },
       },
       {
         method: 'PUT',
-        path: '/me/properties/:documentId/state',
+        path: '/me/properties/:documentId/status',
         handler: 'user-property-state.putState',
         config: { auth: false, policies: ['global::authenticated-user'] },
       },
       {
         method: 'DELETE',
-        path: '/me/properties/:documentId/state',
+        path: '/me/properties/:documentId/status',
         handler: 'user-property-state.deleteState',
         config: { auth: false, policies: ['global::authenticated-user'] },
       },
     ]);
     expect(stateRoutes.routes.map((route) => route.path)).not.toContain('/user-property-states');
     expect(stateRoutes.routes.some((route) => route.path.includes('/states'))).toBe(false);
+    expect(stateRoutes.routes.some((route) => route.path.endsWith('/state'))).toBe(false);
   });
 });
 
@@ -203,5 +213,64 @@ describe('user property state controller', () => {
     await actions.deleteState(deleteCtx);
     expect(service.remove).toHaveBeenCalledWith(7, 'property-1');
     expect(deleteCtx.body).toEqual({ data: { status: 'new', property_document_id: 'property-1' } });
+  });
+
+  it('accepts the exact authenticated batch body and preserves service result order', async () => {
+    const service = makeService();
+    service.putBatch.mockResolvedValue([
+      { status: 'rejected', property_document_id: 'property-2' },
+      { status: 'new', property_document_id: 'property-1' },
+    ]);
+    const { actions } = actionsFor(service);
+    const ctx = makeCtx({
+      params: {},
+      request: {
+        body: {
+          data: {
+            items: [
+              { documentId: 'property-2', status: 'rejected' },
+              { documentId: 'property-1', status: 'new' },
+            ],
+          },
+        },
+      },
+    });
+
+    await actions.putStatuses(ctx);
+
+    expect(service.putBatch).toHaveBeenCalledWith(7, [
+      { documentId: 'property-2', status: 'rejected' },
+      { documentId: 'property-1', status: 'new' },
+    ]);
+    expect(ctx.body).toEqual({ data: [
+      { status: 'rejected', property_document_id: 'property-2' },
+      { status: 'new', property_document_id: 'property-1' },
+    ] });
+  });
+
+  it('rejects malformed batch bodies, duplicate documents, and client-controlled identity fields', async () => {
+    const invalidBodies = [
+      undefined,
+      {},
+      { data: {} },
+      { data: { items: [] } },
+      { data: { items: [{ documentId: 'property-1', status: 'viewed' }, { documentId: 'property-1', status: 'new' }] } },
+      { data: { items: [{ documentId: 'property-1', status: 'viewed', user_id: 7 }] } },
+      { data: { items: [{ documentId: 'property-1', status: 'viewed', property: 101 }] } },
+      { data: { items: [{ documentId: 'property-1', status: 'viewed', identity_key: '7:property-1' }] } },
+      { data: { items: [{ documentId: 'property-1', status: 'invalid' }] } },
+      { data: { items: [{ documentId: 'property-1', status: 'viewed' }] }, actorId: 7 },
+    ];
+
+    for (const body of invalidBodies) {
+      const { actions, service } = actionsFor();
+      const ctx = makeCtx({ params: {}, request: { body } });
+
+      await actions.putStatuses(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid user property state input' });
+      expect(service.putBatch).not.toHaveBeenCalled();
+    }
   });
 });

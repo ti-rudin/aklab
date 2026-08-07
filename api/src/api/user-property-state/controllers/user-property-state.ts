@@ -9,9 +9,11 @@ import {
 } from '../../../services/user-property-state';
 
 const MAX_DOCUMENT_ID_LENGTH = 256;
+const MAX_BATCH_ITEMS = 100;
 const STATUS_SET = new Set<UserPropertyStateStatus>(['new', 'in_progress', 'viewed', 'rejected']);
 
 type RecordValue = Record<string, unknown>;
+type BatchItem = { documentId: string; status: UserPropertyStateStatus };
 
 function isRecord(value: unknown): value is RecordValue {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -45,6 +47,34 @@ function putStatus(ctx: any): UserPropertyStateStatus | null {
   return typeof status === 'string' && STATUS_SET.has(status as UserPropertyStateStatus)
     ? status as UserPropertyStateStatus
     : null;
+}
+
+function putStatuses(ctx: any): BatchItem[] | null {
+  const body = ctx?.request?.body;
+  if (!isRecord(body) || Object.keys(body).length !== 1 || !hasOwn(body, 'data') || !isRecord(body.data)) return null;
+  if (Object.keys(body.data).length !== 1 || !hasOwn(body.data, 'items') || !Array.isArray(body.data.items)) return null;
+  if (body.data.items.length < 1 || body.data.items.length > MAX_BATCH_ITEMS) return null;
+
+  const seen = new Set<string>();
+  const items: BatchItem[] = [];
+  for (const item of body.data.items) {
+    if (
+      !isRecord(item)
+      || Object.keys(item).length !== 2
+      || !hasOwn(item, 'documentId')
+      || !hasOwn(item, 'status')
+      || typeof item.documentId !== 'string'
+      || item.documentId.length === 0
+      || item.documentId.length > MAX_DOCUMENT_ID_LENGTH
+      || item.documentId.trim() !== item.documentId
+      || typeof item.status !== 'string'
+      || !STATUS_SET.has(item.status as UserPropertyStateStatus)
+      || seen.has(item.documentId)
+    ) return null;
+    seen.add(item.documentId);
+    items.push({ documentId: item.documentId, status: item.status as UserPropertyStateStatus });
+  }
+  return items;
 }
 
 function unauthorized(ctx: any): void {
@@ -89,6 +119,25 @@ export default factories.createCoreController('api::user-property-state.user-pro
   const service = createUserPropertyStateService(strapi as any);
 
   return {
+    async putStatuses(ctx) {
+      const userId = actorId(ctx);
+      if (userId === null) {
+        unauthorized(ctx);
+        return;
+      }
+      const items = putStatuses(ctx);
+      if (items === null) {
+        badRequest(ctx);
+        return;
+      }
+
+      try {
+        ctx.body = { data: await service.putBatch(userId, items) };
+      } catch (error) {
+        serviceError(ctx, error);
+      }
+    },
+
     async getState(ctx) {
       const userId = actorId(ctx);
       const propertyDocumentId = documentId(ctx);

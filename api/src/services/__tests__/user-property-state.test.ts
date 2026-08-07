@@ -66,7 +66,12 @@ describe('user property state service', () => {
     expect(stateQuery.findMany).toHaveBeenCalledTimes(1);
     expect(stateQuery.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { identity_key: '7:property-1' },
+      populate: {
+        user: { select: ['id'] },
+        property: { select: ['id', 'documentId'] },
+      },
     }));
+    expect(JSON.stringify(stateQuery.findMany.mock.calls[0][0].populate)).not.toContain('fields');
     expect(stateQuery.create).not.toHaveBeenCalled();
   });
 
@@ -264,6 +269,110 @@ describe('user property state service', () => {
     await expect(service.put(7, 'property-1', 'viewed')).rejects.toBe(error);
     expect(stateQuery.create).toHaveBeenCalledTimes(1);
     expect(stateQuery.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('atomically applies the requested status to a different unique-race winner', async () => {
+    const raced = makeHarness();
+    const winner = stateRow({ status: 'viewed' });
+    raced.stateQuery.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([winner]);
+    raced.stateQuery.create.mockRejectedValue(Object.assign(
+      new Error('UNIQUE constraint failed: user_property_states.identity_key'),
+      { code: 'SQLITE_CONSTRAINT_UNIQUE' },
+    ));
+    raced.stateQuery.update.mockResolvedValue(stateRow({ status: 'in_progress' }));
+
+    await expect(raced.service.put(7, 'property-1', 'in_progress')).resolves.toEqual({
+      status: 'in_progress',
+      property_document_id: 'property-1',
+    });
+    expect(raced.stateQuery.update).toHaveBeenCalledWith({
+      where: { id: 41, user_id: 7, property_document_id: 'property-1' },
+      data: { status: 'in_progress' },
+    });
+  });
+
+  it('turns a zero-row race-winner update into a conflict', async () => {
+    const raced = makeHarness();
+    raced.stateQuery.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stateRow({ status: 'viewed' })]);
+    raced.stateQuery.create.mockRejectedValue(Object.assign(
+      new Error('UNIQUE constraint failed: user_property_states.identity_key'),
+      { code: 'SQLITE_CONSTRAINT_UNIQUE' },
+    ));
+    raced.stateQuery.update.mockResolvedValue(null);
+
+    await expect(raced.service.put(7, 'property-1', 'in_progress')).rejects.toBeInstanceOf(UserPropertyStateConflictError);
+  });
+
+  it('validates every batch item and preflights every canonical context before the first write', async () => {
+    const { service, scope, propertyQuery, stateQuery } = makeHarness();
+    scope.detail.mockImplementation(async (_userId, documentId) => (
+      documentId === 'property-1' ? { documentId } : null
+    ));
+    propertyQuery.findOne.mockImplementation(async (params: any) => ({
+      id: params.where.documentId === 'property-1' ? 101 : 102,
+      documentId: params.where.documentId,
+    }));
+
+    await expect(service.putBatch(7, [
+      { documentId: 'property-1', status: 'viewed' },
+      { documentId: 'property-2', status: 'rejected' },
+    ])).rejects.toBeInstanceOf(UserPropertyStateNotFoundError);
+    expect(scope.detail).toHaveBeenCalledTimes(2);
+    expect(propertyQuery.findOne).toHaveBeenCalledTimes(1);
+    expect(stateQuery.findMany).not.toHaveBeenCalled();
+    expect(stateQuery.create).not.toHaveBeenCalled();
+    expect(stateQuery.update).not.toHaveBeenCalled();
+    expect(stateQuery.delete).not.toHaveBeenCalled();
+  });
+
+  it('applies a valid batch sequentially in input order without repeating canonical scope lookup', async () => {
+    const { service, scope, propertyQuery, stateQuery } = makeHarness();
+    scope.detail.mockImplementation(async (_userId, documentId) => ({ documentId }));
+    propertyQuery.findOne.mockImplementation(async (params: any) => ({
+      id: params.where.documentId === 'property-1' ? 101 : 102,
+      documentId: params.where.documentId,
+    }));
+    stateQuery.create
+      .mockResolvedValueOnce(stateRow({ status: 'viewed', property_document_id: 'property-1' }))
+      .mockResolvedValueOnce(stateRow({
+        id: 42,
+        identity_key: '7:property-2',
+        property_document_id: 'property-2',
+        status: 'rejected',
+        property: { id: 102, documentId: 'property-2' },
+      }));
+
+    await expect(service.putBatch(7, [
+      { documentId: 'property-2', status: 'rejected' },
+      { documentId: 'property-1', status: 'viewed' },
+    ])).resolves.toEqual([
+      { status: 'rejected', property_document_id: 'property-2' },
+      { status: 'viewed', property_document_id: 'property-1' },
+    ]);
+    expect(scope.detail.mock.calls.map((call) => call[1])).toEqual(['property-2', 'property-1']);
+    expect(propertyQuery.findOne).toHaveBeenCalledTimes(2);
+    expect(stateQuery.create.mock.calls.map((call) => call[0].data.property_document_id)).toEqual([
+      'property-2',
+      'property-1',
+    ]);
+  });
+
+  it('rejects malformed, empty, oversized, duplicate, and forged batch input before any database access', async () => {
+    for (const items of [
+      [],
+      Array.from({ length: 101 }, (_, index) => ({ documentId: `property-${index}`, status: 'viewed' })),
+      [{ documentId: 'property-1', status: 'viewed' }, { documentId: 'property-1', status: 'rejected' }],
+      [{ documentId: 'property-1', status: 'viewed', user_id: 7 }],
+      [{ documentId: 'property-1', status: 'viewed', actorId: 7 }],
+      [{ documentId: 'property-1', status: 'invalid' }],
+    ]) {
+      const { service, scope, propertyQuery, stateQuery } = makeHarness();
+      await expect(service.putBatch(7, items)).rejects.toBeInstanceOf(Error);
+      expect(scope.detail).not.toHaveBeenCalled();
+      expect(propertyQuery.findOne).not.toHaveBeenCalled();
+      expect(stateQuery.findMany).not.toHaveBeenCalled();
+      expect(stateQuery.create).not.toHaveBeenCalled();
+    }
   });
 
   it('rejects forged actor/document/status inputs and never uses entityService', async () => {
