@@ -18,24 +18,20 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
+const {
+  PROPERTY_TYPE_VALUES,
+  REGION_VALUES,
+  normalizeUserParseProfile,
+} = require('@aklab/parse-rules');
 
-const PROPERTY_TYPES = Object.freeze([
-  'office',
-  'warehouse',
-  'retail',
-  'production',
-  'free_purpose',
-  'apartment',
-  'land',
-  'other',
-]);
-const REGIONS = Object.freeze(['moscow', 'mo', 'other']);
+const PROPERTY_TYPES = PROPERTY_TYPE_VALUES;
+const REGIONS = REGION_VALUES;
 const PROPERTY_STATUSES = Object.freeze(['new', 'in_progress', 'viewed', 'rejected']);
 const ADMIN_ROLE_TYPE = 'aklab_admin';
 
 const REQUIRED_COLUMNS = Object.freeze({
   up_roles: ['id', 'name', 'type'],
-  up_users: ['id', 'email', 'blocked'],
+  up_users: ['id', 'email', 'blocked', 'confirmed'],
   setting: [
     'id',
     'monitored_regions',
@@ -138,22 +134,18 @@ function normalizeStoredEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
-function parseJsonArray(value, field, options = {}) {
+function parseJsonArray(value, field) {
   let parsed = value;
   if (typeof value === 'string') {
     try {
       parsed = JSON.parse(value);
     } catch {
-      fail('LEGACY_SETTING_INVALID', `Legacy ${field} is not valid JSON`);
+      fail('LEGACY_SETTING_INVALID', 'Legacy setting is invalid');
     }
   }
-  if (!Array.isArray(parsed)) fail('LEGACY_SETTING_INVALID', `Legacy ${field} must be an array`);
-  if (parsed.some(item => typeof item !== 'string')) fail('LEGACY_SETTING_INVALID', `Legacy ${field} contains invalid values`);
-  const normalized = [...new Set(parsed.map(item => item.trim().toLowerCase()).filter(Boolean))].sort();
-  if (options.allowed && normalized.some(item => !options.allowed.includes(item))) {
-    fail('LEGACY_SETTING_INVALID', `Legacy ${field} contains unsupported values`);
-  }
-  return normalized;
+  if (!Array.isArray(parsed)) fail('LEGACY_SETTING_INVALID', 'Legacy setting is invalid');
+  if (parsed.some(item => typeof item !== 'string')) fail('LEGACY_SETTING_INVALID', 'Legacy setting is invalid');
+  return parsed;
 }
 
 function parseOptionalNumber(value, field) {
@@ -192,9 +184,15 @@ function describeSmtp(value) {
 
 function resolveTargetUser(db, targetUserEmail) {
   const normalized = normalizeEmail(targetUserEmail);
-  const rows = db.prepare('SELECT id, email FROM up_users ORDER BY id').all();
+  const rows = db.prepare('SELECT id, email, blocked, confirmed FROM up_users ORDER BY id').all();
   const matches = rows.filter(row => normalizeStoredEmail(row.email) === normalized);
-  if (matches.length !== 1) fail('TARGET_USER_RESOLUTION', 'Target user resolution failed');
+  if (
+    matches.length !== 1
+    || matches[0].blocked !== 0
+    || matches[0].confirmed !== 1
+  ) {
+    fail('TARGET_USER_RESOLUTION', 'Target user resolution failed');
+  }
   return matches[0].id;
 }
 
@@ -412,45 +410,70 @@ function auditDatabase(db, targetUserEmail) {
   return report;
 }
 
-function migrationProfileFromSetting(setting) {
+function canonicalProfileContract(input, code, message) {
+  let normalized;
+  try {
+    normalized = normalizeUserParseProfile(input);
+  } catch {
+    fail(code, message);
+  }
+  return {
+    regions: normalized.regions,
+    property_types: normalized.propertyTypes,
+    price_from: normalized.priceFrom,
+    price_to: normalized.priceTo,
+    area_from: normalized.areaFrom,
+    area_to: normalized.areaTo,
+    stop_words: normalized.stopWords,
+    profile_version: normalized.version,
+  };
+}
+
+function migrationProfileFromSetting(setting, userId) {
   const digestEmail = parseSingleSmtp(setting.smtp_to);
   const priceFrom = parseOptionalNumber(setting.price_from, 'price_from');
   const priceTo = parseOptionalNumber(setting.price_to, 'price_to');
   const areaFrom = parseOptionalNumber(setting.area_from, 'area_from');
   const areaTo = parseOptionalNumber(setting.area_to, 'area_to');
   const digestEnabled = parseLegacyBoolean(setting.digest_enabled, 'digest_enabled');
-  if (priceFrom !== null && priceTo !== null && priceFrom > priceTo) {
-    fail('LEGACY_SETTING_INVALID', 'Legacy price range is inverted');
-  }
-  if (areaFrom !== null && areaTo !== null && areaFrom > areaTo) {
-    fail('LEGACY_SETTING_INVALID', 'Legacy area range is inverted');
+  const contract = canonicalProfileContract({
+    userId,
+    profileId: 1,
+    version: 1,
+    regions: parseJsonArray(setting.monitored_regions, 'monitored_regions'),
+    propertyTypes: PROPERTY_TYPES.slice(),
+    priceFrom,
+    priceTo,
+    areaFrom,
+    areaTo,
+    stopWords: parseJsonArray(setting.stop_words, 'stop_words'),
+  }, 'LEGACY_SETTING_INVALID', 'Legacy setting is invalid');
+  if (contract.regions.length === 0 || contract.property_types.length === 0) {
+    fail('LEGACY_SETTING_INVALID', 'Legacy setting is invalid');
   }
   return {
-    regions: parseJsonArray(setting.monitored_regions, 'monitored_regions', { allowed: REGIONS }),
-    property_types: PROPERTY_TYPES.slice(),
-    price_from: priceFrom,
-    price_to: priceTo,
-    area_from: areaFrom,
-    area_to: areaTo,
-    stop_words: parseJsonArray(setting.stop_words, 'stop_words'),
+    ...contract,
     digest_email: digestEmail,
     digest_enabled: digestEnabled && Boolean(digestEmail),
-    profile_version: 1,
   };
 }
 
-function broadProfile() {
+function broadProfile(userId) {
   return {
-    regions: REGIONS.slice(),
-    property_types: PROPERTY_TYPES.slice(),
-    price_from: null,
-    price_to: null,
-    area_from: null,
-    area_to: null,
-    stop_words: [],
+    ...canonicalProfileContract({
+      userId,
+      profileId: 1,
+      version: 1,
+      regions: REGIONS.slice(),
+      propertyTypes: PROPERTY_TYPES.slice(),
+      priceFrom: null,
+      priceTo: null,
+      areaFrom: null,
+      areaTo: null,
+      stopWords: [],
+    }, 'LEGACY_SETTING_INVALID', 'Legacy setting is invalid'),
     digest_email: null,
     digest_enabled: false,
-    profile_version: 1,
   };
 }
 
@@ -458,17 +481,79 @@ function serializedProfile(value) {
   return JSON.stringify(value);
 }
 
+function parseStoredArray(value) {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    }
+  }
+  if (!Array.isArray(parsed)) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  return parsed;
+}
+
+function parseStoredEmail(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  const email = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+  return email;
+}
+
+function parseStoredBoolean(value) {
+  if (value !== 0 && value !== 1) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  return value === 1;
+}
+
+function canonicalStoredProfile(row) {
+  let normalized;
+  try {
+    normalized = normalizeUserParseProfile({
+      userId: row.user_id,
+      profileId: row.id,
+      version: row.profile_version,
+      regions: parseStoredArray(row.regions),
+      propertyTypes: parseStoredArray(row.property_types),
+      priceFrom: row.price_from,
+      priceTo: row.price_to,
+      areaFrom: row.area_from,
+      areaTo: row.area_to,
+      stopWords: parseStoredArray(row.stop_words),
+    });
+  } catch {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+  if (normalized.regions.length === 0 || normalized.propertyTypes.length === 0) {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+  const digestEmail = parseStoredEmail(row.digest_email);
+  const digestEnabled = parseStoredBoolean(row.digest_enabled);
+  if (digestEnabled && !digestEmail) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  return { normalized, digestEmail, digestEnabled };
+}
+
 function profileContractMatches(row, userId, contract) {
   if (!row || row.user_id !== userId) return false;
-  for (const field of ['regions', 'property_types', 'stop_words']) {
-    if (serializedProfile(parseJsonArray(row[field], field)) !== serializedProfile(contract[field])) return false;
+  let stored;
+  try {
+    stored = canonicalStoredProfile(row);
+  } catch {
+    return false;
   }
-  for (const field of ['price_from', 'price_to', 'area_from', 'area_to']) {
-    if ((row[field] === null ? null : Number(row[field])) !== contract[field]) return false;
-  }
-  if (normalizeStoredEmail(row.digest_email) !== contract.digest_email) return false;
-  if (Boolean(row.digest_enabled) !== contract.digest_enabled) return false;
-  return Number(row.profile_version) === contract.profile_version;
+  return serializedProfile(stored.normalized.regions) === serializedProfile(contract.regions)
+    && serializedProfile(stored.normalized.propertyTypes) === serializedProfile(contract.property_types)
+    && serializedProfile(stored.normalized.stopWords) === serializedProfile(contract.stop_words)
+    && stored.normalized.priceFrom === contract.price_from
+    && stored.normalized.priceTo === contract.price_to
+    && stored.normalized.areaFrom === contract.area_from
+    && stored.normalized.areaTo === contract.area_to
+    && stored.digestEmail === contract.digest_email
+    && stored.digestEnabled === contract.digest_enabled
+    && stored.normalized.version === contract.profile_version;
 }
 
 function insertRow(db, table, values) {
@@ -593,7 +678,7 @@ function ensureCommentAuthors(db, schema, targetUserId) {
 }
 
 function applyChanges(db, schema, targetUserId, setting, options) {
-  const targetContract = options.targetContract || migrationProfileFromSetting(setting);
+  const targetContract = options.targetContract || migrationProfileFromSetting(setting, targetUserId);
   let profilesCreated = 0;
   let profilesPreserved = 0;
   const targetProfile = ensureProfile(db, schema, targetUserId, targetContract);
@@ -601,7 +686,7 @@ function applyChanges(db, schema, targetUserId, setting, options) {
   profilesPreserved += targetProfile.preserved;
 
   for (const user of db.prepare('SELECT id FROM up_users WHERE id != ? ORDER BY id').all(targetUserId)) {
-    const result = ensureProfile(db, schema, user.id, broadProfile());
+    const result = ensureProfile(db, schema, user.id, broadProfile(user.id));
     profilesCreated += result.created;
     profilesPreserved += result.preserved;
   }
@@ -638,6 +723,79 @@ function applyChanges(db, schema, targetUserId, setting, options) {
     },
     profiles_preserved: profilesPreserved,
   };
+}
+
+function verifyPostMigration(db, schema, targetUserId) {
+  if (commentsWithoutAuthor(db, schema.relations.commentAuthor) !== 0) {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+
+  const users = db.prepare('SELECT id FROM up_users ORDER BY id').all();
+  const userIds = new Set(users.map(user => user.id));
+  const profilesByUser = new Map();
+  const profileUser = schema.relations.profileUser;
+  for (const profile of db.prepare('SELECT * FROM user_profiles ORDER BY id').all()) {
+    if (!userIds.has(profile.user_id) || profilesByUser.has(profile.user_id)) {
+      fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    }
+    const links = relationRows(db, profileUser, profile.id);
+    if (
+      links.length !== 1
+      || links[0].targetId !== profile.user_id
+      || !relationTargetExists(db, profileUser, profile.user_id)
+    ) {
+      fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    }
+    canonicalStoredProfile(profile);
+    profilesByUser.set(profile.user_id, profile.id);
+  }
+  if (profilesByUser.size !== users.length) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  for (const user of users) {
+    if (!profilesByUser.has(user.id)) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+
+  const roles = db.prepare('SELECT id, name, type FROM up_roles WHERE type = ? ORDER BY id').all(ADMIN_ROLE_TYPE);
+  if (roles.length !== 1 || roles[0].name !== 'AKLAB Admin' || roles[0].type !== ADMIN_ROLE_TYPE) {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+  const targetRoleLinks = relationRows(db, schema.relations.userRole, targetUserId);
+  if (
+    targetRoleLinks.length !== 1
+    || targetRoleLinks[0].targetId !== roles[0].id
+    || !relationTargetExists(db, schema.relations.userRole, roles[0].id)
+  ) {
+    fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+  }
+
+  const stateUser = schema.relations.stateUser;
+  const stateProperty = schema.relations.stateProperty;
+  for (const property of db.prepare(`
+    SELECT id, document_id, status FROM properties WHERE status IS NOT NULL AND status <> 'new' ORDER BY id
+  `).all()) {
+    const identityKey = `${targetUserId}:${property.document_id}`;
+    const states = db.prepare('SELECT * FROM user_property_states WHERE identity_key = ? ORDER BY id').all(identityKey);
+    if (states.length !== 1) fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    const state = states[0];
+    if (
+      state.user_id !== targetUserId
+      || state.property_document_id !== property.document_id
+      || state.status !== property.status
+    ) {
+      fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    }
+    const userLinks = relationRows(db, stateUser, state.id);
+    const propertyLinks = relationRows(db, stateProperty, state.id);
+    if (
+      userLinks.length !== 1
+      || userLinks[0].targetId !== targetUserId
+      || !relationTargetExists(db, stateUser, targetUserId)
+      || propertyLinks.length !== 1
+      || propertyLinks[0].targetId !== property.id
+      || !relationTargetExists(db, stateProperty, property.id)
+    ) {
+      fail('POSTCONDITION_FAILED', 'Migration postcondition failed');
+    }
+  }
 }
 
 function backupDatabase(db, dbPath, backupPath) {
@@ -691,7 +849,7 @@ function applyMigration({ dbPath, targetUserEmail, backupPath, failAfter = null 
     // Validate and canonicalize all legacy values before creating any backup
     // or entering the write transaction. Invalid SMTP lists therefore fail
     // with zero filesystem and database side effects.
-    const targetContract = migrationProfileFromSetting(setting);
+    const targetContract = migrationProfileFromSetting(setting, before._targetUserId);
     const backup = backupDatabase(db, dbPath, backupPath);
 
     db.exec('BEGIN IMMEDIATE');
@@ -701,6 +859,7 @@ function applyMigration({ dbPath, targetUserEmail, backupPath, failAfter = null 
     // Verify the uncommitted state so any postcondition failure is still
     // covered by the transaction's rollback path.
     const after = auditDatabase(db, targetUserEmail);
+    verifyPostMigration(db, schema, before._targetUserId);
     db.exec('COMMIT');
     transactionStarted = false;
 
@@ -764,6 +923,7 @@ function publicReport(value) {
     delete copy._targetUserId;
     delete copy._schema;
     delete copy.targetUserId;
+    delete copy.targetUserEmail;
   }
   return Object.fromEntries(Object.entries(copy).map(([key, item]) => [key, publicReport(item)]));
 }
@@ -816,4 +976,5 @@ module.exports = {
   normalizeEmail,
   parseArgs,
   publicReport,
+  verifyPostMigration,
 };

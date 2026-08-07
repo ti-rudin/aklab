@@ -1,22 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { PROPERTY_TYPE_VALUES } from '@aklab/parse-rules';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyMigration, auditDatabase, parseArgs } from '../migrate-multiuser.js';
 
 const TARGET_EMAIL = 'Primary@Example.test';
-const ALL_PROPERTY_TYPES = [
-  'office',
-  'warehouse',
-  'retail',
-  'production',
-  'free_purpose',
-  'apartment',
-  'land',
-  'other',
-];
 
 let tempDir = '';
 let dbPath = '';
@@ -41,7 +32,8 @@ function createFixture() {
       id INTEGER PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL,
-      blocked INTEGER NOT NULL DEFAULT 0
+      blocked INTEGER DEFAULT 0,
+      confirmed INTEGER DEFAULT 0
     );
     CREATE TABLE setting (
       id INTEGER PRIMARY KEY,
@@ -127,10 +119,10 @@ function createFixture() {
     INSERT INTO up_roles (id, name, description, type) VALUES
       (1, 'Authenticated', 'regular', 'authenticated'),
       (2, 'Other', 'other role', 'other_role');
-    INSERT INTO up_users (id, username, email, blocked) VALUES
-      (1, 'primary', 'Primary@Example.test', 0),
-      (2, 'existing', 'existing@example.test', 0),
-      (3, 'new-user', 'new-user@example.test', 0);
+    INSERT INTO up_users (id, username, email, blocked, confirmed) VALUES
+      (1, 'primary', 'Primary@Example.test', 0, 1),
+      (2, 'existing', 'existing@example.test', 0, 1),
+      (3, 'new-user', 'new-user@example.test', 0, 1);
     INSERT INTO up_users_role_links (user_id, role_id) VALUES
       (1, 1), (2, 2), (3, 1);
     INSERT INTO setting
@@ -228,6 +220,11 @@ describe('migrate-multiuser offline CLI', () => {
   });
 
   it('applies the migration with scalar ownership and inspected relation links', () => {
+    const boundedStopWords = [
+      ` ${'X'.repeat(256)} `,
+      ...Array.from({ length: 127 }, (_, index) => ` bounded-${index} `),
+    ];
+    db.prepare('UPDATE setting SET stop_words = ?').run(JSON.stringify(boundedStopWords));
     const backupPath = path.join(tempDir, 'before.db');
 
     const result = applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath });
@@ -241,10 +238,14 @@ describe('migrate-multiuser offline CLI', () => {
     expect(result.after.counts.aklab_admin_role.assigned_users).toBe(1);
     expect(result.changes).toMatchObject({ profiles_created: 2, states_created: 3, comments_authored: 1 });
     expect(scalar('SELECT role_id FROM up_users_role_links WHERE user_id = 1').role_id).toBe(3);
+    expect(scalar('SELECT type FROM up_roles WHERE id = 3').type).toBe('aklab_admin');
+    expect(scalar('SELECT COUNT(*) AS count FROM up_users_role_links WHERE user_id = 1').count).toBe(1);
 
     const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = 1').get();
     expect(JSON.parse(profile.regions)).toEqual(['mo', 'moscow']);
-    expect(JSON.parse(profile.property_types)).toEqual(ALL_PROPERTY_TYPES);
+    expect(JSON.parse(profile.property_types)).toEqual([...PROPERTY_TYPE_VALUES].sort());
+    expect(JSON.parse(profile.stop_words)).toHaveLength(128);
+    expect(JSON.parse(profile.stop_words)).toContain('x'.repeat(256));
     expect(profile.digest_email).toBe('digest@example.com');
     expect(profile.digest_enabled).toBe(1);
     expect(db.prepare('SELECT COUNT(*) AS count FROM user_profiles_user_links WHERE user_id = 1').get().count).toBe(1);
@@ -291,7 +292,8 @@ describe('migrate-multiuser offline CLI', () => {
     const before = snapshotBytes();
     const backupPath = path.join(tempDir, 'inverted-range-before.db');
 
-    expect(() => applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath })).toThrow(/price/i);
+    expect(() => applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath }))
+      .toThrow('Legacy setting is invalid');
 
     expect(snapshotBytes()).toEqual(before);
     expect(fs.existsSync(backupPath)).toBe(false);
@@ -327,7 +329,7 @@ describe('migrate-multiuser offline CLI', () => {
     expect(snapshotBytes()).toEqual(before);
   });
 
-  it('rolls back every database change after an injected mid-migration failure', () => {
+  it('rolls back every database change after an injected failure or postcondition violation', () => {
     const before = snapshotBytes();
     const backupPath = path.join(tempDir, 'rollback-before.db');
 
@@ -336,51 +338,152 @@ describe('migrate-multiuser offline CLI', () => {
       targetUserEmail: TARGET_EMAIL,
       backupPath,
       failAfter: 'comments',
-    })).toThrow(/injected/i);
+    } as any)).toThrow(/injected/i);
 
     expect(snapshotBytes()).toEqual(before);
     expect(scalar('SELECT COUNT(*) AS count FROM user_profiles').count).toBe(1);
     expect(scalar('SELECT COUNT(*) AS count FROM user_comments_author_links').count).toBe(1);
     expect(backupSummary(backupPath)).toEqual({ integrity: 'ok', profiles: 1, commentAuthors: 1 });
+
+    const profileCases = [
+      { name: 'malformed', regions: '["unsupported"]', propertyTypes: '["office"]' },
+      { name: 'not-ready', regions: '[]', propertyTypes: '["office"]' },
+    ];
+    for (const testCase of profileCases) {
+      db.prepare('UPDATE user_profiles SET regions = ?, property_types = ? WHERE user_id = 2')
+        .run(testCase.regions, testCase.propertyTypes);
+      const profileBefore = snapshotBytes();
+      const profileBackup = path.join(tempDir, `${testCase.name}-rollback.db`);
+      let error: unknown;
+      try {
+        applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath: profileBackup });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeTruthy();
+      expect(String(error)).toMatch(/postcondition/i);
+      expect(String(error)).not.toContain('unsupported');
+      expect(snapshotBytes()).toEqual(profileBefore);
+      expect(backupSummary(profileBackup)).toEqual({ integrity: 'ok', profiles: 1, commentAuthors: 1 });
+      db.prepare('UPDATE user_profiles SET regions = ?, property_types = ? WHERE user_id = 2')
+        .run('["other"]', '["land"]');
+    }
   });
 
-  it('fails closed on an ambiguous legacy smtp_to without writing', () => {
-    db.prepare('UPDATE setting SET smtp_to = ?').run('one@example.com, two@example.com');
-    const before = snapshotBytes();
+  it('fails closed on malformed legacy settings before writing', () => {
+    const cases = [
+      {
+        name: 'ambiguous-smtp',
+        mutate: () => db.prepare('UPDATE setting SET smtp_to = ?').run('one@example.com, two@example.com'),
+        restore: () => db.prepare('UPDATE setting SET smtp_to = ?').run(' Digest@Example.COM '),
+      },
+      {
+        name: 'canonical-129',
+        mutate: () => db.prepare('UPDATE setting SET stop_words = ?')
+          .run(JSON.stringify(Array.from({ length: 129 }, (_, index) => `word-${index}`))),
+        restore: () => db.prepare('UPDATE setting SET stop_words = ?')
+          .run('["земельный участок","участок"]'),
+      },
+      {
+        name: 'canonical-257',
+        mutate: () => db.prepare('UPDATE setting SET stop_words = ?').run(JSON.stringify(['x'.repeat(257)])),
+        restore: () => db.prepare('UPDATE setting SET stop_words = ?')
+          .run('["земельный участок","участок"]'),
+      },
+      {
+        name: 'empty-regions',
+        mutate: () => db.prepare('UPDATE setting SET monitored_regions = ?').run('[]'),
+        restore: () => db.prepare('UPDATE setting SET monitored_regions = ?').run('["moscow","mo"]'),
+      },
+    ];
 
-    expect(() => applyMigration({
-      dbPath,
-      targetUserEmail: TARGET_EMAIL,
-      backupPath: path.join(tempDir, 'malformed-before.db'),
-    })).toThrow(/email|smtp/i);
-
-    expect(snapshotBytes()).toEqual(before);
-    expect(fs.existsSync(path.join(tempDir, 'malformed-before.db'))).toBe(false);
+    for (const testCase of cases) {
+      testCase.mutate();
+      const before = snapshotBytes();
+      const backupPath = path.join(tempDir, `${testCase.name}-before.db`);
+      let error: unknown;
+      try {
+        applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeTruthy();
+      expect(String(error)).not.toContain('word-128');
+      expect(String(error)).not.toContain('x'.repeat(257));
+      expect(snapshotBytes()).toEqual(before);
+      expect(fs.existsSync(backupPath)).toBe(false);
+      testCase.restore();
+    }
   });
 
-  it('fails before writing for missing and duplicate normalized target emails', () => {
-    const beforeMissing = snapshotBytes();
-    expect(() => applyMigration({
-      dbPath,
-      targetUserEmail: 'missing@example.test',
-      backupPath: path.join(tempDir, 'missing-before.db'),
-    })).toThrow(/target user/i);
-    expect(snapshotBytes()).toEqual(beforeMissing);
+  it('fails before writing for missing, duplicate, blocked, unconfirmed, and malformed targets', () => {
+    const cases = [
+      {
+        name: 'missing',
+        targetEmail: 'missing@example.test',
+        mutate: () => undefined,
+        restore: () => undefined,
+      },
+      {
+        name: 'duplicate',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET email = ? WHERE id = 2').run(' primary@example.test '),
+        restore: () => db.prepare('UPDATE up_users SET email = ? WHERE id = 2').run('existing@example.test'),
+      },
+      {
+        name: 'blocked',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET blocked = ? WHERE id = 1').run(1),
+        restore: () => db.prepare('UPDATE up_users SET blocked = ? WHERE id = 1').run(0),
+      },
+      {
+        name: 'unconfirmed',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET confirmed = ? WHERE id = 1').run(0),
+        restore: () => db.prepare('UPDATE up_users SET confirmed = ? WHERE id = 1').run(1),
+      },
+      {
+        name: 'null-blocked',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET blocked = NULL WHERE id = 1').run(),
+        restore: () => db.prepare('UPDATE up_users SET blocked = ? WHERE id = 1').run(0),
+      },
+      {
+        name: 'string-confirmed',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET confirmed = ? WHERE id = 1').run('true'),
+        restore: () => db.prepare('UPDATE up_users SET confirmed = ? WHERE id = 1').run(1),
+      },
+      {
+        name: 'malformed',
+        targetEmail: TARGET_EMAIL,
+        mutate: () => db.prepare('UPDATE up_users SET email = ? WHERE id = 1').run('not-an-email'),
+        restore: () => db.prepare('UPDATE up_users SET email = ? WHERE id = 1').run('Primary@Example.test'),
+      },
+    ];
 
-    db.prepare('UPDATE up_users SET email = ? WHERE id = 2').run(' primary@example.test ');
-    const beforeDuplicate = snapshotBytes();
-    expect(() => applyMigration({
-      dbPath,
-      targetUserEmail: TARGET_EMAIL,
-      backupPath: path.join(tempDir, 'duplicate-before.db'),
-    })).toThrow(/target user/i);
-    expect(snapshotBytes()).toEqual(beforeDuplicate);
-  });
+    for (const testCase of cases) {
+      testCase.mutate();
+      const before = snapshotBytes();
+      const backupPath = path.join(tempDir, `${testCase.name}-before.db`);
+      let error: unknown;
+      try {
+        applyMigration({ dbPath, targetUserEmail: testCase.targetEmail, backupPath });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeTruthy();
+      expect(String(error)).not.toContain(testCase.targetEmail.toLowerCase());
+      expect(snapshotBytes()).toEqual(before);
+      expect(fs.existsSync(backupPath)).toBe(false);
+      testCase.restore();
+    }
+  }, 20_000);
 
   it('fails closed on an unsupported schema before any write', () => {
     db.close();
     db = new Database(dbPath);
-    db.exec('DROP TABLE setting');
+    db.exec('ALTER TABLE up_users DROP COLUMN confirmed');
     const before = snapshotBytes();
     expect(() => applyMigration({
       dbPath,
@@ -389,4 +492,5 @@ describe('migrate-multiuser offline CLI', () => {
     })).toThrow(/schema/i);
     expect(snapshotBytes()).toEqual(before);
   });
+
 });
