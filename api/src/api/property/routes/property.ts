@@ -8,6 +8,12 @@ export default {
   routes: [
     // Custom routes (must come before core to avoid conflicts)
     {
+      method: 'GET',
+      path: '/internal/properties/:id',
+      handler: 'property.internalFindOne',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
+    {
       method: 'PUT',
       path: '/internal/properties/:id',
       handler: 'property.internalUpdate',

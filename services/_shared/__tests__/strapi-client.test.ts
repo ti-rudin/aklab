@@ -460,7 +460,7 @@ describe('fetchProperty()', () => {
 
     const result = await fetchProperty('doc-1');
     expect(result).toEqual(prop);
-    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/properties/doc-1`);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/internal/properties/doc-1`);
   });
 
   test('throws on non-OK response', async () => {

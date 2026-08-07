@@ -239,6 +239,20 @@ export default factories.createCoreController("api::property.property", ({ strap
     }
   },
 
+  /** GET /api/internal/properties/:id — service-only canonical read. */
+  async internalFindOne(ctx) {
+    const property = await strapi.db.query('api::property.property').findOne({
+      where: { documentId: ctx.params.id },
+    });
+    if (!property) {
+      ctx.status = 404;
+      ctx.body = { error: 'Property not found' };
+      return;
+    }
+
+    ctx.body = { data: property };
+  },
+
   /**
    * PUT /api/internal/properties/:id
    * Service-only updates for analyzer and photo-fetcher fields.
