@@ -46,6 +46,12 @@ type PropertyRef = {
   documentId: string;
 };
 
+type CommentOwnershipWhere = {
+  id: number;
+  property: { id: number };
+  author: { id: number };
+};
+
 export class UserCommentError extends Error {
   readonly code: string;
 
@@ -163,6 +169,18 @@ function commentRelationsMatch(
   return authorId === actorId && property?.id === propertyId && property.documentId === documentId;
 }
 
+function commentOwnershipWhere(
+  actorId: number,
+  property: PropertyRef,
+  commentId: number,
+): CommentOwnershipWhere {
+  return {
+    id: commentId,
+    property: { id: property.id },
+    author: { id: actorId },
+  };
+}
+
 export class UserCommentService {
   constructor(
     private readonly strapi: UserCommentStrapi,
@@ -217,7 +235,7 @@ export class UserCommentService {
     let comment: unknown;
     try {
       comment = await this.commentQuery.findOne({
-        where: { id: commentId },
+        where: commentOwnershipWhere(actorId, property, commentId),
         select: [...USER_COMMENT_SELECT],
         populate: {
           author: { select: ['id'] },
@@ -294,11 +312,7 @@ export class UserCommentService {
     let updated: unknown;
     try {
       updated = await this.commentQuery.update({
-        where: {
-          id: normalizedCommentId,
-          property: { id: property.id },
-          author: { id: actorId },
-        },
+        where: commentOwnershipWhere(actorId, property, normalizedCommentId),
         data: { text: normalizedText },
       });
     } catch {
@@ -321,11 +335,7 @@ export class UserCommentService {
     let deleted: unknown;
     try {
       deleted = await this.commentQuery.delete({
-        where: {
-          id: normalizedCommentId,
-          property: { id: property.id },
-          author: { id: actorId },
-        },
+        where: commentOwnershipWhere(actorId, property, normalizedCommentId),
       });
     } catch {
       throw new UserCommentQueryError();

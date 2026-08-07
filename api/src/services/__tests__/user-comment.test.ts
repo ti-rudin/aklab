@@ -156,7 +156,7 @@ describe('user comment service canonical scope', () => {
     const result = await service.update(7, 'property-7', 9, ' changed ');
 
     expect(strapi.commentQuery.findOne).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 9 },
+      where: { id: 9, property: { id: 42 }, author: { id: 7 } },
       select: COMMENT_SELECT,
       populate: { author: { select: ['id'] }, property: { select: ['id', 'documentId'] } },
     }));
@@ -193,6 +193,31 @@ describe('user comment service canonical scope', () => {
     }
   });
 
+  it('returns not-found when the DB ownership predicate excludes a foreign owner or property without an unscoped read', async () => {
+    for (const foreignCase of ['foreign-owner', 'foreign-property']) {
+      const strapi = makeStrapi();
+      const scope = makeScope();
+      visibleProperty(scope);
+      strapi.propertyQuery.findOne.mockResolvedValue({ id: 42, documentId: 'property-7' });
+      // The database ownership predicate excludes the foreign row before it is loaded.
+      strapi.commentQuery.findOne.mockResolvedValue(null);
+      const service = createUserCommentService(strapi as any, scope);
+
+      await expect(service.update(7, 'property-7', 9, `changed-${foreignCase}`))
+        .rejects.toBeInstanceOf(UserCommentNotFoundError);
+
+      expect(strapi.commentQuery.findOne).toHaveBeenCalledWith({
+        where: { id: 9, property: { id: 42 }, author: { id: 7 } },
+        select: COMMENT_SELECT,
+        populate: { author: { select: ['id'] }, property: { select: ['id', 'documentId'] } },
+      });
+      expect(strapi.commentQuery.findOne).not.toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 9 },
+      }));
+      expect(strapi.commentQuery.update).not.toHaveBeenCalled();
+    }
+  });
+
   it('maps an owner-preserving zero-row update/delete to conflict and a changed owner to not-found', async () => {
     const strapi = makeStrapi();
     const scope = makeScope();
@@ -205,6 +230,12 @@ describe('user comment service canonical scope', () => {
     const service = createUserCommentService(strapi as any, scope);
 
     await expect(service.update(7, 'property-7', 9, 'changed')).rejects.toBeInstanceOf(UserCommentConflictError);
+    expect(strapi.commentQuery.findOne).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { id: 9, property: { id: 42 }, author: { id: 7 } },
+    }));
+    expect(strapi.commentQuery.findOne).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { id: 9, property: { id: 42 }, author: { id: 7 } },
+    }));
 
     const deleteStrapi = makeStrapi();
     const deleteScope = makeScope();
@@ -217,6 +248,12 @@ describe('user comment service canonical scope', () => {
     const deleteService = createUserCommentService(deleteStrapi as any, deleteScope);
 
     await expect(deleteService.delete(7, 'property-7', 9)).rejects.toBeInstanceOf(UserCommentNotFoundError);
+    expect(deleteStrapi.commentQuery.findOne).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { id: 9, property: { id: 42 }, author: { id: 7 } },
+    }));
+    expect(deleteStrapi.commentQuery.findOne).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { id: 9, property: { id: 42 }, author: { id: 7 } },
+    }));
     expect(deleteStrapi.commentQuery.delete).toHaveBeenCalledWith({
       where: { id: 9, property: { id: 42 }, author: { id: 7 } },
     });
