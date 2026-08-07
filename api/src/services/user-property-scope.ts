@@ -450,7 +450,13 @@ export function compileUserPropertyScope(
   }
   if (normalizedRequest.firstSeenAfter !== undefined && normalizedRequest.firstSeenAtOrBefore !== undefined) {
     where.push('p.first_seen_at > ? AND p.first_seen_at <= ?');
-    bindings.push(normalizedRequest.firstSeenAfter, normalizedRequest.firstSeenAtOrBefore);
+    // Strapi's SQLite datetime columns are exposed to raw queries as epoch
+    // milliseconds. Keep the API contract strict ISO, but bind the physical
+    // representation so SQLite does not compare INTEGER values to TEXT.
+    bindings.push(
+      Date.parse(normalizedRequest.firstSeenAfter),
+      Date.parse(normalizedRequest.firstSeenAtOrBefore),
+    );
   }
 
   return Object.freeze({

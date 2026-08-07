@@ -162,8 +162,16 @@ describe('digest projection service', () => {
     expect(listCall[0]).toContain('ORDER BY p.focus_score DESC LIMIT ? OFFSET ?');
     expect(countCall[0]).not.toContain(WINDOW_END);
     expect(listCall[0]).not.toContain(WINDOW_END);
-    expect(countCall[1].slice(-2)).toEqual(['2026-08-06T12:00:00.000Z', WINDOW_END]);
-    expect(listCall[1].slice(-4)).toEqual(['2026-08-06T12:00:00.000Z', WINDOW_END, 10, 10]);
+    expect(countCall[1].slice(-2)).toEqual([
+      Date.parse('2026-08-06T12:00:00.000Z'),
+      Date.parse(WINDOW_END),
+    ]);
+    expect(listCall[1].slice(-4)).toEqual([
+      Date.parse('2026-08-06T12:00:00.000Z'),
+      Date.parse(WINDOW_END),
+      10,
+      10,
+    ]);
     expect(result.data[0]).toMatchObject({ documentId: 'property-7', status: 'new' });
     expect(JSON.stringify(result.data[0])).not.toContain('profile_id');
   });
@@ -248,6 +256,11 @@ describe('digest projection service', () => {
     await expect(service.properties(propertyInput(fixture.snapshot.hash)))
       .rejects.toBeInstanceOf(DigestProjectionMalformedError);
     expect(fixture.raw).not.toHaveBeenCalled();
+
+    fixture.settingQuery.findOne.mockResolvedValueOnce({ threshold_percent: '25' });
+    await expect(service.properties(propertyInput(fixture.snapshot.hash)))
+      .rejects.toBeInstanceOf(DigestProjectionMalformedError);
+    expect(fixture.raw).not.toHaveBeenCalled();
   });
 
   it('re-reads current delivery controls on every call and returns no email when skipped', async () => {
@@ -285,6 +298,7 @@ describe('digest projection service', () => {
     [{ blocked: true, confirmed: true }, { digest_enabled: true, digest_email: 'recipient@example.test' }, 'inactive'],
     [{ blocked: false, confirmed: false }, { digest_enabled: true, digest_email: 'recipient@example.test' }, 'inactive'],
     [{ blocked: false, confirmed: true }, { digest_enabled: false, digest_email: 'recipient@example.test' }, 'disabled'],
+    [{ blocked: false, confirmed: true }, { digest_enabled: false, digest_email: 'stale malformed email' }, 'disabled'],
     [{ blocked: false, confirmed: true }, { digest_enabled: false, digest_email: null }, 'disabled'],
     [{ blocked: false, confirmed: true }, { digest_enabled: true, digest_email: null }, 'missing_email'],
   ])('skips delivery safely for current control state', async (user, profile, reason) => {

@@ -111,8 +111,8 @@ describe('compileUserPropertyScope', () => {
 
     expect(compiled.whereSql).toContain('p.first_seen_at > ? AND p.first_seen_at <= ?');
     expect(compiled.bindings.slice(-2)).toEqual([
-      '2026-08-06T12:00:00.000Z',
-      '2026-08-07T12:00:00.000Z',
+      Date.parse('2026-08-06T12:00:00.000Z'),
+      Date.parse('2026-08-07T12:00:00.000Z'),
     ]);
     expect(compiled.whereSql).not.toContain('2026-08-06');
     expect(compiled.whereSql).not.toContain('2026-08-07');

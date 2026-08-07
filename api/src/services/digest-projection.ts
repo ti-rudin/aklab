@@ -269,15 +269,10 @@ async function loadSnapshotContext(
 }
 
 function normalizeThreshold(value: unknown): number {
-  const threshold = typeof value === 'number'
-    ? value
-    : typeof value === 'string' && value.trim() !== ''
-      ? Number(value.trim())
-      : NaN;
-  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
     throw new DigestProjectionMalformedError();
   }
-  return threshold;
+  return value;
 }
 
 async function loadThreshold(strapi: DigestProjectionStrapi): Promise<number> {
@@ -332,8 +327,8 @@ async function loadCurrentDelivery(
   }
   if (!isRecord(profile)) return { enabled: false, reason: 'disabled' };
   if (typeof profile.digest_enabled !== 'boolean') throw new DigestProjectionMalformedError();
-  const email = normalizeCurrentEmail(profile.digest_email);
   if (!profile.digest_enabled) return { enabled: false, reason: 'disabled' };
+  const email = normalizeCurrentEmail(profile.digest_email);
   if (!email) return { enabled: false, reason: 'missing_email' };
   return { enabled: true, email };
 }
