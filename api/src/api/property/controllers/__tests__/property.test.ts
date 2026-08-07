@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockCreateScopeRepository = vi.hoisted(() => vi.fn());
 const mockGetQueueService = vi.hoisted(() => vi.fn());
@@ -93,12 +93,26 @@ function makeCtx(overrides: Record<string, any> = {}): any {
 describe('property controller', () => {
   let strapi: ReturnType<typeof makeStrapi>;
   let actions: Record<string, (ctx: any) => Promise<void>>;
+  const photoRoot = '/tmp/aklab-property-photo-test-root';
+  let previousPhotoRoot: string | undefined;
+  let previousPhotoAlias: string | undefined;
 
   beforeEach(() => {
+    previousPhotoRoot = process.env.PRIVATE_PHOTO_ROOT;
+    previousPhotoAlias = process.env.PHOTOS_BASE_DIR;
+    process.env.PRIVATE_PHOTO_ROOT = photoRoot;
+    delete process.env.PHOTOS_BASE_DIR;
     strapi = makeStrapi();
     actions = (propertyControllerFactory as any)({ strapi });
     vi.clearAllMocks();
     mockCreateScopeRepository.mockReturnValue(strapi._scopeRepository);
+  });
+
+  afterEach(() => {
+    if (previousPhotoRoot === undefined) delete process.env.PRIVATE_PHOTO_ROOT;
+    else process.env.PRIVATE_PHOTO_ROOT = previousPhotoRoot;
+    if (previousPhotoAlias === undefined) delete process.env.PHOTOS_BASE_DIR;
+    else process.env.PHOTOS_BASE_DIR = previousPhotoAlias;
   });
 
   describe('removed global cleanup action', () => {
@@ -299,11 +313,22 @@ describe('property controller', () => {
       const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc123', filename: 'photo.jpg' } });
       await actions.servePhoto(ctx);
 
-      expect(fs.access).toHaveBeenCalled();
-      expect(fs.readFile).toHaveBeenCalled();
+      expect(fs.access).toHaveBeenCalledWith(`${photoRoot}/doc123/photo.jpg`);
+      expect(fs.readFile).toHaveBeenCalledWith(`${photoRoot}/doc123/photo.jpg`);
       expect(ctx.body).toBe(fileBuffer);
       expect(ctx.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
       expect(ctx.set).toHaveBeenCalledWith('Cache-Control', 'private, max-age=86400');
+    });
+
+    it('returns a safe server error when a visible photo has no configured root', async () => {
+      delete process.env.PRIVATE_PHOTO_ROOT;
+      delete process.env.PHOTOS_BASE_DIR;
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: 'photo.jpg' } });
+      await actions.servePhoto(ctx);
+
+      expect(ctx.status).toBe(500);
+      expect(ctx.body).toEqual({ error: 'Property scope unavailable' });
+      expect(fs.access).not.toHaveBeenCalled();
     });
 
     it('should set image/png for .png extension', async () => {
@@ -350,6 +375,8 @@ describe('property controller', () => {
 
     it('returns the same 404 and never touches fs for a photo outside scope', async () => {
       strapi._scopeRepository.detail.mockResolvedValueOnce(null);
+      delete process.env.PRIVATE_PHOTO_ROOT;
+      delete process.env.PHOTOS_BASE_DIR;
       const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'foreign', filename: 'photo.jpg' } });
       await actions.servePhoto(ctx);
 

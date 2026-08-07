@@ -17,6 +17,8 @@ module.exports = {
       env: {
         ...process.env,
         PORT: process.env.PORT_API || 1338,
+        PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
+        PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
       },
     },
     {
@@ -113,6 +115,8 @@ module.exports = {
         STRAPI_URL: 'http://localhost:1338',
         STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
         PORT: '1356',
+        PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
+        PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
       },
     },
     {

@@ -40,6 +40,8 @@ const coreApps = [
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || '',
       JWT_SECRET: process.env.JWT_SECRET || '',
       DATABASE_FILENAME: process.env.DATABASE_FILENAME || '',
+      PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
+      PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
       STRAPI_ADMIN_EMAIL: process.env.STRAPI_ADMIN_EMAIL || '',
       STRAPI_ADMIN_PASSWORD: process.env.STRAPI_ADMIN_PASSWORD || '',
     },
@@ -146,6 +148,8 @@ const workerApps = [
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
       STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
+      PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
+      PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
       // Node fetch trusts the Russian CA chain used by torgi.gov.ru.
       NODE_EXTRA_CA_CERTS: '/usr/local/share/ca-certificates/russian-ca-chain.pem',
     },

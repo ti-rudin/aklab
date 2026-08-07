@@ -7,6 +7,7 @@
 import { factories } from "@strapi/strapi";
 import * as path from "path";
 import { getQueueService } from '../../../services/queueService';
+import { resolvePhotoPath } from '../../../services/photo-storage';
 import {
   createUserPropertyScopeRepository,
   UserPropertyScopeMalformedError,
@@ -292,7 +293,7 @@ export default factories.createCoreController("api::property.property", ({ strap
         return;
       }
 
-      const filePath = path.join(process.cwd(), 'data', 'photos', documentId, filename);
+      const filePath = resolvePhotoPath(documentId, filename);
       try {
         const fs = await import('fs/promises');
         await fs.access(filePath);
