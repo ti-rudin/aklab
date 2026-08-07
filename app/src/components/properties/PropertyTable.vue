@@ -46,7 +46,7 @@
           </tr>
         </thead>
         <tbody>
-          <template v-for="item in items" :key="item.id">
+          <template v-for="item in items" :key="item.documentId">
             <!-- Title row: full width, never truncated -->
             <tr
               class="border-t cursor-pointer transition-colors hover:opacity-90"
@@ -56,7 +56,7 @@
               @keydown.enter="$emit('open', item)"
             >
               <td v-if="variant === 'focus'" rowspan="2" class="text-center px-2 pt-3 align-top" @click.stop @keydown.enter.stop>
-                <input type="checkbox" :checked="isSelected(item.id)" @change="$emit('toggle-select', item.id)" style="accent-color: var(--accent)" />
+                <input type="checkbox" :checked="isSelected(item.documentId)" @change="$emit('toggle-select', item.documentId)" style="accent-color: var(--accent)" />
               </td>
               <td colspan="20" class="px-3 pt-3 pb-1 font-semibold" style="color: var(--text-main)">
                 {{ item.title }}
@@ -109,10 +109,12 @@ import type { Property } from '@/composables/usePropertyData'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPriceShort } from '@/utils/formatters'
 import { tagStyle, tagLabel, deviationStyle, HIDDEN_TAGS } from '@/composables/useFocusTab'
 
+type PropertyItem = Omit<Property, 'id'>
+
 const props = withDefaults(defineProps<{
-  items: Property[]
+  items: PropertyItem[]
   variant?: 'default' | 'focus'
-  selectedIds?: Set<number>
+  selectedIds?: Set<string>
   allSelected?: boolean
   sortField?: string
   sortDirection?: 'asc' | 'desc'
@@ -125,15 +127,15 @@ const props = withDefaults(defineProps<{
 })
 
 defineEmits<{
-  (e: 'open', item: Property): void
-  (e: 'toggle-select', id: number): void
+  (e: 'open', item: PropertyItem): void
+  (e: 'toggle-select', documentId: string): void
   (e: 'toggle-all'): void
   (e: 'sort', field: string): void
-  (e: 'quick-reject', item: Property): void
+  (e: 'quick-reject', item: PropertyItem): void
 }>()
 
-function isSelected(id: number) {
-  return props.selectedIds?.has(id) ?? false
+function isSelected(documentId: string) {
+  return props.selectedIds?.has(documentId) ?? false
 }
 
 function sortIndicator(field: string) {

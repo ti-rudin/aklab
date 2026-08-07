@@ -122,13 +122,13 @@ describe('PropertyTable', () => {
     expect(wrapper.emitted('open')![0]).toEqual([items[0]])
   })
 
-  it('emits toggle-select with item id on checkbox change', async () => {
+  it('emits toggle-select with documentId on checkbox change', async () => {
     const wrapper = mount(PropertyTable, { props: { items, variant: 'focus' } })
     // Find the checkbox in the tbody (not the header one)
     const bodyCheckboxes = wrapper.findAll('tbody input[type="checkbox"]')
     expect(bodyCheckboxes.length).toBeGreaterThan(0)
     await bodyCheckboxes[0].trigger('change')
-    expect(wrapper.emitted('toggle-select')![0]).toEqual([1])
+    expect(wrapper.emitted('toggle-select')![0]).toEqual(['doc1'])
   })
 
   it('emits toggle-all when header checkbox changes', async () => {
@@ -139,12 +139,12 @@ describe('PropertyTable', () => {
   })
 
   it('checks body checkboxes for selected items', () => {
-    const selectedIds = new Set([1])
+    const selectedIds = new Set(['doc1'])
     const wrapper = mount(PropertyTable, {
       props: { items, variant: 'focus', selectedIds },
     })
     const bodyCheckboxes = wrapper.findAll('tbody input[type="checkbox"]')
-    // item 1 (id=1) should be checked, item 2 (id=2) should not
+    // documentId doc1 should be checked, documentId doc2 should not
     expect((bodyCheckboxes[0].element as HTMLInputElement).checked).toBe(true)
     expect((bodyCheckboxes[1].element as HTMLInputElement).checked).toBe(false)
   })

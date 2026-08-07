@@ -2,32 +2,10 @@
   <!-- Stats header -->
   <div class="mb-4 text-sm font-medium" style="color: var(--text-main)">
     В фокусе: <span class="font-bold">{{ focusTotal }}</span> объектов
-    <template v-if="focusAvgScore !== null"> · Средний скор: <span class="font-bold">{{ focusAvgScore }}</span></template>
   </div>
 
-  <!-- Action buttons -->
+  <!-- Actions -->
   <div class="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-    <button
-      @click="recalculateScore"
-      :disabled="scoringLoading || pipelineRunning"
-      class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-      style="background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-main)"
-    >
-      {{ scoringLoading ? 'Пересчёт...' : '🔄 Пересчитать' }}
-    </button>
-
-    <!-- Прогресс анализа -->
-    <div v-if="analyzeProgress && !analyzeProgress.done" class="flex items-center gap-3 text-sm" style="color: var(--text-muted)">
-      <div class="flex-1 max-w-xs h-2 rounded-full overflow-hidden" style="background: var(--bg-elevated)">
-        <div class="h-full rounded-full transition-all duration-500" style="background: #f59e0b"
-          :style="{ width: Math.round(analyzeProgress.analyzed / analyzeProgress.total * 100) + '%' }"></div>
-      </div>
-      <span class="font-mono whitespace-nowrap">{{ analyzeProgress.analyzed }} / {{ analyzeProgress.total }}</span>
-    </div>
-    <div v-if="analyzeProgress?.done" class="flex items-center gap-2 text-sm" style="color: #22c55e">
-      ✓ Проанализировано: {{ analyzeProgress.analyzed }}, недооценённых: {{ analyzeProgress.undervalued }}
-    </div>
-
     <button
       @click="exportCSV"
       class="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
@@ -41,22 +19,23 @@
 
   <!-- Focus filters -->
   <div class="rounded-xl p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-    <!-- Поиск -->
+    <!-- Search -->
     <div class="relative">
       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
       <input v-model="searchQuery" type="text" placeholder="Поиск по названию или адресу..."
         class="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
         style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
     </div>
-    <!-- Мобильный тоггл фильтров -->
+
     <button @click="focusFiltersOpen = !focusFiltersOpen"
       class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
       style="color: var(--text-muted)">
       <span>{{ focusFiltersOpen ? '▼' : '▶' }}</span>
       <span>Фильтры</span>
     </button>
+
     <div class="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" :class="focusFiltersOpen ? 'grid' : 'hidden sm:grid'">
-      <!-- Порог (threshold) -->
+      <!-- Threshold -->
       <div>
         <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">
           Порог: <span class="font-semibold" style="color: var(--text-main)">{{ focusFilters.threshold }}</span>
@@ -70,7 +49,7 @@
         </div>
       </div>
 
-      <!-- Город (checkboxes) -->
+      <!-- City -->
       <div>
         <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
         <div class="flex flex-wrap gap-3">
@@ -89,39 +68,27 @@
         </div>
       </div>
 
-      <!-- Тип недвижимости -->
+      <!-- Property type -->
       <div>
         <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Тип недвижимости</label>
         <FilterChips v-model="focusFilters.property_type" :options="typeOptions" />
       </div>
 
-      <!-- Теги -->
-      <div class="sm:col-span-2 lg:col-span-1">
-        <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Теги</label>
-        <div class="flex flex-wrap gap-2">
-          <label v-for="tag in availableTags" :key="tag.value" class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" :value="tag.value" v-model="focusFilters.tags" class="rounded" style="accent-color: var(--accent)" />
-            <span class="text-xs px-1.5 py-0.5 rounded-full" :style="{ background: tag.bgColor, color: tag.textColor }">{{ tag.label }}</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Цена -->
+      <!-- Personal status -->
       <div>
-        <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Цена (₽)</label>
-        <div class="flex gap-2 items-center">
-          <input v-model="focusFilters.priceFrom" type="number" placeholder="от" min="0"
-            class="w-full px-2 py-1.5 rounded-lg border text-sm"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-          <span class="text-sm" style="color: var(--text-muted)">—</span>
-          <input v-model="focusFilters.priceTo" type="number" placeholder="до" min="0"
-            class="w-full px-2 py-1.5 rounded-lg border text-sm"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-        </div>
+        <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Личный статус</label>
+        <select v-model="focusFilters.status" data-testid="focus-status"
+          class="w-full px-2 py-1.5 rounded-lg border text-sm"
+          style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
+          <option value="">Все</option>
+          <option value="new">Новый</option>
+          <option value="in_progress">В работе</option>
+          <option value="viewed">Просмотрен</option>
+          <option value="rejected">Отклонён</option>
+        </select>
       </div>
     </div>
 
-    <!-- Reset -->
     <div class="mt-3 pt-2 border-t flex justify-end" style="border-color: var(--border-subtle)">
       <button @click="resetFocusFilters" class="text-sm px-3 py-1.5 rounded-lg hover:opacity-80"
         style="color: var(--text-muted)">Сбросить фильтры</button>
@@ -131,29 +98,28 @@
   <!-- Loading -->
   <SkeletonTable v-if="focusLoading" :rows="6" />
 
-  <!-- Пусто -->
+  <!-- Empty -->
   <div v-else-if="filteredFocusItems.length === 0" class="text-center py-16">
     <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов в фокусе</p>
-    <p class="text-sm" style="color: var(--text-muted)">Запустите пересчёт скоров или измените фильтры</p>
+    <p class="text-sm" style="color: var(--text-muted)">Измените фильтры или дождитесь новых объектов</p>
   </div>
 
-  <!-- Focus Карточки -->
+  <!-- Focus cards -->
   <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <PropertyCard
       v-for="item in filteredFocusItems"
-      :key="item.id"
+      :key="item.documentId"
       :item="item"
       variant="focus"
-      :selected="focusSelected.has(item.id)"
-
-      @toggle-select="toggleFocusSelect(item.id)"
+      :selected="focusSelected.has(item.documentId)"
+      @toggle-select="toggleFocusSelect(item.documentId)"
       @quick-reject="quickReject(item)"
       @bulk-status="bulkSetStatus"
       @bulk-csv="bulkExportCSV"
     />
   </div>
 
-  <!-- Focus Таблица -->
+  <!-- Focus table -->
   <PropertyTable
     v-else
     :items="filteredFocusItems"
@@ -169,7 +135,7 @@
     @quick-reject="quickReject"
   />
 
-  <!-- Focus Pagination -->
+  <!-- Pagination -->
   <div v-if="focusTotalPages > 1" class="flex justify-between items-center mt-6">
     <span class="text-xs" style="color: var(--text-muted)">
       Показано {{ (focusPage - 1) * focusPageSize + 1 }}-{{ Math.min(focusPage * focusPageSize, focusTotal) }} из {{ focusTotal }}
@@ -188,7 +154,7 @@
     </div>
   </div>
 
-  <!-- Bulk action bar (floating) -->
+  <!-- Bulk action bar -->
   <div v-if="focusSelected.size > 0"
     class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 z-50"
     style="background: var(--bg-elevated); border: 1px solid var(--border-subtle)"
@@ -211,29 +177,26 @@ import PropertyCard from '@/components/properties/PropertyCard.vue'
 import PropertyTable from '@/components/properties/PropertyTable.vue'
 import ViewToggle from '@/components/properties/ViewToggle.vue'
 import FilterChips from '@/components/properties/FilterChips.vue'
-import { usePropertyData } from '@/composables/usePropertyData'
+import { usePropertyData, type Property } from '@/composables/usePropertyData'
 import { useFocusTab } from '@/composables/useFocusTab'
 import { cityLabel, typeLabel } from '@/utils/formatters'
 import { useToast } from '@/composables/useToast'
-import { buildFocusParams, buildAnalyzeBody } from '@/composables/useFocusParams'
-import { usePipeline } from '@/composables/usePipeline'
+import { buildFocusParams, FOCUS_PAGE_SIZE_MAX } from '@/composables/useFocusParams'
+
+const CSV_MAX_ROWS = 100_000
+const CSV_PAGE_SIZE = FOCUS_PAGE_SIZE_MAX
 
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
-const { isRunning: pipelineRunning, waitForTerminal, checkOnMount: checkPipelineOnMount } = usePipeline()
 
 const {
   focusProperties: focusItems,
   focusLoading,
   focusTotal,
-  focusAvgScore,
   fetchFocusProperties,
 } = usePropertyData()
 
-// ========================
-// Focus tab composable
-// ========================
 let doFetchFocus: () => void = () => {}
 
 const {
@@ -242,7 +205,6 @@ const {
   toggleFocusSort,
   focusFilters,
   resetFocusFilters,
-  availableTags,
   focusPage,
   focusPageSize,
   focusTotalPages,
@@ -252,9 +214,6 @@ const {
   toggleAllFocus,
 } = useFocusTab(() => doFetchFocus(), focusTotal, focusItems)
 
-// ========================
-// Options
-// ========================
 const typeOptions = [
   { value: 'office', label: 'Офис' },
   { value: 'warehouse', label: 'Склад' },
@@ -265,19 +224,8 @@ const typeOptions = [
   { value: 'other', label: 'Другое' },
 ]
 
-// ========================
-// View mode (persisted)
-// ========================
 const viewMode = ref<'cards' | 'table'>((localStorage.getItem('aklab-view-mode') as 'cards' | 'table') || 'cards')
-
-// ========================
-// Mobile filter toggle
-// ========================
 const focusFiltersOpen = ref(false)
-
-// ========================
-// Search (server-side, debounce)
-// ========================
 const searchQuery = ref('')
 const filteredFocusItems = computed(() => focusItems.value)
 
@@ -290,81 +238,54 @@ watch(searchQuery, () => {
   }, 300)
 })
 
-// ========================
-// Fetch
-// ========================
 function fetchFocusItems() {
   const params = buildFocusParams(focusFilters, focusSort, focusPage.value, focusPageSize, searchQuery.value)
-  fetchFocusProperties(params)
+  void fetchFocusProperties(params)
 }
 
 doFetchFocus = fetchFocusItems
 
-// ========================
-// Recalculate scoring
-// ========================
-const scoringLoading = ref(false)
-const analyzeProgress = ref<{ total: number; analyzed: number; remaining: number; undervalued: number; done: boolean } | null>(null)
+async function fetchCsvRows(): Promise<Property[]> {
+  const rows: Property[] = []
+  let page = 1
+  let totalPages = 1
 
-async function recalculateScore() {
-  if (pipelineRunning.value) {
-    toast.error('Pipeline уже выполняется или отменяется')
-    return
+  while (page <= totalPages && rows.length < CSV_MAX_ROWS) {
+    const params = buildFocusParams(focusFilters, focusSort, page, CSV_PAGE_SIZE, searchQuery.value)
+    const { data } = await api.get('/properties/focus', { params })
+    const pageRows = Array.isArray(data?.data) ? data.data as Property[] : []
+    const remaining = CSV_MAX_ROWS - rows.length
+    rows.push(...pageRows.slice(0, remaining))
+
+    const reportedPages = Number(data?.meta?.totalPages)
+    const reportedTotal = Number(data?.meta?.total)
+    if (Number.isFinite(reportedPages) && reportedPages > 0) {
+      totalPages = Math.trunc(reportedPages)
+    } else if (Number.isFinite(reportedTotal) && reportedTotal > 0) {
+      totalPages = Math.ceil(reportedTotal / CSV_PAGE_SIZE)
+    } else if (pageRows.length < CSV_PAGE_SIZE) {
+      totalPages = page
+    } else {
+      totalPages = page + 1
+    }
+
+    if (pageRows.length === 0) break
+    page += 1
   }
 
-  scoringLoading.value = true
-  analyzeProgress.value = null
-  try {
-    // /cron/analyze создаёт lifecycle; score выполняется внутри его terminal flow.
-    const analyzeBody = buildAnalyzeBody(focusFilters, { force: true })
-    const { data: started } = await api.post('/cron/analyze', analyzeBody)
-    const runId = started?.run_id || started?.runId
-    if (!started?.ok || typeof runId !== 'string') {
-      throw new Error(started?.message || 'Сервер не вернул идентификатор запуска анализа')
-    }
-
-    const terminal = await waitForTerminal(runId)
-    analyzeProgress.value = {
-      total: Number(terminal.analyze_total || 0),
-      analyzed: Number(terminal.analyze_done || 0),
-      remaining: Math.max(0, Number(terminal.analyze_total || 0) - Number(terminal.analyze_done || 0)),
-      undervalued: Number(terminal.undervalued_count || 0),
-      done: true,
-    }
-    if (terminal.stage === 'cancelled' || terminal.stage === 'error') {
-      throw new Error(terminal.message || 'Pipeline анализа не завершился успешно')
-    }
-
-    // Focus scoring is part of the analyse lifecycle; do not start /cron/score
-    // concurrently with its queue-owned analyzer jobs.
-    await fetchFocusItems()
-    if (terminal.stage === 'done_with_errors') {
-      toast.error(terminal.message || 'Анализ завершён с ошибками; показаны доступные результаты')
-    }
-  } catch (e: any) {
-    toast.error('Ошибка пересчёта: ' + (e.response?.data?.error?.message || e.message))
-  } finally {
-    scoringLoading.value = false
-  }
+  return rows
 }
 
-// ========================
-// CSV Export
-// ========================
 async function exportCSV() {
   try {
-    const params = buildFocusParams(focusFilters, focusSort, 1, 1000, undefined)
-
-    const { data } = await api.get('/properties/focus', { params })
-    const rows = data.data || []
-
+    const rows = await fetchCsvRows()
     generateCSV(rows)
   } catch (e: any) {
     toast.error('Ошибка экспорта: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
-function generateCSV(rows: any[]) {
+function generateCSV(rows: Property[]) {
   const header = ['Название', 'Адрес', 'Город', 'Тип', 'Площадь', 'Цена', '₽/м²', 'Скор', 'Теги', 'Ссылка']
   const csvRows = [header.join(';')]
 
@@ -380,87 +301,88 @@ function generateCSV(rows: any[]) {
       row.price_per_sqm || '',
       row.focus_score ?? '',
       escapeCSV((row.tags || []).join(', ')),
-      link,
+      escapeCSV(link),
     ]
-    csvRows.push(values.join(';'))
+    csvRows.push(values.map(value => String(value)).join(';'))
   }
 
-  const BOM = '\uFEFF'
-  const blob = new Blob([BOM + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `focus_export_${new Date().toISOString().slice(0, 10)}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-function escapeCSV(val: string): string {
-  if (!val) return ''
-  if (val.includes(';') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`
+  const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const anchor = document.createElement('a')
+  let url: string | null = null
+  try {
+    url = URL.createObjectURL(blob)
+    anchor.href = url
+    anchor.download = `focus_export_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+  } finally {
+    if (anchor.parentNode) anchor.parentNode.removeChild(anchor)
+    if (url) URL.revokeObjectURL(url)
   }
-  return val
 }
 
-// ========================
-// Bulk actions
-// ========================
+function escapeCSV(value: string): string {
+  if (!value) return ''
+  if (value.includes(';') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function updateLocalStatus(documentId: string, status: string) {
+  const item = focusItems.value.find(candidate => candidate.documentId === documentId)
+  if (item) item.status = status
+}
+
 async function bulkSetStatus(status: string) {
-  const ids = Array.from(focusSelected)
+  const documentIds = Array.from(focusSelected)
+  if (documentIds.length === 0) return
+
   try {
-    await Promise.all(ids.map(id => {
-      const item = focusItems.value.find(i => i.id === id)
-      if (!item) return Promise.resolve()
-      return api.put(`/properties/${item.documentId}`, { data: { status } })
-    }))
-    focusSelected.clear()
-    await fetchFocusItems()
+    for (let offset = 0; offset < documentIds.length; offset += 100) {
+      const chunk = documentIds.slice(offset, offset + 100)
+      await api.put('/me/properties/statuses', {
+        data: { items: chunk.map(documentId => ({ documentId, status })) },
+      })
+      for (const documentId of chunk) {
+        updateLocalStatus(documentId, status)
+        focusSelected.delete(documentId)
+      }
+    }
   } catch (e: any) {
     toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
-async function quickReject(item: { documentId: string }) {
+async function quickReject(item: Pick<Property, 'documentId'>) {
   try {
-    await api.put(`/properties/${item.documentId}`, { data: { status: 'rejected' } })
+    await api.put(`/me/properties/${item.documentId}/status`, { data: { status: 'rejected' } })
+    updateLocalStatus(item.documentId, 'rejected')
+    focusSelected.delete(item.documentId)
     toast.success('Объект отклонён')
-    await fetchFocusItems()
   } catch (e: any) {
     toast.error('Ошибка: ' + (e.response?.data?.error?.message || e.message))
   }
 }
 
-async function bulkExportCSV() {
-  const ids = Array.from(focusSelected)
-  const rows = focusItems.value.filter(i => ids.includes(i.id))
+function bulkExportCSV() {
+  const selectedIds = new Set(focusSelected)
+  const rows = focusItems.value.filter(item => selectedIds.has(item.documentId))
   generateCSV(rows)
 }
 
-// ========================
-// Navigation
-// ========================
-function openProperty(item: { documentId: string }) {
+function openProperty(item: Pick<Property, 'documentId'>) {
   router.push(`/properties/${item.documentId}`)
 }
 
-// ========================
-// Expose for parent
-// ========================
 defineExpose({ total: focusTotal })
 
-// ========================
-// Lifecycle
-// ========================
 onMounted(() => {
   const threshold = Number(route.query.threshold)
   if (Number.isFinite(threshold) && threshold >= 1 && threshold <= 100) {
     focusFilters.threshold = threshold
   }
   activeTab.value = 'focus'
-  void checkPipelineOnMount()
   fetchFocusItems()
 })
 </script>
