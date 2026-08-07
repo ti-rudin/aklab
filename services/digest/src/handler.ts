@@ -472,14 +472,14 @@ function buildMail(properties: Property[], windowEndAt: string): { subject: stri
     <div style="font-family:sans-serif;max-width:900px;margin:0 auto">
       <h2 style="color:#333">AKLAB: Объекты в фокусе — ${escapeHtml(dateLabel)}</h2>
       <p style="color:#666">В фокусе: <strong>${properties.length}</strong> объектов · Средний скор: <strong>${avgScore}</strong></p>
-      <p style="color:#666;font-size:13px">🔥 Горячее (скор ≥ 50): ${hot.length} · 📋 Обычное (20-49): ${regular.length}</p>
+      <p style="color:#666;font-size:13px">🔥 Горячее (скор ≥ 50): ${hot.length} · 📋 Обычное (скор &lt; 50): ${regular.length}</p>
       ${sectionsHtml}
       <p style="color:#999;font-size:12px;margin-top:24px">AKLAB — мониторинг коммерческой недвижимости</p>
     </div>`;
   const text = [
     `AKLAB: Объекты в фокусе — ${dateLabel}`,
     `В фокусе: ${properties.length} объектов · Средний скор: ${avgScore}`,
-    `Горячее (скор ≥ 50): ${hot.length} · Обычное (20-49): ${regular.length}`,
+    `Горячее (скор ≥ 50): ${hot.length} · Обычное (< 50): ${regular.length}`,
     hot.length > 0 ? `\nГорячее:\n${hot.map(propertyText).join('\n')}` : null,
     regular.length > 0 ? `\nОбычное:\n${regular.map(propertyText).join('\n')}` : null,
     '\nAKLAB — мониторинг коммерческой недвижимости',

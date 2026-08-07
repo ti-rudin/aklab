@@ -220,6 +220,9 @@ describe('handleDigestJob immutable internal projection contract', () => {
     expect(mockSendMail).toHaveBeenCalledTimes(1);
     expect(mockSendMail.mock.calls[0][0].to).toBe('new@example.com');
     expect(mockSendMail.mock.calls[0][0].subject).toContain('2026-08-07');
+    expect(mockSendMail.mock.calls[0][0].html).toContain('Обычное (скор &lt; 50)');
+    expect(mockSendMail.mock.calls[0][0].text).toContain('Обычное (< 50)');
+    expect(mockSendMail.mock.calls[0][0].text).not.toContain('20-49');
     expect(mockedLogCron).toHaveBeenCalledTimes(1);
   });
 
