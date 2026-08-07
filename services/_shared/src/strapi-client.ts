@@ -416,7 +416,7 @@ export async function finishParserRunSourceStage(identityKey: string, payload: {
  * Получить Property по documentId (для analyzer).
  */
 export async function fetchProperty(documentId: string): Promise<any> {
-  const res = await fetch(`${BASE}/internal/properties/${documentId}`, { headers: HEADERS });
+  const res = await fetch(`${BASE}/internal/properties/${encodeURIComponent(documentId)}`, { headers: HEADERS });
   if (!res.ok) throw new Error(`fetchProperty failed (${res.status})`);
   const data = (await res.json()) as StrapiResponse<any>;
   return data.data;

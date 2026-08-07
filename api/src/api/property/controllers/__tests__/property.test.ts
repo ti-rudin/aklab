@@ -192,6 +192,16 @@ describe('property controller', () => {
       expect(ctx.status).toBe(404);
       expect(ctx.body).toEqual({ error: 'Property not found' });
     });
+
+    it('rejects a malformed documentId before the canonical read', async () => {
+      const ctx = makeCtx({ params: { id: '../property' } });
+
+      await actions.internalFindOne(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid property id' });
+      expect(strapi._mockDbQuery.findOne).not.toHaveBeenCalled();
+    });
   });
 
   describe('internalUpdate', () => {

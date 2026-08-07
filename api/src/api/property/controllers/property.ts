@@ -241,6 +241,12 @@ export default factories.createCoreController("api::property.property", ({ strap
 
   /** GET /api/internal/properties/:id — service-only canonical read. */
   async internalFindOne(ctx) {
+    if (!safeDocumentId(ctx.params?.id)) {
+      ctx.status = 400;
+      ctx.body = { error: 'Invalid property id' };
+      return;
+    }
+
     const property = await strapi.db.query('api::property.property').findOne({
       where: { documentId: ctx.params.id },
     });

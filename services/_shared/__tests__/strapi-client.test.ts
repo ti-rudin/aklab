@@ -458,9 +458,9 @@ describe('fetchProperty()', () => {
       mockJsonResponse({ data: prop })
     );
 
-    const result = await fetchProperty('doc-1');
+    const result = await fetchProperty('doc /1');
     expect(result).toEqual(prop);
-    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/internal/properties/doc-1`);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/internal/properties/doc%20%2F1`);
   });
 
   test('throws on non-OK response', async () => {
