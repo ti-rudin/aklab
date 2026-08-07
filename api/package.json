@@ -14,7 +14,9 @@
     "upgrade": "npx @strapi/upgrade latest",
     "upgrade:dry": "npx @strapi/upgrade latest --dry",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "multiuser:audit": "node scripts/migrate-multiuser.js",
+    "multiuser:migrate": "node scripts/migrate-multiuser.js --apply"
   },
   "overrides": {
     "nodemailer": "9.0.3",

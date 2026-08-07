@@ -5,15 +5,16 @@
  * 1. Receive { documentId, url, source } from queue
  * 2. Launch Playwright, navigate to detail page
  * 3. Extract photos using source-specific extractor
- * 4. Download photos to disk (api/data/photos/{documentId}/)
+ * 4. Download photos to the configured private root ({root}/{documentId}/)
  * 5. Update property in Strapi with photos + photos_downloaded: true
  */
 
 import type { Browser } from 'playwright';
 import type { Job } from '@aklab/sqlite-queue';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import { fetchProperty, updateProperty, logCron } from '@aklab/service-shared';
+import { config } from './config';
+import { resolvePhotoDirectory, resolvePhotoPath } from './photo-storage';
 import { logger } from './utils/logger';
 import { fetchPhotoWithRetry } from './photo-download';
 import { getExtractor, type ExtractedPhoto } from './sources/extractors';
@@ -98,9 +99,9 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
       return { fetched: false, count: 0 };
     }
 
-    // Download photos — write to API's data/photos/ so servePhoto controller can read them
-    const photosBase = process.env.PHOTOS_BASE_DIR || path.join(process.cwd(), '..', '..', 'api', 'data', 'photos');
-    const photosDir = path.join(photosBase, req.documentId);
+    // Both API reader and worker writer use <root>/<documentId>/<filename>.
+    const storageEnv = { PRIVATE_PHOTO_ROOT: config.photoStorage.root };
+    const photosDir = resolvePhotoDirectory(req.documentId, storageEnv);
     await fs.mkdir(photosDir, { recursive: true });
 
     const downloaded: string[] = [];
@@ -117,7 +118,7 @@ export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean;
 
         const { buffer, extension } = await readValidatedImage(res);
         const filename = `${i}${extension}`;
-        await fs.writeFile(path.join(photosDir, filename), buffer);
+        await fs.writeFile(resolvePhotoPath(req.documentId, filename, storageEnv), buffer);
         downloaded.push(`/photos/${req.documentId}/${filename}`);
       } catch (err: any) {
         logger.warn(`Photo ${i} download error: ${err.message}`, { correlationId: corrId });

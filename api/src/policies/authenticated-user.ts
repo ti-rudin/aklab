@@ -5,8 +5,8 @@ type PolicyContext = {
 
 type AuthenticatedUser = {
   id: string | number;
-  blocked?: boolean;
-  confirmed?: boolean;
+  blocked?: unknown;
+  confirmed?: unknown;
 };
 
 /**
@@ -23,7 +23,7 @@ export default async function authenticatedUser(ctx: PolicyContext): Promise<boo
     if (!token?.id) return false;
 
     const user = await plugin.service('user').fetchAuthenticatedUser(token.id) as AuthenticatedUser | null;
-    if (!user || user.blocked || user.confirmed === false) return false;
+    if (!user || user.blocked !== false || user.confirmed !== true) return false;
 
     ctx.state.user = user;
     return true;

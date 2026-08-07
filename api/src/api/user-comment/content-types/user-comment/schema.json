@@ -17,6 +17,11 @@
       "target": "api::property.property",
       "inversedBy": "comments"
     },
+    "author": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
     "text": {
       "type": "text",
       "required": true

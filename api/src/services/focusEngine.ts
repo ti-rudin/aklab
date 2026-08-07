@@ -2,8 +2,8 @@
  * Focus Engine — оценка объектов по правилам (focus rules).
  *
  * scoreProperty(property, rules) → { score, tags, events[] }
- * scoreAllProperties(threshold?) → статистика по всем status='new'
- * scorePropertiesBatch(options?) → scoreAllProperties + фильтры (city/price)
+ * scoreAllProperties(threshold?) → статистика по всем shared Property candidates
+ * scorePropertiesBatch(options?) → shared candidates + фильтры (city/price)
  */
 
 import type { StrapiInstance } from '../types/strapi';
@@ -315,7 +315,9 @@ export function scoreProperty(property: any, rules: FocusRule[]): ScoreResult {
 }
 
 /**
- * Оценить все объекты со status='new', опционально с фильтрами.
+ * Оценить все shared Property candidates, опционально с фильтрами.
+ * Legacy callers may still pass city/price filters; personal status is not part
+ * of the shared candidate selection.
  * Объединяет логику scoreAllProperties + фильтры из cron controller.
  */
 export async function scorePropertiesBatch(options?: {
@@ -339,9 +341,9 @@ export async function scorePropertiesBatch(options?: {
 
   const minScore = options?.threshold || 0;
 
-  // Строим WHERE с опциональными фильтрами
+  // Shared candidate selection deliberately excludes personal status; legacy
+  // callers may still constrain the shared set by city and price.
   const where = buildPropertyWhere({
-    status: 'new',
     city: options?.city,
     priceFrom: options?.priceFrom,
     priceTo: options?.priceTo,

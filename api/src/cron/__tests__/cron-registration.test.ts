@@ -112,6 +112,45 @@ describe('Cron Registration', () => {
     expect(mockCronSchedule).toHaveBeenCalledTimes(2);
   });
 
+  it('запускает pipeline без target и request filters', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T06:00:00.000Z'));
+    try {
+      const mockStrapi = createMockStrapi();
+      const { registerCrons } = await import('../../cron/index');
+      registerCrons(mockStrapi as any);
+
+      const pipelineCallback = mockCronSchedule.mock.calls[0][1];
+      await pipelineCallback();
+
+      expect(mockRun).toHaveBeenCalledWith(undefined, undefined, 'cron');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start a second cron run while the persisted lifecycle is cancelling', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T06:00:00.000Z'));
+    try {
+      const mockStrapi = createMockStrapi();
+      const settingQuery = mockStrapi.db.query();
+      settingQuery.findOne.mockResolvedValue({
+        digest_time: '09:00',
+        pipeline_state: { status: 'cancelling' },
+      });
+      const { registerCrons } = await import('../../cron/index');
+      registerCrons(mockStrapi as any);
+
+      const pipelineCallback = mockCronSchedule.mock.calls[0][1];
+      await pipelineCallback();
+
+      expect(mockRun).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ─── 4. rescheduleSource — no-op ────────────────────────────────
   it('rescheduleSource — no-op (не падает)', async () => {
     const mockStrapi = createMockStrapi();

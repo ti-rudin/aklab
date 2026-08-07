@@ -1,29 +1,18 @@
-/**
- * Generic parse handler — используется всеми парсерами.
- *
- * ДВУХФАЗНАЯ АРХИТЕКТУРА:
- *  Фаза 1 (scan):  парсинг списков + дедуп + предфильтр → сохраняет результат в файл
- *  Фаза 2 (details): чтение файла + fetchDetails + createProperty
- *
- * Pipeline управляет синхронизацией фаз:
- *   Phase 1: enqueue scan для ВСЕХ источников → ждём завершения ВСЕХ
- *   Phase 2: enqueue details для ВСЕХ источников → ждём завершения ВСЕХ
- *
- * Если phase не указан — выполняет обе фазы последовательно (backward compat).
- */
-
 import { PermanentError } from '@aklab/sqlite-queue';
 import type { Job, WorkerContext } from '@aklab/sqlite-queue';
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from 'fs';
-import { createHash, randomUUID } from 'crypto';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import type { SourceParser, ParseResult } from './types';
 import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters, markParserRunSourceStageRunning, finishParserRunSourceStage } from './strapi-client';
-import type { ParseRules } from './strapi-client';
+import type { ParseRules, UserFilterSnapshot } from '@aklab/parse-rules';
+import { normalizeUserFilterSnapshot, snapshotMatchesCandidate } from '@aklab/parse-rules';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 import { detectCity } from './city-detect';
+import {
+  cleanupScanArtifact,
+  LEGACY_FILTER_SNAPSHOT_HASH,
+  readScanArtifact,
+  writeScanArtifact,
+} from './scan-artifact';
 
 export interface ParseRequest {
   source: string;
@@ -31,7 +20,9 @@ export interface ParseRequest {
   documentId?: string;
   correlationId?: string;
   depth?: number;
+  /** Legacy direct-invocation rules. Pipeline-owned jobs must use filterSnapshot. */
   rules?: ParseRules;
+  filterSnapshot?: UserFilterSnapshot;
   /** Если указан — выполняет только одну фазу. undefined = обе (backward compat). */
   phase?: 'scan' | 'details';
   /** Identity of the server-created telemetry row; only present for pipeline-owned jobs. */
@@ -41,84 +32,43 @@ export interface ParseRequest {
 /** Порог последовательных дубликатов для smart stop. */
 const SMART_STOP_THRESHOLD = 10;
 
-/** Директория для промежуточных результатов Phase 1. */
-const SCAN_DIR = join(tmpdir(), 'aklab-scan');
-
-/** Путь к файлу с результатами сканирования. */
-function getScanFilePath(source: string, correlationId: string): string {
-  return join(SCAN_DIR, `${source}-${correlationId}.json`);
+interface FilterContext {
+  snapshot?: UserFilterSnapshot;
+  hash: string;
+  scope: 'all' | 'single';
+  profileCount: number;
+  usesSnapshot: boolean;
 }
 
-const SCAN_ARTIFACT_SCHEMA_VERSION = 1;
+function getFilterContext(req: ParseRequest): FilterContext {
+  if (req.telemetryIdentityKey !== undefined && !req.filterSnapshot) {
+    throw new PermanentError('Parse job filter snapshot is required');
+  }
+  if (!req.filterSnapshot) {
+    return {
+      hash: LEGACY_FILTER_SNAPSHOT_HASH,
+      scope: 'all',
+      profileCount: 0,
+      usesSnapshot: false,
+    };
+  }
 
-interface ScanArtifact {
-  schemaVersion: number;
-  runId: string;
-  source: string;
-  counters: {
-    listed: number;
-    eligible: number;
-    existing: number;
-    preFiltered: number;
-    detailsNeeded: number;
-  };
-  checksum: string;
-  items: unknown[];
-}
-
-function checksumItems(items: unknown[]): string {
-  return createHash('sha256').update(JSON.stringify(items)).digest('hex');
-}
-
-function writeScanArtifact(source: string, runId: string, counters: ScanArtifact['counters'], items: unknown[]): void {
-  mkdirSync(SCAN_DIR, { recursive: true });
-  const artifact: ScanArtifact = {
-    schemaVersion: SCAN_ARTIFACT_SCHEMA_VERSION,
-    runId,
-    source,
-    counters,
-    checksum: checksumItems(items),
-    items,
-  };
-  const target = getScanFilePath(source, runId);
-  const temporary = `${target}.${randomUUID()}.tmp`;
+  let normalized: UserFilterSnapshot;
   try {
-    writeFileSync(temporary, JSON.stringify(artifact), 'utf-8');
-    renameSync(temporary, target);
-  } catch (error) {
-    try { unlinkSync(temporary); } catch {}
-    throw error;
+    normalized = normalizeUserFilterSnapshot(req.filterSnapshot);
+  } catch {
+    throw new PermanentError('Parse job filter snapshot is invalid');
   }
-}
-
-function readScanArtifact(source: string, runId: string): ScanArtifact {
-  const scanFilePath = getScanFilePath(source, runId);
-  if (!existsSync(scanFilePath)) {
-    throw new PermanentError(`Scan artifact is missing for ${source} (${runId})`);
+  if (typeof req.filterSnapshot.hash !== 'string' || req.filterSnapshot.hash !== normalized.hash) {
+    throw new PermanentError('Parse job filter snapshot hash mismatch');
   }
-
-  let artifact: unknown;
-  try {
-    artifact = JSON.parse(readFileSync(scanFilePath, 'utf-8'));
-  } catch (error: any) {
-    throw new PermanentError(`Scan artifact manifest is invalid for ${source}: ${error.message}`);
-  }
-
-  const candidate = artifact as Partial<ScanArtifact>;
-  if (
-    !candidate ||
-    candidate.schemaVersion !== SCAN_ARTIFACT_SCHEMA_VERSION ||
-    candidate.runId !== runId ||
-    candidate.source !== source ||
-    !Array.isArray(candidate.items) ||
-    typeof candidate.checksum !== 'string' ||
-    checksumItems(candidate.items) !== candidate.checksum
-  ) {
-    throw new PermanentError(`Scan artifact manifest is invalid for ${source} (${runId})`);
-  }
-
-  try { unlinkSync(scanFilePath); } catch {}
-  return candidate as ScanArtifact;
+  return {
+    snapshot: normalized,
+    hash: normalized.hash,
+    scope: normalized.scope,
+    profileCount: normalized.profiles.length,
+    usesSnapshot: true,
+  };
 }
 
 function throwIfCancellationRequested(workerContext?: WorkerContext): void {
@@ -141,6 +91,7 @@ export function createParseHandler(parser: SourceParser) {
     const req = job.data as ParseRequest;
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 20;
+    let filterContext: FilterContext | undefined;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, preFiltered = 0, detailsFetched = 0, detailsNeeded = 0;
     let existing = 0, detailsAttempted = 0, detailsOk = 0, skipped = 0, itemFailures = 0;
@@ -171,10 +122,20 @@ export function createParseHandler(parser: SourceParser) {
     const phase: string | undefined = req.phase; // undefined = обе фазы
 
     try {
+      // Snapshot validation belongs to the terminal source-telemetry boundary:
+      // a malformed pipeline job must fail closed and close its source stage.
+      filterContext = getFilterContext(req);
       if (req.telemetryIdentityKey) {
         await markParserRunSourceStageRunning(req.telemetryIdentityKey, job.id);
       }
       throwIfCancellationRequested(workerContext);
+
+      // Empty all-user snapshots are an intentional successful no-op. Do not
+      // reset source counters, invoke parser.parse(), or touch Property APIs.
+      if (filterContext.usesSnapshot && filterContext.profileCount === 0) {
+        await finishTelemetry('success_empty');
+        return { created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 };
+      }
       // ═══════════════════════════════════════════════════════════════
       // ФАЗА 1: СКАНИРОВАНИЕ
       // Парсинг списков + дедупликация + предфильтр
@@ -224,12 +185,20 @@ export function createParseHandler(parser: SourceParser) {
             throwIfCancellationRequested(workerContext);
             consecutiveDuplicates = 0;
 
-            // Предфильтр: city, stop words, commercial type, price, area
-            const preResult = preFilterProperty(prop, req.rules);
+            // Snapshot jobs apply only the technical global hard filter here.
+            // User city/price/area/stop-word rules are evaluated by the canonical OR matcher.
+            const preResult = preFilterProperty(prop, filterContext.usesSnapshot ? undefined : req.rules);
             if (!preResult.pass) {
               preFiltered++;
               if (preFiltered <= 10 || preFiltered % 50 === 0) {
                 console.log(`[parse-handler:${req.source}] PRE-FILTER #${preFiltered}: ${prop.external_id} — ${preResult.reason}`);
+              }
+              continue;
+            }
+            if (filterContext.usesSnapshot && !snapshotMatchesCandidate(prop as any, filterContext.snapshot!, { phase: 'scan' })) {
+              preFiltered++;
+              if (preFiltered <= 10 || preFiltered % 50 === 0) {
+                console.log(`[parse-handler:${req.source}] SNAPSHOT FILTER #${preFiltered}: ${prop.external_id}`);
               }
               continue;
             }
@@ -247,13 +216,21 @@ export function createParseHandler(parser: SourceParser) {
         // Сохраняем отфильтрованный список для Phase 2 как атомарный manifest.
         try {
           throwIfCancellationRequested(workerContext);
-          writeScanArtifact(req.source, corrId, {
-            listed: total,
-            eligible: newProperties.length,
-            existing,
-            preFiltered,
-            detailsNeeded,
-          }, newProperties);
+          writeScanArtifact({
+            source: req.source,
+            runId: corrId,
+            counters: {
+              listed: total,
+              eligible: newProperties.length,
+              existing,
+              preFiltered,
+              detailsNeeded,
+            },
+            items: newProperties,
+            filterSnapshotHash: filterContext.hash,
+            scope: filterContext.scope,
+            profileCount: filterContext.profileCount,
+          });
           console.log(`[parse-handler:${req.source}] SCAN: artifact saved for ${corrId}`);
         } catch (err: any) {
           if (isCancellationError(err)) throw err;
@@ -303,7 +280,16 @@ export function createParseHandler(parser: SourceParser) {
       // ═══════════════════════════════════════════════════════════════
       if (phase !== 'scan') {
         throwIfCancellationRequested(workerContext);
-        const artifact = readScanArtifact(req.source, corrId);
+        let artifact;
+        try {
+          artifact = readScanArtifact(req.source, corrId, {
+            filterSnapshotHash: filterContext.hash,
+            scope: filterContext.scope,
+            profileCount: filterContext.profileCount,
+          });
+        } catch (err: any) {
+          throw new PermanentError(err instanceof Error ? err.message : 'Scan artifact manifest is invalid');
+        }
         const newProperties = artifact.items as any[];
         total = artifact.counters.listed;
         existing = artifact.counters.existing;
@@ -378,19 +364,31 @@ export function createParseHandler(parser: SourceParser) {
                     // Промежуточное обновление для UI
                     if (req.documentId) {
                       throwIfCancellationRequested(workerContext);
-                      updateSourceStats(req.documentId, {
+                      const progressUpdate = updateSourceStats(req.documentId, {
                         total_details_fetched: detailsFetched,
-                      }).catch(() => {});
+                      });
+                      if (filterContext.usesSnapshot) await progressUpdate;
+                      else progressUpdate.catch(() => {});
                     }
                   }
                 } catch (err: any) {
                   if (isCancellationError(err)) throw err;
+                  if (filterContext.usesSnapshot) throw err;
                   logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
                 }
                 // Антибан: пауза между детальными страницами (2-5 сек)
                 throwIfCancellationRequested(workerContext);
                 await randomDelay(2000, 5000);
                 throwIfCancellationRequested(workerContext);
+              }
+
+              if (filterContext.usesSnapshot && !snapshotMatchesCandidate(prop, filterContext.snapshot!, { phase: 'details' })) {
+                filtered++;
+                skipped++;
+                if (filtered <= 5 || filtered % 50 === 0) {
+                  console.log(`[parse-handler:${req.source}] SNAPSHOT FILTER #${filtered}: ${prop.external_id}`);
+                }
+                continue;
               }
 
               // Создание объекта в Strapi
@@ -413,7 +411,7 @@ export function createParseHandler(parser: SourceParser) {
                 contacts: prop.contacts,
                 latitude: prop.latitude,
                 longitude: prop.longitude,
-                rules: req.rules,
+                rules: filterContext.usesSnapshot ? undefined : req.rules,
               });
               throwIfCancellationRequested(workerContext);
               if (result) created++;
@@ -426,6 +424,7 @@ export function createParseHandler(parser: SourceParser) {
               }
             } catch (err: any) {
               if (isCancellationError(err)) throw err;
+              if (filterContext.usesSnapshot) throw err;
               itemFailures++;
               logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
             }
@@ -465,39 +464,44 @@ export function createParseHandler(parser: SourceParser) {
     } finally {
       // Cancellation is a cooperative queue outcome, not a late cron-side effect.
       if (!cancelled) {
-        await logCron({
-          name: `parse-${req.source}`,
-          started_at: startedAt,
-          finished_at: new Date().toISOString(),
-          items_processed: created,
-          error: errorMsg,
-        }).catch(() => {});
+        try {
+          await logCron({
+            name: `parse-${req.source}`,
+            started_at: startedAt,
+            finished_at: new Date().toISOString(),
+            items_processed: created,
+            error: errorMsg,
+          });
+        } catch (cronError: any) {
+          logger.warn(`Cron log failed: ${cronError.message}`, { correlationId: corrId });
+        }
       }
     }
 
-    // Финальное обновление статистики источника
+    // Финальное обновление статистики источника. Не проглатываем ошибку:
+    // artifact должен остаться для retry до подтверждённого terminal update.
     if (req.documentId) {
-      try {
-        throwIfCancellationRequested(workerContext);
-        console.log(`[parse-handler:${req.source}] FINAL: total=${total} created=${created} filtered=${filtered} preFiltered=${preFiltered} details=${detailsFetched}/${detailsNeeded}`);
-        await updateSourceStats(req.documentId, {
-          last_parse_status: 'success',
-          last_parse_error: undefined,
-          last_parsed_at: new Date().toISOString(),
-          total_created: created,
-          parse_count: 1,
-          total_details_fetched: detailsFetched,
-          total_details_needed: detailsNeeded,
-        });
-        throwIfCancellationRequested(workerContext);
-      } catch (err: any) {
-        if (isCancellationError(err)) throw err;
-        logger.warn(`Stats update failed: ${err.message}`, { correlationId: corrId });
-      }
+      throwIfCancellationRequested(workerContext);
+      console.log(`[parse-handler:${req.source}] FINAL: total=${total} created=${created} filtered=${filtered} preFiltered=${preFiltered} details=${detailsFetched}/${detailsNeeded}`);
+      await updateSourceStats(req.documentId, {
+        last_parse_status: 'success',
+        last_parse_error: undefined,
+        last_parsed_at: new Date().toISOString(),
+        total_created: created,
+        parse_count: 1,
+        total_details_fetched: detailsFetched,
+        total_details_needed: detailsNeeded,
+      });
+      throwIfCancellationRequested(workerContext);
     }
 
     console.log(`[parse-handler:${req.source}] DONE: created=${created} filtered=${filtered} preFiltered=${preFiltered} total=${total} details=${detailsFetched}/${detailsNeeded}`);
     await finishTelemetry(total === 0 ? 'success_empty' : 'success');
+    if (phase !== 'scan') {
+      // The only destructive artifact operation is immediately before a
+      // successful return, after details and both terminal telemetry paths.
+      cleanupScanArtifact(req.source, corrId);
+    }
     return { created, filtered, total, detailsFetched, detailsNeeded };
   };
 }

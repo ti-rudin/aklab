@@ -68,13 +68,13 @@
 
       <!-- ==================== ССЫЛКИ ==================== -->
       <div class="flex flex-wrap items-center gap-3">
-        <a v-if="property.url" :href="property.url" target="_blank" rel="noopener"
+        <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener"
           class="inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--accent)">
           Открыть на источнике →
         </a>
         <span v-else class="text-sm" style="color: var(--text-muted)">Ссылка на источник недоступна</span>
 
-        <span v-if="property.url && cianUrl" class="text-sm" style="color: var(--text-muted)">·</span>
+        <span v-if="sourceUrl && cianUrl" class="text-sm" style="color: var(--text-muted)">·</span>
 
         <a v-if="cianUrl" :href="cianUrl" target="_blank" rel="noopener"
           class="inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--accent)">
@@ -84,26 +84,29 @@
         <span v-else-if="geocoding" class="text-sm" style="color: var(--text-muted)">⏳ Определяем координаты…</span>
       </div>
 
-      <!-- ==================== ФОТОГАЛЕРЕЯ (для всех) ==================== -->
+      <!-- ==================== ФОТОГАЛЕРЕЯ (private blob media) ==================== -->
       <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📸 Фотографии</h2>
-        <!-- Photos loaded -->
-        <div v-if="property.photos_downloaded && property.photos?.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          <div v-for="(photo, idx) in property.photos" :key="idx"
+        <!-- Photos loaded as private blob ObjectURLs -->
+        <div v-if="thumbnails.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div v-for="(photo, idx) in thumbnails" :key="photo.path"
             class="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
             @click="openLightbox(idx)">
-            <img :src="photoUrl(photo)" :alt="`Фото ${idx + 1}`"
+            <img :src="photo.url" :alt="`Фото ${idx + 1}`"
               class="w-full h-full object-cover" />
           </div>
         </div>
-        <!-- No photos after download -->
-        <div v-else-if="property.photos_downloaded && !property.photos?.length" class="text-sm py-4 text-center" style="color: var(--text-muted)">
-          Фотографии не найдены
+        <div v-if="Object.keys(mediaErrors).length" class="text-xs mt-3" style="color: var(--danger)">
+          Некоторые фотографии недоступны и не были показаны.
         </div>
-        <!-- Loading -->
-        <div v-else-if="photoLoading" class="flex flex-col items-center gap-3 py-4">
+        <!-- Loading: queue polling or blob hydration -->
+        <div v-else-if="photoLoading || mediaLoading" class="flex flex-col items-center gap-3 py-4">
           <div class="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style="border-color: var(--accent); border-top-color: transparent"></div>
           <span class="text-sm" style="color: var(--text-muted)">Загружаем фотографии…</span>
+        </div>
+        <!-- No photos after a terminal response -->
+        <div v-else-if="property.photos_downloaded || photoTerminal === 'no_url'" class="text-sm py-4 text-center" style="color: var(--text-muted)">
+          Фотографии не найдены
         </div>
         <!-- Not fetched yet -->
         <div v-else class="flex flex-col items-center gap-3 py-4">
@@ -112,16 +115,16 @@
             Загрузить фотографии
           </BaseButton>
         </div>
-        <!-- Lightbox -->
+        <!-- Lightbox owns a separate ObjectURL; thumbnails remain valid when it closes. -->
         <Teleport to="body">
-          <div v-if="lightbox.open" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          <div v-if="lightbox.open && lightboxUrl" class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
             role="dialog" aria-modal="true" aria-label="Просмотр фотографии" tabindex="-1"
-            @click.self="lightbox.open = false">
-            <button @click="lightbox.open = false" class="absolute top-4 right-4 text-white text-2xl" aria-label="Закрыть">✕</button>
+            @click.self="closeLightbox">
+            <button @click="closeLightbox" class="absolute top-4 right-4 text-white text-2xl" aria-label="Закрыть">✕</button>
             <button @click="prevPhoto" class="absolute left-4 text-white text-3xl" aria-label="Предыдущее фото">‹</button>
-            <img v-if="property.photos?.[lightbox.idx]" :src="photoUrl(String(property.photos?.[lightbox.idx]))" class="max-h-[80vh] max-w-[90vw] object-contain" />
+            <img :src="lightboxUrl" :alt="`Фото ${lightbox.idx + 1}`" class="max-h-[80vh] max-w-[90vw] object-contain" />
             <button @click="nextPhoto" class="absolute right-4 text-white text-3xl" aria-label="Следующее фото">›</button>
-            <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ property.photos?.length ?? 0 }}</div>
+            <div class="absolute bottom-4 text-white text-sm">{{ lightbox.idx + 1 }} / {{ thumbnails.length }}</div>
           </div>
         </Teleport>
       </div>
@@ -290,14 +293,24 @@ import api from '@/api/strapi'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPrice } from '@/utils/formatters'
 import { scoreColor, scoreBg } from '@/utils/styleHelpers'
 import { useToast } from '@/composables/useToast'
-import { usePolling } from '@/composables/usePolling'
+import { usePropertyMedia } from '@/composables/usePropertyMedia'
 
 const route = useRoute()
 const toast = useToast()
-const { poll } = usePolling()
+const {
+  thumbnails,
+  errors: mediaErrors,
+  loading: mediaLoading,
+  lightboxUrl,
+  load: loadMedia,
+  resetMedia,
+  openLightbox: createLightboxUrl,
+  closeLightbox: revokeLightbox,
+  pollForPhotos,
+  stopPolling,
+} = usePropertyMedia()
 
 interface Property {
-  id: number
   documentId: string
   title: string
   address: string | null
@@ -320,10 +333,8 @@ interface Property {
   first_seen_at: string | null
   focus_score: number | null
   tags: string[] | null
-  comments?: Comment[]
-  photos?: string[]
+  photos?: string[] | null
   photos_downloaded?: boolean
-  photo_urls?: string[]
   latitude?: number | null
   longitude?: number | null
 }
@@ -334,16 +345,27 @@ interface Comment {
   createdAt: string
 }
 
+interface PropertyEvent {
+  documentId: string
+  event_type: string
+  old_value: string | null
+  new_value: string | null
+  createdAt: string | null
+  updatedAt?: string | null
+}
+
 const property = ref<Property | null>(null)
 const comments = ref<Comment[]>([])
-const events = ref<any[]>([])
+const events = ref<PropertyEvent[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const comment = ref('')
 const showFullDesc = ref(false)
 const photoLoading = ref(false)
+const photoTerminal = ref<'no_url' | 'downloaded' | 'error' | null>(null)
 const detailsOpen = ref(false)
+let pageGeneration = 0
 
 const statuses = [
   { value: 'new', label: 'Новый' },
@@ -355,24 +377,39 @@ const statuses = [
 const auctionLabel = (v: string) => ({
   bankruptcy: 'Банкротство', privatization: 'Приватизация', marketplace: 'Торговая площадка'
 })[v] || v
-const formatDate = (d: string) => new Date(d).toLocaleString('ru-RU')
+const formatDate = (d: string | null) => d ? new Date(d).toLocaleString('ru-RU') : '—'
 
-// Photo gallery
+// Private blob gallery lifecycle
 const lightbox = reactive({ open: false, idx: 0 })
 
-function photoUrl(path: string) {
-  return `${api.defaults.baseURL}${path}`
+function openLightbox(idx: number): void {
+  if (createLightboxUrl(idx)) {
+    lightbox.idx = idx
+    lightbox.open = true
+  }
 }
 
-function openLightbox(idx: number) {
-  lightbox.idx = idx
-  lightbox.open = true
+function closeLightbox(): void {
+  lightbox.open = false
+  revokeLightbox()
 }
-function nextPhoto() {
-  if (property.value && lightbox.idx < property.value.photos!.length - 1) lightbox.idx++
+
+function nextPhoto(): void {
+  if (lightbox.idx < thumbnails.value.length - 1) {
+    lightbox.idx += 1
+    createLightboxUrl(lightbox.idx)
+  }
 }
-function onLightboxKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') lightbox.open = false
+
+function prevPhoto(): void {
+  if (lightbox.idx > 0) {
+    lightbox.idx -= 1
+    createLightboxUrl(lightbox.idx)
+  }
+}
+
+function onLightboxKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeLightbox()
   else if (e.key === 'ArrowLeft') prevPhoto()
   else if (e.key === 'ArrowRight') nextPhoto()
 }
@@ -388,30 +425,79 @@ watch(() => lightbox.open, (open) => {
 })
 
 onUnmounted(() => {
+  pageGeneration += 1
+  stopPolling()
+  closeLightbox()
   document.removeEventListener('keydown', onLightboxKeydown)
   document.body.style.overflow = ''
 })
 
-function prevPhoto() {
-  if (lightbox.idx > 0) lightbox.idx--
+function isPropertyDetail(value: unknown): value is Property {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && typeof (value as Property).documentId === 'string'
 }
 
-async function triggerPhotoFetch() {
-  const pv = property.value
-  if (!pv || photoLoading.value) return
+async function applyPhotoDetail(detail: Record<string, unknown>, documentId: string): Promise<void> {
+  if (
+    !isPropertyDetail(detail)
+    || detail.documentId !== documentId
+    || property.value?.documentId !== documentId
+  ) {
+    throw new Error('Invalid scoped photo detail')
+  }
+  property.value = { ...property.value, ...detail }
+  if (detail.photos_downloaded === true) {
+    await loadMedia(documentId, detail.photos)
+  }
+}
+
+async function refreshPhotoDetail(documentId: string): Promise<void> {
+  const { data } = await api.get(`/properties/${documentId}`)
+  if (!isPropertyDetail(data?.data)) throw new Error('Invalid property detail response')
+  await applyPhotoDetail(data.data, documentId)
+}
+
+async function triggerPhotoFetch(): Promise<void> {
+  const current = property.value
+  if (!current || photoLoading.value) return
+  const documentId = current.documentId
+  const generation = pageGeneration
+  const isCurrent = () => generation === pageGeneration && property.value?.documentId === documentId
   photoLoading.value = true
+  photoTerminal.value = null
   try {
-    await api.post(`/properties/${pv.documentId}/fetch-photos`)
-    await poll(async () => {
-      const { data: propData } = await api.get(`/properties/${pv!.documentId}`)
-      if (propData.data?.photos_downloaded) {
-        property.value = { ...pv!, ...propData.data }
-        return true
+    const { data } = await api.post(`/properties/${documentId}/fetch-photos`)
+    if (!isCurrent()) return
+    if (data?.queued === true) {
+      const result = await pollForPhotos(documentId, (detail) => applyPhotoDetail(detail, documentId))
+      if (!isCurrent()) return
+      if (result.status === 'downloaded') photoTerminal.value = 'downloaded'
+      else if (result.status === 'error') {
+        photoTerminal.value = 'error'
+        throw new Error('Photo polling failed')
       }
-      return false
-    }, 2000, 30)
-  } catch { toast.error('Не удалось загрузить фотографии') }
-  finally { photoLoading.value = false }
+      return
+    }
+    if (data?.queued === false && data.reason === 'already_downloaded') {
+      await refreshPhotoDetail(documentId)
+      photoTerminal.value = 'downloaded'
+      return
+    }
+    if (data?.queued === false && data.reason === 'no_url') {
+      photoTerminal.value = 'no_url'
+      return
+    }
+    throw new Error('Invalid photo queue response')
+  } catch {
+    if (isCurrent()) {
+      photoTerminal.value = 'error'
+      toast.error('Не удалось загрузить фотографии')
+    }
+  } finally {
+    if (isCurrent()) photoLoading.value = false
+  }
 }
 
 const geocoding = ref(false)
@@ -423,54 +509,91 @@ const cianUrl = computed(() => {
   return `https://www.cian.ru/map/?deal_type=sale&offer_type=commercial&object_type[0]=1&object_type[1]=2&object_type[2]=5&center=${lng},${lat}&zoom=16`
 })
 
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
+const sourceUrl = computed(() => safeHttpUrl(property.value?.url))
+
 async function geocodeAddress() {
-  if (!property.value?.address || property.value.latitude) return
+  const current = property.value
+  if (!current?.address || current.latitude) return
+  const documentId = current.documentId
+  const generation = pageGeneration
   geocoding.value = true
   try {
-    const { data } = await api.get(`/properties/${property.value.documentId}/geocode`)
-    if (data.latitude && data.longitude) {
+    const { data } = await api.get(`/properties/${documentId}/geocode`)
+    if (
+      generation === pageGeneration
+      && property.value?.documentId === documentId
+      && data.latitude
+      && data.longitude
+    ) {
       property.value.latitude = data.latitude
       property.value.longitude = data.longitude
     }
   } catch { /* geocode — non-critical, button won't show */ }
-  finally { geocoding.value = false }
-}
-
-async function fetchProperty() {
-  loading.value = true
-  try {
-    const docId = route.params.id as string
-    const { data } = await api.get(`/properties/${docId}`, {
-      params: { populate: 'comments' }
-    })
-    // Treat null/undefined/empty-object responses as "not found"
-    if (data.data && data.data.documentId) {
-      property.value = data.data
-      comments.value = data.data?.comments || []
-    } else {
-      property.value = null
-      error.value = 'Объект не найден'
-    }
-  } catch (e: any) {
-    property.value = null
-    error.value = e.response?.data?.error?.message || 'Объект не найден'
-  } finally {
-    loading.value = false
+  finally {
+    if (generation === pageGeneration) geocoding.value = false
   }
 }
 
-async function fetchEvents() {
-  if (!property.value) return
+async function fetchProperty(): Promise<boolean> {
+  const generation = ++pageGeneration
+  const documentId = route.params.id as string
+  loading.value = true
+  error.value = ''
+  property.value = null
+  comments.value = []
+  events.value = []
+  photoLoading.value = false
+  photoTerminal.value = null
+  geocoding.value = false
+  stopPolling()
+  resetMedia()
+
   try {
-    const { data } = await api.get('/property-events', {
-      params: {
-        'filters[property][documentId][$eq]': property.value.documentId,
-        'sort': 'createdAt:desc',
-        'pagination[pageSize]': 50,
-      }
-    })
-    events.value = data.data || []
-  } catch { /* ignore */ }
+    // Detail is the scope gate. It has no query and no dependent request can precede it.
+    const { data } = await api.get(`/properties/${documentId}`)
+    if (generation !== pageGeneration) return false
+    if (!isPropertyDetail(data?.data) || data.data.documentId !== documentId) {
+      error.value = 'Объект не найден'
+      return false
+    }
+
+    property.value = data.data
+    if (data.data.photos_downloaded === true) {
+      await loadMedia(documentId, data.data.photos)
+      if (generation !== pageGeneration) return false
+    }
+
+    const [commentsResult, eventsResult] = await Promise.allSettled([
+      api.get(`/me/properties/${documentId}/comments`),
+      api.get(`/me/properties/${documentId}/events`, { params: { page: 1, pageSize: 100 } }),
+    ])
+    if (generation !== pageGeneration) return false
+    if (commentsResult.status === 'fulfilled') {
+      comments.value = commentsResult.value.data?.data || []
+    }
+    if (eventsResult.status === 'fulfilled') {
+      events.value = eventsResult.value.data?.data || []
+    }
+    return true
+  } catch (e: any) {
+    if (generation === pageGeneration) {
+      property.value = null
+      error.value = e.response?.data?.error?.message || 'Объект не найден'
+    }
+    return false
+  } finally {
+    if (generation === pageGeneration) loading.value = false
+  }
 }
 
 const eventTypeLabel: Record<string, string> = {
@@ -491,15 +614,19 @@ const eventTypeColor: Record<string, string> = {
   price_changed: 'var(--danger)',
 }
 
-async function changeStatus(status: string) {
+async function changeStatus(status: string): Promise<void> {
   if (!property.value) return
   saving.value = true
   error.value = ''
   try {
-    await api.put(`/properties/${property.value.documentId}`, {
-      data: { status }
+    const { data } = await api.put(`/me/properties/${property.value.documentId}/status`, {
+      data: { status },
     })
-    property.value.status = status
+    const acknowledgedStatus = data?.data?.status
+    if (typeof acknowledgedStatus !== 'string' || !statuses.some((item) => item.value === acknowledgedStatus)) {
+      throw new Error('Invalid status acknowledgement')
+    }
+    property.value = { ...property.value, status: acknowledgedStatus }
   } catch (e: any) {
     error.value = e.response?.data?.error?.message || 'Ошибка обновления'
   } finally {
@@ -507,23 +634,21 @@ async function changeStatus(status: string) {
   }
 }
 
-async function addComment() {
+async function addComment(): Promise<void> {
   if (!property.value || !comment.value.trim()) return
   saving.value = true
   error.value = ''
+  const draft = comment.value.trim()
   try {
-    await api.post('/user-comments', {
-      data: {
-        text: comment.value.trim(),
-        property: property.value.id,
-      }
+    const { data } = await api.post(`/me/properties/${property.value.documentId}/comments`, {
+      data: { text: draft },
     })
+    const acknowledgedComment = data?.data
+    if (!acknowledgedComment || typeof acknowledgedComment.text !== 'string') {
+      throw new Error('Invalid comment acknowledgement')
+    }
+    comments.value = [...comments.value, acknowledgedComment]
     comment.value = ''
-    // Перезагружаем комментарии
-    const { data } = await api.get(`/properties/${property.value.documentId}`, {
-      params: { populate: 'comments' }
-    })
-    comments.value = data.data?.comments || []
   } catch (e: any) {
     error.value = e.response?.data?.error?.message || 'Ошибка добавления комментария'
   } finally {
@@ -531,15 +656,15 @@ async function addComment() {
   }
 }
 
-onMounted(async () => {
-  await fetchProperty()
-  await fetchEvents()
-  geocodeAddress() // fire-and-forget
-  // Lazy photo fetch — trigger if not yet downloaded
-  if (property.value && !property.value.photos_downloaded) {
-    triggerPhotoFetch()
-  }
-})
+async function loadPage(): Promise<void> {
+  const loaded = await fetchProperty()
+  if (!loaded || !property.value) return
+  geocodeAddress() // scoped and non-critical
+  if (!property.value.photos_downloaded) void triggerPhotoFetch()
+}
+
+onMounted(() => { void loadPage() })
+watch(() => route.params.id, () => { void loadPage() })
 </script>
 
 <style scoped>

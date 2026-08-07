@@ -8,8 +8,7 @@ import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
 import { createParserRunTelemetry } from '../parser-run-telemetry';
 import { scorePropertiesBatch } from '../focusEngine';
-import { buildParseRules } from '../parseRules';
-import type { RunOptions } from './state';
+import type { UserFilterSnapshot } from '../user-profile';
 import { updateState } from './state';
 
 export interface PipelineContext {
@@ -19,6 +18,8 @@ export interface PipelineContext {
   requestCancellation(jobIds: number[], message: string): Promise<void>;
   getRunId(): string;
   getParserRunId(): number;
+  /** The one immutable snapshot selected during lifecycle preflight. */
+  getFilterSnapshot(): UserFilterSnapshot | null;
   recordJobIds(ids: number[]): Promise<void>;
   getSourceStats(slugs: string[]): Promise<any[]>;
 }
@@ -120,6 +121,73 @@ function sumResult(jobs: Job[], field: string): number {
     .reduce((total, job) => total + (Number((job.result as any)?.[field]) || 0), 0);
 }
 
+type DigestCounters = {
+  runId: string;
+  scheduled: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+};
+
+type DigestResultKind = 'sent' | 'skipped' | 'malformed';
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const expected = [...keys].sort();
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function safeDigestReason(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 256
+    && value.trim() === value
+    && !/[\u0000-\u001f\u007f]/.test(value)
+    && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function classifyDigestResult(result: unknown): DigestResultKind {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return 'malformed';
+  const value = result as Record<string, unknown>;
+  if (value.sent === true) {
+    return exactKeys(value, ['sent', 'count'])
+      && typeof value.count === 'number'
+      && Number.isSafeInteger(value.count)
+      && value.count >= 0
+      ? 'sent'
+      : 'malformed';
+  }
+  return value.sent === false
+    && exactKeys(value, ['sent', 'count', 'reason'])
+    && value.count === 0
+    && safeDigestReason(value.reason)
+    ? 'skipped'
+    : 'malformed';
+}
+
+function snapshotUserIds(snapshot: UserFilterSnapshot): number[] {
+  if (!Array.isArray(snapshot.profiles)) throw new Error('Digest snapshot is invalid.');
+  const seen = new Set<number>();
+  const userIds: number[] = [];
+  for (const profile of snapshot.profiles) {
+    const userId = (profile as any)?.userId;
+    if (typeof userId !== 'number' || !Number.isSafeInteger(userId) || userId <= 0) {
+      throw new Error('Digest snapshot is invalid.');
+    }
+    if (seen.has(userId)) throw new Error('Digest snapshot contains duplicate users.');
+    seen.add(userId);
+    userIds.push(userId);
+  }
+  return userIds;
+}
+
+async function persistDigestCounters(
+  telemetry: ReturnType<typeof createParserRunTelemetry>,
+  counters: DigestCounters,
+): Promise<void> {
+  await telemetry.setDigestCounters(counters);
+}
+
 async function reconcileQueueFailures(
   ctx: PipelineContext,
   telemetry: ReturnType<typeof createParserRunTelemetry>,
@@ -144,18 +212,23 @@ async function reconcileQueueFailures(
         errorMessage,
       });
     } catch (error: any) {
-      ctx.strapi.log.error(`[pipeline] Cannot reconcile ${stage} telemetry job ${job.id}: ${error?.message || error}`);
+      ctx.strapi.log.error(`[pipeline] Cannot reconcile ${stage} telemetry job`);
     }
   }
 }
 
 // ── Parse ───────────────────────────────────────────────────────────────────
 
-export async function parseAll(ctx: PipelineContext, depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
+export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ created: number; errors: string[] }> {
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
   const scanArtifactId = `scan-${runId}`; // trace/artifact identifier, not idempotency
+  const filterSnapshot = ctx.getFilterSnapshot();
+  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
+    await updateState(ctx.strapi, { stage: 'parsing_done', sources_total: 0, sources_done: 0 }, 'Парсинг пропущен — нет готовых профилей');
+    return { created: 0, errors };
+  }
 
   const sources = await ctx.strapi.entityService.findMany('api::source.source', {
     filters: { is_active: true },
@@ -176,11 +249,6 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
     objects_created: 0,
   }, `Фаза 1: сканирование... (0/${total})`);
 
-  const settings = await ctx.strapi.db.query('api::setting.setting').findOne({});
-  const rules = buildParseRules(settings);
-  if (filters?.priceFrom != null) rules.priceFrom = filters.priceFrom;
-  if (filters?.priceTo != null) rules.priceTo = filters.priceTo;
-  if (filters?.city?.length) rules.cities = filters.city;
 
   const scanJobs: Array<{ slug: string; id: number }> = [];
   const telemetry = createParserRunTelemetry(ctx.strapi);
@@ -200,7 +268,8 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       sourceId: src.id,
       documentId: src.documentId,
       depth,
-      rules,
+      filterSnapshot,
+      filterSnapshotHash: filterSnapshot.hash,
       correlationId: scanArtifactId,
       phase: 'scan',
       telemetryIdentityKey: `${runId}:${src.slug}:scan`,
@@ -208,10 +277,11 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${src.slug}:scan`,
     });
-    await telemetry.attachSourceStageJob({ runId, sourceSlug: src.slug, stage: 'scan', jobId: job.id });
     scanJobs.push({ slug: src.slug, id: job.id });
-    // Persist the returned id before enqueueing another source; cancel can now be exact.
+    // Own the queue job before any later operation may throw. This keeps lifecycle
+    // settlement exact even when telemetry attachment fails after enqueue.
     await ctx.recordJobIds([job.id]);
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: src.slug, stage: 'scan', jobId: job.id });
   }
 
   const scanWait = await waitForJobs(qs, ctx, scanJobs.map(job => job.id), 'Сканирование', async jobs => {
@@ -261,7 +331,8 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       sourceId: src.id,
       documentId: src.documentId,
       depth,
-      rules,
+      filterSnapshot,
+      filterSnapshotHash: filterSnapshot.hash,
       correlationId: scanArtifactId,
       phase: 'details',
       telemetryIdentityKey: `${runId}:${slug}:details`,
@@ -269,9 +340,9 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${slug}:details`,
     });
-    await telemetry.attachSourceStageJob({ runId, sourceSlug: slug, stage: 'details', jobId: job.id });
     detailJobs.push({ slug, id: job.id });
     await ctx.recordJobIds([job.id]);
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: slug, stage: 'details', jobId: job.id });
   }
 
   const detailWait = await waitForJobs(qs, ctx, detailJobs.map(job => job.id), 'Детальная загрузка', async jobs => {
@@ -304,38 +375,19 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
 
 // ── Analyze ─────────────────────────────────────────────────────────────────
 
-export async function analyze(ctx: PipelineContext, filters?: RunOptions['filters']): Promise<{ undervalued: number; errors: string[] }> {
+export async function analyze(ctx: PipelineContext): Promise<{ undervalued: number; errors: string[] }> {
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
-
-  const analysisWhere: any = { status: 'new', is_undervalued: { $null: true } };
-  if (filters?.priceFrom != null && !isNaN(filters.priceFrom)) analysisWhere.price = { ...(analysisWhere.price || {}), $gte: filters.priceFrom };
-  if (filters?.priceTo != null && !isNaN(filters.priceTo)) analysisWhere.price = { ...(analysisWhere.price || {}), $lte: filters.priceTo };
-  if (filters?.city?.length) analysisWhere.city = { $in: filters.city };
-
-  if (filters?.force) {
-    // `analysisWhere` intentionally selects only unanalysed candidates. Force
-    // must first reset the same filtered status='new' set without that null
-    // predicate, then query fresh analysis candidates after the reset.
-    const resetWhere = { ...analysisWhere };
-    delete resetWhere.is_undervalued;
-    if (ctx.isCancelled()) return { undervalued: 0, errors };
-    const toReset = await ctx.strapi.db.query('api::property.property').findMany({ where: resetWhere, select: ['documentId'] });
-    for (const prop of toReset || []) {
-      if (ctx.isCancelled()) return { undervalued: 0, errors };
-      await ctx.strapi.db.query('api::property.property').update({
-        where: { documentId: prop.documentId },
-        data: { is_undervalued: null, deviation: null, price_per_sqm_ref: null },
-      });
-    }
-  }
+  // Shared analysis candidates are selected only by the canonical marker;
+  // personal status and user/profile filters do not apply here.
+  const analysisWhere: any = { is_undervalued: { $null: true } };
 
   if (ctx.isCancelled()) return { undervalued: 0, errors };
   const properties = await ctx.strapi.entityService.findMany('api::property.property', { filters: analysisWhere, limit: -1 });
   const total = properties?.length || 0;
   if (!total) {
-    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет новых объектов');
+    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет необработанных shared объектов');
     return { undervalued: 0, errors };
   }
 
@@ -346,7 +398,6 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
     const documentId = (prop as any).documentId;
     const job = qs.addToQueue('analyze-property', {
       documentId,
-      threshold: filters?.threshold,
     }, {
       correlationId: `analyze-${runId}`,
       idempotencyKey: `${runId}:${documentId}:analyze`,
@@ -364,15 +415,10 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
 
   try {
     await updateState(ctx.strapi, { message: 'Расчёт focus score...' });
-    await scorePropertiesBatch({
-      city: filters?.city,
-      priceFrom: filters?.priceFrom,
-      priceTo: filters?.priceTo,
-      threshold: filters?.threshold,
-    });
+    await scorePropertiesBatch();
   } catch (err: any) {
-    errors.push(`Score: ${err.message}`);
-    ctx.strapi.log.error(`[pipeline] Score error: ${err.message}`);
+    errors.push('Score: расчёт focus score завершился ошибкой');
+    ctx.strapi.log.error('[pipeline] Score calculation failed');
   }
 
   const undervaluedRows = await ctx.strapi.db.query('api::property.property').findMany({
@@ -395,29 +441,89 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
-  const setting = await ctx.strapi.db.query('api::setting.setting').findOne({});
-  if (setting?.digest_enabled === false) {
-    await updateState(ctx.strapi, { stage: 'digest_done' }, 'Дайджест отключён в настройках');
+  const filterSnapshot = ctx.getFilterSnapshot();
+  const telemetry = createParserRunTelemetry(ctx.strapi);
+  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
+    const counters = { scheduled: 0, sent: 0, skipped: 0, failed: 0 };
+    await persistDigestCounters(telemetry, { runId, ...counters });
+    await updateState(
+      ctx.strapi,
+      {
+        stage: 'digest_done',
+        errors,
+        digest_scheduled: counters.scheduled,
+        digest_sent: counters.sent,
+        digest_skipped: counters.skipped,
+        digest_failed: counters.failed,
+      },
+      'Дайджест пропущен — нет готовых профилей',
+    );
     return { sent: false, errors };
   }
 
-  await updateState(ctx.strapi, { stage: 'digesting' }, 'Отправка дайджеста...');
-  const job = qs.addToQueue('digest-send', {
-    date: new Date().toISOString().slice(0, 10),
-    smtpTo: setting?.smtp_to || null,
-    correlationId: `digest-${runId}`,
-  }, {
-    correlationId: `digest-${runId}`,
-    idempotencyKey: `${runId}:digest`,
-  });
-  await ctx.recordJobIds([job.id]);
+  const userIds = snapshotUserIds(filterSnapshot);
+  await updateState(ctx.strapi, { stage: 'digesting' }, `Дайджест: запланировано ${userIds.length}`);
 
-  const wait = await waitForJobs(qs, ctx, [job.id], 'Дайджест');
-  errors.push(...wait.errors);
-  const terminalJob = wait.jobs[0];
-  if (ctx.isCancelled() || wait.timedOut || terminalJob?.status === 'failed') return { sent: false, errors };
+  const jobIds: number[] = [];
+  for (const userId of userIds) {
+    if (ctx.isCancelled()) break;
+    const correlationId = `digest-${runId}`;
+    const job = qs.addToQueue('digest-send', {
+      runId,
+      userId,
+      snapshotHash: filterSnapshot.hash,
+      correlationId,
+    }, {
+      correlationId,
+      idempotencyKey: `digest:${runId}:${userId}`,
+    });
+    // Persist ownership before any later operation can throw. If add() returns
+    // an idempotent winner, its exact existing id is recorded again safely.
+    await ctx.recordJobIds([job.id]);
+    jobIds.push(job.id);
+  }
 
-  const sent = terminalJob?.status === 'completed' && (terminalJob.result as any)?.sent === true;
-  await updateState(ctx.strapi, { stage: 'digest_done', errors }, sent ? '✓ Дайджест отправлен' : 'Дайджест завершён без отправки');
+  const wait = await waitForJobs(qs, ctx, jobIds, 'Дайджест');
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = Math.max(0, jobIds.length - wait.jobs.length);
+  for (const job of wait.jobs) {
+    if (job.status === 'failed') {
+      failedCount += 1;
+      continue;
+    }
+    if (job.status !== 'completed') {
+      failedCount += 1;
+      continue;
+    }
+    const resultKind = classifyDigestResult(job.result);
+    if (resultKind === 'sent') sentCount += 1;
+    else if (resultKind === 'skipped') skippedCount += 1;
+    else failedCount += 1;
+  }
+  if (failedCount > 0) errors.push(`Дайджест: ${failedCount} задач завершились с ошибкой`);
+  if (wait.timedOut) errors.push('Дайджест: deadline ожидания превышен');
+
+  const counters = {
+    runId,
+    scheduled: jobIds.length,
+    sent: sentCount,
+    skipped: skippedCount,
+    failed: failedCount,
+  };
+  await persistDigestCounters(telemetry, counters);
+  const sent = sentCount > 0;
+  await updateState(
+    ctx.strapi,
+    {
+      stage: 'digest_done',
+      errors,
+      digest_scheduled: counters.scheduled,
+      digest_sent: counters.sent,
+      digest_skipped: counters.skipped,
+      digest_failed: counters.failed,
+    },
+    `Дайджест: ${sentCount} отправлено, ${skippedCount} пропущено, ${failedCount} ошибок`,
+  );
   return { sent, errors };
 }

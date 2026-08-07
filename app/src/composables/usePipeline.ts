@@ -1,33 +1,59 @@
-import { reactive, computed, onUnmounted } from 'vue'
+import { computed, onUnmounted, reactive, ref } from 'vue'
+import type { AxiosInstance } from 'axios'
 import api from '@/api/strapi'
 
-interface PipelineServerState {
-  run_id?: string | null
-  status?: string
-  stage?: string
-  message?: string
-  sources_total?: number
-  sources_done?: number
-  details_fetched?: number
-  details_needed?: number
-  analyze_total?: number
-  analyze_done?: number
-  undervalued_count?: number
-  objects_created?: number
-  errors?: string[]
+const PIPELINE_STAGES = [
+  'idle',
+  'parsing_scan',
+  'parsing_scan_done',
+  'parsing_details',
+  'parsing_done',
+  'analyzing',
+  'analyzing_skipped',
+  'analyzing_done',
+  'digesting',
+  'digest_done',
+  'done',
+  'done_with_errors',
+  'cancelled',
+  'error',
+] as const
+
+const TERMINAL_STAGES = new Set<string>(['done', 'done_with_errors', 'cancelled', 'error'])
+
+type PipelineStage = (typeof PIPELINE_STAGES)[number]
+type PipelineStatus = 'idle' | 'running' | 'cancelling'
+
+export interface PipelinePublicState {
+  run_id: string | null
+  status: PipelineStatus
+  stage: PipelineStage
+  message: string
+  sources_total: number
+  sources_done: number
+  details_fetched: number
+  details_needed: number
+  analyze_total: number
+  analyze_done: number
+  undervalued_count: number
+  objects_created: number
+  digest_scheduled: number
+  digest_sent: number
+  digest_skipped: number
+  digest_failed: number
+  errors: string[]
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PipelineFilters = Record<string, any>
+interface PipelineOptions {
+  apiClient?: AxiosInstance
+  intervalMs?: number
+}
 
-export function usePipeline() {
-  // ========================
-  // Pipeline state
-  // ========================
-  const state = reactive({
-    run_id: null as string | null,
-    status: 'idle' as string,
-    stage: 'idle' as string,
+function emptyState(): PipelinePublicState {
+  return {
+    run_id: null,
+    status: 'idle',
+    stage: 'idle',
     message: '',
     sources_total: 0,
     sources_done: 0,
@@ -37,233 +63,205 @@ export function usePipeline() {
     analyze_done: 0,
     undervalued_count: 0,
     objects_created: 0,
-    errors: [] as string[],
-  })
+    digest_scheduled: 0,
+    digest_sent: 0,
+    digest_skipped: 0,
+    digest_failed: 0,
+    errors: [],
+  }
+}
 
-  // ========================
-  // Computed stage flags
-  // ========================
-  const isRunning = computed(() =>
-    state.status === 'running' ||
-    state.status === 'cancelling' ||
-    // Defensive: if stage is active but status got corrupted
-    (state.stage !== 'idle' && state.stage !== 'done' &&
-     state.stage !== 'done_with_errors' && state.stage !== 'cancelled' &&
-     state.stage !== 'error')
-  )
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
-  const isDone = computed(() =>
-    ['done', 'done_with_errors', 'cancelled', 'error'].includes(state.stage)
-  )
+function nonNegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
 
-  const isParsingStage = computed(() =>
-    ['parsing_scan', 'parsing_scan_done', 'parsing_details'].includes(state.stage)
-  )
+function parseServerState(value: unknown): PipelinePublicState | null {
+  if (!isRecord(value)) return null
+  const status = value.status
+  const stage = value.stage
+  if (!['idle', 'running', 'cancelling'].includes(status as string)) return null
+  if (!PIPELINE_STAGES.includes(stage as PipelineStage)) return null
 
-  const isParsingDone = computed(() =>
-    state.stage === 'parsing_done' || isDone.value
-  )
+  return {
+    run_id: typeof value.run_id === 'string' && value.run_id.trim() !== '' ? value.run_id : null,
+    status: status as PipelineStatus,
+    stage: stage as PipelineStage,
+    message: typeof value.message === 'string' ? value.message : '',
+    sources_total: nonNegativeInteger(value.sources_total),
+    sources_done: nonNegativeInteger(value.sources_done),
+    details_fetched: nonNegativeInteger(value.details_fetched),
+    details_needed: nonNegativeInteger(value.details_needed),
+    analyze_total: nonNegativeInteger(value.analyze_total),
+    analyze_done: nonNegativeInteger(value.analyze_done),
+    undervalued_count: nonNegativeInteger(value.undervalued_count),
+    objects_created: nonNegativeInteger(value.objects_created),
+    digest_scheduled: nonNegativeInteger(value.digest_scheduled),
+    digest_sent: nonNegativeInteger(value.digest_sent),
+    digest_skipped: nonNegativeInteger(value.digest_skipped),
+    digest_failed: nonNegativeInteger(value.digest_failed),
+    errors: Array.isArray(value.errors)
+      ? value.errors.filter((item): item is string => typeof item === 'string').slice(0, 100)
+      : [],
+  }
+}
 
-  const isAnalyzingStage = computed(() =>
-    state.stage === 'analyzing'
-  )
+function terminal(state: PipelinePublicState): boolean {
+  return state.status === 'idle' && TERMINAL_STAGES.has(state.stage)
+}
 
-  const isAnalyzingDone = computed(() =>
-    ['analyzing_done', 'analyzing_skipped'].includes(state.stage) || isDone.value
-  )
+function active(state: PipelinePublicState): boolean {
+  return state.status === 'running' || state.status === 'cancelling'
+}
 
-  const isDigestDone = computed(() =>
-    ['digest_done', 'done', 'done_with_errors'].includes(state.stage)
-  )
+export function usePipeline(options: PipelineOptions = {}) {
+  const apiClient = options.apiClient ?? api
+  const intervalMs = options.intervalMs ?? 3_000
+  const state = reactive<PipelinePublicState>(emptyState())
+  const polling = ref(false)
+  const requestError = ref('')
 
-  /**
-   * Simplified parse stage for ParseLaunchPanel UI.
-   * Maps full pipeline stages to: 'idle' | 'parsing' | 'done' | 'error'
-   */
+  let disposed = false
+  let generation = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let controller: AbortController | null = null
+
+  const isRunning = computed(() => active(state))
+  const isDone = computed(() => terminal(state))
+  const isParsingStage = computed(() => ['parsing_scan', 'parsing_scan_done', 'parsing_details'].includes(state.stage))
+  const isParsingDone = computed(() => state.stage === 'parsing_done' || isDone.value)
+  const isAnalyzingStage = computed(() => state.stage === 'analyzing')
+  const isAnalyzingDone = computed(() => ['analyzing_done', 'analyzing_skipped'].includes(state.stage) || isDone.value)
+  const isDigestDone = computed(() => ['digest_done', 'done', 'done_with_errors'].includes(state.stage))
   const parseStage = computed<'idle' | 'parsing' | 'done' | 'error'>(() => {
     if (isParsingStage.value) return 'parsing'
-    if (isParsingDone.value) return state.stage === 'error' ? 'error' : 'done'
+    if (state.stage === 'error') return 'error'
     if (state.stage === 'idle') return 'idle'
-    // Stages after parsing (analyzing, digesting) → parse is "done"
-    if (['analyzing', 'analyzing_done', 'analyzing_skipped', 'digesting', 'digest_done'].includes(state.stage)) return 'done'
-    return 'idle'
+    return 'done'
   })
 
-  // ========================
-  // State update helper
-  // ========================
-  function updateState(serverState: PipelineServerState | undefined) {
-    if (!serverState) return
-    Object.assign(state, {
-      run_id: serverState.run_id || null,
-      status: serverState.status || 'idle',
-      stage: serverState.stage || 'idle',
-      message: serverState.message || '',
-      sources_total: serverState.sources_total || 0,
-      sources_done: serverState.sources_done || 0,
-      details_fetched: serverState.details_fetched || 0,
-      details_needed: serverState.details_needed || 0,
-      analyze_total: serverState.analyze_total || 0,
-      analyze_done: serverState.analyze_done || 0,
-      undervalued_count: serverState.undervalued_count || 0,
-      objects_created: serverState.objects_created || 0,
-      errors: serverState.errors || [],
-    })
+  function updateState(next: PipelinePublicState) {
+    Object.assign(state, next)
   }
 
-  // ========================
-  // Polling (fallback / backup)
-  // ========================
-  let pollInterval: ReturnType<typeof setInterval> | null = null
-
   function stopPolling() {
-    if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+    generation += 1
+    polling.value = false
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    controller?.abort()
+    controller = null
+  }
+
+  function schedule(runGeneration: number) {
+    if (disposed || runGeneration !== generation || !polling.value) return
+    timer = setTimeout(() => {
+      timer = null
+      void pollOnce(runGeneration)
+    }, intervalMs)
+  }
+
+  async function pollOnce(runGeneration: number) {
+    if (disposed || runGeneration !== generation || !polling.value) return
+    controller = new AbortController()
+    const signal = controller.signal
+    try {
+      const response = await apiClient.get('/pipeline/status', { signal })
+      if (disposed || runGeneration !== generation) return
+      if (response.data?.ok !== true) throw new Error('Некорректный ответ статуса pipeline')
+      const next = parseServerState(response.data?.state)
+      if (!next) throw new Error('Некорректный ответ статуса pipeline')
+      requestError.value = ''
+      updateState(next)
+      if (terminal(next) || !active(next)) {
+        polling.value = false
+        return
+      }
+      schedule(runGeneration)
+    } catch (cause) {
+      if (disposed || runGeneration !== generation || signal.aborted) return
+      requestError.value = cause instanceof Error ? cause.message : 'Не удалось получить статус pipeline'
+      schedule(runGeneration)
+    } finally {
+      if (controller?.signal === signal) controller = null
+    }
   }
 
   function startPolling() {
     stopPolling()
-    pollInterval = setInterval(async () => {
-      try {
-        const res = await api.get('/pipeline/status', { params: { _t: Date.now() } })
-        if (res.data?.ok && res.data.state) {
-          updateState(res.data.state)
-          const s = res.data.state
-          if (s.status === 'idle' || s.stage === 'done' || s.stage === 'done_with_errors' ||
-              s.stage === 'cancelled' || s.stage === 'error') {
-            stopPolling()
-          }
-        }
-      } catch { /* ok */ }
-    }, 3000)
+    if (disposed) return
+    polling.value = true
+    const runGeneration = ++generation
+    void pollOnce(runGeneration)
   }
 
-  // ========================
-  // SSE connection
-  // ========================
-  let eventSource: EventSource | null = null
-
-  function connectSSE() {
-    if (eventSource) { eventSource.close(); eventSource = null }
-    // SSE URL must point to API domain (Vite preview doesn't proxy /api)
-    const apiBase = (import.meta.env.VITE_API_URL as string) || (window.location.origin + '/api')
-    const sseBase = apiBase.replace(/\/api$/, '')
-    eventSource = new EventSource(`${sseBase}/api/pipeline/stream`)
-    eventSource.addEventListener('progress', (e) => {
-      stopPolling() // SSE works, no need to poll
-      try { updateState(JSON.parse(e.data)) } catch { /* ok */ }
-    })
-    eventSource.addEventListener('done', (e) => {
-      try { updateState(JSON.parse((e as MessageEvent).data)) } catch { /* ok */ }
-      if (eventSource) { eventSource.close(); eventSource = null }
-      stopPolling()
-    })
-    eventSource.addEventListener('error', () => {
-      if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-        // SSE failed — fall back to polling
-        if (eventSource) { eventSource.close(); eventSource = null }
-        startPolling()
-      }
-    })
-    // Also start polling as backup (SSE might connect but never fire events)
-    startPolling()
-  }
-
-  // ========================
-  // Actions
-  // ========================
-
-  function isTerminalState(serverState: PipelineServerState): boolean {
-    return serverState.status === 'idle' && ['done', 'done_with_errors', 'cancelled', 'error'].includes(serverState.stage || '')
-  }
-
-  /**
-   * Follow a run returned by an asynchronous endpoint. SSE updates the local
-   * state immediately; status polling remains the durable fallback if an SSE
-   * event is lost during a reconnect.
-   */
-  async function waitForTerminal(runId: string): Promise<PipelineServerState> {
-    connectSSE()
-    while (true) {
-      const res = await api.get('/pipeline/status', { params: { _t: Date.now() } })
-      const serverState = res.data?.state as PipelineServerState | undefined
-      if (res.data?.ok && serverState) {
-        updateState(serverState)
-        if (serverState.run_id === runId && isTerminalState(serverState)) {
-          return serverState
-        }
-      }
-      await new Promise(resolve => setTimeout(resolve, 1_000))
+  async function start(targetUserId: number, depth: number) {
+    if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+      throw new Error('Выберите целевого пользователя')
     }
-  }
+    if (!Number.isSafeInteger(depth) || depth < 1 || depth > 1000) {
+      throw new Error('Глубина должна быть целым числом от 1 до 1000')
+    }
+    if (disposed) throw new Error('Pipeline panel is disposed')
 
-  /**
-   * Start the full pipeline. Caller builds filters object from UI state.
-   */
-  async function start(depth: number, filters?: PipelineFilters) {
-    await api.post('/pipeline/start', {
+    requestError.value = ''
+    const response = await apiClient.post('/pipeline/start', {
       mode: 'full',
       depth,
-      filters: filters && Object.keys(filters).length ? filters : undefined,
+      targetUserId,
     })
-    connectSSE()
+    const runId = response.data?.run_id
+    if (response.data?.ok !== true || typeof runId !== 'string' || runId.trim() === '') {
+      throw new Error('Некорректный ответ запуска pipeline')
+    }
+    Object.assign(state, emptyState(), {
+      run_id: runId,
+      status: 'running',
+      stage: 'idle',
+      message: 'Pipeline запущен',
+    })
+    startPolling()
+    return runId
   }
 
   async function cancel() {
-    try {
-      const res = await api.post('/pipeline/cancel')
-      // The lifecycle owns cancellation: it remains cancelling until its jobs are terminal.
-      if (res.data?.state) updateState(res.data.state)
-    } catch {
-      // A response can fail after the server accepted the request; retain local state and
-      // reconcile it with the durable lifecycle rather than manufacturing a terminal one.
-      try {
-        const res = await api.get('/pipeline/status')
-        if (res.data?.ok && res.data.state) updateState(res.data.state)
-      } catch { /* retain current state */ }
-    }
+    const response = await apiClient.post('/pipeline/cancel')
+    if (response.data?.ok !== true) throw new Error('Некорректный ответ отмены pipeline')
+    const next = parseServerState(response.data?.state)
+    if (next) updateState(next)
+    startPolling()
   }
 
   async function reset() {
-    try {
-      await api.post('/pipeline/reset')
-      updateState({ status: 'idle', stage: 'idle', message: '' })
-      stopPolling()
-      if (eventSource) { eventSource.close(); eventSource = null }
-    } catch { /* ok */ }
+    const response = await apiClient.post('/pipeline/reset')
+    if (response.data?.ok !== true) throw new Error('Некорректный ответ сброса pipeline')
+    stopPolling()
+    updateState(emptyState())
+    requestError.value = ''
   }
 
-  // ========================
-  // Cleanup
-  // ========================
+  async function checkOnMount() {
+    if (disposed) return
+    startPolling()
+  }
+
   function cleanup() {
-    if (eventSource) { eventSource.close(); eventSource = null }
+    if (disposed) return
+    disposed = true
     stopPolling()
   }
 
   onUnmounted(cleanup)
 
-  // ========================
-  // Check running on mount
-  // ========================
-  async function checkOnMount() {
-    try {
-      const res = await api.get('/pipeline/status')
-      if (res.data?.ok && res.data.state) {
-        updateState(res.data.state)
-        // Connect SSE if pipeline is (or might be) running
-        const s = res.data.state
-        const mightBeRunning = s.status === 'running' || s.status === 'cancelling' ||
-          (s.stage && s.stage !== 'idle' && s.stage !== 'done' &&
-           s.stage !== 'done_with_errors' && s.stage !== 'cancelled' && s.stage !== 'error')
-        if (mightBeRunning) {
-          connectSSE()
-        }
-      }
-    } catch { /* ok — no pipeline state */ }
-  }
-
   return {
     state,
+    polling,
+    requestError,
     isRunning,
     isDone,
     isParsingStage,
@@ -273,7 +271,6 @@ export function usePipeline() {
     isDigestDone,
     parseStage,
     start,
-    waitForTerminal,
     cancel,
     reset,
     cleanup,

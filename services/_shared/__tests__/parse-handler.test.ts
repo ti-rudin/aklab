@@ -3,7 +3,7 @@
  * Mocks strapi-client and logger; tests the orchestration logic.
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -48,10 +48,12 @@ vi.mock('../src/anti-ban', () => ({
 }));
 
 import { createParseHandler } from '../src/parse-handler';
-import { propertyExists, createProperty, logCron, updateSourceStats, finishParserRunSourceStage, markParserRunSourceStageRunning } from '../src/strapi-client';
+import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, finishParserRunSourceStage, markParserRunSourceStageRunning } from '../src/strapi-client';
 import { randomDelay } from '../src/anti-ban';
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser } from '../src/types';
+import { createUserFilterSnapshot, type UserFilterSnapshot } from '@aklab/parse-rules';
+import { getScanArtifactPath } from '../src/scan-artifact';
 
 // Helpers
 function makeJob(data: any, correlationId?: string): Job {
@@ -107,6 +109,32 @@ const defaultProps = [
   },
 ];
 
+function makeSnapshot(profiles: UserFilterSnapshot['profiles'], scope: 'all' | 'single' = 'all'): UserFilterSnapshot {
+  return createUserFilterSnapshot({
+    schemaVersion: 1,
+    scope,
+    createdAt: '2026-08-07T10:00:00.000Z',
+    windowEndAt: '2026-08-07T11:00:00.000Z',
+    profiles,
+  });
+}
+
+function makeProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    userId: 1,
+    profileId: 11,
+    version: 1,
+    regions: ['moscow' as const],
+    propertyTypes: ['office' as const],
+    priceFrom: null,
+    priceTo: null,
+    areaFrom: null,
+    areaTo: null,
+    stopWords: [],
+    ...overrides,
+  };
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('createParseHandler()', () => {
@@ -143,6 +171,7 @@ describe('createParseHandler()', () => {
       source: 'tender',
       documentId: 'doc-src-1',
       telemetryIdentityKey: 'run-1:tender:scan',
+      filterSnapshot: makeSnapshot([makeProfile({ propertyTypes: ['office', 'warehouse'] })]),
     }));
 
     expect(markParserRunSourceStageRunning).toHaveBeenCalledWith('run-1:tender:scan', 1);
@@ -362,5 +391,201 @@ describe('createParseHandler()', () => {
     // updateSourceStats should NOT be called (only logCron)
     expect(updateSourceStats).not.toHaveBeenCalled();
     expect(logCron).toHaveBeenCalled();
+  });
+
+  test('requires a valid snapshot for pipeline-owned jobs', async () => {
+    const parser = makeParser(defaultProps);
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'pipeline-snapshot-required',
+      telemetryIdentityKey: 'run-required:pipeline-snapshot-required:scan',
+    }))).rejects.toThrow('Parse job filter snapshot is required');
+
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(propertyExists).not.toHaveBeenCalled();
+  });
+
+  test('uses OR of complete immutable profiles once across scan and details', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+
+    const properties = [
+      { ...defaultProps[1], external_id: 'or-moscow-office', city: 'moscow', property_type: 'office', price: 10_000_000 },
+      { ...defaultProps[0], external_id: 'or-mo-warehouse', city: 'mo', property_type: 'warehouse', price: 60_000_000 },
+      { ...defaultProps[0], external_id: 'or-crossed-fields', city: 'moscow', property_type: 'warehouse', price: 60_000_000 },
+    ];
+    const parser: SourceParser = {
+      name: 'or-parser',
+      parse: vi.fn().mockResolvedValue(properties),
+      fetchDetails: vi.fn().mockResolvedValue({}),
+    };
+    const snapshot = makeSnapshot([
+      makeProfile({ userId: 1, profileId: 101, regions: ['moscow'], propertyTypes: ['office'], priceTo: 20_000_000 }),
+      makeProfile({ userId: 2, profileId: 202, regions: ['mo'], propertyTypes: ['warehouse'], priceFrom: 50_000_000 }),
+    ]);
+    const handler = createParseHandler(parser);
+    const runId = `or-run-${Date.now()}`;
+
+    const scan = await handler(makeJob({
+      source: 'or-source',
+      documentId: 'doc-or',
+      correlationId: runId,
+      phase: 'scan',
+      telemetryIdentityKey: 'run-or:or-source:scan',
+      filterSnapshot: snapshot,
+    }));
+
+    expect(scan).toMatchObject({ total: 3, filtered: 1, detailsNeeded: 2 });
+    expect(parser.parse).toHaveBeenCalledTimes(1);
+    expect(preFilterProperty).toHaveBeenCalledTimes(3);
+    expect((preFilterProperty as any).mock.calls.every((call: any[]) => call[1] === undefined)).toBe(true);
+
+    const details = await handler(makeJob({
+      source: 'or-source',
+      documentId: 'doc-or',
+      correlationId: runId,
+      phase: 'details',
+      telemetryIdentityKey: 'run-or:or-source:details',
+      filterSnapshot: snapshot,
+    }));
+
+    expect(details).toMatchObject({ total: 3, created: 2, filtered: 0, detailsFetched: 0, detailsNeeded: 2 });
+    expect(parser.fetchDetails).toHaveBeenCalledTimes(2);
+    expect(createProperty).toHaveBeenCalledTimes(2);
+    expect((createProperty as any).mock.calls.every((call: any[]) => call[0].rules === undefined)).toBe(true);
+    expect(existsSync(getScanArtifactPath('or-source', runId))).toBe(false);
+  });
+
+  test('creates a candidate only once when it matches two profiles', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+
+    const parser = makeParser([{ ...defaultProps[1], external_id: 'matches-both' }]);
+    const snapshot = makeSnapshot([
+      makeProfile({ userId: 1, profileId: 301 }),
+      makeProfile({ userId: 2, profileId: 302 }),
+    ]);
+    const handler = createParseHandler(parser);
+    const runId = `or-both-${Date.now()}`;
+
+    await handler(makeJob({ source: 'or-both-source', correlationId: runId, phase: 'scan', filterSnapshot: snapshot }));
+    await handler(makeJob({ source: 'or-both-source', correlationId: runId, phase: 'details', filterSnapshot: snapshot }));
+
+    expect(createProperty).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed on a job snapshot hash mismatch before details side effects', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    const parser: SourceParser = {
+      name: 'mismatch-parser',
+      parse: vi.fn().mockResolvedValue([defaultProps[0]]),
+      fetchDetails: vi.fn().mockResolvedValue({ description: 'must not fetch' }),
+    };
+    const first = makeSnapshot([makeProfile({ profileId: 401 })]);
+    const second = makeSnapshot([makeProfile({ profileId: 402, regions: ['mo'], propertyTypes: ['warehouse'] })]);
+    const handler = createParseHandler(parser);
+    const runId = `mismatch-${Date.now()}`;
+
+    await handler(makeJob({ source: 'mismatch-source', correlationId: runId, phase: 'scan', filterSnapshot: first }));
+    await expect(handler(makeJob({ source: 'mismatch-source', correlationId: runId, phase: 'details', filterSnapshot: second })))
+      .rejects.toThrow('Scan artifact metadata is invalid');
+
+    expect(parser.fetchDetails).not.toHaveBeenCalled();
+    expect(createProperty).not.toHaveBeenCalled();
+    expect(existsSync(getScanArtifactPath('mismatch-source', runId))).toBe(true);
+  });
+
+  test('terminally fails source telemetry when the pipeline job snapshot itself is invalid', async () => {
+    const parser = makeParser(defaultProps);
+    const snapshot = makeSnapshot([makeProfile({ profileId: 451 })]);
+    const invalidSnapshot = { ...snapshot, hash: 'f'.repeat(64) };
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'invalid-snapshot-source',
+      documentId: 'doc-invalid-snapshot',
+      telemetryIdentityKey: 'run-invalid:invalid-snapshot-source:scan',
+      filterSnapshot: invalidSnapshot,
+    }))).rejects.toThrow('Parse job filter snapshot hash mismatch');
+
+    expect(markParserRunSourceStageRunning).not.toHaveBeenCalled();
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-invalid:invalid-snapshot-source:scan',
+      expect.objectContaining({ status: 'failed' }),
+    );
+  });
+
+  test('empty snapshot is a successful no-op without parser or property calls', async () => {
+    const parser = makeParser(defaultProps);
+    const snapshot = makeSnapshot([]);
+    const handler = createParseHandler(parser);
+    (logCron as any).mockRejectedValueOnce(new Error('best-effort cron log unavailable'));
+
+    const result = await handler(makeJob({
+      source: 'empty-snapshot-source',
+      documentId: 'doc-empty',
+      telemetryIdentityKey: 'run-empty:empty-snapshot-source:scan',
+      filterSnapshot: snapshot,
+    }));
+
+    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 });
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(propertyExists).not.toHaveBeenCalled();
+    expect(preFilterProperty).not.toHaveBeenCalled();
+    expect(createProperty).not.toHaveBeenCalled();
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith('run-empty:empty-snapshot-source:scan', expect.objectContaining({
+      status: 'success_empty',
+    }));
+  });
+
+  test('preserves the artifact after a snapshot details failure and cleans it only after retry succeeds', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockRejectedValueOnce(new Error('injected create failure')).mockResolvedValue({ id: 1 });
+    const parser = makeParser([{ ...defaultProps[0], external_id: 'retryable' }]);
+    const snapshot = makeSnapshot([makeProfile({ profileId: 501, propertyTypes: ['warehouse'] })]);
+    const handler = createParseHandler(parser);
+    const runId = `retry-${Date.now()}`;
+
+    await handler(makeJob({ source: 'retry-source', correlationId: runId, phase: 'scan', filterSnapshot: snapshot }));
+    await expect(handler(makeJob({
+      source: 'retry-source',
+      correlationId: runId,
+      phase: 'details',
+      telemetryIdentityKey: 'run-retry:retry-source:details',
+      filterSnapshot: snapshot,
+    }))).rejects.toThrow('injected create failure');
+    expect(existsSync(getScanArtifactPath('retry-source', runId))).toBe(true);
+
+    await handler(makeJob({
+      source: 'retry-source',
+      correlationId: runId,
+      phase: 'details',
+      telemetryIdentityKey: 'run-retry:retry-source:details',
+      filterSnapshot: snapshot,
+    }));
+    expect(existsSync(getScanArtifactPath('retry-source', runId))).toBe(false);
+  });
+
+  test('preserves the artifact when terminal source telemetry fails', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser = makeParser([{ ...defaultProps[0], external_id: 'telemetry-retry' }]);
+    const snapshot = makeSnapshot([makeProfile({ profileId: 601, propertyTypes: ['warehouse'] })]);
+    const handler = createParseHandler(parser);
+    const runId = `telemetry-${Date.now()}`;
+
+    await handler(makeJob({ source: 'telemetry-source', correlationId: runId, phase: 'scan', filterSnapshot: snapshot }));
+    (updateSourceStats as any).mockRejectedValueOnce(new Error('injected telemetry failure'));
+
+    await expect(handler(makeJob({
+      source: 'telemetry-source',
+      documentId: 'doc-telemetry',
+      correlationId: runId,
+      phase: 'details',
+      filterSnapshot: snapshot,
+    }))).rejects.toThrow('injected telemetry failure');
+    expect(existsSync(getScanArtifactPath('telemetry-source', runId))).toBe(true);
   });
 });

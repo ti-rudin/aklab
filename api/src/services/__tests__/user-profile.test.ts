@@ -1,0 +1,600 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  buildAllActiveSnapshot,
+  buildSingleUserSnapshot,
+  getUserContext,
+  getUserProfile,
+  isProfileReady,
+  listUserProfiles,
+  replaceUserProfile,
+  toUserProfileDto,
+  UserContextMalformedError,
+  UserProfileConflictError,
+  UserProfileMalformedError,
+  UserProfileNotFoundError,
+  UserProfileUnavailableError,
+  UserProfileValidationError,
+} from '../user-profile';
+
+const PROFILE_UID = 'api::user-profile.user-profile';
+const USER_UID = 'plugin::users-permissions.user';
+
+const profile = (overrides: Record<string, unknown> = {}) => ({
+  id: 12,
+  user_id: 7,
+  profile_version: 3,
+  regions: ['moscow'],
+  property_types: ['office'],
+  price_from: '100',
+  price_to: null,
+  area_from: null,
+  area_to: '200',
+  stop_words: '["secret", "  SECRET "]',
+  digest_email: null,
+  digest_enabled: false,
+  ...overrides,
+});
+
+function makeStrapi() {
+  const profileQuery = {
+    findOne: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    update: vi.fn(),
+  };
+  const userQuery = {
+    findOne: vi.fn(),
+    findMany: vi.fn(),
+  };
+  const db = {
+    query: vi.fn((uid: string) => {
+      if (uid === PROFILE_UID) return profileQuery;
+      if (uid === USER_UID) return userQuery;
+      throw new Error(`unexpected uid: ${uid}`);
+    }),
+  };
+
+  return {
+    db,
+    entityService: {
+      update: vi.fn(() => { throw new Error('entityService must not be used'); }),
+    },
+    profileQuery,
+    userQuery,
+  };
+}
+
+const now = new Date('2026-08-07T10:00:00.000Z');
+
+const activeUser = (id: number, extra: Record<string, unknown> = {}) => ({
+  id,
+  blocked: false,
+  confirmed: true,
+  username: `private-${id}`,
+  email: `private-${id}@example.test`,
+  role: { type: 'authenticated' },
+  ...extra,
+});
+
+describe('getUserProfile', () => {
+  it('looks up only by positive scalar user_id and does not log or expose a relation lookup', async () => {
+    const strapi = makeStrapi();
+    const stored = profile();
+    strapi.profileQuery.findOne.mockResolvedValue(stored);
+
+    await expect(getUserProfile(strapi as any, 7)).resolves.toBe(stored);
+    expect(strapi.profileQuery.findOne).toHaveBeenCalledWith({ where: { user_id: 7 } });
+    expect(strapi.db.query).toHaveBeenCalledWith(PROFILE_UID);
+    expect(strapi).not.toHaveProperty('log');
+
+    await expect(getUserProfile(strapi as any, 0)).rejects.toBeInstanceOf(UserProfileValidationError);
+    expect(strapi.profileQuery.findOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('replaceUserProfile', () => {
+  it('allowlists fields, normalizes arrays/ranges, increments exactly once, and leaves input untouched', async () => {
+    const strapi = makeStrapi();
+    const existing = profile();
+    const input = {
+      regions: [' MO ', 'moscow', 'MO'],
+      property_types: [' OFFICE ', 'office'],
+      price_from: '2.5',
+      price_to: 10,
+      area_from: null,
+      area_to: '20',
+      stop_words: [' Z ', 'a', 'z'],
+      digest_email: '  User@example.test ',
+      digest_enabled: true,
+    };
+    const original = structuredClone(input);
+    strapi.profileQuery.findOne.mockResolvedValue(existing);
+    strapi.profileQuery.update.mockResolvedValue({ ...existing, profile_version: 4 });
+
+    await expect(replaceUserProfile(strapi as any, 7, input, 3)).resolves.toMatchObject({ profile_version: 4 });
+    expect(input).toEqual(original);
+    expect(strapi.profileQuery.update).toHaveBeenCalledWith({
+      where: { id: 12, profile_version: 3 },
+      data: {
+        regions: ['mo', 'moscow'],
+        property_types: ['office'],
+        price_from: 2.5,
+        price_to: 10,
+        area_from: null,
+        area_to: 20,
+        stop_words: ['a', 'z'],
+        digest_email: 'User@example.test',
+        digest_enabled: true,
+        profile_version: 4,
+      },
+    });
+    expect(strapi.entityService.update).not.toHaveBeenCalled();
+    expect(JSON.stringify(strapi.profileQuery.update.mock.calls[0][0].data)).not.toContain('user_id');
+  });
+
+  it('returns the current row for a normalized no-op without updating or incrementing', async () => {
+    const strapi = makeStrapi();
+    const existing = profile();
+    const input = {
+      regions: [' MOSCOW ', 'moscow'],
+      property_types: [' OFFICE '],
+      price_from: '100',
+      price_to: null,
+      area_from: null,
+      area_to: '200',
+      stop_words: [' SECRET ', 'secret'],
+      digest_email: null,
+      digest_enabled: false,
+    };
+    strapi.profileQuery.findOne.mockResolvedValue(existing);
+
+    await expect(replaceUserProfile(strapi as any, 7, input, 3)).resolves.toBe(existing);
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('checks expectedVersion before returning a normalized no-op', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.findOne.mockResolvedValue(profile());
+
+    await expect(replaceUserProfile(strapi as any, 7, { regions: [' MOSCOW '] }, 2))
+      .rejects.toMatchObject({
+        name: 'UserProfileConflictError',
+        expectedVersion: 2,
+        actualVersion: 3,
+      });
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('turns a null or undefined Query Engine update into a fresh-read typed conflict', async () => {
+    const strapi = makeStrapi();
+    const existing = profile();
+    const fresh = profile({ profile_version: 4 });
+    strapi.profileQuery.findOne.mockResolvedValueOnce(existing).mockResolvedValueOnce(fresh);
+    strapi.profileQuery.update.mockResolvedValueOnce(null);
+
+    await expect(replaceUserProfile(strapi as any, 7, { regions: ['mo'] }, 3))
+      .rejects.toMatchObject({
+        name: 'UserProfileConflictError',
+        code: 'USER_PROFILE_VERSION_CONFLICT',
+        expectedVersion: 3,
+        actualVersion: 4,
+      });
+    expect(strapi.profileQuery.findOne).toHaveBeenCalledTimes(2);
+    expect(strapi.profileQuery.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails safely when a failed update fresh-read is missing or malformed', async () => {
+    const missing = makeStrapi();
+    missing.profileQuery.findOne.mockResolvedValueOnce(profile()).mockResolvedValueOnce(null);
+    missing.profileQuery.update.mockResolvedValueOnce(undefined);
+    await expect(replaceUserProfile(missing as any, 7, { regions: ['mo'] }, 3))
+      .rejects.toBeInstanceOf(UserProfileNotFoundError);
+
+    const malformed = makeStrapi();
+    malformed.profileQuery.findOne.mockResolvedValueOnce(profile()).mockResolvedValueOnce(profile({ regions: '{bad json' }));
+    malformed.profileQuery.update.mockResolvedValueOnce(null);
+    await expect(replaceUserProfile(malformed as any, 7, { regions: ['mo'] }, 3))
+      .rejects.toBeInstanceOf(UserProfileMalformedError);
+    expect(missing.profileQuery.update).toHaveBeenCalledTimes(1);
+    expect(malformed.profileQuery.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('enforces canonical stop-word cardinality and item length on input', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.findOne.mockResolvedValue(profile());
+    for (const stop_words of [
+      Array.from({ length: 129 }, (_, index) => `word-${index}`),
+      ['x'.repeat(257)],
+    ]) {
+      await expect(replaceUserProfile(strapi as any, 7, { stop_words }))
+        .rejects.toBeInstanceOf(UserProfileValidationError);
+    }
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing profiles and forbidden identity/actor/target fields before writing', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.findOne.mockResolvedValue(null);
+    await expect(replaceUserProfile(strapi as any, 7, {})).rejects.toBeInstanceOf(UserProfileNotFoundError);
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+
+    strapi.profileQuery.findOne.mockResolvedValue(profile());
+    for (const forbidden of [
+      'id', 'documentId', 'user', 'user_id', 'profile_version',
+      'actorId', 'targetId', 'actor_user_id', 'target_user_id', 'targetUserId', 'userId',
+    ]) {
+      await expect(replaceUserProfile(strapi as any, 7, { [forbidden]: 1 })).rejects
+        .toBeInstanceOf(UserProfileValidationError);
+    }
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed version conflict before any update', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.findOne.mockResolvedValue(profile({ profile_version: 9 }));
+
+    await expect(replaceUserProfile(strapi as any, 7, { regions: ['mo'] }, 8))
+      .rejects.toMatchObject({
+        name: 'UserProfileConflictError',
+        code: 'USER_PROFILE_VERSION_CONFLICT',
+        expectedVersion: 8,
+        actualVersion: 9,
+      });
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+
+  it('validates exact enums, finite non-negative ordered ranges, email, and digest enablement', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.findOne.mockResolvedValue(profile());
+
+    const invalidInputs = [
+      { regions: ['moscowx'] },
+      { property_types: ['shops'] },
+      { price_from: -1 },
+      { price_to: Number.NaN },
+      { area_from: Number.POSITIVE_INFINITY },
+      { price_from: 20, price_to: 10 },
+      { area_from: 20, area_to: 10 },
+      { digest_email: 'not-an-email' },
+      { digest_enabled: true, digest_email: null },
+      { digest_enabled: true, digest_email: ' ' },
+      { digest_enabled: 'true' },
+      { unknown: true },
+    ];
+
+    for (const input of invalidInputs) {
+      await expect(replaceUserProfile(strapi as any, 7, input)).rejects
+        .toBeInstanceOf(UserProfileValidationError);
+    }
+    expect(strapi.profileQuery.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('profile readiness and snapshots', () => {
+  it('parses array and JSON-string storage, normalizes decimals, and fails closed for malformed profiles', () => {
+    expect(isProfileReady(profile())).toBe(true);
+    expect(isProfileReady(profile({ regions: '["mo"]', property_types: ['warehouse'] }))).toBe(true);
+    expect(isProfileReady(profile({ regions: 'not-json' }))).toBe(false);
+    expect(isProfileReady(profile({ property_types: '{}' }))).toBe(false);
+    expect(isProfileReady(profile({ price_from: 'NaN' }))).toBe(false);
+    expect(isProfileReady(profile({ price_from: '-1' }))).toBe(false);
+    expect(isProfileReady(profile({ price_from: 2, price_to: 1 }))).toBe(false);
+    expect(isProfileReady(profile({ stop_words: Array.from({ length: 129 }, (_, index) => `word-${index}`) }))).toBe(false);
+    expect(isProfileReady(profile({ stop_words: ['x'.repeat(257)] }))).toBe(false);
+    expect(isProfileReady(profile({ regions: [], property_types: ['office'] }))).toBe(false);
+    expect(isProfileReady({ id: 1, user_id: 1, profile_version: 1, regions: ['moscow'] })).toBe(false);
+  });
+
+  it('builds an empty all-snapshot when no active users exist', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findMany.mockResolvedValue([]);
+
+    const snapshot = await buildAllActiveSnapshot(strapi as any, now);
+    expect(snapshot).toMatchObject({
+      schemaVersion: 1,
+      scope: 'all',
+      createdAt: now.toISOString(),
+      windowEndAt: now.toISOString(),
+      profiles: [],
+    });
+    expect(snapshot.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(strapi.profileQuery.findMany).not.toHaveBeenCalled();
+  });
+
+  it('filters blocked/unconfirmed users, excludes not-ready profiles, and emits no PII', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findMany.mockResolvedValue([
+      activeUser(7),
+      activeUser(8, { blocked: true }),
+      activeUser(9, { confirmed: false }),
+      activeUser(10),
+      activeUser(11, { blocked: null }),
+      activeUser(12, { confirmed: 'true' }),
+    ]);
+    strapi.profileQuery.findMany.mockResolvedValue([
+      profile({ id: 12, user_id: 7, profile_version: 4, regions: '["MOSCOW"]', property_types: '["OFFICE"]' }),
+      profile({ id: 13, user_id: 10, regions: [], property_types: ['office'] }),
+    ]);
+
+    const snapshot = await buildAllActiveSnapshot(strapi as any, now);
+    expect(strapi.userQuery.findMany).toHaveBeenCalledWith({
+      where: { blocked: false, confirmed: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(strapi.profileQuery.findMany).toHaveBeenCalledWith({
+      where: { user_id: { $in: [7, 10] } },
+      orderBy: { id: 'asc' },
+    });
+    expect(snapshot.profiles).toEqual([expect.objectContaining({
+      userId: 7,
+      profileId: 12,
+      version: 4,
+      regions: ['moscow'],
+      propertyTypes: ['office'],
+      priceFrom: 100,
+      priceTo: null,
+      areaFrom: null,
+      areaTo: 200,
+      stopWords: ['secret'],
+    })]);
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain('private-7');
+    expect(serialized).not.toContain('private-8');
+    expect(serialized).not.toContain('example.test');
+    expect(serialized).not.toContain('digest_enabled');
+    expect(serialized).not.toContain('username');
+    expect(serialized).not.toContain('role');
+  });
+
+  it('aborts with an explicit safe typed error instead of omitting a malformed persisted active profile', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findMany.mockResolvedValue([activeUser(7)]);
+    strapi.profileQuery.findMany.mockResolvedValue([profile({ regions: '{bad json' })]);
+
+    await expect(buildAllActiveSnapshot(strapi as any, now)).rejects.toBeInstanceOf(UserProfileMalformedError);
+    await expect(buildAllActiveSnapshot(strapi as any, now)).rejects.toMatchObject({
+      code: 'USER_PROFILE_MALFORMED',
+    });
+  });
+
+  it('fails closed for malformed scalar ownership and profiles outside active user IDs', async () => {
+    for (const returnedProfile of [
+      profile({ user_id: '7' }),
+      profile({ user_id: 99 }),
+      profile({ user_id: 7 }),
+    ]) {
+      const strapi = makeStrapi();
+      strapi.userQuery.findMany.mockResolvedValue([activeUser(7)]);
+      strapi.profileQuery.findMany.mockResolvedValue(
+        returnedProfile.user_id === 7
+          ? [returnedProfile, profile({ id: 13, user_id: 7 })]
+          : [returnedProfile],
+      );
+
+      await expect(buildAllActiveSnapshot(strapi as any, now)).rejects.toMatchObject({
+        name: 'UserProfileSnapshotError',
+        code: 'USER_PROFILE_SNAPSHOT_ERROR',
+      });
+    }
+  });
+
+  it('uses one immutable time window and stable hash for equivalent stored order', async () => {
+    const first = makeStrapi();
+    first.userQuery.findMany.mockResolvedValue([activeUser(7)]);
+    first.profileQuery.findMany.mockResolvedValue([profile({ regions: ['mo', 'moscow'], stop_words: ['z', 'a'] })]);
+    const second = makeStrapi();
+    second.userQuery.findMany.mockResolvedValue([activeUser(7)]);
+    second.profileQuery.findMany.mockResolvedValue([profile({ regions: ['MOSCOW', 'MO'], stop_words: '["a", "z"]' })]);
+
+    const left = await buildAllActiveSnapshot(first as any, now);
+    const right = await buildAllActiveSnapshot(second as any, now);
+    expect(left.createdAt).toBe(now.toISOString());
+    expect(left.windowEndAt).toBe(now.toISOString());
+    expect(left.createdAt).toBe(left.windowEndAt);
+    expect(left.hash).toBe(right.hash);
+  });
+});
+
+describe('buildSingleUserSnapshot', () => {
+  it('throws a safe typed unavailable error for missing, blocked, or unconfirmed targets', async () => {
+    for (const user of [
+      null,
+      activeUser(7, { blocked: true }),
+      activeUser(7, { confirmed: false }),
+      activeUser(7, { blocked: null }),
+      activeUser(7, { confirmed: null }),
+      activeUser(7, { confirmed: 'true' }),
+    ]) {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(user);
+      await expect(buildSingleUserSnapshot(strapi as any, 7, now)).rejects
+        .toBeInstanceOf(UserProfileUnavailableError);
+      expect(strapi.profileQuery.findOne).not.toHaveBeenCalled();
+    }
+  });
+
+  it('returns null for a missing or not-ready valid profile', async () => {
+    const missing = makeStrapi();
+    missing.userQuery.findOne.mockResolvedValue(activeUser(7));
+    missing.profileQuery.findOne.mockResolvedValue(null);
+    await expect(buildSingleUserSnapshot(missing as any, 7, now)).resolves.toBeNull();
+
+    const notReady = makeStrapi();
+    notReady.userQuery.findOne.mockResolvedValue(activeUser(7));
+    notReady.profileQuery.findOne.mockResolvedValue(profile({ regions: [], property_types: ['office'] }));
+    await expect(buildSingleUserSnapshot(notReady as any, 7, now)).resolves.toBeNull();
+  });
+
+  it('returns exactly one ready profile in single scope without relation IDs or PII', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
+    strapi.profileQuery.findOne.mockResolvedValue(profile({
+      id: 42,
+      user_id: 7,
+      user: 999,
+      documentId: 'private-document-id',
+      regions: '["mo"]',
+      property_types: '["warehouse"]',
+      profile_version: 5,
+    }));
+
+    const snapshot = await buildSingleUserSnapshot(strapi as any, 7, now);
+    expect(snapshot).toMatchObject({
+      scope: 'single',
+      createdAt: now.toISOString(),
+      windowEndAt: now.toISOString(),
+      profiles: [{ userId: 7, profileId: 42, version: 5, regions: ['mo'], propertyTypes: ['warehouse'] }],
+    });
+    expect(snapshot?.profiles).toHaveLength(1);
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain('private-document-id');
+    expect(serialized).not.toMatch(/email|username|role/);
+  });
+
+  it('aborts on malformed target profile rather than treating it as not-ready', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
+    strapi.profileQuery.findOne.mockResolvedValue(profile({ property_types: '["office"' }));
+    await expect(buildSingleUserSnapshot(strapi as any, 7, now)).rejects
+      .toBeInstanceOf(UserProfileMalformedError);
+  });
+});
+
+describe('profile API DTO and admin pagination service', () => {
+  it('returns only the explicit profile DTO allowlist and never spreads database metadata', () => {
+    expect(toUserProfileDto(profile({
+      user: { id: 7, email: 'relation@example.test' },
+      documentId: 'private-document-id',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      updatedAt: '2026-08-07T10:01:00.000Z',
+      role: { type: 'aklab_admin' },
+      email: 'private@example.test',
+      username: 'private-user',
+    }))).toEqual({
+      id: 12,
+      user_id: 7,
+      regions: ['moscow'],
+      property_types: ['office'],
+      price_from: 100,
+      price_to: null,
+      area_from: null,
+      area_to: 200,
+      stop_words: ['secret'],
+      digest_email: null,
+      digest_enabled: false,
+      profile_version: 3,
+    });
+  });
+
+  it('uses Query Engine scalar pagination with stable user/id ordering and bounded page size', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.count.mockResolvedValue(3);
+    strapi.profileQuery.findMany.mockResolvedValue([
+      profile({ id: 13, user_id: 8 }),
+      profile({ id: 12, user_id: 7 }),
+    ]);
+
+    await expect(listUserProfiles(strapi as any, 2, 2)).resolves.toEqual({
+      data: [
+        expect.objectContaining({ id: 13, user_id: 8 }),
+        expect.objectContaining({ id: 12, user_id: 7 }),
+      ],
+      meta: { page: 2, pageSize: 2, total: 3, totalPages: 2 },
+    });
+    expect(strapi.profileQuery.count).toHaveBeenCalledWith({ where: {} });
+    expect(strapi.profileQuery.findMany).toHaveBeenCalledWith({
+      select: [
+        'id',
+        'user_id',
+        'regions',
+        'property_types',
+        'price_from',
+        'price_to',
+        'area_from',
+        'area_to',
+        'stop_words',
+        'digest_email',
+        'digest_enabled',
+        'profile_version',
+      ],
+      orderBy: [{ user_id: 'asc' }, { id: 'asc' }],
+      limit: 2,
+      offset: 2,
+    });
+    expect(strapi.entityService.update).not.toHaveBeenCalled();
+  });
+});
+
+void UserProfileConflictError;
+void UserProfileUnavailableError;
+void UserProfileValidationError;
+
+describe('safe user context', () => {
+  it('reads a fresh active user and profile through Query Engine and returns only the exact context DTO', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue({
+      ...activeUser(7),
+      role: { id: 55, type: 'aklab_admin', name: 'private role name' },
+      documentId: 'private-user-document-id',
+      password: 'private-password',
+    });
+    strapi.profileQuery.findOne.mockResolvedValue(profile({
+      documentId: 'private-profile-document-id',
+      user: { id: 7 },
+    }));
+
+    await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: 'true' })).resolves.toEqual({
+      user: { id: 7, username: 'private-7', email: 'private-7@example.test' },
+      role: { type: 'aklab_admin' },
+      profileReady: true,
+      multiuserEnabled: true,
+    });
+    expect(strapi.userQuery.findOne).toHaveBeenCalledWith({
+      where: { id: 7 },
+      populate: { role: true },
+    });
+    expect(strapi.profileQuery.findOne).toHaveBeenCalledWith({ where: { user_id: 7 } });
+    expect(JSON.stringify(strapi.userQuery.findOne.mock.calls[0][0])).not.toContain('password');
+  });
+
+  it('fails closed for missing or inactive users without exposing user details', async () => {
+    for (const user of [
+      null,
+      activeUser(7, { blocked: true }),
+      activeUser(7, { confirmed: false }),
+      activeUser(7, { blocked: null }),
+      activeUser(7, { confirmed: 'true' }),
+    ]) {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(user);
+      await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: 'true' }))
+        .rejects.toBeInstanceOf(UserProfileUnavailableError);
+      expect(strapi.profileQuery.findOne).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects a malformed active user through a generic typed error and treats a missing profile as not ready', async () => {
+    const malformed = makeStrapi();
+    malformed.userQuery.findOne.mockResolvedValue(activeUser(7, { email: null }));
+    await expect(getUserContext(malformed as any, 7, { MULTIUSER_ENABLED: 'true' }))
+      .rejects.toBeInstanceOf(UserContextMalformedError);
+
+    const missingProfile = makeStrapi();
+    missingProfile.userQuery.findOne.mockResolvedValue(activeUser(7));
+    missingProfile.profileQuery.findOne.mockResolvedValue(null);
+    await expect(getUserContext(missingProfile as any, 7, { MULTIUSER_ENABLED: 'true' }))
+      .resolves.toMatchObject({ profileReady: false });
+  });
+
+  it.each([' TRUE ', 'True', 'TRUE', '1', 'false', undefined])(
+    'enables multiuser only for the exact true flag: %s',
+    async (flag) => {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
+      strapi.profileQuery.findOne.mockResolvedValue(profile());
+
+      await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: flag }))
+        .resolves.toMatchObject({ multiuserEnabled: false });
+    },
+  );
+});

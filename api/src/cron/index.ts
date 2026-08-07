@@ -38,7 +38,7 @@ export function registerCrons(strapi: Core.Strapi): void {
       if (mskHour !== targetHour) return;
 
       // Проверяем pipeline не запущен уже
-      if (setting.pipeline_state?.status === 'running') {
+      if (setting.pipeline_state?.status && setting.pipeline_state.status !== 'idle') {
         strapi.log.info(`[cron] pipeline:daily — already running, skipping (${corrId})`);
         return;
       }
@@ -48,18 +48,14 @@ export function registerCrons(strapi: Core.Strapi): void {
       const { getPipelineService } = await import('../services/pipeline');
       const pipeline = getPipelineService(strapi as unknown as StrapiInstance);
 
-      const depth = setting.parse_depth || 20;
-      const filters: any = {};
-      if (setting.price_from != null) filters.priceFrom = Number(setting.price_from);
-      if (setting.price_to != null) filters.priceTo = Number(setting.price_to);
-      if (setting.monitored_regions) filters.city = setting.monitored_regions;
-
       // mode='full' — парсинг → анализ → дайджест (как ручной запуск из UI)
-      await pipeline.run(depth, Object.keys(filters).length ? filters : undefined, 'cron');
+      // The pipeline resolves fresh parse_depth and builds the all-active-user
+      // snapshot itself. Cron never supplies a target user or request filters.
+      await pipeline.run(undefined, undefined, 'cron');
 
       strapi.log.info(`[cron] pipeline:daily completed (${corrId})`);
     } catch (err: any) {
-      strapi.log.error(`[cron] pipeline:daily error: ${err.message}`);
+      strapi.log.error('[cron] pipeline:daily failed');
     }
   }, { timezone: CRON_TIMEZONE });
 
@@ -100,7 +96,7 @@ export function registerCrons(strapi: Core.Strapi): void {
         strapi.log.info(`[cron] cleanup:old deleted ${totalDeleted} properties older than ${cutoffStr}`);
       }
     } catch (err: any) {
-      strapi.log.error(`[cron] cleanup:old error: ${err.message}`);
+      strapi.log.error('[cron] cleanup:old failed');
     }
   }, { timezone: CRON_TIMEZONE });
 

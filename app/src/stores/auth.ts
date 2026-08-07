@@ -2,25 +2,89 @@ import { defineStore } from 'pinia'
 import api from '@/api/strapi'
 import { persistAuth, clearPersistedAuth, parseAuthError } from '@/stores/auth-helpers'
 
-interface User {
+export interface User {
   id: number
   email: string
   username: string
-  [key: string]: unknown
 }
+
+export interface AuthContextRole {
+  type: string
+}
+
+export interface AuthContextDto {
+  user: User
+  role: AuthContextRole | null
+  profileReady: boolean
+  multiuserEnabled: boolean
+}
+
+export interface AuthContextResponse {
+  data: AuthContextDto
+}
+
+export type AuthContext = AuthContextDto
 
 interface AuthState {
   user: User | null
   token: string | null
+  context: AuthContextDto | null
   loading: boolean
   error: string | null
   status: 'in' | 'out'
   isInitialized: boolean
 }
 
+type RecordValue = Record<string, unknown>
+
+type ApiError = {
+  response?: {
+    status?: number
+  }
+}
+
+function isRecord(value: unknown): value is RecordValue {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function safeUser(value: unknown): User | null {
+  if (
+    !isRecord(value)
+    || typeof value.id !== 'number'
+    || !Number.isSafeInteger(value.id)
+    || value.id <= 0
+    || typeof value.email !== 'string'
+    || typeof value.username !== 'string'
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    email: value.email,
+    username: value.username,
+  }
+}
+
+function safeContext(value: unknown): AuthContextDto | null {
+  if (!isRecord(value) || !safeUser(value.user)) return null
+  const role = value.role
+  if (role !== null && role !== undefined && (!isRecord(role) || typeof role.type !== 'string')) return null
+  if (typeof value.profileReady !== 'boolean' || typeof value.multiuserEnabled !== 'boolean') return null
+  return {
+    user: safeUser(value.user)!,
+    role: role === null || role === undefined ? null : { type: role.type as string },
+    profileReady: value.profileReady,
+    multiuserEnabled: value.multiuserEnabled,
+  }
+}
+
+function responseStatus(error: unknown): number | undefined {
+  return (error as ApiError)?.response?.status
+}
+
 const getInitialState = (): AuthState => {
-  let user = null
-  let token = null
+  let user: User | null = null
+  let token: string | null = null
   let status: 'in' | 'out' = 'out'
 
   if (typeof localStorage !== 'undefined') {
@@ -28,16 +92,18 @@ const getInitialState = (): AuthState => {
     const jwt = localStorage.getItem('jwt')
     if (userData && jwt) {
       try {
-        user = JSON.parse(userData)
-        token = jwt
-        status = 'in'
+        user = safeUser(JSON.parse(userData))
+        if (user) {
+          token = jwt
+          status = 'in'
+        }
       } catch {
-        // ignore
+        // ignore malformed persisted state
       }
     }
   }
 
-  return { user, token, loading: false, error: null, status, isInitialized: false }
+  return { user, token, context: null, loading: false, error: null, status, isInitialized: false }
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -45,43 +111,66 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isAuthenticated: (state) => !!state.user && !!state.token,
+    isAklabAdmin: (state) => state.context?.role?.type === 'aklab_admin',
+    profileReady: (state) => state.context?.profileReady === true,
     userEmail: (state) => state.user?.email,
     userId: (state) => state.user?.id,
     userName: (state) => state.user?.username || state.user?.email?.split('@')[0] || 'Пользователь',
   },
 
   actions: {
+    clearSession() {
+      clearPersistedAuth()
+      this.user = null
+      this.token = null
+      this.context = null
+      this.status = 'out'
+    },
+
+    async refreshContext() {
+      if (!this.token) {
+        this.context = null
+        return null
+      }
+
+      try {
+        const response = await api.get<AuthContextResponse>('/me/context')
+        const context = safeContext(response.data?.data)
+        if (!context) throw new Error('Некорректный контекст авторизации')
+        this.context = context
+        this.user = context.user
+        this.status = 'in'
+        persistAuth(this.user, this.token)
+        return context
+      } catch (error: unknown) {
+        this.context = null
+        if (responseStatus(error) === 401) this.clearSession()
+        throw error
+      }
+    },
+
     async init() {
       this.loading = true
       try {
         const userData = localStorage.getItem('user')
         const token = localStorage.getItem('jwt')
+        const cachedUser = userData ? safeUser(JSON.parse(userData)) : null
 
-        if (userData && token) {
-          this.user = JSON.parse(userData)
+        if (cachedUser && token) {
+          this.user = cachedUser
           this.token = token
           this.status = 'in'
-
           try {
-            const response = await api.get('/users/me?populate=role')
-            if (response.data) {
-              this.user = { ...this.user, ...response.data }
-              persistAuth(this.user!, this.token!)
-            }
-          } catch (error: unknown) {
-            const err = error as { response?: { status?: number } }
-            if (err.response?.status === 401) {
-              this.user = null
-              this.token = null
-              this.status = 'out'
-              clearPersistedAuth()
-            }
+            await this.refreshContext()
+          } catch {
+            // 403 and transient context failures preserve the authenticated session.
           }
         } else {
+          this.context = null
           this.status = 'out'
         }
       } catch {
-        this.logout()
+        this.clearSession()
       } finally {
         this.isInitialized = true
         this.loading = false
@@ -102,21 +191,21 @@ export const useAuthStore = defineStore('auth', {
         if (!authResponse.data?.jwt) {
           throw new Error('Токен не получен')
         }
+        const authenticatedUser = safeUser(authResponse.data.user)
+        if (!authenticatedUser) throw new Error('Некорректный пользователь')
+        const jwt = authResponse.data.jwt as string
 
-        this.user = authResponse.data.user
-        this.token = authResponse.data.jwt
+        this.user = authenticatedUser
+        this.token = jwt
+        this.context = null
         this.status = 'in'
-        persistAuth(this.user!, this.token!)
+        persistAuth(this.user, jwt)
 
-        // Доп. данные пользователя
         try {
-          const userResponse = await api.get('/users/me?populate=role')
-          if (userResponse.data) {
-            this.user = { ...this.user, ...userResponse.data }
-            localStorage.setItem('user', JSON.stringify(this.user))
-          }
-        } catch {
-          // не критично
+          await this.refreshContext()
+        } catch (error: unknown) {
+          if (responseStatus(error) === 401) throw error
+          // A 403 must not turn a successful login into a logout.
         }
 
         return this.user
@@ -154,10 +243,7 @@ export const useAuthStore = defineStore('auth', {
     async logout() {
       this.loading = true
       try {
-        clearPersistedAuth()
-        this.user = null
-        this.token = null
-        this.status = 'out'
+        this.clearSession()
         this.error = null
       } finally {
         this.loading = false

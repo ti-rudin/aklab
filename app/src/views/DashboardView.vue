@@ -9,21 +9,23 @@
       </button>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-if="loading && !stats" class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+    <div v-if="loading && !stats && !profileNotReady" class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
       <div v-for="i in 4" :key="i" class="skeleton h-24 rounded-xl" />
     </div>
 
+    <div v-else-if="profileNotReady" class="rounded-xl border p-6 text-center" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+      <p class="text-lg font-semibold" style="color: var(--text-main)">Профиль ещё не готов</p>
+      <p class="mt-2 text-sm" style="color: var(--text-muted)">Статистика и объекты станут доступны после подготовки профиля.</p>
+    </div>
+
     <template v-else-if="stats">
-      <!-- KPI StatCards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatCard title="Всего объектов" :value="stats.total" icon="🏢" to="/properties" />
         <StatCard title="В фокусе" :value="stats.inFocus" icon="🎯" to="/properties#focus" color="var(--accent)" />
-        <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" to="/properties?tab=focus&threshold=50" color="var(--score-hot)" />
-        <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" to="/properties?status=new&newSince=24h" color="var(--success)" />
+        <StatCard title="Горячие (≥50)" :value="stats.hot" icon="🔥" to="/properties?tab=focus" color="var(--score-hot)" />
+        <StatCard title="Новые 24ч" :value="stats.newToday" icon="🆕" to="/properties?status=new" color="var(--success)" />
       </div>
 
-      <!-- Bar chart: property types -->
       <BaseCard v-if="typeEntries.length" padding="lg" class="mb-8">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📊 Объекты по типам</h2>
         <div class="space-y-3">
@@ -37,7 +39,6 @@
         </div>
       </BaseCard>
 
-      <!-- Hot properties -->
       <BaseCard padding="lg" class="mb-8">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">🔥 Горячие объекты</h2>
         <div v-if="topProperties.length === 0" class="text-sm" style="color: var(--text-muted)">
@@ -45,7 +46,7 @@
         </div>
         <div v-else class="space-y-2 sm:space-y-3">
           <div v-for="p in topProperties" :key="p.documentId"
-            @click="$router.push(`/properties/${p.documentId}`)"
+            @click="router.push(`/properties/${p.documentId}`)"
             class="flex items-center gap-2 sm:gap-4 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-colors hover:opacity-80"
             style="background: var(--bg-main); border: 1px solid var(--border-subtle)">
             <div class="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-xs sm:text-sm font-bold"
@@ -65,11 +66,8 @@
           </div>
         </div>
       </BaseCard>
-
-
     </template>
 
-    <!-- Error -->
     <p v-if="error" class="mt-4 text-sm text-center" style="color: #fca5a5">{{ error }}</p>
   </div>
 </template>
@@ -89,7 +87,6 @@ import { useToast } from '@/composables/useToast'
 const router = useRouter()
 const toast = useToast()
 
-/* ── Types ── */
 interface StatsResponse {
   total: number
   inFocus: number
@@ -109,35 +106,38 @@ interface TopProperty {
   tags: string[]
 }
 
-/* ── State ── */
 const loading = ref(true)
 const error = ref('')
+const profileNotReady = ref(false)
 const stats = ref<StatsResponse | null>(null)
 const topProperties = ref<TopProperty[]>([])
-/* ── Computed ── */
+
 const typeEntries = computed(() => {
   if (!stats.value?.typeBreakdown) return []
-  const entries = Object.entries(stats.value.typeBreakdown)
+  return Object.entries(stats.value.typeBreakdown)
     .map(([type, count]) => ({ type, label: typeLabel(type), count }))
     .sort((a, b) => b.count - a.count)
-  return entries
 })
 
-const maxTypeCount = computed(() => {
-  if (!typeEntries.value.length) return 1
-  return Math.max(...typeEntries.value.map(e => e.count), 1)
-})
-
+const maxTypeCount = computed(() => Math.max(...typeEntries.value.map(entry => entry.count), 1))
 function barWidth(count: number): number {
   return Math.round((count / maxTypeCount.value) * 100)
 }
 
-/* ── Fetchers ── */
+function isProfileNotReady(error: any): boolean {
+  return error?.response?.status === 409
+}
+
 async function fetchStats() {
   try {
     const { data } = await api.get('/properties/stats')
     stats.value = data
   } catch (e: any) {
+    if (isProfileNotReady(e)) {
+      profileNotReady.value = true
+      stats.value = null
+      return
+    }
     error.value = 'Ошибка загрузки статистики'
   }
 }
@@ -145,15 +145,22 @@ async function fetchStats() {
 async function fetchTopProperties() {
   try {
     const { data } = await api.get('/properties/focus', {
-      params: { threshold: 20, pageSize: 5, sort: '-focus_score' }
+      params: { page: 1, pageSize: 5, sort: '-focus_score' },
     })
     topProperties.value = data.data || []
-  } catch { toast.error('Ошибка загрузки горячих объектов') }
+  } catch (e: any) {
+    if (isProfileNotReady(e)) {
+      profileNotReady.value = true
+      return
+    }
+    toast.error('Ошибка загрузки горячих объектов')
+  }
 }
 
 async function refresh() {
   loading.value = true
   error.value = ''
+  profileNotReady.value = false
   await Promise.all([fetchStats(), fetchTopProperties()])
   loading.value = false
 }

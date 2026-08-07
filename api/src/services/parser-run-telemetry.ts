@@ -1,4 +1,7 @@
+import { canonicalJson, type UserFilterSnapshot } from '@aklab/parse-rules';
+
 type ParserStage = 'scan' | 'details';
+export type ParserRunProfileScope = 'all' | 'single' | 'none';
 type SourceStageStatus =
   | 'queued'
   | 'running'
@@ -18,6 +21,14 @@ export type StageCounters = {
   details_attempted: number;
   details_ok: number;
   created: number;
+  skipped: number;
+  failed: number;
+};
+
+export type DigestCounters = {
+  runId: string;
+  scheduled: number;
+  sent: number;
   skipped: number;
   failed: number;
 };
@@ -59,6 +70,16 @@ const ZERO_COUNTERS: StageCounters = {
   failed: 0,
 };
 
+export class ParserRunSnapshotConflictError extends Error {
+  readonly code = 'PARSER_RUN_SNAPSHOT_CONFLICT';
+
+  constructor() {
+    super('Parser run filter snapshot is already persisted with different metadata.');
+    this.name = 'ParserRunSnapshotConflictError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 function identityKey(runId: string, sourceSlug: string, stage: ParserStage): string {
   return `${runId}:${sourceSlug}:${stage}`;
 }
@@ -68,6 +89,63 @@ function assertOwned(row: any, jobId: number, key: string): void {
   if (Number(row.job_id) !== jobId) {
     throw new Error(`Queue job ${jobId} does not own telemetry row ${key}`);
   }
+}
+
+function decodeStoredSnapshot(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function sameSnapshot(left: unknown, right: UserFilterSnapshot | null): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  try {
+    return canonicalJson(decodeStoredSnapshot(left)) === canonicalJson(right);
+  } catch {
+    return false;
+  }
+}
+
+function assertDigestCounters(counters: DigestCounters): void {
+  if (
+    !counters
+    || typeof counters.runId !== 'string'
+    || counters.runId.length === 0
+    || counters.runId.trim() !== counters.runId
+    || /[\u0000-\u001f\u007f]/.test(counters.runId)
+  ) {
+    throw new Error('Invalid digest counters.');
+  }
+
+  const values = [counters.scheduled, counters.sent, counters.skipped, counters.failed];
+  if (values.some(value => !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Invalid digest counters.');
+  }
+
+  const classified = counters.sent + counters.skipped + counters.failed;
+  if (!Number.isSafeInteger(classified) || counters.scheduled !== classified) {
+    throw new Error('Invalid digest counters.');
+  }
+}
+
+const DIGEST_COUNTER_FIELDS = [
+  'digest_scheduled',
+  'digest_sent',
+  'digest_skipped',
+  'digest_failed',
+] as const;
+
+function storedDigestCounters(row: any): [number, number, number, number] {
+  const values = DIGEST_COUNTER_FIELDS.map(field => row?.[field] ?? 0);
+  if (values.some(value => typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Invalid persisted digest counters.');
+  }
+  return values as [number, number, number, number];
+}
+
+function sameDigestCounters(row: any, counters: DigestCounters): boolean {
+  const stored = storedDigestCounters(row);
+  const requested = [counters.scheduled, counters.sent, counters.skipped, counters.failed];
+  return stored.every((value, index) => value === requested[index]);
 }
 
 /** Run-scoped parser telemetry. Source remains a health summary, never a coordination record. */
@@ -95,6 +173,76 @@ export function createParserRunTelemetry(strapi: any) {
       });
     },
 
+    /**
+     * Persist the one immutable snapshot selected for a parser run. The first
+     * successful call wins; retries may only repeat the exact same metadata.
+     */
+    async ensureParserRunSnapshot({ runId, profileScope, targetUserId, snapshot }: {
+      runId: string;
+      profileScope: ParserRunProfileScope;
+      targetUserId?: number;
+      snapshot: UserFilterSnapshot | null;
+    }) {
+      const existing = await parserRuns().findOne({ where: { run_id: runId } });
+      if (!existing) throw new Error(`Parser run does not exist: ${runId}`);
+
+      const expectedTarget = profileScope === 'single' ? targetUserId : undefined;
+      const hasMetadata = existing.profile_scope != null
+        || existing.filter_snapshot_hash != null
+        || existing.filter_snapshot_schema_version != null
+        || existing.filter_snapshot != null
+        || existing.target_user_id != null;
+      const matches = existing.profile_scope === profileScope
+        && (expectedTarget === undefined
+          ? existing.target_user_id == null
+          : Number(existing.target_user_id) === expectedTarget)
+        && (existing.filter_snapshot_hash ?? null) === (snapshot?.hash ?? null)
+        && (existing.filter_snapshot_schema_version ?? null) === (snapshot?.schemaVersion ?? null)
+        && sameSnapshot(existing.filter_snapshot ?? null, snapshot);
+
+      if (hasMetadata) {
+        if (!matches) throw new ParserRunSnapshotConflictError();
+        return existing;
+      }
+
+      const firstWrite = await parserRuns().update({
+        // Conditional update makes the first metadata write atomic across API
+        // processes. A find-then-unconditional-update would let two builders
+        // overwrite each other's immutable snapshot.
+        where: {
+          id: existing.id,
+          profile_scope: null,
+          target_user_id: null,
+          filter_snapshot: null,
+          filter_snapshot_hash: null,
+          filter_snapshot_schema_version: null,
+        },
+        data: {
+          profile_scope: profileScope,
+          ...(expectedTarget === undefined ? {} : { target_user_id: expectedTarget }),
+          filter_snapshot: snapshot,
+          filter_snapshot_hash: snapshot?.hash ?? null,
+          filter_snapshot_schema_version: snapshot?.schemaVersion ?? null,
+        },
+      });
+      if (firstWrite) return firstWrite;
+
+      // Another process won the conditional write. Re-read the winner and
+      // accept only an exact replay; otherwise fail closed without overwriting.
+      const winner = await parserRuns().findOne({ where: { run_id: runId } });
+      if (winner) {
+        const winnerMatches = winner.profile_scope === profileScope
+          && (expectedTarget === undefined
+            ? winner.target_user_id == null
+            : Number(winner.target_user_id) === expectedTarget)
+          && (winner.filter_snapshot_hash ?? null) === (snapshot?.hash ?? null)
+          && (winner.filter_snapshot_schema_version ?? null) === (snapshot?.schemaVersion ?? null)
+          && sameSnapshot(winner.filter_snapshot ?? null, snapshot);
+        if (winnerMatches) return winner;
+      }
+      throw new ParserRunSnapshotConflictError();
+    },
+
     async finishParserRun({ runId, status, errorSummary }: {
       runId: string;
       status: 'succeeded' | 'degraded' | 'failed' | 'cancelled';
@@ -111,6 +259,43 @@ export function createParserRunTelemetry(strapi: any) {
           ...(errorSummary ? { error_summary: errorSummary.slice(0, 4_000) } : {}),
         },
       });
+    },
+
+    /** Persist the exact digest fan-out outcome before parser-run terminalization. */
+    async setDigestCounters(counters: DigestCounters) {
+      assertDigestCounters(counters);
+      const existing = await parserRuns().findOne({ where: { run_id: counters.runId } });
+      if (!existing) throw new Error('Parser run does not exist.');
+      if (existing.status !== 'running') throw new Error('Parser run is not running.');
+
+      if (sameDigestCounters(existing, counters)) return existing;
+      if (storedDigestCounters(existing).some(value => value !== 0)) {
+        throw new Error('Conflicting digest counters are already persisted.');
+      }
+
+      const updated = await parserRuns().update({
+        // First write wins from schema defaults. The full predicate prevents a
+        // concurrent finalizer or terminal transition from being overwritten.
+        where: {
+          id: existing.id,
+          status: 'running',
+          digest_scheduled: 0,
+          digest_sent: 0,
+          digest_skipped: 0,
+          digest_failed: 0,
+        },
+        data: {
+          digest_scheduled: counters.scheduled,
+          digest_sent: counters.sent,
+          digest_skipped: counters.skipped,
+          digest_failed: counters.failed,
+        },
+      });
+      if (updated) return updated;
+
+      const winner = await parserRuns().findOne({ where: { run_id: counters.runId } });
+      if (winner && sameDigestCounters(winner, counters)) return winner;
+      throw new Error('Digest counters changed before persistence.');
     },
 
     async ensureSourceStage({ runId, sourceSlug, stage, jobId, parserRunId, sourceId }: EnsureSourceStage) {

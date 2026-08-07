@@ -1,10 +1,7 @@
 /**
- * Composable for focus-tab UI state: filters, sorting, selection, pagination, tag helpers.
- * Extracted from PropertyListView.vue.
- * Does NOT include data fetching (see usePropertyData) or CSV/bulk actions.
+ * Composable for focus-tab UI state: supported filters, sorting, selection and pagination.
  */
-import { ref, reactive, computed, watch, onMounted, type Ref } from 'vue'
-import api from '@/api/strapi'
+import { ref, reactive, computed, watch, type Ref } from 'vue'
 
 /** Tags hidden from UI — city is already shown separately */
 export const HIDDEN_TAGS = ['moscow_mo']
@@ -15,6 +12,17 @@ export const FOCUS_AVAILABLE_TAGS = [
   { value: 'new', label: 'Новый', bgColor: 'rgba(16,185,129,0.15)', textColor: '#10b981' },
   { value: 'large_area', label: 'Большая пл.', bgColor: 'rgba(168,85,247,0.15)', textColor: '#a855f7' },
 ]
+
+export interface FocusItemIdentity {
+  documentId: string
+}
+
+export interface FocusFilterState {
+  threshold: number
+  cities: { moscow: boolean; mo: boolean; other: boolean }
+  property_type: string[]
+  status: string
+}
 
 // ========================
 // Standalone helpers (module-level exports for reuse in PropertyCard/PropertyTable)
@@ -49,19 +57,13 @@ export function deviationStyle(pct: number) {
   return { background: 'rgba(107,114,128,0.15)', color: '#6b7280' }
 }
 
-export function useFocusTab(
+export function useFocusTab<T extends FocusItemIdentity>(
   onFilterChange: () => void,
   focusTotal: Ref<number>,
-  focusItems: Ref<{ id: number }[]>,
+  focusItems: Ref<T[]>,
 ) {
-  // ========================
-  // Tab state
-  // ========================
   const activeTab = ref<'all' | 'focus' | 'work'>('all')
 
-  // ========================
-  // Sort
-  // ========================
   const focusSort = reactive({
     field: 'focus_score' as string,
     direction: 'desc' as 'asc' | 'desc',
@@ -76,91 +78,62 @@ export function useFocusTab(
     }
   }
 
-  // ========================
-  // Filters
-  // ========================
-  const focusFilters = reactive({
+  const focusFilters = reactive<FocusFilterState>({
     threshold: 20,
     cities: { moscow: true, mo: true, other: true },
-    property_type: [] as string[],
-    tags: [] as string[],
-    priceFrom: '',
-    priceTo: '',
+    property_type: [],
+    status: '',
   })
 
-  // Load from localStorage
   try {
     const saved = localStorage.getItem('aklab-focus-filters')
     if (saved) {
       const parsed = JSON.parse(saved)
       if (parsed.threshold != null) focusFilters.threshold = parsed.threshold
       if (parsed.cities) Object.assign(focusFilters.cities, parsed.cities)
-      if (parsed.property_type) focusFilters.property_type = Array.isArray(parsed.property_type) ? parsed.property_type : [parsed.property_type]
-      if (parsed.tags) focusFilters.tags = parsed.tags
-      if (parsed.priceFrom) focusFilters.priceFrom = parsed.priceFrom
-      if (parsed.priceTo) focusFilters.priceTo = parsed.priceTo
-    }
-  } catch {}
-
-  // Загрузить threshold_percent из настроек (если нет сохранённого значения)
-  ;(async () => {
-    try {
-      const saved = localStorage.getItem('aklab-focus-filters')
-      if (!saved || !JSON.parse(saved).threshold) {
-        const res = await api.get('/setting')
-        const data = res.data?.data
-        if (data?.threshold_percent != null) {
-          focusFilters.threshold = data.threshold_percent
-        }
+      if (parsed.property_type) {
+        focusFilters.property_type = Array.isArray(parsed.property_type)
+          ? parsed.property_type
+          : [parsed.property_type]
       }
-    } catch {}
-  })()
+      if (typeof parsed.status === 'string') focusFilters.status = parsed.status
+    }
+  } catch {
+    // Invalid local storage is equivalent to no saved filters.
+  }
 
-  // Save to localStorage on change
-  watch(focusFilters, (val) => {
+  watch(focusFilters, (value) => {
     try {
-      localStorage.setItem('aklab-focus-filters', JSON.stringify(val))
-    } catch {}
+      localStorage.setItem('aklab-focus-filters', JSON.stringify(value))
+    } catch {
+      // Persistence is best effort and must not block focus actions.
+    }
   }, { deep: true })
 
-  async function resetFocusFilters() {
-    let defaultThreshold = 20
-    try {
-      const res = await api.get('/setting')
-      const data = res.data?.data
-      if (data?.threshold_percent != null) defaultThreshold = data.threshold_percent
-    } catch {}
-    focusFilters.threshold = defaultThreshold
+  function resetFocusFilters() {
+    focusFilters.threshold = 20
     focusFilters.cities.moscow = true
     focusFilters.cities.mo = true
     focusFilters.cities.other = true
     focusFilters.property_type = []
-    focusFilters.tags = []
-    focusFilters.priceFrom = ''
-    focusFilters.priceTo = ''
+    focusFilters.status = ''
   }
 
-  // ========================
-  // Pagination
-  // ========================
   const focusPage = ref(1)
   const focusPageSize = 20
   const focusTotalPages = computed(() => Math.ceil(focusTotal.value / focusPageSize))
 
-  // ========================
-  // Selection
-  // ========================
-  const focusSelected = reactive(new Set<number>())
+  const focusSelected = reactive(new Set<string>())
   const allFocusChecked = computed(() => {
     if (focusItems.value.length === 0) return false
-    return focusItems.value.every(item => focusSelected.has(item.id))
+    return focusItems.value.every(item => focusSelected.has(item.documentId))
   })
 
-  function toggleFocusSelect(id: number) {
-    if (focusSelected.has(id)) {
-      focusSelected.delete(id)
+  function toggleFocusSelect(documentId: string) {
+    if (focusSelected.has(documentId)) {
+      focusSelected.delete(documentId)
     } else {
-      focusSelected.add(id)
+      focusSelected.add(documentId)
     }
   }
 
@@ -168,30 +141,22 @@ export function useFocusTab(
     if (allFocusChecked.value) {
       focusSelected.clear()
     } else {
-      focusItems.value.forEach(item => focusSelected.add(item.id))
+      focusItems.value.forEach(item => focusSelected.add(item.documentId))
     }
   }
 
-  // ========================
-  // Switch to focus tab
-  // ========================
   function switchToFocus() {
     activeTab.value = 'focus'
     focusPage.value = 1
     onFilterChange()
   }
 
-  // ========================
-  // Watchers — auto-refresh on filter/sort/page changes
-  // ========================
   watch(
     [
       () => focusFilters.threshold,
       () => focusFilters.cities,
       () => focusFilters.property_type,
-      () => focusFilters.tags,
-      () => focusFilters.priceFrom,
-      () => focusFilters.priceTo,
+      () => focusFilters.status,
     ],
     () => {
       if (activeTab.value === 'focus') {
@@ -210,34 +175,26 @@ export function useFocusTab(
   })
 
   watch(focusPage, () => {
-    if (activeTab.value === 'focus') {
-      onFilterChange()
-    }
+    if (activeTab.value === 'focus') onFilterChange()
   })
 
   return {
     activeTab,
-    // Sort
     focusSort,
     toggleFocusSort,
-    // Filters
     focusFilters,
     resetFocusFilters,
     availableTags: FOCUS_AVAILABLE_TAGS,
-    // Pagination
     focusPage,
     focusPageSize,
     focusTotalPages,
-    // Selection
     focusSelected,
     allFocusChecked,
     toggleFocusSelect,
     toggleAllFocus,
-    // Helpers (module-level, re-exported for template use via composable return)
     tagStyle,
     tagLabel,
     deviationStyle,
-    // Actions
     switchToFocus,
   }
 }

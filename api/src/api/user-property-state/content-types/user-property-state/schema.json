@@ -1,0 +1,66 @@
+{
+  "kind": "collectionType",
+  "collectionName": "user_property_states",
+  "info": {
+    "singularName": "user-property-state",
+    "pluralName": "user-property-states",
+    "displayName": "User Property State"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "indexes": [
+    {
+      "name": "user_property_states_user_status_idx",
+      "columns": [
+        "user_id",
+        "status"
+      ]
+    },
+    {
+      "name": "user_property_states_property_document_id_idx",
+      "columns": [
+        "property_document_id"
+      ]
+    }
+  ],
+  "pluginOptions": {},
+  "attributes": {
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user",
+      "required": true
+    },
+    "property": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::property.property",
+      "inversedBy": "user_states",
+      "required": true
+    },
+    "user_id": {
+      "type": "integer",
+      "required": true,
+      "min": 1
+    },
+    "property_document_id": {
+      "type": "string",
+      "required": true
+    },
+    "identity_key": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": [
+        "in_progress",
+        "viewed",
+        "rejected"
+      ],
+      "required": true
+    }
+  }
+}

@@ -139,6 +139,89 @@ describe('parser run telemetry', () => {
     });
   });
 
+  it('persists immutable filter snapshot metadata and rejects a conflicting overwrite', async () => {
+    const snapshot = {
+      schemaVersion: 1,
+      scope: 'single',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      windowEndAt: '2026-08-07T10:00:00.000Z',
+      profiles: [],
+      hash: 'a'.repeat(64),
+    } as any;
+    const update = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', profile_scope: 'single' });
+    const findOne = vi.fn()
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running' })
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running', profile_scope: 'single', filter_snapshot_hash: snapshot.hash, filter_snapshot_schema_version: 1, filter_snapshot: snapshot, target_user_id: 7 })
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running', profile_scope: 'single', filter_snapshot_hash: 'b'.repeat(64), filter_snapshot_schema_version: 1, filter_snapshot: { ...snapshot, hash: 'b'.repeat(64) }, target_user_id: 7 });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await telemetry.ensureParserRunSnapshot({
+      runId: 'run-1',
+      profileScope: 'single',
+      targetUserId: 7,
+      snapshot,
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 3,
+        profile_scope: null,
+        target_user_id: null,
+        filter_snapshot: null,
+        filter_snapshot_hash: null,
+        filter_snapshot_schema_version: null,
+      }),
+      data: expect.objectContaining({
+        profile_scope: 'single',
+        target_user_id: 7,
+        filter_snapshot: snapshot,
+        filter_snapshot_hash: snapshot.hash,
+        filter_snapshot_schema_version: 1,
+      }),
+    });
+
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).resolves.toBeDefined();
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).rejects.toThrow('snapshot');
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a concurrent conflicting snapshot after the conditional first write loses the race', async () => {
+    const first = { id: 3, run_id: 'run-1', status: 'running' };
+    const winner = {
+      id: 3,
+      run_id: 'run-1',
+      profile_scope: 'single',
+      target_user_id: 8,
+      filter_snapshot_hash: 'b'.repeat(64),
+      filter_snapshot_schema_version: 1,
+      filter_snapshot: { schemaVersion: 1, scope: 'single', profiles: [], hash: 'b'.repeat(64) },
+    };
+    const findOne = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(winner);
+    const update = vi.fn().mockResolvedValue(null);
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+    const snapshot = {
+      schemaVersion: 1,
+      scope: 'single',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      windowEndAt: '2026-08-07T10:00:00.000Z',
+      profiles: [],
+      hash: 'a'.repeat(64),
+    } as any;
+
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).rejects.toThrow('snapshot');
+    expect(findOne).toHaveBeenCalledTimes(2);
+  });
+
   it('reconciles a worker success to the queue terminal failure for the same job', async () => {
     const update = vi.fn().mockResolvedValue({ id: 7, status: 'cancelled' });
     const telemetry = createParserRunTelemetry({
@@ -183,5 +266,109 @@ describe('parser run telemetry', () => {
 
     const createdData = create.mock.calls[0][0].data;
     expect(Object.hasOwn(createdData, 'job_id')).toBe(false);
+  });
+
+  it('persists valid digest counters through the Query Engine for a running parser run', async () => {
+    const update = vi.fn().mockResolvedValue({ id: 3, status: 'running', digest_scheduled: 3 });
+    const findOne = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'running' });
+    const query = vi.fn().mockReturnValue({ findOne, update });
+    const telemetry = createParserRunTelemetry({ db: { query } } as any);
+
+    await telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 1, skipped: 1, failed: 1 });
+
+    expect(query).toHaveBeenCalledWith('api::parser-run.parser-run');
+    expect(update).toHaveBeenCalledWith({
+      where: {
+        id: 3,
+        status: 'running',
+        digest_scheduled: 0,
+        digest_sent: 0,
+        digest_skipped: 0,
+        digest_failed: 0,
+      },
+      data: { digest_scheduled: 3, digest_sent: 1, digest_skipped: 1, digest_failed: 1 },
+    });
+  });
+
+  it('accepts only an exact replay and rejects conflicting persisted digest counters', async () => {
+    const update = vi.fn();
+    const findOne = vi.fn().mockResolvedValue({
+      id: 3,
+      run_id: 'run-1',
+      status: 'running',
+      digest_scheduled: 3,
+      digest_sent: 1,
+      digest_skipped: 1,
+      digest_failed: 1,
+    });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 1, skipped: 1, failed: 1 }))
+      .resolves.toMatchObject({ digest_scheduled: 3 });
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 2, skipped: 1, failed: 0 }))
+      .rejects.toThrow(/digest counters/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('accepts an exact concurrent CAS winner but never overwrites it', async () => {
+    const winner = {
+      id: 3,
+      run_id: 'run-1',
+      status: 'running',
+      digest_scheduled: 2,
+      digest_sent: 1,
+      digest_skipped: 1,
+      digest_failed: 0,
+    };
+    const findOne = vi.fn()
+      .mockResolvedValueOnce({
+        id: 3,
+        run_id: 'run-1',
+        status: 'running',
+        digest_scheduled: 0,
+        digest_sent: 0,
+        digest_skipped: 0,
+        digest_failed: 0,
+      })
+      .mockResolvedValueOnce(winner);
+    const update = vi.fn().mockResolvedValue(null);
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 2, sent: 1, skipped: 1, failed: 0 }))
+      .resolves.toBe(winner);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(findOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects unsafe digest counters and invariant violations before querying', async () => {
+    const query = vi.fn();
+    const telemetry = createParserRunTelemetry({ db: { query } } as any);
+    const base = { runId: 'run-1', scheduled: 1, sent: 1, skipped: 0, failed: 0 };
+
+    await expect(telemetry.setDigestCounters({ ...base, sent: -1 })).rejects.toThrow(/digest counters/i);
+    await expect(telemetry.setDigestCounters({ ...base, scheduled: 2 })).rejects.toThrow(/digest counters/i);
+    await expect(telemetry.setDigestCounters({ ...base, failed: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow(/digest counters/i);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing and non-running parser runs without changing terminal telemetry', async () => {
+    const missingQuery = vi.fn().mockReturnValue({ findOne: vi.fn().mockResolvedValue(null), update: vi.fn() });
+    const missingTelemetry = createParserRunTelemetry({ db: { query: missingQuery } } as any);
+    await expect(missingTelemetry.setDigestCounters({ runId: 'run-missing', scheduled: 0, sent: 0, skipped: 0, failed: 0 }))
+      .rejects.toThrow(/parser run/i);
+
+    const update = vi.fn();
+    const terminalQuery = vi.fn().mockReturnValue({
+      findOne: vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'succeeded' }),
+      update,
+    });
+    const terminalTelemetry = createParserRunTelemetry({ db: { query: terminalQuery } } as any);
+    await expect(terminalTelemetry.setDigestCounters({ runId: 'run-1', scheduled: 0, sent: 0, skipped: 0, failed: 0 }))
+      .rejects.toThrow(/running/i);
+    expect(update).not.toHaveBeenCalled();
   });
 });

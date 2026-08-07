@@ -183,6 +183,12 @@
       "target": "api::user-comment.user-comment",
       "mappedBy": "property"
     },
+    "user_states": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::user-property-state.user-property-state",
+      "mappedBy": "property"
+    },
     "focus_score": {
       "type": "integer",
       "default": 0,
