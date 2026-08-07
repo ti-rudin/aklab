@@ -7,6 +7,15 @@
 import { factories } from "@strapi/strapi";
 import * as path from "path";
 import { getQueueService } from '../../../services/queueService';
+import {
+  createUserPropertyScopeRepository,
+  UserPropertyScopeMalformedError,
+  UserPropertyScopeNotReadyError,
+  UserPropertyScopeQueryError,
+  UserPropertyScopeUnavailableError,
+  UserPropertyScopeValidationError,
+  type UserPropertyScopeRequest,
+} from '../../../services/user-property-scope';
 import { PropertyUpsertValidationError } from '../services/property';
 
 const INTERNAL_PROPERTY_FIELDS = new Set([
@@ -16,6 +25,28 @@ const INTERNAL_PROPERTY_FIELDS = new Set([
   'photos',
   'photos_downloaded',
 ]);
+
+const PHOTO_MIME_BY_EXTENSION: Readonly<Record<string, string>> = Object.freeze({
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+});
+
+const SCOPED_QUERY_KEYS = new Set([
+  'city',
+  'property_type',
+  'status',
+  'search',
+  'sort',
+  'page',
+  'pageSize',
+]);
+
+const FOCUS_QUERY_KEYS = new Set([...SCOPED_QUERY_KEYS, 'threshold']);
+
+type ScopedRequest = UserPropertyScopeRequest;
 
 function internalPayload(ctx: any, allowedFields: Set<string>): Record<string, unknown> | null {
   const data = ctx.request?.body?.data;
@@ -31,7 +62,141 @@ function internalPayload(ctx: any, allowedFields: Set<string>): Record<string, u
   return data as Record<string, unknown>;
 }
 
+function actorId(ctx: any): number {
+  const value = ctx?.state?.user?.id;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new UserPropertyScopeValidationError();
+  }
+  return value;
+}
+
+function queryRecord(ctx: any): Record<string, unknown> {
+  const query = ctx?.query ?? {};
+  if (!query || typeof query !== 'object' || Array.isArray(query)) {
+    throw new UserPropertyScopeValidationError();
+  }
+  return query as Record<string, unknown>;
+}
+
+function queryString(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new UserPropertyScopeValidationError();
+  return value;
+}
+
+function queryCsv(value: unknown): string[] {
+  const raw = queryString(value);
+  const values = raw.split(',').map((item) => item.trim());
+  if (values.some((item) => item === '')) throw new UserPropertyScopeValidationError();
+  return values;
+}
+
+function queryNumber(value: unknown, integer: boolean): number {
+  if (typeof value !== 'string' && typeof value !== 'number') throw new UserPropertyScopeValidationError();
+  const raw = typeof value === 'string' ? value.trim() : value;
+  if (raw === '') throw new UserPropertyScopeValidationError();
+  const parsed = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(parsed) || (integer && !Number.isSafeInteger(parsed))) {
+    throw new UserPropertyScopeValidationError();
+  }
+  return parsed;
+}
+
+function parseScopedQuery(ctx: any, focus = false): ScopedRequest {
+  const input = queryRecord(ctx);
+  const allowedKeys = focus ? FOCUS_QUERY_KEYS : SCOPED_QUERY_KEYS;
+  if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
+    throw new UserPropertyScopeValidationError();
+  }
+
+  const request: ScopedRequest = {};
+  if (input.city !== undefined) request.city = queryCsv(input.city) as ScopedRequest['city'];
+  if (input.property_type !== undefined) request.propertyType = queryCsv(input.property_type) as ScopedRequest['propertyType'];
+  if (input.status !== undefined) request.status = queryCsv(input.status) as ScopedRequest['status'];
+  if (input.search !== undefined) request.search = queryString(input.search).trim();
+  if (input.sort !== undefined) request.sort = queryString(input.sort);
+  if (input.page !== undefined) request.page = queryNumber(input.page, true);
+  if (input.pageSize !== undefined) request.pageSize = queryNumber(input.pageSize, true);
+  if (focus) {
+    request.focusThreshold = input.threshold === undefined ? 0 : queryNumber(input.threshold, false);
+  }
+  return request;
+}
+
+function safePathSegment(value: unknown): value is string {
+  return typeof value === 'string'
+    && value !== ''
+    && value === path.basename(value)
+    && !value.includes('/')
+    && !/[\\/]/.test(value)
+    && value !== '.'
+    && value !== '..';
+}
+
+function scopeErrorResponse(ctx: any, error: unknown): void {
+  if (error instanceof UserPropertyScopeValidationError) {
+    ctx.status = 400;
+    ctx.body = { error: 'Invalid property query' };
+    return;
+  }
+  if (error instanceof UserPropertyScopeNotReadyError) {
+    ctx.status = 409;
+    ctx.body = { error: 'Property profile is not ready' };
+    return;
+  }
+  if (
+    error instanceof UserPropertyScopeMalformedError
+    || error instanceof UserPropertyScopeUnavailableError
+    || error instanceof UserPropertyScopeQueryError
+  ) {
+    ctx.status = 500;
+    ctx.body = { error: 'Property scope unavailable' };
+    return;
+  }
+  ctx.status = 500;
+  ctx.body = { error: 'Property scope unavailable' };
+}
+
+async function runScoped(ctx: any, operation: () => Promise<void>): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    scopeErrorResponse(ctx, error);
+  }
+}
+
 export default factories.createCoreController("api::property.property", ({ strapi }) => ({
+  /**
+   * GET /api/properties
+   * Canonical profile-scoped list. Query Engine/core find is deliberately not used.
+   */
+  async find(ctx) {
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const request = parseScopedQuery(ctx);
+      ctx.body = await repository.list(userId, request);
+    });
+  },
+
+  /**
+   * GET /api/properties/:id
+   * Detail is looked up through the same positive profile predicate as list.
+   */
+  async findOne(ctx) {
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const request = parseScopedQuery(ctx);
+      const property = await repository.detail(userId, ctx.params?.id, request);
+      if (property === null) {
+        ctx.status = 404;
+        ctx.body = { error: 'Property not found' };
+        return;
+      }
+      ctx.body = { data: property };
+    });
+  },
+
   /**
    * POST /api/properties/clear-new
    * Удалить все объекты кроме статуса "in_progress" (В работе).
@@ -96,108 +261,77 @@ export default factories.createCoreController("api::property.property", ({ strap
 
   /**
    * GET /api/photos/:documentId/:filename
-   * Serve downloaded property photos.
+   * Scope-check before touching the filesystem; private cache only.
    */
   async servePhoto(ctx) {
-    const { documentId, filename } = ctx.params;
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const { documentId, filename } = ctx.params || {};
+      const property = await repository.detail(userId, documentId, {});
+      if (property === null) {
+        ctx.status = 404;
+        ctx.body = { error: 'Photo not found' };
+        return;
+      }
 
-    // Basic security: sanitize filename to prevent path traversal
-    const safeFilename = path.basename(filename);
-    const safeDocumentId = path.basename(documentId);
+      if (!safePathSegment(documentId) || !safePathSegment(filename)) {
+        ctx.status = 400;
+        ctx.body = { error: 'Invalid photo path' };
+        return;
+      }
+      const ext = path.extname(filename).toLowerCase();
+      const contentType = PHOTO_MIME_BY_EXTENSION[ext];
+      if (!contentType) {
+        ctx.status = 400;
+        ctx.body = { error: 'Invalid photo path' };
+        return;
+      }
 
-    const filePath = path.join(process.cwd(), "data", "photos", safeDocumentId, safeFilename);
-
-    try {
-      const fs = await import("fs/promises");
-      await fs.access(filePath);
-      const buffer = await fs.readFile(filePath);
-
-      // Determine content type from extension
-      const ext = path.extname(safeFilename).toLowerCase();
-      let contentType = "image/jpeg";
-      if (ext === ".png") contentType = "image/png";
-      else if (ext === ".webp") contentType = "image/webp";
-
-      ctx.set("Content-Type", contentType);
-      ctx.set("Cache-Control", "public, max-age=86400");
-      ctx.body = buffer;
-    } catch {
-      ctx.status = 404;
-      ctx.body = { error: "Photo not found" };
-    }
+      const filePath = path.join(process.cwd(), 'data', 'photos', documentId, filename);
+      try {
+        const fs = await import('fs/promises');
+        await fs.access(filePath);
+        const buffer = await fs.readFile(filePath);
+        ctx.set('Content-Type', contentType);
+        ctx.set('Cache-Control', 'private, max-age=86400');
+        ctx.body = buffer;
+      } catch {
+        ctx.status = 404;
+        ctx.body = { error: 'Photo not found' };
+      }
+    });
   },
 
   /**
    * GET /api/properties/focus
-   * Список объектов с focus_score >= threshold, с фильтрацией, сортировкой, пагинацией.
+   * The focus view is the canonical list predicate plus one threshold.
    */
   async getFocus(ctx) {
-    const query = ctx.query || {};
-
-    const params = {
-      threshold: Number(query.threshold) || 0,
-      city: query.city as string | undefined,
-      property_type: query.property_type as string | undefined,
-      tags: query.tags as string | undefined,
-      search: (query.search as string) || undefined,
-      sort: (query.sort as string) || "-focus_score",
-      page: Math.max(1, Number(query.page) || 1),
-      pageSize: Math.min(100, Math.max(1, Number(query.pageSize) || 20)),
-    };
-
-    ctx.body = await strapi.service('api::property.property').getFocusQuery(params);
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const request = parseScopedQuery(ctx, true);
+      ctx.body = await repository.list(userId, request);
+    });
   },
 
   /**
    * GET /api/properties/stats
-   * Агрегированная статистика для дашборда (1 запрос вместо N).
+   * Profile-scoped aggregate DTO; no unscoped Query Engine counts.
    */
-  async getStats(ctx: any) {
-    const s = strapi as any;
-    const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayISO = yesterday.toISOString();
-
-    // Count helper: findMany + select: ['id'] + .length (gotcha #54)
-    const countWhere = async (where: Record<string, any>) => {
-      const rows = await s.db.query('api::property.property').findMany({ where, select: ['id'] });
-      return rows?.length ?? 0;
-    };
-
-    // Оптимизация: 4 запроса вместо 6 с параллелизацией
-    // Запрос 1: все status='new' → считаем total, inFocus, hot в JS
-    // Запрос 2: is_undervalued count
-    // Запрос 3: newToday count
-    // Запрос 4: type breakdown
-    const [newRows, undervalued, newToday, typeRows] = await Promise.all([
-      s.db.query('api::property.property').findMany({
-        where: { status: 'new' },
-        select: ['focus_score'],
-      }),
-      countWhere({ is_undervalued: true }),
-      countWhere({ first_seen_at: { $gte: yesterdayISO } }),
-      s.db.query('api::property.property').findMany({
-        where: { status: 'new' },
-        select: ['property_type'],
-      }),
-    ]);
-
-    // Считаем total, inFocus, hot из одного результата
-    const total = newRows?.length ?? 0;
-    let inFocus = 0, hot = 0;
-    for (const row of newRows || []) {
-      if (row.focus_score > 0) inFocus++;
-      if (row.focus_score >= 50) hot++;
-    }
-
-    // Type breakdown
-    const typeBreakdown: Record<string, number> = {};
-    for (const p of typeRows || []) {
-      const t = p.property_type || 'other';
-      typeBreakdown[t] = (typeBreakdown[t] || 0) + 1;
-    }
-
-    ctx.body = { total, inFocus, hot, undervalued, newToday, typeBreakdown };
+  async getStats(ctx) {
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const request = parseScopedQuery(ctx);
+      if (Object.keys(request).length > 0) {
+        // Stats has no list filters beyond the canonical profile; reject rather
+        // than silently changing the dashboard contract.
+        throw new UserPropertyScopeValidationError();
+      }
+      ctx.body = await repository.stats(userId, new Date());
+    });
   },
 
   async fetchPhotos(ctx) {
@@ -232,9 +366,9 @@ export default factories.createCoreController("api::property.property", ({ strap
       }, { correlationId: `photo-lazy-${property.documentId}` });
 
       ctx.body = { queued: true };
-    } catch (err: any) {
+    } catch {
       ctx.status = 500;
-      ctx.body = { error: 'Failed to queue photo fetch', details: err.message };
+      ctx.body = { error: 'Failed to queue photo fetch' };
     }
   },
 
@@ -280,9 +414,9 @@ export default factories.createCoreController("api::property.property", ({ strap
         data: { latitude: lat, longitude: lng },
       });
       ctx.body = { latitude: lat, longitude: lng, cached: false };
-    } catch (err: any) {
+    } catch {
       ctx.status = 500;
-      ctx.body = { error: 'Geocoding failed', details: err.message };
+      ctx.body = { error: 'Geocoding failed' };
     }
   },
 }));

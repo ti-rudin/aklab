@@ -281,6 +281,56 @@ describe('UserPropertyScopeRepository', () => {
     }
   });
 
+  it('aggregates stats from the same profile-visible scope while applying virtual new status semantics', async () => {
+    const strapi = rawStrapi();
+    strapi.raw
+      .mockResolvedValueOnce({ rows: [{
+        total: '2',
+        in_focus: '1',
+        hot: 1,
+        undervalued: '3',
+        new_today: '2',
+      }] })
+      .mockResolvedValueOnce({ rows: [
+        { property_type: 'office', total: '1' },
+        { property_type: 'warehouse', total: 1 },
+      ] });
+    const repository = createUserPropertyScopeRepository(strapi, vi.fn().mockResolvedValue(profile));
+    const now = new Date('2026-08-07T12:00:00.000Z');
+
+    await expect(repository.stats(7, now)).resolves.toEqual({
+      total: 2,
+      inFocus: 1,
+      hot: 1,
+      undervalued: 3,
+      newToday: 2,
+      typeBreakdown: { office: 1, warehouse: 1 },
+    });
+
+    const compiled = compileUserPropertyScope(profile);
+    const [aggregateCall, breakdownCall] = strapi.raw.mock.calls;
+    for (const call of [aggregateCall, breakdownCall]) {
+      expect(call[0]).toContain(compiled.fromSql);
+      expect(call[0]).toContain(`WHERE ${compiled.whereSql}`);
+      expect(call[1]).toEqual(expect.arrayContaining(compiled.bindings));
+    }
+    expect(aggregateCall[0]).toContain("COALESCE(ups.status, 'new')");
+    expect(aggregateCall[0]).toContain('p.is_undervalued');
+    expect(aggregateCall[0]).toContain('new_today');
+    expect(aggregateCall[1]).toEqual([...compiled.bindings, 1786017600000, 1786104000000, '2026-08-06T12:00:00.000Z', '2026-08-07T12:00:00.000Z']);
+    expect(breakdownCall[1]).toEqual(compiled.bindings);
+  });
+
+  it('fails closed when stats aggregate or type rows have an unsafe shape', async () => {
+    const strapi = rawStrapi();
+    strapi.raw
+      .mockResolvedValueOnce({ rows: [{ total: 'NaN', in_focus: 0, hot: 0, undervalued: 0, new_today: 0 }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const repository = createUserPropertyScopeRepository(strapi, vi.fn().mockResolvedValue(profile));
+
+    await expect(repository.stats(7)).rejects.toMatchObject({ code: 'USER_PROPERTY_SCOPE_QUERY_ERROR' });
+  });
+
   it('does not use entityService or expose an unscoped actor path', async () => {
     const strapi = rawStrapi();
     strapi.raw

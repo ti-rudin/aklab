@@ -9,13 +9,13 @@ export default {
       method: 'GET',
       path: '/property-events',
       handler: 'property-event.find',
-      config: { auth: false, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
     },
     {
       method: 'GET',
       path: '/property-events/:id',
       handler: 'property-event.findOne',
-      config: { auth: false, policies: [] },
+      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
     },
   ],
 };

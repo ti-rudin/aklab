@@ -73,6 +73,15 @@ export interface UserPropertyListResult {
   };
 }
 
+export interface UserPropertyStats {
+  total: number;
+  inFocus: number;
+  hot: number;
+  undervalued: number;
+  newToday: number;
+  typeBreakdown: Record<string, number>;
+}
+
 export class UserPropertyScopeError extends Error {
   readonly code: string;
 
@@ -478,6 +487,52 @@ function totalFromRaw(result: unknown): number {
   return total;
 }
 
+function statsNumber(value: unknown): number {
+  if (typeof value === 'string' && value.trim() === '') throw new UserPropertyScopeQueryError();
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new UserPropertyScopeQueryError();
+  return parsed;
+}
+
+function statsAggregateFromRaw(result: unknown): Omit<UserPropertyStats, 'typeBreakdown'> {
+  const rows = rowsFromRaw(result);
+  if (rows.length !== 1) throw new UserPropertyScopeQueryError();
+  const row = rows[0];
+  return {
+    total: statsNumber(row.total),
+    inFocus: statsNumber(row.in_focus),
+    hot: statsNumber(row.hot),
+    undervalued: statsNumber(row.undervalued),
+    newToday: statsNumber(row.new_today),
+  };
+}
+
+function statsTypeBreakdownFromRaw(result: unknown): Record<string, number> {
+  const rows = rowsFromRaw(result);
+  const breakdown: Record<string, number> = {};
+  for (const row of rows) {
+    if (typeof row.property_type !== 'string' || !PROPERTY_TYPE_SET.has(row.property_type as PropertyType)) {
+      throw new UserPropertyScopeQueryError();
+    }
+    if (Object.prototype.hasOwnProperty.call(breakdown, row.property_type)) {
+      throw new UserPropertyScopeQueryError();
+    }
+    breakdown[row.property_type] = statsNumber(row.total);
+  }
+  return breakdown;
+}
+
+function statsWindow(now?: Date | string): { lower: string; upper: string; lowerEpoch: number; upperEpoch: number } {
+  const date = now === undefined ? new Date() : now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(date.getTime())) throw new UserPropertyScopeValidationError();
+  return {
+    lower: new Date(date.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+    upper: date.toISOString(),
+    lowerEpoch: date.getTime() - 24 * 60 * 60 * 1000,
+    upperEpoch: date.getTime(),
+  };
+}
+
 async function defaultProfileLoader(strapi: UserPropertyScopeStrapi, userId: number): Promise<UserParseProfile | null> {
   try {
     const snapshot = await buildSingleUserSnapshot(strapi as never, userId);
@@ -526,6 +581,50 @@ export class UserPropertyScopeRepository {
       throw new UserPropertyScopeQueryError();
     }
     return totalFromRaw(result);
+  }
+
+  /**
+   * Aggregate only rows visible through the canonical profile predicate.
+   * Legacy dashboard counters (total/inFocus/hot/typeBreakdown) intentionally
+   * use the virtual personal status "new" (missing state means new). The
+   * undervalued and newToday counters remain profile-visible across personal
+   * statuses, so a user's review state cannot erase market signals.
+   */
+  async stats(userId: unknown, now?: Date | string): Promise<UserPropertyStats> {
+    const compiled = await this.compile(userId, {});
+    const window = statsWindow(now);
+    const scopedCte = `WITH scoped AS (SELECT p.is_undervalued AS is_undervalued, `
+      + `p.first_seen_at AS first_seen_at, p.property_type AS property_type, `
+      + `p.focus_score AS focus_score, COALESCE(ups.status, 'new') AS personal_status `
+      + `${compiled.fromSql} WHERE ${compiled.whereSql})`;
+
+    let aggregateResult: unknown;
+    let breakdownResult: unknown;
+    try {
+      aggregateResult = await this.strapi.db.connection.raw(
+        `${scopedCte} SELECT `
+          + `COALESCE(SUM(CASE WHEN personal_status = 'new' THEN 1 ELSE 0 END), 0) AS total, `
+          + `COALESCE(SUM(CASE WHEN personal_status = 'new' AND focus_score > 0 THEN 1 ELSE 0 END), 0) AS in_focus, `
+          + `COALESCE(SUM(CASE WHEN personal_status = 'new' AND focus_score >= 50 THEN 1 ELSE 0 END), 0) AS hot, `
+          + `COALESCE(SUM(CASE WHEN is_undervalued = 1 THEN 1 ELSE 0 END), 0) AS undervalued, `
+          + `COALESCE(SUM(CASE WHEN first_seen_at IS NOT NULL AND ((typeof(first_seen_at) IN ('integer', 'real') `
+          + `AND first_seen_at >= ? AND first_seen_at <= ?) OR (typeof(first_seen_at) = 'text' `
+          + `AND first_seen_at >= ? AND first_seen_at <= ?)) THEN 1 ELSE 0 END), 0) AS new_today FROM scoped`,
+        [...compiled.bindings, window.lowerEpoch, window.upperEpoch, window.lower, window.upper],
+      );
+      breakdownResult = await this.strapi.db.connection.raw(
+        `${scopedCte} SELECT property_type, COUNT(*) AS total FROM scoped `
+          + `WHERE personal_status = 'new' GROUP BY property_type`,
+        [...compiled.bindings],
+      );
+    } catch {
+      throw new UserPropertyScopeQueryError();
+    }
+
+    return {
+      ...statsAggregateFromRaw(aggregateResult),
+      typeBreakdown: statsTypeBreakdownFromRaw(breakdownResult),
+    };
   }
 
   async list(userId: unknown, request?: UserPropertyScopeRequest): Promise<UserPropertyListResult> {

@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockCreateScopeRepository = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../services/user-property-scope', () => ({
+  createUserPropertyScopeRepository: mockCreateScopeRepository,
+  UserPropertyScopeValidationError: class UserPropertyScopeValidationError extends Error {},
+  UserPropertyScopeNotReadyError: class UserPropertyScopeNotReadyError extends Error {},
+  UserPropertyScopeMalformedError: class UserPropertyScopeMalformedError extends Error {},
+  UserPropertyScopeUnavailableError: class UserPropertyScopeUnavailableError extends Error {},
+  UserPropertyScopeQueryError: class UserPropertyScopeQueryError extends Error {},
+}));
+
 // --- Mock fs/promises ---
 vi.mock('fs/promises', () => ({
   access: vi.fn(),
@@ -37,6 +48,11 @@ function makeStrapi() {
     deleteMany: vi.fn(),
     update: vi.fn(),
   };
+  const scopeRepository = {
+    list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
+    detail: vi.fn().mockResolvedValue({ documentId: 'doc123' }),
+    stats: vi.fn().mockResolvedValue({ total: 0, inFocus: 0, hot: 0, undervalued: 0, newToday: 0, typeBreakdown: {} }),
+  };
   return {
     db: {
       query: vi.fn().mockReturnValue(mockDbQuery),
@@ -50,6 +66,7 @@ function makeStrapi() {
     service: vi.fn().mockReturnValue(mockService),
     _mockService: mockService,
     _mockDbQuery: mockDbQuery,
+    _scopeRepository: scopeRepository,
   };
 }
 
@@ -76,6 +93,7 @@ describe('property controller', () => {
     strapi = makeStrapi();
     actions = (propertyControllerFactory as any)({ strapi });
     vi.clearAllMocks();
+    mockCreateScopeRepository.mockReturnValue(strapi._scopeRepository);
   });
 
   // =================== clearNew ===================
@@ -187,6 +205,103 @@ describe('property controller', () => {
     });
   });
 
+  describe('scoped read actions', () => {
+    it('uses the exact authenticated actor and canonical request for list', async () => {
+      const result = { data: [{ documentId: 'doc-7' }], meta: { page: 2, pageSize: 25, total: 1, totalPages: 1 } };
+      strapi._scopeRepository.list.mockResolvedValue(result);
+      const ctx = makeCtx({
+        state: { user: { id: 7 } },
+        query: {
+          city: 'moscow,mo',
+          property_type: 'office,warehouse',
+          status: 'new,viewed',
+          search: 'needle',
+          sort: '-focus_score',
+          page: '2',
+          pageSize: '25',
+        },
+      });
+
+      await actions.find(ctx);
+
+      expect(mockCreateScopeRepository).toHaveBeenCalledWith(strapi);
+      expect(strapi._scopeRepository.list).toHaveBeenCalledWith(7, {
+        city: ['moscow', 'mo'],
+        propertyType: ['office', 'warehouse'],
+        status: ['new', 'viewed'],
+        search: 'needle',
+        sort: '-focus_score',
+        page: 2,
+        pageSize: 25,
+      });
+      expect(ctx.body).toBe(result);
+    });
+
+    it('rejects populate, fields, and unknown query keys without a scope query', async () => {
+      const ctx = makeCtx({ state: { user: { id: 7 } }, query: { populate: 'comments' } });
+
+      await actions.find(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid property query' });
+      expect(strapi._scopeRepository.list).not.toHaveBeenCalled();
+    });
+
+    it('returns an indistinguishable 404 for a detail outside the actor scope', async () => {
+      strapi._scopeRepository.detail.mockResolvedValue(null);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'hidden-property' } });
+
+      await actions.findOne(ctx);
+
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'hidden-property', {});
+      expect(ctx.status).toBe(404);
+      expect(ctx.body).toEqual({ error: 'Property not found' });
+    });
+
+    it('uses the same scoped list predicate for focus and adds only a threshold', async () => {
+      const result = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } };
+      strapi._scopeRepository.list.mockResolvedValue(result);
+      const ctx = makeCtx({
+        state: { user: { id: 7 } },
+        query: { threshold: '50', city: 'moscow', sort: '-focus_score', page: '1', pageSize: '20' },
+      });
+
+      await actions.getFocus(ctx);
+
+      expect(strapi._scopeRepository.list).toHaveBeenCalledWith(7, {
+        city: ['moscow'],
+        focusThreshold: 50,
+        sort: '-focus_score',
+        page: 1,
+        pageSize: 20,
+      });
+      expect(ctx.body).toBe(result);
+    });
+
+    it('uses scoped stats and never performs unscoped Query Engine counts', async () => {
+      const stats = { total: 2, inFocus: 1, hot: 1, undervalued: 2, newToday: 1, typeBreakdown: { office: 2 } };
+      strapi._scopeRepository.stats.mockResolvedValue(stats);
+      const ctx = makeCtx({ state: { user: { id: 7 } } });
+
+      await actions.getStats(ctx);
+
+      expect(strapi._scopeRepository.stats).toHaveBeenCalledWith(7, expect.any(Date));
+      expect(ctx.body).toBe(stats);
+      expect(strapi.db.query).not.toHaveBeenCalled();
+    });
+
+    it('maps scope failures to safe status responses without leaking details', async () => {
+      strapi._scopeRepository.list.mockRejectedValue(new Error('SQL contains private data'));
+      const ctx = makeCtx({ state: { user: { id: 7 } } });
+
+      await actions.find(ctx);
+
+      expect(ctx.status).toBe(500);
+      expect(ctx.body).toEqual({ error: 'Property scope unavailable' });
+      expect(JSON.stringify(ctx.body)).not.toContain('private data');
+    });
+  });
+
   // =================== servePhoto ===================
   describe('servePhoto', () => {
     it('should serve file with correct content-type for jpg', async () => {
@@ -194,21 +309,21 @@ describe('property controller', () => {
       (fs.access as any).mockResolvedValue(undefined);
       (fs.readFile as any).mockResolvedValue(fileBuffer);
 
-      const ctx = makeCtx({ params: { documentId: 'doc123', filename: 'photo.jpg' } });
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc123', filename: 'photo.jpg' } });
       await actions.servePhoto(ctx);
 
       expect(fs.access).toHaveBeenCalled();
       expect(fs.readFile).toHaveBeenCalled();
       expect(ctx.body).toBe(fileBuffer);
       expect(ctx.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
-      expect(ctx.set).toHaveBeenCalledWith('Cache-Control', 'public, max-age=86400');
+      expect(ctx.set).toHaveBeenCalledWith('Cache-Control', 'private, max-age=86400');
     });
 
     it('should set image/png for .png extension', async () => {
       (fs.access as any).mockResolvedValue(undefined);
       (fs.readFile as any).mockResolvedValue(Buffer.from('png'));
 
-      const ctx = makeCtx({ params: { documentId: 'doc1', filename: 'img.png' } });
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: 'img.png' } });
       await actions.servePhoto(ctx);
 
       expect(ctx.set).toHaveBeenCalledWith('Content-Type', 'image/png');
@@ -218,182 +333,63 @@ describe('property controller', () => {
       (fs.access as any).mockResolvedValue(undefined);
       (fs.readFile as any).mockResolvedValue(Buffer.from('webp'));
 
-      const ctx = makeCtx({ params: { documentId: 'doc1', filename: 'img.webp' } });
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: 'img.webp' } });
       await actions.servePhoto(ctx);
 
       expect(ctx.set).toHaveBeenCalledWith('Content-Type', 'image/webp');
     });
 
-    it('should default to image/jpeg for unknown extension', async () => {
+    it('rejects non-image extensions before filesystem access', async () => {
       (fs.access as any).mockResolvedValue(undefined);
       (fs.readFile as any).mockResolvedValue(Buffer.from('data'));
 
-      const ctx = makeCtx({ params: { documentId: 'doc1', filename: 'img.bmp' } });
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: 'img.bmp' } });
       await actions.servePhoto(ctx);
 
-      expect(ctx.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid photo path' });
+      expect(fs.access).not.toHaveBeenCalled();
     });
 
     it('should return 404 when file not found', async () => {
       (fs.access as any).mockRejectedValue(new Error('ENOENT'));
 
-      const ctx = makeCtx({ params: { documentId: 'doc1', filename: 'missing.jpg' } });
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: 'missing.jpg' } });
       await actions.servePhoto(ctx);
 
       expect(ctx.status).toBe(404);
       expect(ctx.body).toEqual({ error: 'Photo not found' });
     });
 
-    it('should block path traversal in filename (../)', async () => {
-      (fs.access as any).mockResolvedValue(undefined);
-      (fs.readFile as any).mockResolvedValue(Buffer.from('data'));
-
-      const ctx = makeCtx({ params: { documentId: 'doc1', filename: '../../etc/passwd' } });
+    it('returns the same 404 and never touches fs for a photo outside scope', async () => {
+      strapi._scopeRepository.detail.mockResolvedValueOnce(null);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'foreign', filename: 'photo.jpg' } });
       await actions.servePhoto(ctx);
 
-      const accessPath = (fs.access as any).mock.calls[0]?.[0] as string;
-      expect(accessPath).not.toContain('../');
-      expect(accessPath).toContain('data/photos/doc1/passwd');
+      expect(ctx.status).toBe(404);
+      expect(ctx.body).toEqual({ error: 'Photo not found' });
+      expect(fs.access).not.toHaveBeenCalled();
+    });
+    it('rejects path traversal instead of rewriting it', async () => {
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: 'doc1', filename: '../../etc/passwd' } });
+      await actions.servePhoto(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid photo path' });
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'doc1', {});
+      expect(fs.access).not.toHaveBeenCalled();
     });
 
-    it('should block path traversal in documentId (../)', async () => {
-      (fs.access as any).mockResolvedValue(undefined);
-      (fs.readFile as any).mockResolvedValue(Buffer.from('data'));
-
-      const ctx = makeCtx({ params: { documentId: '../secret', filename: 'photo.jpg' } });
+    it('rejects traversal in documentId without checking filesystem existence', async () => {
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { documentId: '../secret', filename: 'photo.jpg' } });
       await actions.servePhoto(ctx);
 
-      const accessPath = (fs.access as any).mock.calls[0]?.[0] as string;
-      expect(accessPath).not.toContain('../secret');
-      expect(accessPath).toContain('data/photos/secret/photo.jpg');
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid photo path' });
+      expect(fs.access).not.toHaveBeenCalled();
     });
   });
 
-  // =================== getFocus ===================
-  describe('getFocus', () => {
-    it('should parse query params and delegate to service.getFocusQuery', async () => {
-      const expectedResult = {
-        data: [{ id: 1, documentId: 'd1', title: 'Test' }],
-        meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, threshold: 20, filters: {} },
-      };
-      strapi._mockService.getFocusQuery.mockResolvedValue(expectedResult);
-
-      const ctx = makeCtx({ query: {} });
-      await actions.getFocus(ctx);
-
-      expect(strapi.service).toHaveBeenCalledWith('api::property.property');
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith({
-        threshold: 0,
-        city: undefined,
-        property_type: undefined,
-        tags: undefined,
-        search: undefined,
-        sort: '-focus_score',
-        page: 1,
-        pageSize: 20,
-      });
-      expect(ctx.body).toEqual(expectedResult);
-    });
-
-    it('should pass custom threshold to service', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { threshold: '50' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 50 })
-      );
-    });
-
-    it('should pass city filter to service', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { city: 'moscow' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ city: 'moscow' })
-      );
-    });
-
-    it('should pass property_type filter to service', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { property_type: 'apartment' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ property_type: 'apartment' })
-      );
-    });
-
-    it('should pass tags filter to service', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { tags: 'undervalued,new' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ tags: 'undervalued,new' })
-      );
-    });
-
-    it('should pass sort param to service', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { sort: '-price_per_sqm' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ sort: '-price_per_sqm' })
-      );
-    });
-
-    it('should clamp pageSize to max 100', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { pageSize: '500' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ pageSize: 100 })
-      );
-    });
-
-    it('should clamp pageSize to min 1', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { pageSize: '-5' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ pageSize: 1 })
-      );
-    });
-
-    it('should clamp page to min 1', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { page: '-3' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ page: 1 })
-      );
-    });
-
-    it('should handle non-numeric threshold gracefully (defaults to 0)', async () => {
-      strapi._mockService.getFocusQuery.mockResolvedValue({ data: [], meta: {} });
-
-      const ctx = makeCtx({ query: { threshold: 'abc' } });
-      await actions.getFocus(ctx);
-
-      expect(strapi._mockService.getFocusQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 0 })
-      );
-    });
-  });
 });
 
 describe('property internal route', () => {

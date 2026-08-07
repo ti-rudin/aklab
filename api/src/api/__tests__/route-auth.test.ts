@@ -6,6 +6,7 @@ import marketReferenceRoutes from '../market-reference/routes/market-reference';
 import pipelineRoutes from '../pipeline/routes/pipeline';
 import parserRunSourceRoutes from '../parser-run-source/routes/parser-run-source';
 import propertyRoutes from '../property/routes/property';
+import propertyEventRoutes from '../property-event/routes/property-event';
 import settingRoutes from '../setting/routes/setting';
 import sourceRoutes from '../source/routes/source';
 
@@ -41,6 +42,11 @@ const ADMIN_CONFIG = {
 const SERVICE_CONFIG = {
   auth: false,
   policies: ['global::service-token'],
+} as const;
+
+const USER_CONFIG = {
+  auth: false,
+  policies: ['global::authenticated-user'],
 } as const;
 
 const PUBLIC_HEALTH_CONFIG = {
@@ -108,6 +114,24 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/terminal', handler: 'api::parser-run-source.parser-run-source.finishInternal', config: SERVICE_CONFIG },
 ];
 
+const PROPERTY_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
+  { resource: 'property', method: 'PUT', path: '/internal/properties/:id', handler: 'property.internalUpdate', config: SERVICE_CONFIG },
+  { resource: 'property', method: 'POST', path: '/properties/upsert', handler: 'property.upsert', config: SERVICE_CONFIG },
+  { resource: 'property', method: 'POST', path: '/properties/clear-new', handler: 'property.clearNew', config: ADMIN_CONFIG },
+  { resource: 'property', method: 'GET', path: '/photos/:documentId/:filename', handler: 'property.servePhoto', config: USER_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties/focus', handler: 'property.getFocus', config: USER_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties/:id/geocode', handler: 'property.geocode', config: ADMIN_CONFIG },
+  { resource: 'property', method: 'POST', path: '/properties/:id/fetch-photos', handler: 'property.fetchPhotos', config: ADMIN_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties/stats', handler: 'property.getStats', config: USER_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties', handler: 'property.find', config: USER_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties/:id', handler: 'property.findOne', config: USER_CONFIG },
+];
+
+const PROPERTY_EVENT_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
+  { resource: 'property-event', method: 'GET', path: '/property-events', handler: 'property-event.find', config: ADMIN_CONFIG },
+  { resource: 'property-event', method: 'GET', path: '/property-events/:id', handler: 'property-event.findOne', config: ADMIN_CONFIG },
+];
+
 function routeKey(resource: string, route: Pick<RouteExpectation, 'method' | 'path'>): string {
   return `${resource}|${route.method}|${route.path}`;
 }
@@ -137,6 +161,34 @@ describe('global/admin API route boundary', () => {
         path: expected.path,
         handler: expected.handler,
         config: expected.config,
+      });
+    }
+  });
+
+  it('classifies every Property and Property Event route exactly once', () => {
+    const modules = [
+      { resource: 'property', module: propertyRoutes },
+      { resource: 'property-event', module: propertyEventRoutes },
+    ];
+    const actualRoutes = modules.flatMap(({ resource, module }) => (
+      module.routes.map((route) => ({ resource, route }))
+    ));
+    const actualKeys = actualRoutes.map(({ resource, route }) => routeKey(resource, route));
+    const expected = [...PROPERTY_ROUTE_EXPECTATIONS, ...PROPERTY_EVENT_ROUTE_EXPECTATIONS];
+    const expectedKeys = expected.map((route) => routeKey(route.resource, route));
+
+    expect(new Set(actualKeys).size).toBe(actualKeys.length);
+    expect([...actualKeys].sort()).toEqual([...expectedKeys].sort());
+
+    for (const expectedRoute of expected) {
+      const actual = actualRoutes.find(({ resource, route }) => (
+        routeKey(resource, route) === routeKey(expectedRoute.resource, expectedRoute)
+      ));
+      expect(actual?.route).toEqual({
+        method: expectedRoute.method,
+        path: expectedRoute.path,
+        handler: expectedRoute.handler,
+        config: expectedRoute.config,
       });
     }
   });
