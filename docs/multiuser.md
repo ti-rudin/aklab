@@ -354,6 +354,9 @@ scope; no-auth и foreign-scope запросы не должны раскрыв�
 Текущий `npm run smoke` — dedicated multi-user harness. Он требует явные
 `SMOKE_API_URL`, `SMOKE_UI_URL` и три разные пары credentials для admin/A/B,
 ничего не берёт из legacy `TEST_USER_*` и не имеет production fallback.
+URL принимаются только как exact trusted pair: dev-домены из этого репозитория,
+production-домены с отдельным `SMOKE_ALLOW_PRODUCTION=1`, либо loopback pair с
+флагом `--local`. Unknown/mixed UI/API origins отклоняются до login.
 Read-only проверки запускаются по умолчанию. Status/comment и harmless denial
 probes включаются только для изолированной fixture:
 
@@ -364,6 +367,7 @@ SMOKE_ADMIN_EMAIL="$ADMIN_EMAIL" SMOKE_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 SMOKE_USER_A_EMAIL="$USER_A_EMAIL" SMOKE_USER_A_PASSWORD="$USER_A_PASSWORD" \
 SMOKE_USER_B_EMAIL="$USER_B_EMAIL" SMOKE_USER_B_PASSWORD="$USER_B_PASSWORD" \
 SMOKE_FIXTURE_PROPERTY_ID="${SHARED_FIXTURE_DOCUMENT_ID:?set shared A/B fixture}" \
+SMOKE_FIXTURE_EXPECTED_TITLE="${SHARED_FIXTURE_TITLE:?set exact dedicated fixture title}" \
 SMOKE_PHOTO_DOCUMENT_ID="${USER_A_ONLY_PHOTO_DOCUMENT_ID:?set A-only photo fixture}" \
 SMOKE_PHOTO_FILENAME="${PHOTO_FILENAME:?set safe stored filename}" \
 SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only \

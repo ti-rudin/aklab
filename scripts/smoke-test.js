@@ -21,6 +21,11 @@ const ADMIN_ROLE_TYPE = 'aklab_admin';
 const MUTATION_CONFIRM = 'fixture-only';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru']);
+const TRUSTED_TARGET_PAIRS = [
+  { kind: 'dev', ui: 'https://aklab-dev.tirobots.ru', api: 'https://api-aklab-dev.tirobots.ru' },
+  { kind: 'production', ui: 'https://aklab.tirobots.ru', api: 'https://api-aklab.tirobots.ru' },
+  { kind: 'local', ui: 'http://127.0.0.1:5174', api: 'http://127.0.0.1:1338' },
+];
 const PERSONAL_STATUSES = new Set(['new', 'in_progress', 'viewed', 'rejected']);
 
 function isRecord(value) {
@@ -88,6 +93,10 @@ function validateOptIn(env, name) {
   return env[name] === '1';
 }
 
+function trustedTargetPair(apiBaseUrl, uiBaseUrl) {
+  return TRUSTED_TARGET_PAIRS.find(pair => pair.api === apiBaseUrl && pair.ui === uiBaseUrl) || null;
+}
+
 function createSmokeConfig(env = process.env, argv = []) {
   const local = argv.includes('--local');
   const apiValue = optionalEnv(env, 'SMOKE_API_URL') || (local ? 'http://127.0.0.1:1338' : null);
@@ -125,6 +134,7 @@ function createSmokeConfig(env = process.env, argv = []) {
 
   const fixture = {
     propertyId: optionalEnv(env, 'SMOKE_FIXTURE_PROPERTY_ID'),
+    expectedTitle: optionalEnv(env, 'SMOKE_FIXTURE_EXPECTED_TITLE'),
     photoDocumentId: optionalEnv(env, 'SMOKE_PHOTO_DOCUMENT_ID'),
     photoFilename: optionalEnv(env, 'SMOKE_PHOTO_FILENAME'),
     foreignPropertyId: optionalEnv(env, 'SMOKE_FOREIGN_PROPERTY_ID'),
@@ -140,15 +150,24 @@ function createSmokeConfig(env = process.env, argv = []) {
     if (!fixture.propertyId) {
       throw new Error('SMOKE_FIXTURE_PROPERTY_ID is required when SMOKE_ALLOW_MUTATIONS=1');
     }
+    if (!fixture.expectedTitle) {
+      throw new Error('SMOKE_FIXTURE_EXPECTED_TITLE is required when SMOKE_ALLOW_MUTATIONS=1');
+    }
   }
 
+  const apiBaseUrl = normalizeBaseUrl(apiValue, 'SMOKE_API_URL', env);
+  const uiBaseUrl = normalizeBaseUrl(uiValue, 'SMOKE_UI_URL', env);
+  const targetPair = trustedTargetPair(apiBaseUrl, uiBaseUrl);
+  if (!targetPair) throw new Error('SMOKE_API_URL and SMOKE_UI_URL must match one trusted target pair');
+  if (targetPair.kind === 'local' && !local) throw new Error('Loopback target pair requires --local');
+  if (targetPair.kind !== 'local' && local) throw new Error('--local requires the loopback target pair');
+
   return {
-    apiBaseUrl: normalizeBaseUrl(apiValue, 'SMOKE_API_URL', env),
-    uiBaseUrl: normalizeBaseUrl(uiValue, 'SMOKE_UI_URL', env),
+    apiBaseUrl,
+    uiBaseUrl,
     roles,
     allowMutations,
     fixture,
-    requireDataSeparation: env.SMOKE_REQUIRE_DATA_SEPARATION !== '0',
     secrets: ROLE_NAMES.flatMap(role => [roles[role].identifier, roles[role].password]),
   };
 }
@@ -364,29 +383,29 @@ function assertProfilesIncompatible(left, right) {
   return true;
 }
 
-function assertListSeparation(leftRows, rightRows, requireSeparation = true) {
+function assertListSeparation(leftRows, rightRows) {
   const leftIds = new Set(leftRows.map(rowId).filter(Boolean));
   const rightIds = new Set(rightRows.map(rowId).filter(Boolean));
   const leftOnly = [...leftIds].filter(id => !rightIds.has(id));
   const rightOnly = [...rightIds].filter(id => !leftIds.has(id));
   const equalPayload = stableJson(leftRows) === stableJson(rightRows);
-  if (requireSeparation && (leftRows.length === 0 || rightRows.length === 0)) {
+  if (leftRows.length === 0 || rightRows.length === 0) {
     throw new Error('profile separation fixture returned an empty user list');
   }
-  if (requireSeparation && (leftIds.size !== leftRows.length || rightIds.size !== rightRows.length)) {
+  if (leftIds.size !== leftRows.length || rightIds.size !== rightRows.length) {
     throw new Error('scoped list contains a row without a stable property id');
   }
-  if (requireSeparation && (leftOnly.length === 0 || rightOnly.length === 0)) {
+  if (leftOnly.length === 0 || rightOnly.length === 0) {
     throw new Error('user A and user B lists have no exclusive fixture rows');
   }
-  if (requireSeparation && equalPayload) {
+  if (equalPayload) {
     throw new Error('user A and user B lists are not separated');
   }
   return { leftOnly, rightOnly, overlap: [...leftIds].filter(id => rightIds.has(id)) };
 }
 
-function assertStatsSeparation(left, right, requireSeparation = true) {
-  if (requireSeparation && stableJson(left) === stableJson(right)) {
+function assertStatsSeparation(left, right) {
+  if (stableJson(left) === stableJson(right)) {
     throw new Error('user A and user B stats are not separated');
   }
 }
@@ -527,9 +546,12 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
   if (scoped.userA?.rows && scoped.userB?.rows) {
     let separation;
     await check('User A and user B lists are separated', async () => {
-      separation = assertListSeparation(scoped.userA.rows, scoped.userB.rows, config.requireDataSeparation);
+      separation = assertListSeparation(scoped.userA.rows, scoped.userB.rows);
     });
     if (separation) {
+      if (config.fixture.foreignPropertyId && !separation.leftOnly.includes(config.fixture.foreignPropertyId)) {
+        throw new Error('SMOKE_FOREIGN_PROPERTY_ID must be present only in user A scoped list');
+      }
       const foreignId = config.fixture.foreignPropertyId || separation.leftOnly[0];
       const ownId = separation.leftOnly[0] || separation.rightOnly[0] || rowId(scoped.userA.rows[0]);
       if (ownId) {
@@ -551,7 +573,7 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
     }
   }
   if (scoped.userA?.stats && scoped.userB?.stats) {
-    await check('User A and user B stats are separated', async () => assertStatsSeparation(scoped.userA.stats, scoped.userB.stats, config.requireDataSeparation));
+    await check('User A and user B stats are separated', async () => assertStatsSeparation(scoped.userA.stats, scoped.userB.stats));
   }
 
   await check('Ordinary user cannot read global settings', async () => assertForbidden(await client.request('GET', '/api/setting', { token: sessions.userA.token }), 'settings'));
@@ -607,6 +629,12 @@ async function runMutationChecks({ config, client, sessions, check }) {
     ]);
     assertStatus(a, 200, 'user A fixture');
     assertStatus(b, 200, 'user B fixture');
+    const dtoA = a?.data?.data;
+    const dtoB = b?.data?.data;
+    if (dtoA?.documentId !== propertyId || dtoB?.documentId !== propertyId
+      || dtoA?.title !== config.fixture.expectedTitle || dtoB?.title !== config.fixture.expectedTitle) {
+      throw new Error('mutation fixture identity/title does not match the dedicated fixture');
+    }
     fixtureVisible = true;
   });
   if (!fixtureVisible) return;
@@ -647,10 +675,20 @@ async function runMutationChecks({ config, client, sessions, check }) {
         if (statusValue(a) !== changedStatus) throw new Error('user A status did not change');
         if (statusValue(b) !== originalStatusB) throw new Error('user B status changed with user A');
       } finally {
-        const restored = originalStatusA === 'new'
-          ? await client.request('DELETE', statusPath, { token: sessions.userA.token })
-          : await client.request('PUT', statusPath, { token: sessions.userA.token, body: { data: { status: originalStatusA } } });
-        assertStatus(restored, [200, 204], 'status restore');
+        let restoreError;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const restored = originalStatusA === 'new'
+              ? await client.request('DELETE', statusPath, { token: sessions.userA.token })
+              : await client.request('PUT', statusPath, { token: sessions.userA.token, body: { data: { status: originalStatusA } } });
+            assertStatus(restored, [200, 204], 'status restore');
+            restoreError = null;
+            break;
+          } catch (error) {
+            restoreError = error;
+          }
+        }
+        if (restoreError) throw new Error('fixture status cleanup failed after retries; manual cleanup is required');
       }
     });
   } else {
@@ -671,7 +709,14 @@ async function runMutationChecks({ config, client, sessions, check }) {
       createAccepted = created.status === 201 || created.status === 200;
       if (!createAccepted) throw new Error('comment create was not accepted');
       commentId = extractCommentId(created);
-      if (!commentId) throw new Error('comment id missing; refusing broad cleanup');
+      if (!commentId) {
+        const lookup = await client.request('GET', `/api/me/properties/${encodedPropertyId}/comments`, { token: sessions.userA.token });
+        assertStatus(lookup, 200, 'comment cleanup lookup');
+        const comments = Array.isArray(lookup.data) ? lookup.data : lookup.data?.data;
+        const matches = Array.isArray(comments) ? comments.filter(item => item?.text === marker) : [];
+        if (matches.length === 1) commentId = extractCommentId({ data: matches[0] });
+      }
+      if (!commentId) throw new Error('comment id missing after marker lookup; manual cleanup is required');
       const [a, b] = await Promise.all([
         client.request('GET', `/api/me/properties/${encodedPropertyId}/comments`, { token: sessions.userA.token }),
         client.request('GET', `/api/me/properties/${encodedPropertyId}/comments`, { token: sessions.userB.token }),
@@ -689,8 +734,18 @@ async function runMutationChecks({ config, client, sessions, check }) {
     } finally {
       if (createAccepted && !commentId) throw new Error('comment was created without an id; manual cleanup is required');
       if (commentId) {
-        const response = await client.request('DELETE', `/api/me/properties/${encodedPropertyId}/comments/${encodeURIComponent(commentId)}`, { token: sessions.userA.token });
-        assertStatus(response, [200, 204], 'comment restore');
+        let cleanupError;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const response = await client.request('DELETE', `/api/me/properties/${encodedPropertyId}/comments/${encodeURIComponent(commentId)}`, { token: sessions.userA.token });
+            assertStatus(response, [200, 204], 'comment restore');
+            cleanupError = null;
+            break;
+          } catch (error) {
+            cleanupError = error;
+          }
+        }
+        if (cleanupError) throw new Error('fixture comment cleanup failed after retries; manual cleanup is required');
       }
     }
   });
@@ -698,7 +753,7 @@ async function runMutationChecks({ config, client, sessions, check }) {
   const denialProbes = [
     ['Ordinary user cannot mutate global settings', 'PUT', '/api/setting', { data: {} }],
     ['Ordinary user cannot mutate global sources', 'PUT', '/api/sources/__smoke_denied__', { data: {} }],
-    ['Ordinary user cannot start a pipeline', 'POST', '/api/pipeline/start', { mode: 'full', targetUserId: sessions.userB.userId }],
+    ['Ordinary user cannot start a pipeline', 'POST', '/api/pipeline/start', {}],
   ];
   for (const [name, method, path, body] of denialProbes) {
     await check(name, async () => {
@@ -709,7 +764,7 @@ async function runMutationChecks({ config, client, sessions, check }) {
 }
 
 function helpText() {
-  return `AKLAB multi-user smoke harness\n\nUsage:\n  node scripts/smoke-test.js              # explicit dev acceptance target\n  node scripts/smoke-test.js --local      # only with explicit fixture credentials\n  node scripts/smoke-test.js --print-plan # validate env and print no-network plan\n  node scripts/smoke-test.js --help\n\nRequired environment:\n  SMOKE_API_URL, SMOKE_UI_URL\n  SMOKE_ADMIN_EMAIL, SMOKE_ADMIN_PASSWORD\n  SMOKE_USER_A_EMAIL, SMOKE_USER_A_PASSWORD\n  SMOKE_USER_B_EMAIL, SMOKE_USER_B_PASSWORD\n\nOptional fixture environment:\n  SMOKE_PHOTO_DOCUMENT_ID, SMOKE_PHOTO_FILENAME\n  SMOKE_FOREIGN_PROPERTY_ID, SMOKE_FIXTURE_PROPERTY_ID\n\nMutations are disabled by default. Fixture-only status/comment probes require:\n  SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only\n\nProduction URLs are rejected unless SMOKE_ALLOW_PRODUCTION=1 is explicit.\nCron/queue fan-out and manual pipeline execution are separate runtime evidence.\n`;
+  return `AKLAB multi-user smoke harness\n\nUsage:\n  node scripts/smoke-test.js              # explicit dev acceptance target\n  node scripts/smoke-test.js --local      # only with explicit fixture credentials\n  node scripts/smoke-test.js --print-plan # validate env and print no-network plan\n  node scripts/smoke-test.js --help\n\nRequired environment:\n  SMOKE_API_URL, SMOKE_UI_URL\n  SMOKE_ADMIN_EMAIL, SMOKE_ADMIN_PASSWORD\n  SMOKE_USER_A_EMAIL, SMOKE_USER_A_PASSWORD\n  SMOKE_USER_B_EMAIL, SMOKE_USER_B_PASSWORD\n\nOptional fixture environment:\n  SMOKE_PHOTO_DOCUMENT_ID, SMOKE_PHOTO_FILENAME\n  SMOKE_FOREIGN_PROPERTY_ID, SMOKE_FIXTURE_PROPERTY_ID\n  SMOKE_FIXTURE_EXPECTED_TITLE (required with mutation opt-in)\n\nMutations are disabled by default. Fixture-only status/comment probes require:\n  SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only\n\nProduction URLs are rejected unless SMOKE_ALLOW_PRODUCTION=1 is explicit.\nCron/queue fan-out and manual pipeline execution are separate runtime evidence.\n`;
 }
 
 async function main() {

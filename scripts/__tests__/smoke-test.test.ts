@@ -15,8 +15,8 @@ const SCRIPT = new URL('scripts/smoke-test.js', ROOT);
 const PLAYWRIGHT_SPEC = new URL('app/e2e/vue.spec.ts', ROOT);
 
 const SAFE_ENV = {
-  SMOKE_API_URL: 'https://aklab-dev.example.test',
-  SMOKE_UI_URL: 'https://aklab-dev.example.test',
+  SMOKE_API_URL: 'https://api-aklab-dev.tirobots.ru',
+  SMOKE_UI_URL: 'https://aklab-dev.tirobots.ru',
   SMOKE_ADMIN_EMAIL: 'admin@example.test',
   SMOKE_ADMIN_PASSWORD: 'admin-secret',
   SMOKE_USER_A_EMAIL: 'user-a@example.test',
@@ -95,6 +95,7 @@ describe('multiuser smoke source boundary', () => {
     expect(source).toContain('SMOKE_MUTATION_CONFIRM');
     expect(source).toContain('/api/properties?page=1&pageSize=100');
     expect(source).not.toContain('pagination%5BpageSize%5D');
+    expect(source).not.toContain("{ mode: 'full', targetUserId: sessions.userB.userId }");
     expect(source).not.toContain('row.document_id');
   });
 
@@ -122,13 +123,28 @@ describe('multiuser smoke helpers', () => {
       body: { mode: 'full', targetUserId: 17 },
     });
     expect(buildSmokePlan({}).noAuth.some((entry: { path: string }) => entry.path === '/api/photos/<documentId>/<filename>')).toBe(true);
-    expect(() => assertListSeparation([{ documentId: 'shared' }], [{ documentId: 'shared' }], true)).toThrow('exclusive fixture rows');
+    expect(() => assertListSeparation([{ documentId: 'shared' }], [{ documentId: 'shared' }])).toThrow('exclusive fixture rows');
+    expect(() => assertListSeparation([], [])).toThrow('empty user list');
   });
 
   it('rejects insecure remote URLs, embedded credentials and base paths', () => {
     expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'http://dev.example.test' }, [])).toThrow('HTTPS');
     expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'https://name:secret@dev.example.test' }, [])).toThrow('credentials');
     expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'https://dev.example.test/api' }, [])).toThrow('origin URL');
+  });
+
+  it('rejects unknown and mixed target pairs', () => {
+    expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_UI_URL: 'https://unknown.example.test' }, [])).toThrow('trusted target pair');
+    expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'https://api-aklab.tirobots.ru' }, [])).toThrow();
+  });
+
+  it('requires an exact dedicated fixture title for mutation opt-in', () => {
+    expect(() => createSmokeConfig({
+      ...SAFE_ENV,
+      SMOKE_ALLOW_MUTATIONS: '1',
+      SMOKE_MUTATION_CONFIRM: 'fixture-only',
+      SMOKE_FIXTURE_PROPERTY_ID: 'fixture-property',
+    }, [])).toThrow('SMOKE_FIXTURE_EXPECTED_TITLE');
   });
 
   it('does not write a mutation when the shared fixture is not visible to both users', async () => {
@@ -153,7 +169,7 @@ describe('multiuser smoke helpers', () => {
     };
 
     await runMutationChecks({
-      config: { fixture: { propertyId: 'fixture-property' }, secrets: [] },
+      config: { fixture: { propertyId: 'fixture-property', expectedTitle: 'Dedicated fixture' }, secrets: [] },
       client,
       sessions: {
         userA: { token: 'a-token', userId: 1 },
@@ -170,9 +186,11 @@ describe('multiuser smoke helpers', () => {
     let statusA = 'viewed';
     const statusB = 'rejected';
     const statusWrites: string[] = [];
+    let commentMarker = '';
+    let cleanupAttempts = 0;
     const client = {
       async request(method: string, path: string, options?: { token?: string; body?: any }) {
-        if (path === '/api/properties/fixture-property') return { status: 200, data: { data: { documentId: 'fixture-property' } } };
+        if (path === '/api/properties/fixture-property') return { status: 200, data: { data: { documentId: 'fixture-property', title: 'Dedicated fixture' } } };
         if (path.endsWith('/status') && method === 'GET') {
           return { status: 200, data: { data: { status: options?.token === 'a-token' ? statusA : statusB } } };
         }
@@ -181,18 +199,24 @@ describe('multiuser smoke helpers', () => {
           statusWrites.push(statusA);
           return { status: 200, data: { data: { status: statusA } } };
         }
-        if (path.endsWith('/comments') && method === 'POST') return { status: 201, data: { data: { id: 91 } } };
-        if (path.endsWith('/comments') && method === 'GET') {
-          return { status: 200, data: { data: options?.token === 'a-token' ? [{ id: 91 }] : [] } };
+        if (path.endsWith('/comments') && method === 'POST') {
+          commentMarker = options?.body?.data?.text;
+          return { status: 201, data: { data: {} } };
         }
-        if (path.endsWith('/comments/91') && method === 'DELETE') return { status: 204, data: null };
+        if (path.endsWith('/comments') && method === 'GET') {
+          return { status: 200, data: { data: options?.token === 'a-token' ? [{ id: 91, text: commentMarker }] : [] } };
+        }
+        if (path.endsWith('/comments/91') && method === 'DELETE') {
+          cleanupAttempts += 1;
+          return { status: cleanupAttempts < 3 ? 503 : 204, data: null };
+        }
         return { status: 403, data: null };
       },
     };
     const check = async (_name: string, fn: () => Promise<void>) => fn();
 
     await runMutationChecks({
-      config: { fixture: { propertyId: 'fixture-property' }, secrets: [] },
+      config: { fixture: { propertyId: 'fixture-property', expectedTitle: 'Dedicated fixture' }, secrets: [] },
       client,
       sessions: {
         userA: { token: 'a-token', userId: 1 },
@@ -203,5 +227,6 @@ describe('multiuser smoke helpers', () => {
 
     expect(statusWrites).toEqual(['in_progress', 'viewed']);
     expect(statusA).toBe('viewed');
+    expect(cleanupAttempts).toBe(3);
   });
 });

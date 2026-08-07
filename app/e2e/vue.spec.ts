@@ -15,20 +15,16 @@ type MultiuserConfig = {
   foreignPropertyId?: string
 }
 
-const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru'])
+const TRUSTED_TARGET_PAIRS = [
+  { kind: 'dev', ui: 'https://aklab-dev.tirobots.ru', api: 'https://api-aklab-dev.tirobots.ru' },
+  { kind: 'production', ui: 'https://aklab.tirobots.ru', api: 'https://api-aklab.tirobots.ru' },
+  { kind: 'local', ui: 'http://127.0.0.1:5174', api: 'http://127.0.0.1:1338' },
+] as const
 const ROLES: readonly Role[] = ['admin', 'userA', 'userB']
 const URLConstructor = (globalThis as any).URL
 const ENV: Record<string, string | undefined> = (
   globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }
 ).process?.env || {}
-
-function productionHost(value: string): boolean {
-  try {
-    return PRODUCTION_HOSTS.has(new URLConstructor(value).hostname.toLowerCase())
-  } catch {
-    return false
-  }
-}
 
 function normalizeOrigin(value: string, name: string): string {
   let url
@@ -47,6 +43,10 @@ function normalizeOrigin(value: string, name: string): string {
     throw new Error(`${name} must use HTTPS for a remote target`)
   }
   return url.origin
+}
+
+function trustedTargetPair(apiURL: string, baseURL: string) {
+  return TRUSTED_TARGET_PAIRS.find(pair => pair.api === apiURL && pair.ui === baseURL)
 }
 
 function required(name: string): string | null {
@@ -93,33 +93,26 @@ function buildConfig(): MultiuserConfig {
     safeBaseURL = normalizeOrigin(baseURL!, 'SMOKE_UI_URL')
     safeApiURL = normalizeOrigin(apiURL!, 'SMOKE_API_URL')
   } catch (error) {
-    return {
-      enabled: false,
-      reason: `multiuser Playwright пропущен: ${error instanceof Error ? error.message : 'invalid target URL'}`,
-      baseURL: 'http://127.0.0.1:5174',
-      apiURL: 'http://127.0.0.1:1338',
-      credentials,
-    }
+    throw new Error(error instanceof Error ? error.message : 'invalid target URL')
+  }
+
+  const targetPair = trustedTargetPair(safeApiURL, safeBaseURL)
+  if (!targetPair) {
+    throw new Error('SMOKE_API_URL/SMOKE_UI_URL do not form a trusted target pair')
   }
 
   if (new Set(ROLES.map(role => credentials[role].email)).size !== ROLES.length) {
-    return {
-      enabled: false,
-      reason: 'multiuser Playwright пропущен: SMOKE_ADMIN/USER_A/USER_B должны быть тремя разными аккаунтами',
-      baseURL: safeBaseURL,
-      apiURL: safeApiURL,
-      credentials,
-    }
+    throw new Error('SMOKE_ADMIN/USER_A/USER_B must identify three distinct accounts')
   }
 
-  if ((productionHost(safeBaseURL) || productionHost(safeApiURL)) && ENV.E2E_ALLOW_PRODUCTION !== '1') {
-    return {
-      enabled: false,
-      reason: 'multiuser Playwright пропущен: production URL запрещён без E2E_ALLOW_PRODUCTION=1',
-      baseURL: safeBaseURL,
-      apiURL: safeApiURL,
-      credentials,
-    }
+  if (ENV.E2E_ALLOW_PRODUCTION !== undefined && ENV.E2E_ALLOW_PRODUCTION !== '' && ENV.E2E_ALLOW_PRODUCTION !== '1') {
+    throw new Error('E2E_ALLOW_PRODUCTION must be exactly 1 when enabled')
+  }
+  if (ENV.E2E_ALLOW_PRODUCTION === '1' && targetPair.kind !== 'production') {
+    throw new Error('E2E_ALLOW_PRODUCTION=1 is only valid for the trusted production pair')
+  }
+  if (targetPair.kind === 'production' && ENV.E2E_ALLOW_PRODUCTION !== '1') {
+    throw new Error('production URL is blocked without E2E_ALLOW_PRODUCTION=1')
   }
 
   return {
@@ -282,6 +275,8 @@ test.describe('AKLAB multi-user dev acceptance', () => {
       ])
       expect(profileA.status).toBe(200)
       expect(profileB.status).toBe(200)
+      expect(dataOf(profileA)?.user_id).toBe(dataOf(contextA)?.user?.id)
+      expect(dataOf(profileB)?.user_id).toBe(dataOf(contextB)?.user?.id)
       expect(profilesAreIncompatible(dataOf(profileA), dataOf(profileB))).toBe(true)
 
       const [listA, listB, statsA, statsB] = await Promise.all([
@@ -301,6 +296,10 @@ test.describe('AKLAB multi-user dev acceptance', () => {
 
       const idsA = new Set(rowsA.map(idOf).filter(Boolean))
       const idsB = new Set(rowsB.map(idOf).filter(Boolean))
+      if (CONFIG.foreignPropertyId) {
+        expect(idsA.has(CONFIG.foreignPropertyId)).toBe(true)
+        expect(idsB.has(CONFIG.foreignPropertyId)).toBe(false)
+      }
       const foreignId = CONFIG.foreignPropertyId || [...idsA].find(id => !idsB.has(id))
       expect(foreignId).toBeTruthy()
       const ownId = [...idsA][0]
