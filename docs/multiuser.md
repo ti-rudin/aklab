@@ -207,6 +207,12 @@ unknown statuses, existing profiles/role/links и orphan conditions. В отчё
   записано до apply;
 - `comments_without_author`, relation orphans и duplicate identity равны нулю
   либо имеют заранее утверждённое объяснение;
+- relation topology полностью introspectable. `schema.ready=false` допустим до
+  первого apply только когда причина исчерпывается явными `false` в четырёх
+  `unique_constraints` (`role_type`, `property_document_id`, `profile_user_id`,
+  `state_identity_key`): Strapi SQLite может не материализовать field-level
+  `unique` как physical index. Missing table/column, ambiguous relation или
+  duplicate values остаются fail-closed;
 - audit не изменил ни DB, ни filesystem.
 
 ### B1. Transactional migration и backup argument
@@ -223,11 +229,14 @@ cd "$REPO"
   | tee "$EVIDENCE_DIR/migration-first.json"
 ```
 
-Текущий CLI делает canonical validation до backup/write transaction, проверяет
-backup integrity и permissions, затем использует transactional/idempotent
-apply и postconditions до commit. Он не должен запускаться с implicit DB path,
-relative path, `--backup` равным `--db`, Strapi bootstrap или запущенным
-локальным server.
+Текущий CLI делает canonical validation и duplicate precheck до backup/write
+transaction, проверяет backup integrity и permissions, затем внутри одной
+transaction создаёт только отсутствующие named UNIQUE indexes, повторно
+introspect'ит schema и выполняет idempotent apply с postconditions до commit.
+Duplicate-identical FK rows, которые Strapi SQLite может вернуть через PRAGMA,
+схлопываются только по полному semantic tuple; отличающаяся topology остаётся
+ambiguous/fail-closed. CLI не должен запускаться с implicit DB path, relative
+path, `--backup` равным `--db`, Strapi bootstrap или запущенным локальным server.
 
 Expected result:
 
@@ -238,6 +247,8 @@ Expected result:
 - `Setting`, `Property.status`, unrelated profiles/roles/links не очищаются;
 - report содержит before/after counts, `changes`, backup bytes/hash/integrity и
   generic error codes без PII.
+- `after.schema.ready=true`, а все четыре `after.schema.unique_constraints`
+  равны `true`.
 
 Любой schema/validation/postcondition failure должен дать non-zero exit и
 откатить DB transaction. Если failure произошёл после создания backup, backup
@@ -268,8 +279,9 @@ Expected result:
 Для второго apply ожидается `profiles_created=0`, `states_created=0`,
 `comments_authored=0`, а также нулевые role/profile/link changes. Финальный
 audit должен сохранить те же counts и подтвердить отсутствие orphan/duplicate
-rows. Любое изменение, новый профиль, второй role link или изменение чужой
-existing profile — rollback trigger.
+rows; `schema.ready` и все четыре unique constraints остаются `true`. Любое
+изменение, новый профиль, второй role link или изменение чужой existing profile
+— rollback trigger.
 
 ## 5. Private photo-root migration
 

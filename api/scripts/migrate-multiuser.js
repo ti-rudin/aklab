@@ -71,6 +71,13 @@ const RELATION_REQUIREMENTS = Object.freeze({
   userRole: ['up_users', 'up_roles'],
 });
 
+const UNIQUE_INDEX_REQUIREMENTS = Object.freeze([
+  ['aklab_multiuser_up_roles_type_unique', 'up_roles', ['type']],
+  ['aklab_multiuser_properties_document_id_unique', 'properties', ['document_id']],
+  ['aklab_multiuser_user_profiles_user_id_unique', 'user_profiles', ['user_id']],
+  ['aklab_multiuser_user_property_states_identity_key_unique', 'user_property_states', ['identity_key']],
+]);
+
 class MigrationError extends Error {
   constructor(code, message) {
     super(message);
@@ -108,6 +115,22 @@ function foreignKeys(db, table) {
   return db.prepare(`PRAGMA foreign_key_list(${quoteIdentifier(table)})`).all();
 }
 
+function semanticForeignKeys(db, table) {
+  const unique = new Map();
+  for (const fk of foreignKeys(db, table)) {
+    const key = JSON.stringify([
+      fk.table,
+      fk.from,
+      fk.to,
+      fk.on_update,
+      fk.on_delete,
+      fk.match,
+    ]);
+    if (!unique.has(key)) unique.set(key, fk);
+  }
+  return [...unique.values()];
+}
+
 function uniqueColumns(db, table, requiredColumns) {
   const indexes = db.prepare(`PRAGMA index_list(${quoteIdentifier(table)})`).all();
   return indexes.some(index => {
@@ -118,6 +141,14 @@ function uniqueColumns(db, table, requiredColumns) {
       .map(column => column.name);
     return columns.join('\u0000') === requiredColumns.join('\u0000');
   });
+}
+
+function ensureUniqueConstraints(db) {
+  for (const [name, table, columns] of UNIQUE_INDEX_REQUIREMENTS) {
+    if (uniqueColumns(db, table, columns)) continue;
+    const columnSql = columns.map(quoteIdentifier).join(', ');
+    db.exec(`CREATE UNIQUE INDEX ${quoteIdentifier(name)} ON ${quoteIdentifier(table)} (${columnSql})`);
+  }
 }
 
 function normalizeEmail(value) {
@@ -203,7 +234,7 @@ function discoverRelation(db, sourceTable, targetTable) {
   const linkCandidates = [];
   for (const table of tableRows(db).map(row => row.name)) {
     if (table === sourceTable || table === targetTable) continue;
-    const fks = foreignKeys(db, table);
+    const fks = semanticForeignKeys(db, table);
     const sourceRefs = fks.filter(fk => fk.table === sourceTable && fk.to === 'id');
     const targetRefs = fks.filter(fk => fk.table === targetTable && fk.to === 'id');
     if (fks.length === 2 && sourceRefs.length === 1 && targetRefs.length === 1 && sourceRefs[0].from !== targetRefs[0].from) {
@@ -221,7 +252,7 @@ function discoverRelation(db, sourceTable, targetTable) {
   if (linkCandidates.length > 1) fail('SCHEMA_AMBIGUOUS_RELATION', 'Multiple relation link tables detected');
   if (linkCandidates.length === 1) return linkCandidates[0];
 
-  const directCandidates = foreignKeys(db, sourceTable)
+  const directCandidates = semanticForeignKeys(db, sourceTable)
     .filter(fk => fk.table === targetTable && fk.to === 'id');
   if (directCandidates.length === 1) {
     return {
@@ -243,16 +274,23 @@ function inspectSchema(db) {
     const actual = columnSet(db, table);
     if (columns.some(column => !actual.has(column))) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema: required column is missing');
   }
-  if (!uniqueColumns(db, 'up_roles', ['type'])) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema: role type uniqueness is missing');
-  if (!uniqueColumns(db, 'properties', ['document_id'])) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema: property document identity uniqueness is missing');
-  if (!uniqueColumns(db, 'user_profiles', ['user_id'])) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema: profile ownership uniqueness is missing');
-  if (!uniqueColumns(db, 'user_property_states', ['identity_key'])) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema: state identity uniqueness is missing');
+  const uniqueConstraints = {
+    role_type: uniqueColumns(db, 'up_roles', ['type']),
+    property_document_id: uniqueColumns(db, 'properties', ['document_id']),
+    profile_user_id: uniqueColumns(db, 'user_profiles', ['user_id']),
+    state_identity_key: uniqueColumns(db, 'user_property_states', ['identity_key']),
+  };
 
   const relations = {};
   for (const [name, [source, target]] of Object.entries(RELATION_REQUIREMENTS)) {
     relations[name] = discoverRelation(db, source, target);
   }
-  return { tables, relations };
+  return {
+    tables,
+    relations,
+    uniqueConstraints,
+    ready: Object.values(uniqueConstraints).every(Boolean),
+  };
 }
 
 function relationRows(db, relation, sourceId) {
@@ -316,6 +354,18 @@ function relationDrift(db, schema) {
 }
 
 function duplicateData(db) {
+  const duplicateRequiredUnique = UNIQUE_INDEX_REQUIREMENTS.some(([, table, columns]) => {
+    const columnSql = columns.map(quoteIdentifier).join(', ');
+    const nonNullSql = columns.map(column => `${quoteIdentifier(column)} IS NOT NULL`).join(' AND ');
+    return Boolean(db.prepare(`
+      SELECT 1
+      FROM ${quoteIdentifier(table)}
+      WHERE ${nonNullSql}
+      GROUP BY ${columnSql}
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `).get());
+  });
   const duplicateProfile = db.prepare(`
     SELECT 1 FROM user_profiles GROUP BY user_id HAVING COUNT(*) > 1 LIMIT 1
   `).get();
@@ -325,7 +375,9 @@ function duplicateData(db) {
   const duplicateRole = db.prepare(`
     SELECT 1 FROM up_roles WHERE type = ? GROUP BY type HAVING COUNT(*) > 1 LIMIT 1
   `).get(ADMIN_ROLE_TYPE);
-  if (duplicateProfile || duplicateState || duplicateRole) fail('DATA_DUPLICATE', 'Duplicate migration identity detected');
+  if (duplicateRequiredUnique || duplicateProfile || duplicateState || duplicateRole) {
+    fail('DATA_DUPLICATE', 'Duplicate migration identity detected');
+  }
 }
 
 function commentsWithoutAuthor(db, relation) {
@@ -385,14 +437,9 @@ function auditDatabase(db, targetUserEmail) {
   const report = {
     mode: 'audit',
     schema: {
-      ready: true,
+      ready: schema.ready,
       relations: Object.fromEntries(Object.entries(schema.relations).map(([name, relation]) => [name, relation.kind])),
-      unique_constraints: {
-        role_type: true,
-        property_document_id: true,
-        profile_user_id: true,
-        state_identity_key: true,
-      },
+      unique_constraints: schema.uniqueConstraints,
     },
     counts: {
       users: db.prepare('SELECT COUNT(*) AS count FROM up_users').get().count,
@@ -854,7 +901,9 @@ function applyMigration({ dbPath, targetUserEmail, backupPath, failAfter = null 
 
     db.exec('BEGIN IMMEDIATE');
     transactionStarted = true;
-    const schema = before._schema;
+    ensureUniqueConstraints(db);
+    const schema = inspectSchema(db);
+    if (!schema.ready) fail('SCHEMA_UNSUPPORTED', 'Required unique constraints could not be prepared');
     const applied = applyChanges(db, schema, before._targetUserId, setting, { failAfter, targetContract });
     // Verify the uncommitted state so any postcondition failure is still
     // covered by the transaction's rollback path.
