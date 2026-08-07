@@ -80,7 +80,7 @@ describe('PropertyAllTab strict scoped contract', () => {
       },
     })
     expect(mockedApi.get.mock.calls.every((call) => {
-      const params = call[1]?.params || {}
+      const params = (call[1]?.params || {}) as Record<string, unknown>
       return !('status' in params) && !('source' in params) && !('priceFrom' in params) && !('newSince' in params) && !('filters' in params)
     })).toBe(true)
     expect(wrapper.text()).toContain('doc-1')
@@ -102,8 +102,8 @@ describe('PropertyAllTab strict scoped contract', () => {
   it('keeps pageSize at or below 100 and uses documentId for rendered identity', async () => {
     const wrapper = await mountTab()
 
-    const request = mockedApi.get.mock.calls[0][1]?.params
-    expect(request.pageSize).toBeLessThanOrEqual(100)
+    const request = mockedApi.get.mock.calls[0]?.[1]?.params as { pageSize?: number } | undefined
+    expect(request?.pageSize).toBeLessThanOrEqual(100)
     expect(wrapper.find('.mock-property-card').text()).toContain('doc-1')
   })
 

@@ -88,8 +88,9 @@ fi
 CURRENT_NODE_VER="$(node -v 2>/dev/null | sed 's/^v//')"
 PM2_DAEMON_NODE="$(pm2 report 2>/dev/null | grep 'node version' | awk '{print $NF}' || echo unknown)"
 if [ "$PM2_DAEMON_NODE" != unknown ] && [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
-  warn "PM2 daemon Node v${PM2_DAEMON_NODE} != current v${CURRENT_NODE_VER}; updating daemon"
-  pm2 update 2>/dev/null || warn "pm2 update failed; acceptance must verify daemon state"
+  err "PM2 daemon Node v${PM2_DAEMON_NODE} != current v${CURRENT_NODE_VER}"
+  err "Shared dev daemon also owns TODOIT; refusing automatic pm2 update"
+  exit 1
 fi
 
 log "Environment preflight"

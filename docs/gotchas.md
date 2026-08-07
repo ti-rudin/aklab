@@ -352,3 +352,9 @@
 82. **GNU `ln -sf` следует symlink-to-directory** (2026-07-19) — повторный deploy выполнял `ln -sf target api/node_modules/@aklab/parse-rules`; если destination уже был symlink на директорию, GNU ln создавал вложенную сломанную ссылку `lib/parse-rules/parse-rules`. Использовать `ln -sfn`, где `-n` запрещает dereference destination. После deploy проверять `git status --porcelain` и отсутствие вложенной ссылки. `npm install` также может менять только root version в `package-lock.json`; такой diff синхронизировать отдельным PR, не делать слепой `git checkout -- .` при наличии production backup/diagnostics.
 
 83. **Multi-user migration — только explicit absolute paths и dev gate** — `api/scripts/migrate-multiuser.js` в audit требует `--db=/absolute/...`, а apply дополнительно требует отдельный `--backup=/absolute/...`; implicit DB path, relative backup, Strapi bootstrap и server runtime запрещены. Порядок `feature OFF → audit → transactional migration → idempotent re-audit → private photo copy → dev-only flag ON` и rollback triggers записан в [docs/multiuser.md](multiuser.md). `MULTIUSER_ENABLED` включается только exact raw `true`; legacy rows не удалять, private photo originals сохранять до отдельной cleanup wave.
+
+84. **Dev PM2 daemon shared с TODOIT — не делать automatic `pm2 update`** —
+    `pm2 update` перезапускает весь daemon, а на `192.168.11.151` он обслуживает
+    одновременно AKLAB и TODOIT. Dev deploy при Node-version mismatch обязан
+    остановиться до build/restart и запросить отдельное infrastructure решение;
+    нельзя автоматически менять daemon в AKLAB deploy script.
