@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildAllActiveSnapshot,
   buildSingleUserSnapshot,
+  getUserContext,
   getUserProfile,
   isProfileReady,
   listUserProfiles,
   replaceUserProfile,
   toUserProfileDto,
+  UserContextMalformedError,
   UserProfileConflictError,
   UserProfileMalformedError,
   UserProfileNotFoundError,
@@ -526,3 +528,73 @@ describe('profile API DTO and admin pagination service', () => {
 void UserProfileConflictError;
 void UserProfileUnavailableError;
 void UserProfileValidationError;
+
+describe('safe user context', () => {
+  it('reads a fresh active user and profile through Query Engine and returns only the exact context DTO', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue({
+      ...activeUser(7),
+      role: { id: 55, type: 'aklab_admin', name: 'private role name' },
+      documentId: 'private-user-document-id',
+      password: 'private-password',
+    });
+    strapi.profileQuery.findOne.mockResolvedValue(profile({
+      documentId: 'private-profile-document-id',
+      user: { id: 7 },
+    }));
+
+    await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: 'true' })).resolves.toEqual({
+      user: { id: 7, username: 'private-7', email: 'private-7@example.test' },
+      role: { type: 'aklab_admin' },
+      profileReady: true,
+      multiuserEnabled: true,
+    });
+    expect(strapi.userQuery.findOne).toHaveBeenCalledWith({
+      where: { id: 7 },
+      populate: { role: true },
+    });
+    expect(strapi.profileQuery.findOne).toHaveBeenCalledWith({ where: { user_id: 7 } });
+    expect(JSON.stringify(strapi.userQuery.findOne.mock.calls[0][0])).not.toContain('password');
+  });
+
+  it('fails closed for missing or inactive users without exposing user details', async () => {
+    for (const user of [
+      null,
+      activeUser(7, { blocked: true }),
+      activeUser(7, { confirmed: false }),
+      activeUser(7, { blocked: null }),
+      activeUser(7, { confirmed: 'true' }),
+    ]) {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(user);
+      await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: 'true' }))
+        .rejects.toBeInstanceOf(UserProfileUnavailableError);
+      expect(strapi.profileQuery.findOne).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects a malformed active user through a generic typed error and treats a missing profile as not ready', async () => {
+    const malformed = makeStrapi();
+    malformed.userQuery.findOne.mockResolvedValue(activeUser(7, { email: null }));
+    await expect(getUserContext(malformed as any, 7, { MULTIUSER_ENABLED: 'true' }))
+      .rejects.toBeInstanceOf(UserContextMalformedError);
+
+    const missingProfile = makeStrapi();
+    missingProfile.userQuery.findOne.mockResolvedValue(activeUser(7));
+    missingProfile.profileQuery.findOne.mockResolvedValue(null);
+    await expect(getUserContext(missingProfile as any, 7, { MULTIUSER_ENABLED: 'true' }))
+      .resolves.toMatchObject({ profileReady: false });
+  });
+
+  it.each([' TRUE ', 'True', 'TRUE', '1', 'false', undefined])(
+    'enables multiuser only for the exact true flag: %s',
+    async (flag) => {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
+      strapi.profileQuery.findOne.mockResolvedValue(profile());
+
+      await expect(getUserContext(strapi as any, 7, { MULTIUSER_ENABLED: flag }))
+        .resolves.toMatchObject({ multiuserEnabled: false });
+    },
+  );
+});

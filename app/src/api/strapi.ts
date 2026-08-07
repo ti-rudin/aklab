@@ -20,23 +20,23 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor — обработка 401 и Strapi Forbidden (500 с "Forbidden")
+// Response interceptor — только 401 означает потерю сессии.
+export function authResponseError(error: unknown): Promise<never> {
+  const status = (error as { response?: { status?: number } })?.response?.status
+  if (status === 401) {
+    localStorage.removeItem('user')
+    localStorage.removeItem('jwt')
+    localStorage.removeItem('lastAuthTime')
+    if (window.location.pathname !== '/auth') {
+      window.location.href = '/auth'
+    }
+  }
+  return Promise.reject(error)
+}
+
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const status = error.response?.status
-    const msg = error.response?.data?.error?.message || ''
-    // Strapi может вернуть 500 с "Forbidden access" вместо 401 при невалидном JWT
-    if (status === 401 || (status === 500 && msg.toLowerCase().includes('forbidden'))) {
-      localStorage.removeItem('user')
-      localStorage.removeItem('jwt')
-      localStorage.removeItem('lastAuthTime')
-      if (window.location.pathname !== '/auth') {
-        window.location.href = '/auth'
-      }
-    }
-    return Promise.reject(error)
-  },
+  authResponseError,
 )
 
 export default api

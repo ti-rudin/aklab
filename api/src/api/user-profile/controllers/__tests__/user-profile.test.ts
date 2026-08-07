@@ -10,6 +10,7 @@ import controllerFactory from '../user-profile';
 import userProfileRoutes from '../../routes/user-profile';
 
 const PROFILE_UID = 'api::user-profile.user-profile';
+const USER_UID = 'plugin::users-permissions.user';
 const scalarFields = [
   'id',
   'user_id',
@@ -48,10 +49,15 @@ function makeStrapi() {
     count: vi.fn(),
     update: vi.fn(),
   };
+  const userQuery = {
+    findOne: vi.fn(),
+    findMany: vi.fn(),
+  };
   const strapi = {
     db: {
       query: vi.fn((uid: string) => {
         if (uid === PROFILE_UID) return profileQuery;
+        if (uid === USER_UID) return userQuery;
         throw new Error(`unexpected uid: ${uid}`);
       }),
     },
@@ -59,6 +65,7 @@ function makeStrapi() {
       update: vi.fn(() => { throw new Error('entityService must not be used'); }),
     },
     profileQuery,
+    userQuery,
   };
   return strapi;
 }
@@ -88,6 +95,12 @@ describe('user profile custom routes', () => {
         method: 'PUT',
         path: '/me/profile',
         handler: 'user-profile.updateMe',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'GET',
+        path: '/me/context',
+        handler: 'user-profile.getMeContext',
         config: { auth: false, policies: ['global::authenticated-user'] },
       },
       {
@@ -270,5 +283,71 @@ describe('admin profile controller', () => {
       expect(ctx.body).toEqual({ error: 'Invalid user profile input' });
       expect(strapi.profileQuery.findOne).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('safe user context controller', () => {
+  it('returns the exact fresh context DTO and never spreads user, role, or profile metadata', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue({
+      id: 7,
+      username: 'user-7',
+      email: 'user-7@example.test',
+      blocked: false,
+      confirmed: true,
+      role: { id: 55, type: 'aklab_admin', name: 'private role name' },
+      password: 'private-password',
+    });
+    strapi.profileQuery.findOne.mockResolvedValue(profile({
+      documentId: 'private-profile-document-id',
+      createdAt: 'private-created-at',
+    }));
+    vi.stubEnv('MULTIUSER_ENABLED', 'true');
+    const actions = (controllerFactory as any)({ strapi });
+    const ctx = makeCtx();
+
+    await actions.getMeContext(ctx);
+
+    expect(ctx.body).toEqual({
+      data: {
+        user: { id: 7, username: 'user-7', email: 'user-7@example.test' },
+        role: { type: 'aklab_admin' },
+        profileReady: true,
+        multiuserEnabled: true,
+      },
+    });
+    expect(JSON.stringify(ctx.body)).not.toContain('password');
+    expect(JSON.stringify(ctx.body)).not.toContain('private-profile-document-id');
+    vi.unstubAllEnvs();
+  });
+
+  it('maps unavailable users to generic 403 and malformed active users to generic 500', async () => {
+    for (const user of [null, { id: 7, blocked: true, confirmed: true }]) {
+      const strapi = makeStrapi();
+      strapi.userQuery.findOne.mockResolvedValue(user);
+      const actions = (controllerFactory as any)({ strapi });
+      const ctx = makeCtx();
+
+      await actions.getMeContext(ctx);
+
+      expect(ctx.status).toBe(403);
+      expect(ctx.body).toEqual({ error: 'Forbidden' });
+    }
+
+    const malformed = makeStrapi();
+    malformed.userQuery.findOne.mockResolvedValue({
+      id: 7,
+      username: 'user-7',
+      email: null,
+      blocked: false,
+      confirmed: true,
+    });
+    const actions = (controllerFactory as any)({ strapi: malformed });
+    const ctx = makeCtx();
+
+    await actions.getMeContext(ctx);
+
+    expect(ctx.status).toBe(500);
+    expect(ctx.body).toEqual({ error: 'Internal server error' });
   });
 });

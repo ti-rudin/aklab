@@ -1,9 +1,11 @@
 import { factories } from '@strapi/strapi';
 import {
   getUserProfile,
+  getUserContext,
   listUserProfiles,
   replaceUserProfile,
   toUserProfileDto,
+  UserContextMalformedError,
   UserProfileConflictError,
   UserProfileMalformedError,
   UserProfileNotFoundError,
@@ -91,6 +93,11 @@ function setNotFound(ctx: any): void {
 }
 
 function setServiceError(ctx: any, error: unknown): void {
+  if (error instanceof UserContextMalformedError) {
+    ctx.status = 500;
+    ctx.body = { error: 'Internal server error' };
+    return;
+  }
   if (error instanceof UserProfileValidationError || error instanceof UserProfileMalformedError) {
     setBadRequest(ctx);
     return;
@@ -139,6 +146,20 @@ export default factories.createCoreController('api::user-profile.user-profile' a
         return;
       }
       ctx.body = { data: toUserProfileDto(profile) };
+    } catch (error) {
+      setServiceError(ctx, error);
+    }
+  },
+
+  async getMeContext(ctx) {
+    const userId = actorId(ctx);
+    if (userId === null) {
+      setUnauthorized(ctx);
+      return;
+    }
+
+    try {
+      ctx.body = { data: await getUserContext(strapi as any, userId) };
     } catch (error) {
       setServiceError(ctx, error);
     }

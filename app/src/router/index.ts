@@ -1,5 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+
+export type AdminGuardAuth = {
+  isAuthenticated: boolean
+  isAklabAdmin: boolean
+}
+
+export function requiresAdmin(authStore: AdminGuardAuth): RouteLocationRaw | undefined {
+  if (!authStore.isAuthenticated) return { name: 'auth' }
+  if (!authStore.isAklabAdmin) return { name: 'properties' }
+  return undefined
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -71,6 +83,10 @@ router.beforeEach(async (to) => {
   // Только для гостей, но пользователь авторизован
   if (to.meta.requiresGuest && authStore.isAuthenticated) {
     return { name: 'properties' }
+  }
+
+  if (to.meta.requiresAdmin) {
+    return requiresAdmin(authStore)
   }
 })
 

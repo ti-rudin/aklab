@@ -8,6 +8,7 @@ import {
   type UserFilterSnapshot,
   type UserParseProfile,
 } from '@aklab/parse-rules';
+import { isMultiuserEnabled } from './multiuser-feature';
 
 export const USER_UID = 'plugin::users-permissions.user';
 export const PROFILE_UID = 'api::user-profile.user-profile';
@@ -73,6 +74,17 @@ export type UserProfileDto = {
   profile_version: number;
 };
 
+export type UserContextDto = {
+  user: {
+    id: number;
+    username: string;
+    email: string;
+  };
+  role: { type: string } | null;
+  profileReady: boolean;
+  multiuserEnabled: boolean;
+};
+
 export class UserProfileError extends Error {
   readonly code: string;
 
@@ -122,6 +134,12 @@ export class UserProfileMalformedError extends UserProfileError {
 export class UserProfileSnapshotError extends UserProfileError {
   constructor() {
     super('UserProfileSnapshotError', 'USER_PROFILE_SNAPSHOT_ERROR', 'User profile snapshot could not be built.');
+  }
+}
+
+export class UserContextMalformedError extends UserProfileError {
+  constructor() {
+    super('UserContextMalformedError', 'USER_CONTEXT_MALFORMED', 'User context is malformed.');
   }
 }
 
@@ -343,6 +361,68 @@ export function isProfileReady(profile: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+async function freshContextUser(strapi: StrapiLike, userId: number): Promise<ProfileRecord> {
+  let user: unknown;
+  try {
+    user = await strapi.db.query(USER_UID).findOne({
+      where: { id: userId },
+      populate: { role: true },
+    });
+  } catch {
+    throw new UserProfileUnavailableError();
+  }
+  if (!isRecord(user) || user.blocked !== false || user.confirmed !== true) {
+    throw new UserProfileUnavailableError();
+  }
+  if (
+    user.id !== userId
+    || typeof user.username !== 'string'
+    || user.username.length === 0
+    || typeof user.email !== 'string'
+    || user.email.length === 0
+  ) {
+    throw new UserContextMalformedError();
+  }
+  return user;
+}
+
+function exactMultiuserEnabled(env: NodeJS.ProcessEnv): boolean {
+  const value = env?.MULTIUSER_ENABLED;
+  return value === 'true' && isMultiuserEnabled({ MULTIUSER_ENABLED: 'true' });
+}
+
+/** Read fresh identity, role, and profile readiness without exposing database metadata. */
+export async function getUserContext(
+  strapi: StrapiLike,
+  userId: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<UserContextDto> {
+  assertPositiveUserId(userId);
+  const user = await freshContextUser(strapi, userId);
+
+  let storedProfile: unknown;
+  try {
+    storedProfile = await getUserProfile(strapi, userId);
+  } catch {
+    throw new UserContextMalformedError();
+  }
+
+  const role = isRecord(user.role) && typeof user.role.type === 'string'
+    ? { type: user.role.type }
+    : null;
+
+  return {
+    user: {
+      id: user.id as number,
+      username: user.username as string,
+      email: user.email as string,
+    },
+    role,
+    profileReady: storedProfile !== null && storedProfile !== undefined && isProfileReady(storedProfile),
+    multiuserEnabled: exactMultiuserEnabled(env),
+  };
 }
 
 /** Read a profile through the scalar ownership key only. */

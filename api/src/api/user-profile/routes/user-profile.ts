@@ -14,6 +14,12 @@ export default {
     },
     {
       method: 'GET' as const,
+      path: '/me/context',
+      handler: 'user-profile.getMeContext',
+      config: { auth: false, policies: ['global::authenticated-user'] },
+    },
+    {
+      method: 'GET' as const,
       path: '/admin/user-profiles',
       handler: 'user-profile.listAdmin',
       config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
