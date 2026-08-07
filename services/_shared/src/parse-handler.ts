@@ -91,7 +91,7 @@ export function createParseHandler(parser: SourceParser) {
     const req = job.data as ParseRequest;
     const corrId = req.correlationId || job.correlation_id || `parse-${Date.now()}`;
     const depth = req.depth ?? 20;
-    const filterContext = getFilterContext(req);
+    let filterContext: FilterContext | undefined;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, preFiltered = 0, detailsFetched = 0, detailsNeeded = 0;
     let existing = 0, detailsAttempted = 0, detailsOk = 0, skipped = 0, itemFailures = 0;
@@ -122,6 +122,9 @@ export function createParseHandler(parser: SourceParser) {
     const phase: string | undefined = req.phase; // undefined = обе фазы
 
     try {
+      // Snapshot validation belongs to the terminal source-telemetry boundary:
+      // a malformed pipeline job must fail closed and close its source stage.
+      filterContext = getFilterContext(req);
       if (req.telemetryIdentityKey) {
         await markParserRunSourceStageRunning(req.telemetryIdentityKey, job.id);
       }
@@ -470,7 +473,6 @@ export function createParseHandler(parser: SourceParser) {
             error: errorMsg,
           });
         } catch (cronError: any) {
-          if (filterContext.usesSnapshot && phase !== 'scan') throw cronError;
           logger.warn(`Cron log failed: ${cronError.message}`, { correlationId: corrId });
         }
       }

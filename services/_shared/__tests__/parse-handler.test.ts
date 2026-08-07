@@ -496,10 +496,32 @@ describe('createParseHandler()', () => {
     expect(existsSync(getScanArtifactPath('mismatch-source', runId))).toBe(true);
   });
 
+  test('terminally fails source telemetry when the pipeline job snapshot itself is invalid', async () => {
+    const parser = makeParser(defaultProps);
+    const snapshot = makeSnapshot([makeProfile({ profileId: 451 })]);
+    const invalidSnapshot = { ...snapshot, hash: 'f'.repeat(64) };
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'invalid-snapshot-source',
+      documentId: 'doc-invalid-snapshot',
+      telemetryIdentityKey: 'run-invalid:invalid-snapshot-source:scan',
+      filterSnapshot: invalidSnapshot,
+    }))).rejects.toThrow('Parse job filter snapshot hash mismatch');
+
+    expect(markParserRunSourceStageRunning).not.toHaveBeenCalled();
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-invalid:invalid-snapshot-source:scan',
+      expect.objectContaining({ status: 'failed' }),
+    );
+  });
+
   test('empty snapshot is a successful no-op without parser or property calls', async () => {
     const parser = makeParser(defaultProps);
     const snapshot = makeSnapshot([]);
     const handler = createParseHandler(parser);
+    (logCron as any).mockRejectedValueOnce(new Error('best-effort cron log unavailable'));
 
     const result = await handler(makeJob({
       source: 'empty-snapshot-source',
