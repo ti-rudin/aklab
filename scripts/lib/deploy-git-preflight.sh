@@ -6,7 +6,7 @@ parse_pm2_daemon_node_version() {
   local versions count
   versions="$(awk '
     /^--- Daemon[-[:space:]]*$/ { in_daemon = 1; next }
-    in_daemon && /^--- / { exit }
+    in_daemon && /^--- / { in_daemon = 0; next }
     in_daemon && /^[[:space:]]*node version[[:space:]]*:/ { print $NF }
   ')"
   if [ -n "$versions" ] && grep -Evq '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$versions"; then

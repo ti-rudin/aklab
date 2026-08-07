@@ -10,6 +10,15 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected '$1', got '$2'"; }
 
 PM2_SECTIONED_REPORT=$'--- Daemon --------------------------------------------------------------------\nnode version         : 22.20.0\n--- CLI -----------------------------------------------------------------------\nnode version         : 20.19.0\n'
 assert_eq "$(printf '%s' "$PM2_SECTIONED_REPORT" | parse_pm2_daemon_node_version)" '22.20.0'
+if ! PM2_PIPEFAIL_RESULT="$(awk 'BEGIN {
+  print "--- Daemon ---"
+  print "node version : 22.20.0"
+  print "--- CLI ---"
+  for (i = 0; i < 200000; i++) print "post-daemon filler"
+}' | parse_pm2_daemon_node_version)"; then
+  fail 'valid PM2 daemon report failed when the upstream producer observed an early-closed pipe'
+fi
+assert_eq "$PM2_PIPEFAIL_RESULT" '22.20.0'
 PM2_DUPLICATE_DAEMON_REPORT=$'--- Daemon --------------------------------------------------------------------\nnode version         : 22.20.0\nnode version         : 22.20.0\n--- CLI -----------------------------------------------------------------------\nnode version         : 20.19.0\n'
 assert_eq "$(printf '%s' "$PM2_DUPLICATE_DAEMON_REPORT" | parse_pm2_daemon_node_version)" '22.20.0'
 if printf '%s' $'--- Daemon ---\nnode version : 22.20.0\nnode version : 20.19.0\n--- CLI ---\nnode version : 22.20.0\n' | parse_pm2_daemon_node_version >/dev/null; then
