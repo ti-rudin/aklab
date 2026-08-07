@@ -36,7 +36,7 @@ import PropertyAllTab from '../PropertyAllTab.vue'
 
 const mockedApi = vi.mocked(api)
 
-async function mountTab(status: 'new' | 'in_progress', query: Record<string, string | string[]> = {}) {
+async function mountTab(status?: 'in_progress', query: Record<string, string | string[]> = {}) {
   routeQuery = query
   mockedApi.get.mockResolvedValue({
     data: {
@@ -44,7 +44,7 @@ async function mountTab(status: 'new' | 'in_progress', query: Record<string, str
       meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
     },
   })
-  const wrapper = mount(PropertyAllTab, { props: { status } })
+  const wrapper = mount(PropertyAllTab, { props: status ? { status } : {} })
   await flushPromises()
   return wrapper
 }
@@ -58,7 +58,7 @@ describe('PropertyAllTab strict scoped contract', () => {
   })
 
   it('emits literal-all as supported flat params and ignores unsupported route filters', async () => {
-    const wrapper = await mountTab('new', {
+    const wrapper = await mountTab(undefined, {
       city: 'moscow,mo',
       property_type: ['office', 'warehouse'],
       search: 'центр',
@@ -100,7 +100,7 @@ describe('PropertyAllTab strict scoped contract', () => {
   })
 
   it('keeps pageSize at or below 100 and uses documentId for rendered identity', async () => {
-    const wrapper = await mountTab('new')
+    const wrapper = await mountTab()
 
     const request = mockedApi.get.mock.calls[0][1]?.params
     expect(request.pageSize).toBeLessThanOrEqual(100)
@@ -109,7 +109,7 @@ describe('PropertyAllTab strict scoped contract', () => {
 
   it('builds supported descending sort values', async () => {
     localStorage.setItem('aklab-view-mode', 'table')
-    const wrapper = await mountTab('new')
+    const wrapper = await mountTab()
     await wrapper.find('.mock-property-table button').trigger('click')
     await flushPromises()
 

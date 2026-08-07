@@ -292,18 +292,18 @@ function generateCSV(rows: Property[]) {
   for (const row of rows) {
     const link = `${window.location.origin}/properties/${row.documentId}`
     const values = [
-      escapeCSV(row.title),
-      escapeCSV(row.address || ''),
-      escapeCSV(cityLabel(row.city)),
-      escapeCSV(typeLabel(row.property_type)),
+      row.title,
+      row.address || '',
+      cityLabel(row.city),
+      typeLabel(row.property_type),
       row.area_sqm || '',
       row.price || '',
       row.price_per_sqm || '',
       row.focus_score ?? '',
-      escapeCSV((row.tags || []).join(', ')),
-      escapeCSV(link),
+      (row.tags || []).join(', '),
+      link,
     ]
-    csvRows.push(values.map(value => String(value)).join(';'))
+    csvRows.push(values.map(value => escapeCSV(String(value))).join(';'))
   }
 
   const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
@@ -323,10 +323,13 @@ function generateCSV(rows: Property[]) {
 
 function escapeCSV(value: string): string {
   if (!value) return ''
-  if (value.includes(';') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`
+  // Spreadsheet applications execute cells beginning with formula sigils.
+  // Every exported value may originate in scraped content, including prices.
+  const safeValue = /^\s*[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  if (safeValue.includes(';') || safeValue.includes('"') || safeValue.includes('\n')) {
+    return `"${safeValue.replace(/"/g, '""')}"`
   }
-  return value
+  return safeValue
 }
 
 function updateLocalStatus(documentId: string, status: string) {

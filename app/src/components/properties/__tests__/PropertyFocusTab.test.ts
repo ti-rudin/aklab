@@ -16,7 +16,6 @@ vi.mock('@/api/strapi', () => ({
 const mockedApi = vi.mocked(api)
 
 const baseItem: Property = {
-  id: 999,
   documentId: 'doc-1',
   title: 'Объект фокуса',
   address: 'ул. Тестовая, 1',
@@ -102,7 +101,6 @@ describe('PropertyFocusTab', () => {
   it('sends selected statuses through sequential chunks of at most 100', async () => {
     const items = Array.from({ length: 101 }, (_, index) => ({
       ...baseItem,
-      id: index + 1,
       documentId: `doc-${index + 1}`,
       title: `Объект ${index + 1}`,
     }))
@@ -126,8 +124,13 @@ describe('PropertyFocusTab', () => {
     expect(wrapper.text()).not.toContain('Выбрано:')
   })
 
-  it('pages CSV with pageSize 100, preserves the scoped query and cleans up the object URL', async () => {
+  it('pages CSV with pageSize 100, preserves scope, neutralizes formulas and cleans up the object URL', async () => {
     let focusRequestCount = 0
+    const spreadsheetInjection = {
+      ...baseItem,
+      title: '=HYPERLINK("https://evil.invalid")',
+      price: '-1+1',
+    }
     mockedApi.get.mockImplementation((url: any, config: any) => {
       if (url !== '/properties/focus') return Promise.resolve({ data: { ok: false } })
       focusRequestCount += 1
@@ -135,7 +138,7 @@ describe('PropertyFocusTab', () => {
         return Promise.resolve({ data: { data: [baseItem], meta: { total: 1 } } })
       }
       if (focusRequestCount === 2) {
-        return Promise.resolve({ data: { data: [baseItem], meta: { total: 101, totalPages: 2 } } })
+        return Promise.resolve({ data: { data: [spreadsheetInjection], meta: { total: 101, totalPages: 2 } } })
       }
       expect((config as any).params.page).toBe(2)
       return Promise.resolve({ data: { data: [baseItem], meta: { total: 101, totalPages: 2 } } })
@@ -160,6 +163,15 @@ describe('PropertyFocusTab', () => {
       expect((config as any).params).not.toHaveProperty('priceFrom')
       expect((config as any).params).not.toHaveProperty('priceTo')
     }
+    const exportedBlob = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock.calls[0][0] as Blob
+    const csv = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(exportedBlob)
+    })
+    expect(csv).toContain(`'=HYPERLINK`)
+    expect(csv).toContain(`'-1+1`)
     expect((URL as any).revokeObjectURL).toHaveBeenCalledWith('blob:test')
   })
 

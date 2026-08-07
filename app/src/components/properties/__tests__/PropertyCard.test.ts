@@ -5,7 +5,6 @@ import type { Property } from '@/composables/usePropertyData'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 const baseItem: Property = {
-  id: 1,
   documentId: 'doc1',
   title: 'Тестовый объект',
   address: 'ул. Пушкина, 10',

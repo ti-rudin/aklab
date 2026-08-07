@@ -5,7 +5,6 @@ import type { Property } from '@/composables/usePropertyData'
 
 const items: Property[] = [
   {
-    id: 1,
     documentId: 'doc1',
     title: 'Объект A',
     address: 'ул. Ленина, 1',
@@ -22,7 +21,6 @@ const items: Property[] = [
     has_minimum_price: false,
   },
   {
-    id: 2,
     documentId: 'doc2',
     title: 'Объект B',
     address: 'пр. Мира, 5',

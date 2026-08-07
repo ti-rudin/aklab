@@ -32,7 +32,7 @@
       </button>
     </div>
 
-    <PropertyAllTab v-if="activeTab === 'all'" ref="allTabRef" status="new" />
+    <PropertyAllTab v-if="activeTab === 'all'" ref="allTabRef" />
     <PropertyAllTab v-if="activeTab === 'work'" ref="workTabRef" status="in_progress" />
     <PropertyFocusTab v-if="activeTab === 'focus'" ref="focusTabRef" />
   </div>

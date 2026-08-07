@@ -68,7 +68,7 @@ describe('PropertyListView strict scoped contract', () => {
   it('passes literal all and work status shortcuts to the respective tabs', async () => {
     const wrapper = await mountAndWait()
     const all = wrapper.findComponent({ name: 'PropertyAllTab' })
-    expect(all.props('status')).toBe('new')
+    expect(all.props('status')).toBeUndefined()
 
     const workButton = wrapper.findAll('button').find((button) => button.text() === 'В работе')!
     await workButton.trigger('click')

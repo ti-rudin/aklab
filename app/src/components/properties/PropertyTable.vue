@@ -109,7 +109,7 @@ import type { Property } from '@/composables/usePropertyData'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPriceShort } from '@/utils/formatters'
 import { tagStyle, tagLabel, deviationStyle, HIDDEN_TAGS } from '@/composables/useFocusTab'
 
-type PropertyItem = Omit<Property, 'id'>
+type PropertyItem = Property
 
 const props = withDefaults(defineProps<{
   items: PropertyItem[]

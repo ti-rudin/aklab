@@ -9,10 +9,8 @@ import { ref } from 'vue'
 import api from '@/api/strapi'
 
 export interface Property {
-  /** Canonical public identity. Numeric persistence ids are not required. */
+  /** Canonical public identity. Numeric persistence ids are never exposed. */
   documentId: string
-  /** Legacy child-component compatibility; the scoped API adapter never reads it. */
-  id: number
   title: string
   address: string | null
   city: string

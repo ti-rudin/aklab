@@ -92,8 +92,8 @@ import { usePropertyData, type PropertyQuery } from '@/composables/usePropertyDa
 import { usePropertyFilters } from '@/composables/usePropertyFilters'
 
 const props = defineProps<{
-  /** "new" is the literal all view; only work emits a status query. */
-  status: 'new' | 'in_progress'
+  /** Omitted for the literal all view; work emits the only status shortcut. */
+  status?: 'in_progress'
 }>()
 
 const router = useRouter()
