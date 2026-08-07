@@ -2,6 +2,13 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (Task17 — multi-user dev rollout/rollback documentation)
+**Сделано 7 августа 2026:**
+- ✅ Создан проверяемый [dev runbook multi-user](multiuser.md): exact SHA gate, feature OFF, WAL-safe backup prerequisite, explicit absolute `--db/--backup`, audit → transactional migration → idempotent re-audit, private photo-root copy/counts/checksums с сохранением originals, admin/A/B/no-auth/private-media/manual-target/cron evidence и rollback order.
+- ✅ Зафиксированы текущие факты: migration CLI offline и privacy-safe, `MULTIUSER_ENABLED` fail-closed; `PRIVATE_PHOTO_ROOT` остаётся отдельным persistent storage contract.
+- ⚠️ В этой docs-волне не выполнялись dev/prod deploy, restart, migration против реальной runtime DB, photo copy, SMTP или server E2E. Production требует отдельной команды пользователя.
+- ⚠️ Текущий `scripts/deploy-dev.sh` не является exact-SHA applier без отдельного approved wrapper: он содержит legacy `git pull`/stash/reset и не принимает `--ref`. Текущий smoke/E2E также не доказывает A/B isolation без dedicated multi-user fixture/spec.
+
 ## Session handoff (v1.1.79 — manual immutable deploy, GitHub Actions disabled)
 **Сделано 6 августа 2026:**
 - ✅ По явной команде пользователя все workflows AKLAB вручную отключены в GitHub: `CI — Tests`, `Deploy — Dev`, `Deploy — Prod`. Дальнейший release path — только ручная проверка → PR/merge → exact SHA deploy.
