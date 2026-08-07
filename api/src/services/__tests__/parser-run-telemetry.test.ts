@@ -267,4 +267,47 @@ describe('parser run telemetry', () => {
     const createdData = create.mock.calls[0][0].data;
     expect(Object.hasOwn(createdData, 'job_id')).toBe(false);
   });
+
+  it('persists valid digest counters through the Query Engine for a running parser run', async () => {
+    const update = vi.fn().mockResolvedValue({ id: 3, status: 'running', digest_scheduled: 3 });
+    const findOne = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'running' });
+    const query = vi.fn().mockReturnValue({ findOne, update });
+    const telemetry = createParserRunTelemetry({ db: { query } } as any);
+
+    await telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 1, skipped: 1, failed: 1 });
+
+    expect(query).toHaveBeenCalledWith('api::parser-run.parser-run');
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 3, status: 'running' },
+      data: { digest_scheduled: 3, digest_sent: 1, digest_skipped: 1, digest_failed: 1 },
+    });
+  });
+
+  it('rejects unsafe digest counters and invariant violations before querying', async () => {
+    const query = vi.fn();
+    const telemetry = createParserRunTelemetry({ db: { query } } as any);
+    const base = { runId: 'run-1', scheduled: 1, sent: 1, skipped: 0, failed: 0 };
+
+    await expect(telemetry.setDigestCounters({ ...base, sent: -1 })).rejects.toThrow(/digest counters/i);
+    await expect(telemetry.setDigestCounters({ ...base, scheduled: 2 })).rejects.toThrow(/digest counters/i);
+    await expect(telemetry.setDigestCounters({ ...base, failed: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow(/digest counters/i);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing and non-running parser runs without changing terminal telemetry', async () => {
+    const missingQuery = vi.fn().mockReturnValue({ findOne: vi.fn().mockResolvedValue(null), update: vi.fn() });
+    const missingTelemetry = createParserRunTelemetry({ db: { query: missingQuery } } as any);
+    await expect(missingTelemetry.setDigestCounters({ runId: 'run-missing', scheduled: 0, sent: 0, skipped: 0, failed: 0 }))
+      .rejects.toThrow(/parser run/i);
+
+    const update = vi.fn();
+    const terminalQuery = vi.fn().mockReturnValue({
+      findOne: vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'succeeded' }),
+      update,
+    });
+    const terminalTelemetry = createParserRunTelemetry({ db: { query: terminalQuery } } as any);
+    await expect(terminalTelemetry.setDigestCounters({ runId: 'run-1', scheduled: 0, sent: 0, skipped: 0, failed: 0 }))
+      .rejects.toThrow(/running/i);
+    expect(update).not.toHaveBeenCalled();
+  });
 });

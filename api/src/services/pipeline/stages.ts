@@ -121,6 +121,73 @@ function sumResult(jobs: Job[], field: string): number {
     .reduce((total, job) => total + (Number((job.result as any)?.[field]) || 0), 0);
 }
 
+type DigestCounters = {
+  runId: string;
+  scheduled: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+};
+
+type DigestResultKind = 'sent' | 'skipped' | 'malformed';
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const expected = [...keys].sort();
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function safeDigestReason(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 256
+    && value.trim() === value
+    && !/[\u0000-\u001f\u007f]/.test(value)
+    && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function classifyDigestResult(result: unknown): DigestResultKind {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return 'malformed';
+  const value = result as Record<string, unknown>;
+  if (value.sent === true) {
+    return exactKeys(value, ['sent', 'count'])
+      && typeof value.count === 'number'
+      && Number.isSafeInteger(value.count)
+      && value.count >= 0
+      ? 'sent'
+      : 'malformed';
+  }
+  return value.sent === false
+    && exactKeys(value, ['sent', 'count', 'reason'])
+    && value.count === 0
+    && safeDigestReason(value.reason)
+    ? 'skipped'
+    : 'malformed';
+}
+
+function snapshotUserIds(snapshot: UserFilterSnapshot): number[] {
+  if (!Array.isArray(snapshot.profiles)) throw new Error('Digest snapshot is invalid.');
+  const seen = new Set<number>();
+  const userIds: number[] = [];
+  for (const profile of snapshot.profiles) {
+    const userId = (profile as any)?.userId;
+    if (typeof userId !== 'number' || !Number.isSafeInteger(userId) || userId <= 0) {
+      throw new Error('Digest snapshot is invalid.');
+    }
+    if (seen.has(userId)) throw new Error('Digest snapshot contains duplicate users.');
+    seen.add(userId);
+    userIds.push(userId);
+  }
+  return userIds;
+}
+
+async function persistDigestCounters(
+  telemetry: ReturnType<typeof createParserRunTelemetry>,
+  counters: DigestCounters,
+): Promise<void> {
+  await telemetry.setDigestCounters(counters);
+}
+
 async function reconcileQueueFailures(
   ctx: PipelineContext,
   telemetry: ReturnType<typeof createParserRunTelemetry>,
@@ -375,33 +442,69 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   const errors: string[] = [];
   const runId = ctx.getRunId();
   const filterSnapshot = ctx.getFilterSnapshot();
+  const telemetry = createParserRunTelemetry(ctx.strapi);
   if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
-    await updateState(ctx.strapi, { stage: 'digest_done' }, 'Дайджест пропущен — нет готовых профилей');
-    return { sent: false, errors };
-  }
-  const setting = await ctx.strapi.db.query('api::setting.setting').findOne({});
-  if (setting?.digest_enabled === false) {
-    await updateState(ctx.strapi, { stage: 'digest_done' }, 'Дайджест отключён в настройках');
+    await persistDigestCounters(telemetry, { runId, scheduled: 0, sent: 0, skipped: 0, failed: 0 });
+    await updateState(ctx.strapi, { stage: 'digest_done', errors }, 'Дайджест пропущен — нет готовых профилей');
     return { sent: false, errors };
   }
 
-  await updateState(ctx.strapi, { stage: 'digesting' }, 'Отправка дайджеста...');
-  const job = qs.addToQueue('digest-send', {
-    date: new Date().toISOString().slice(0, 10),
-    smtpTo: setting?.smtp_to || null,
-    correlationId: `digest-${runId}`,
-  }, {
-    correlationId: `digest-${runId}`,
-    idempotencyKey: `${runId}:digest`,
-  });
-  await ctx.recordJobIds([job.id]);
+  const userIds = snapshotUserIds(filterSnapshot);
+  await updateState(ctx.strapi, { stage: 'digesting' }, `Дайджест: запланировано ${userIds.length}`);
 
-  const wait = await waitForJobs(qs, ctx, [job.id], 'Дайджест');
-  errors.push(...wait.errors);
-  const terminalJob = wait.jobs[0];
-  if (ctx.isCancelled() || wait.timedOut || terminalJob?.status === 'failed') return { sent: false, errors };
+  const jobIds: number[] = [];
+  for (const userId of userIds) {
+    if (ctx.isCancelled()) break;
+    const correlationId = `digest-${runId}`;
+    const job = qs.addToQueue('digest-send', {
+      runId,
+      userId,
+      snapshotHash: filterSnapshot.hash,
+      correlationId,
+    }, {
+      correlationId,
+      idempotencyKey: `digest:${runId}:${userId}`,
+    });
+    // Persist ownership before any later operation can throw. If add() returns
+    // an idempotent winner, its exact existing id is recorded again safely.
+    await ctx.recordJobIds([job.id]);
+    jobIds.push(job.id);
+  }
 
-  const sent = terminalJob?.status === 'completed' && (terminalJob.result as any)?.sent === true;
-  await updateState(ctx.strapi, { stage: 'digest_done', errors }, sent ? '✓ Дайджест отправлен' : 'Дайджест завершён без отправки');
+  const wait = await waitForJobs(qs, ctx, jobIds, 'Дайджест');
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = Math.max(0, jobIds.length - wait.jobs.length);
+  for (const job of wait.jobs) {
+    if (job.status === 'failed') {
+      failedCount += 1;
+      continue;
+    }
+    if (job.status !== 'completed') {
+      failedCount += 1;
+      continue;
+    }
+    const resultKind = classifyDigestResult(job.result);
+    if (resultKind === 'sent') sentCount += 1;
+    else if (resultKind === 'skipped') skippedCount += 1;
+    else failedCount += 1;
+  }
+  if (failedCount > 0) errors.push(`Дайджест: ${failedCount} задач завершились с ошибкой`);
+  if (wait.timedOut) errors.push('Дайджест: deadline ожидания превышен');
+
+  const counters = {
+    runId,
+    scheduled: jobIds.length,
+    sent: sentCount,
+    skipped: skippedCount,
+    failed: failedCount,
+  };
+  await persistDigestCounters(telemetry, counters);
+  const sent = sentCount > 0;
+  await updateState(
+    ctx.strapi,
+    { stage: 'digest_done', errors },
+    `Дайджест: ${sentCount} отправлено, ${skippedCount} пропущено, ${failedCount} ошибок`,
+  );
   return { sent, errors };
 }

@@ -25,6 +25,14 @@ export type StageCounters = {
   failed: number;
 };
 
+export type DigestCounters = {
+  runId: string;
+  scheduled: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+};
+
 type EnsureSourceStage = {
   runId: string;
   sourceSlug: string;
@@ -94,6 +102,28 @@ function sameSnapshot(left: unknown, right: UserFilterSnapshot | null): boolean 
     return canonicalJson(decodeStoredSnapshot(left)) === canonicalJson(right);
   } catch {
     return false;
+  }
+}
+
+function assertDigestCounters(counters: DigestCounters): void {
+  if (
+    !counters
+    || typeof counters.runId !== 'string'
+    || counters.runId.length === 0
+    || counters.runId.trim() !== counters.runId
+    || /[\u0000-\u001f\u007f]/.test(counters.runId)
+  ) {
+    throw new Error('Invalid digest counters.');
+  }
+
+  const values = [counters.scheduled, counters.sent, counters.skipped, counters.failed];
+  if (values.some(value => !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Invalid digest counters.');
+  }
+
+  const classified = counters.sent + counters.skipped + counters.failed;
+  if (!Number.isSafeInteger(classified) || counters.scheduled !== classified) {
+    throw new Error('Invalid digest counters.');
   }
 }
 
@@ -208,6 +238,36 @@ export function createParserRunTelemetry(strapi: any) {
           ...(errorSummary ? { error_summary: errorSummary.slice(0, 4_000) } : {}),
         },
       });
+    },
+
+    /** Persist the exact digest fan-out outcome before parser-run terminalization. */
+    async setDigestCounters(counters: DigestCounters) {
+      assertDigestCounters(counters);
+      const existing = await parserRuns().findOne({ where: { run_id: counters.runId } });
+      if (!existing) throw new Error('Parser run does not exist.');
+      if (existing.status !== 'running') throw new Error('Parser run is not running.');
+
+      const samePersistedCounters = [
+        ['digest_scheduled', counters.scheduled],
+        ['digest_sent', counters.sent],
+        ['digest_skipped', counters.skipped],
+        ['digest_failed', counters.failed],
+      ].every(([field, value]) => existing[field] !== undefined && Number(existing[field]) === value);
+      if (samePersistedCounters && counters.scheduled > 0) return existing;
+
+      const updated = await parserRuns().update({
+        // The status predicate prevents a late digest finalizer from overwriting
+        // a terminal parser run after the lifecycle has moved on.
+        where: { id: existing.id, status: 'running' },
+        data: {
+          digest_scheduled: counters.scheduled,
+          digest_sent: counters.sent,
+          digest_skipped: counters.skipped,
+          digest_failed: counters.failed,
+        },
+      });
+      if (!updated) throw new Error('Parser run changed before digest counters were persisted.');
+      return updated;
     },
 
     async ensureSourceStage({ runId, sourceSlug, stage, jobId, parserRunId, sourceId }: EnsureSourceStage) {
