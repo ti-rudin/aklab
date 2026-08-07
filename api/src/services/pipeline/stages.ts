@@ -210,10 +210,11 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${src.slug}:scan`,
     });
-    await telemetry.attachSourceStageJob({ runId, sourceSlug: src.slug, stage: 'scan', jobId: job.id });
     scanJobs.push({ slug: src.slug, id: job.id });
-    // Persist the returned id before enqueueing another source; cancel can now be exact.
+    // Own the queue job before any later operation may throw. This keeps lifecycle
+    // settlement exact even when telemetry attachment fails after enqueue.
     await ctx.recordJobIds([job.id]);
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: src.slug, stage: 'scan', jobId: job.id });
   }
 
   const scanWait = await waitForJobs(qs, ctx, scanJobs.map(job => job.id), 'Сканирование', async jobs => {
@@ -272,9 +273,9 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
       correlationId: scanArtifactId,
       idempotencyKey: `${runId}:${slug}:details`,
     });
-    await telemetry.attachSourceStageJob({ runId, sourceSlug: slug, stage: 'details', jobId: job.id });
     detailJobs.push({ slug, id: job.id });
     await ctx.recordJobIds([job.id]);
+    await telemetry.attachSourceStageJob({ runId, sourceSlug: slug, stage: 'details', jobId: job.id });
   }
 
   const detailWait = await waitForJobs(qs, ctx, detailJobs.map(job => job.id), 'Детальная загрузка', async jobs => {

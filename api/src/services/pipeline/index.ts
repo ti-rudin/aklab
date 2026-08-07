@@ -342,9 +342,12 @@ export class PipelineService implements PipelineContext {
     const telemetryFinished = await this.finishParserTelemetry(runId, 'failed', message);
 
     if (stateIsIdle && !telemetryFinished) {
-      // A terminal telemetry failure must not leave the service claiming a
-      // clean idle run. Preserve a durable blocking state if possible.
-      stateIsIdle = !(await this.blockLifecycle('Pipeline preflight requires operator recovery', [message]));
+      // A terminal telemetry failure must never release the in-memory lifecycle,
+      // even if persisting the preferred durable blocking state also fails.
+      // The stored state is then uncertain and a process restart/operator recovery
+      // is required before another run may be admitted.
+      await this.blockLifecycle('Pipeline preflight requires operator recovery', [message]);
+      stateIsIdle = false;
     }
 
     if (stateIsIdle) {
@@ -525,7 +528,7 @@ export class PipelineService implements PipelineContext {
     const state = await this.getState();
     if (state.run_id !== this.activeRunId) return;
     const jobIds = [...new Set([...state.job_ids, ...ids])];
-    await this.updateState({ job_ids: jobIds });
+    await updateState(this.strapi, { job_ids: jobIds }, undefined, true);
   }
 
   /**

@@ -80,6 +80,9 @@ describe('parse stage canonical snapshot propagation', () => {
     expect(scanData.depth).toBe(37);
     expect(detailData.depth).toBe(37);
     expect((ctx.strapi as any).db).toBeUndefined();
+    expect(ctx.recordJobIds).toHaveBeenCalledTimes(2);
+    expect(ctx.recordJobIds.mock.invocationCallOrder[0]).toBeLessThan(mockAttachSourceStageJob.mock.invocationCallOrder[0]);
+    expect(ctx.recordJobIds.mock.invocationCallOrder[1]).toBeLessThan(mockAttachSourceStageJob.mock.invocationCallOrder[1]);
   });
 
   it('does not read sources or enqueue jobs for an empty snapshot', async () => {

@@ -109,6 +109,17 @@ beforeEach(() => {
 });
 
 describe('pipeline canonical snapshot lifecycle', () => {
+  it('persists run-owned job ids fail-closed', async () => {
+    const strapi = makeStrapi();
+    const service = new PipelineService(strapi);
+    (service as any).activeRunId = 'run-1';
+    mockGetState.mockResolvedValue({ ...emptyState(), run_id: 'run-1', status: 'running' });
+
+    await service.recordJobIds([42]);
+
+    expect(mockUpdateState).toHaveBeenCalledWith(strapi, { job_ids: [42] }, undefined, true);
+  });
+
   it('builds the manual single snapshot once after telemetry and before stages', async () => {
     const service = new PipelineService(makeStrapi());
     mockBuildSingle.mockResolvedValue(snapshot);
@@ -190,6 +201,21 @@ describe('pipeline canonical snapshot lifecycle', () => {
     mockBuildSingle.mockResolvedValue(snapshot);
     mockEnsureSnapshot.mockRejectedValue(new Error('snapshot persistence failed'));
     mockFinishParserRun.mockRejectedValue(new Error('telemetry finish failed'));
+
+    await expect(service.start('parse', 25, 7, 'manual')).rejects.toBeTruthy();
+    await expect(service.start('parse', 25, 7, 'manual')).rejects.toMatchObject({ code: 'PIPELINE_BUSY' });
+    expect(mockParseAll).not.toHaveBeenCalled();
+  });
+
+  it('retains the in-memory lifecycle even when the durable blocking write also fails', async () => {
+    const service = new PipelineService(makeStrapi());
+    mockBuildSingle.mockResolvedValue(snapshot);
+    mockEnsureSnapshot.mockRejectedValue(new Error('snapshot persistence failed'));
+    mockFinishParserRun.mockRejectedValue(new Error('telemetry finish failed'));
+    mockUpdateState
+      .mockImplementationOnce(async () => undefined) // private pipeline snapshot
+      .mockImplementationOnce(async () => undefined) // idle preflight terminal state
+      .mockImplementationOnce(async () => { throw new Error('blocking write failed'); });
 
     await expect(service.start('parse', 25, 7, 'manual')).rejects.toBeTruthy();
     await expect(service.start('parse', 25, 7, 'manual')).rejects.toMatchObject({ code: 'PIPELINE_BUSY' });
