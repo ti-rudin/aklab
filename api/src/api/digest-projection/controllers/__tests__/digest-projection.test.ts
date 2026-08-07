@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createUserFilterSnapshot, type UserParseProfile } from '@aklab/parse-rules';
 
-vi.mock('@strapi/strapi', () => ({
-  factories: {
-    createCoreController: vi.fn((_uid: string, factory: any) => factory),
-  },
-}));
-
-import controllerFactory from '../digest-projection';
+import controller, { createDigestProjectionController } from '../digest-projection';
 import digestProjectionRoutes from '../../routes/digest-projection';
 
 const profile: UserParseProfile = {
@@ -71,9 +65,16 @@ function makeCtx(data: unknown) {
 }
 
 describe('digest projection controller', () => {
+  it('exports a plain route-only controller without requiring a content-type factory', () => {
+    expect(controller).toEqual(expect.objectContaining({
+      properties: expect.any(Function),
+      delivery: expect.any(Function),
+    }));
+  });
+
   it('rejects unknown and nested extra fields before any Query Engine or raw SQL call', async () => {
     const fixture = makeStrapi();
-    const actions = (controllerFactory as any)({ strapi: fixture.strapi });
+    const actions = createDigestProjectionController(fixture.strapi);
 
     const ctx = makeCtx({
       runId: 'run-1',
@@ -93,7 +94,7 @@ describe('digest projection controller', () => {
 
   it('returns exact standard data envelope for properties and never adds internal fields', async () => {
     const fixture = makeStrapi();
-    const actions = (controllerFactory as any)({ strapi: fixture.strapi });
+    const actions = createDigestProjectionController(fixture.strapi);
     const ctx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: snapshot.hash, page: 1, pageSize: 20 });
 
     await actions.properties(ctx);
@@ -107,7 +108,7 @@ describe('digest projection controller', () => {
 
   it('maps safe membership and conflict outcomes without echoing identifiers or service errors', async () => {
     const notFoundFixture = makeStrapi({ run: null });
-    const notFoundActions = (controllerFactory as any)({ strapi: notFoundFixture.strapi });
+    const notFoundActions = createDigestProjectionController(notFoundFixture.strapi);
     const notFoundCtx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: snapshot.hash });
     await notFoundActions.delivery(notFoundCtx);
     expect(notFoundCtx.status).toBe(404);
@@ -116,7 +117,7 @@ describe('digest projection controller', () => {
     expect(JSON.stringify(notFoundCtx.body)).not.toContain(snapshot.hash);
 
     const conflictFixture = makeStrapi();
-    const conflictActions = (controllerFactory as any)({ strapi: conflictFixture.strapi });
+    const conflictActions = createDigestProjectionController(conflictFixture.strapi);
     const conflictCtx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: 'f'.repeat(64) });
     await conflictActions.delivery(conflictCtx);
     expect(conflictCtx.status).toBe(409);
@@ -124,7 +125,7 @@ describe('digest projection controller', () => {
     expect(JSON.stringify(conflictCtx.body)).not.toContain('f'.repeat(64));
 
     const malformedFixture = makeStrapi({ threshold: Number.NaN });
-    const malformedActions = (controllerFactory as any)({ strapi: malformedFixture.strapi });
+    const malformedActions = createDigestProjectionController(malformedFixture.strapi);
     const malformedCtx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: snapshot.hash, page: 1, pageSize: 20 });
     await malformedActions.properties(malformedCtx);
     expect(malformedCtx.status).toBe(500);
@@ -134,7 +135,7 @@ describe('digest projection controller', () => {
 
   it('maps delivery skip/enabled results without exposing current email for skipped delivery', async () => {
     const fixture = makeStrapi();
-    const actions = (controllerFactory as any)({ strapi: fixture.strapi });
+    const actions = createDigestProjectionController(fixture.strapi);
     const ctx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: snapshot.hash });
 
     await actions.delivery(ctx);
