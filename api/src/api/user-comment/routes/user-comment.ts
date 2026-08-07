@@ -1,9 +1,28 @@
 export default {
   routes: [
-    { method: 'GET', path: '/user-comments', handler: 'user-comment.find', config: { auth: {} } },
-    { method: 'GET', path: '/user-comments/:id', handler: 'user-comment.findOne', config: { auth: {} } },
-    { method: 'POST', path: '/user-comments', handler: 'user-comment.create', config: { auth: {} } },
-    { method: 'PUT', path: '/user-comments/:id', handler: 'user-comment.update', config: { auth: {} } },
-    { method: 'DELETE', path: '/user-comments/:id', handler: 'user-comment.delete', config: { auth: {} } },
+    {
+      method: 'GET',
+      path: '/me/properties/:documentId/comments',
+      handler: 'user-comment.listMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
+    },
+    {
+      method: 'POST',
+      path: '/me/properties/:documentId/comments',
+      handler: 'user-comment.createMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
+    },
+    {
+      method: 'PUT',
+      path: '/me/properties/:documentId/comments/:commentId',
+      handler: 'user-comment.updateMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
+    },
+    {
+      method: 'DELETE',
+      path: '/me/properties/:documentId/comments/:commentId',
+      handler: 'user-comment.deleteMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
+    },
   ],
 };
