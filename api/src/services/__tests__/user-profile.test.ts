@@ -4,7 +4,9 @@ import {
   buildSingleUserSnapshot,
   getUserProfile,
   isProfileReady,
+  listUserProfiles,
   replaceUserProfile,
+  toUserProfileDto,
   UserProfileConflictError,
   UserProfileMalformedError,
   UserProfileNotFoundError,
@@ -35,6 +37,7 @@ function makeStrapi() {
   const profileQuery = {
     findOne: vi.fn(),
     findMany: vi.fn(),
+    count: vi.fn(),
     update: vi.fn(),
   };
   const userQuery = {
@@ -452,6 +455,71 @@ describe('buildSingleUserSnapshot', () => {
     strapi.profileQuery.findOne.mockResolvedValue(profile({ property_types: '["office"' }));
     await expect(buildSingleUserSnapshot(strapi as any, 7, now)).rejects
       .toBeInstanceOf(UserProfileMalformedError);
+  });
+});
+
+describe('profile API DTO and admin pagination service', () => {
+  it('returns only the explicit profile DTO allowlist and never spreads database metadata', () => {
+    expect(toUserProfileDto(profile({
+      user: { id: 7, email: 'relation@example.test' },
+      documentId: 'private-document-id',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      updatedAt: '2026-08-07T10:01:00.000Z',
+      role: { type: 'aklab_admin' },
+      email: 'private@example.test',
+      username: 'private-user',
+    }))).toEqual({
+      id: 12,
+      user_id: 7,
+      regions: ['moscow'],
+      property_types: ['office'],
+      price_from: 100,
+      price_to: null,
+      area_from: null,
+      area_to: 200,
+      stop_words: ['secret'],
+      digest_email: null,
+      digest_enabled: false,
+      profile_version: 3,
+    });
+  });
+
+  it('uses Query Engine scalar pagination with stable user/id ordering and bounded page size', async () => {
+    const strapi = makeStrapi();
+    strapi.profileQuery.count.mockResolvedValue(3);
+    strapi.profileQuery.findMany.mockResolvedValue([
+      profile({ id: 13, user_id: 8 }),
+      profile({ id: 12, user_id: 7 }),
+    ]);
+
+    await expect(listUserProfiles(strapi as any, 2, 2)).resolves.toEqual({
+      data: [
+        expect.objectContaining({ id: 13, user_id: 8 }),
+        expect.objectContaining({ id: 12, user_id: 7 }),
+      ],
+      meta: { page: 2, pageSize: 2, total: 3, totalPages: 2 },
+    });
+    expect(strapi.profileQuery.count).toHaveBeenCalledWith({ where: {} });
+    expect(strapi.profileQuery.findMany).toHaveBeenCalledWith({
+      select: [
+        'id',
+        'user_id',
+        'regions',
+        'property_types',
+        'price_from',
+        'price_to',
+        'area_from',
+        'area_to',
+        'stop_words',
+        'digest_email',
+        'digest_enabled',
+        'profile_version',
+      ],
+      orderBy: [{ user_id: 'asc' }, { id: 'asc' }],
+      limit: 2,
+      offset: 2,
+    });
+    expect(strapi.entityService.update).not.toHaveBeenCalled();
   });
 });
 

@@ -25,16 +25,52 @@ const ALLOWED_PROFILE_FIELDS = [
 ] as const;
 
 type AllowedProfileField = (typeof ALLOWED_PROFILE_FIELDS)[number];
+
+const PROFILE_SCALAR_FIELDS = [
+  'id',
+  'user_id',
+  'regions',
+  'property_types',
+  'price_from',
+  'price_to',
+  'area_from',
+  'area_to',
+  'stop_words',
+  'digest_email',
+  'digest_enabled',
+  'profile_version',
+] as const;
+const PROFILE_LIST_DEFAULT_PAGE = 1;
+const PROFILE_LIST_DEFAULT_PAGE_SIZE = 20;
+const PROFILE_LIST_MAX_PAGE = 1_000_000;
+const PROFILE_LIST_MAX_PAGE_SIZE = 100;
+
 type ProfileRecord = Record<string, unknown>;
 type Query = {
   findOne: (params?: unknown) => Promise<unknown>;
   findMany: (params?: unknown) => Promise<unknown>;
+  count: (params?: unknown) => Promise<unknown>;
   update: (params: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<unknown>;
 };
 type StrapiLike = {
   db: {
     query: (uid: string) => Query;
   };
+};
+
+export type UserProfileDto = {
+  id: number;
+  user_id: number;
+  regions: Region[];
+  property_types: PropertyType[];
+  price_from: number | null;
+  price_to: number | null;
+  area_from: number | null;
+  area_to: number | null;
+  stop_words: string[];
+  digest_email: string | null;
+  digest_enabled: boolean;
+  profile_version: number;
 };
 
 export class UserProfileError extends Error {
@@ -251,6 +287,26 @@ function toCanonicalProfile(record: ProfileRecord): UserParseProfile {
   }
 }
 
+/** Convert a stored row to the only DTO exposed by the profile custom API. */
+export function toUserProfileDto(value: unknown): UserProfileDto {
+  if (!isRecord(value)) throw new UserProfileMalformedError();
+  const canonical = toCanonicalProfile(value);
+  return {
+    id: canonical.profileId,
+    user_id: canonical.userId,
+    regions: canonical.regions,
+    property_types: canonical.propertyTypes,
+    price_from: canonical.priceFrom,
+    price_to: canonical.priceTo,
+    area_from: canonical.areaFrom,
+    area_to: canonical.areaTo,
+    stop_words: canonical.stopWords,
+    digest_email: normalizeStoredEmail(value.digest_email),
+    digest_enabled: normalizeBoolean(value.digest_enabled, true),
+    profile_version: canonical.version,
+  };
+}
+
 function normalizeStringArray(value: unknown, malformed: boolean): string[] {
   try {
     const parsed = parseStoredArray(value);
@@ -293,6 +349,60 @@ export function isProfileReady(profile: unknown): boolean {
 export async function getUserProfile(strapi: StrapiLike, userId: unknown): Promise<unknown> {
   assertPositiveUserId(userId);
   return strapi.db.query(PROFILE_UID).findOne({ where: { user_id: userId } });
+}
+
+function assertProfileListPagination(page: unknown, pageSize: unknown): asserts page is number {
+  if (
+    typeof page !== 'number'
+    || !Number.isSafeInteger(page)
+    || page < PROFILE_LIST_DEFAULT_PAGE
+    || page > PROFILE_LIST_MAX_PAGE
+    || typeof pageSize !== 'number'
+    || !Number.isSafeInteger(pageSize)
+    || pageSize < 1
+    || pageSize > PROFILE_LIST_MAX_PAGE_SIZE
+  ) {
+    throw new UserProfileValidationError();
+  }
+  const offset = (page - 1) * pageSize;
+  if (!Number.isSafeInteger(offset)) throw new UserProfileValidationError();
+}
+
+/** List profiles with scalar-only, deterministic Query Engine pagination. */
+export async function listUserProfiles(
+  strapi: StrapiLike,
+  page = PROFILE_LIST_DEFAULT_PAGE,
+  pageSize = PROFILE_LIST_DEFAULT_PAGE_SIZE,
+): Promise<{
+  data: UserProfileDto[];
+  meta: { page: number; pageSize: number; total: number; totalPages: number };
+}> {
+  assertProfileListPagination(page, pageSize);
+  const query = strapi.db.query(PROFILE_UID);
+  const totalValue = await query.count({ where: {} });
+  if (
+    typeof totalValue !== 'number'
+    || !Number.isSafeInteger(totalValue)
+    || totalValue < 0
+  ) {
+    throw new UserProfileMalformedError();
+  }
+  const rows = await query.findMany({
+    select: PROFILE_SCALAR_FIELDS,
+    orderBy: [{ user_id: 'asc' }, { id: 'asc' }],
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  });
+  if (!Array.isArray(rows)) throw new UserProfileMalformedError();
+  return {
+    data: rows.map(toUserProfileDto),
+    meta: {
+      page,
+      pageSize,
+      total: totalValue,
+      totalPages: Math.ceil(totalValue / pageSize),
+    },
+  };
 }
 
 function assertInputObject(input: unknown): asserts input is ProfileRecord {
