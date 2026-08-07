@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   assertListSeparation,
+  assertProfilesDistinctWithOverlap,
   buildManualPipelineRequest,
   buildSmokePlan,
   createSmokeConfig,
@@ -125,6 +126,69 @@ describe('multiuser smoke helpers', () => {
     expect(buildSmokePlan({}).noAuth.some((entry: { path: string }) => entry.path === '/api/photos/<documentId>/<filename>')).toBe(true);
     expect(() => assertListSeparation([{ documentId: 'shared' }], [{ documentId: 'shared' }])).toThrow('exclusive fixture rows');
     expect(() => assertListSeparation([], [])).toThrow('empty user list');
+  });
+
+  it('requires distinct profiles with a controlled shared candidate scope', () => {
+    const left = {
+      regions: ['moscow', 'other'],
+      property_types: ['free_purpose'],
+      price_from: 100,
+      price_to: 1000,
+      area_from: null,
+      area_to: null,
+      stop_words: ['left-only'],
+    };
+    const right = {
+      regions: ['other'],
+      property_types: ['free_purpose', 'office'],
+      price_from: 500,
+      price_to: 2000,
+      area_from: null,
+      area_to: null,
+      stop_words: ['right-only'],
+    };
+
+    expect(assertProfilesDistinctWithOverlap(left, right)).toBe(true);
+    expect(assertProfilesDistinctWithOverlap(left, {
+      ...right,
+      stop_words: [
+        ...Array.from({ length: 129 }, () => 'duplicate'),
+        ...Array.from({ length: 127 }, (_, index) => `word-${index}`),
+      ],
+    })).toBe(true);
+    expect(() => assertProfilesDistinctWithOverlap(left, {
+      ...right,
+      stop_words: Array.from({ length: 129 }, (_, index) => `unique-${index}`),
+    })).toThrow('profile response is malformed');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...left })).toThrow('profiles are identical');
+    expect(() => assertProfilesDistinctWithOverlap(left, {
+      ...left,
+      regions: [' OTHER ', 'MOSCOW', 'moscow'],
+      property_types: [' FREE_PURPOSE ', 'free_purpose'],
+      price_from: '100',
+      price_to: '1000',
+      stop_words: [' LEFT-ONLY ', 'left-only'],
+    })).toThrow('profiles are identical');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, regions: ['mo'] })).toThrow('shared candidate scope');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, property_types: ['office'] })).toThrow('shared candidate scope');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, price_from: 2001, price_to: 3000 })).toThrow('shared candidate scope');
+
+    for (const malformed of [
+      { ...right, price_from: '' },
+      { ...right, price_from: true },
+      { ...right, price_from: -1 },
+      { ...right, price_from: '01' },
+      { ...right, price_from: '1e3' },
+      { ...right, price_from: Number.NaN },
+      { ...right, price_from: Number.POSITIVE_INFINITY },
+      { ...right, regions: [42] },
+      { ...right, regions: [' '] },
+      { ...right, regions: ['unknown-region'] },
+      { ...right, property_types: ['unknown-type'] },
+      { ...right, stop_words: [false] },
+    ]) {
+      expect(() => assertProfilesDistinctWithOverlap(left, malformed)).toThrow('profile response is malformed');
+    }
   });
 
   it('rejects insecure remote URLs, embedded credentials and base paths', () => {
