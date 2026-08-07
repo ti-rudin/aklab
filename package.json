@@ -9,7 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:unit": "vitest run --reporter=verbose",
-    "test:e2e": "npx playwright test --reporter=line",
+    "test:e2e": "BASE_URL=\"${SMOKE_UI_URL:-http://127.0.0.1:5174}\" npx playwright test app/e2e/vue.spec.ts --config app/playwright.config.ts --reporter=line",
     "smoke": "node scripts/smoke-test.js",
     "smoke:local": "node scripts/smoke-test.js --local",
     "deploy:prod": "bash scripts/deploy-prod.sh",

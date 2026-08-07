@@ -1,266 +1,740 @@
 #!/usr/bin/env node
+'use strict';
+
 /**
- * AKLAB Smoke Test
+ * Safe AKLAB multi-user dev-acceptance smoke harness.
  *
- * Проверяет что прод-сервер жив и работает корректно.
- * Запуск: npm run smoke
- * С опцией --local: тестирует localhost (для dev)
+ * The default run is read-only and requires explicit URLs plus three sets of
+ * credentials. It never falls back to production or to legacy single-user variables.
+ * Mutating checks require an explicit fixture-only confirmation and always
+ * restore the one fixture property in a finally block.
  *
- * Exit codes: 0 = all pass, 1 = failures
+ * No cron/queue emulation is performed here. Cron fan-out and manual pipeline
+ * execution are separate runtime-acceptance evidence items (see --print-plan).
  */
 
-const BASE_URL = process.argv.includes('--local')
-  ? 'http://localhost:5174'
-  : 'https://aklab.tirobots.ru';
+const { randomUUID } = require('node:crypto');
 
-const API_URL = process.argv.includes('--local')
-  ? 'http://localhost:1338'
-  : 'https://api-aklab.tirobots.ru';
+const ROLE_NAMES = ['admin', 'userA', 'userB'];
+const DENIAL_STATUSES = [401, 403];
+const ADMIN_ROLE_TYPE = 'aklab_admin';
+const MUTATION_CONFIRM = 'fixture-only';
+const DEFAULT_TIMEOUT_MS = 10_000;
+const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru']);
 
-const TEST_EMAIL = process.env.TEST_USER_EMAIL;
-const TEST_PASSWORD = process.env.TEST_USER_PASSWORD;
-if (!TEST_EMAIL || !TEST_PASSWORD) {
-  console.error('TEST_USER_EMAIL and TEST_USER_PASSWORD must be set');
-  process.exit(1);
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-let passed = 0;
-let failed = 0;
-let jwt = null;
-
-function ok(name, detail) {
-  passed++;
-  console.log(`  ✅ ${name}${detail ? ` — ${detail}` : ''}`);
+function requiredEnv(env, name) {
+  const value = env[name];
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value.trim();
 }
 
-function fail(name, detail) {
-  failed++;
-  console.log(`  ❌ ${name}${detail ? ` — ${detail}` : ''}`);
+function optionalEnv(env, name) {
+  const value = env[name];
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
-async function test(name, fn) {
+function assertEmail(value, name) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    throw new Error(`Invalid email format in ${name}`);
+  }
+  return value;
+}
+
+function isProductionUrl(value) {
   try {
-    await fn();
-  } catch (err) {
-    fail(name, err.message);
+    return PRODUCTION_HOSTS.has(new URL(value).hostname.toLowerCase());
+  } catch {
+    return false;
   }
 }
 
-async function api(method, path, body) {
-  const url = `${API_URL}${path}`;
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json' },
+function normalizeBaseUrl(value, name, env) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute http(s) URL`);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`${name} must use http or https`);
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '' && parsed.pathname !== '/')) {
+    throw new Error(`${name} must contain only an origin`);
+  }
+  if (isProductionUrl(value) && env.SMOKE_ALLOW_PRODUCTION !== '1') {
+    throw new Error(`${name} points to protected production; set SMOKE_ALLOW_PRODUCTION=1 explicitly`);
+  }
+  return parsed.origin;
+}
+
+function validateOptIn(env, name) {
+  if (env[name] !== undefined && env[name] !== '' && env[name] !== '1') {
+    throw new Error(`${name} must be exactly 1 when enabled`);
+  }
+  return env[name] === '1';
+}
+
+function createSmokeConfig(env = process.env, argv = []) {
+  const local = argv.includes('--local');
+  const apiValue = optionalEnv(env, 'SMOKE_API_URL') || (local ? 'http://127.0.0.1:1338' : null);
+  const uiValue = optionalEnv(env, 'SMOKE_UI_URL') || (local ? 'http://127.0.0.1:5174' : null);
+  if (!apiValue) throw new Error('Missing required environment variable: SMOKE_API_URL');
+  if (!uiValue) throw new Error('Missing required environment variable: SMOKE_UI_URL');
+
+  const allowMutations = validateOptIn(env, 'SMOKE_ALLOW_MUTATIONS');
+  const allowProduction = validateOptIn(env, 'SMOKE_ALLOW_PRODUCTION');
+  if (allowProduction && !PRODUCTION_HOSTS.has(new URL(apiValue).hostname.toLowerCase()) && !PRODUCTION_HOSTS.has(new URL(uiValue).hostname.toLowerCase())) {
+    throw new Error('SMOKE_ALLOW_PRODUCTION=1 is only valid when a protected production URL is configured');
+  }
+
+  const roles = {
+    admin: {
+      label: 'admin',
+      identifier: assertEmail(requiredEnv(env, 'SMOKE_ADMIN_EMAIL'), 'SMOKE_ADMIN_EMAIL'),
+      password: requiredEnv(env, 'SMOKE_ADMIN_PASSWORD'),
+    },
+    userA: {
+      label: 'user A',
+      identifier: assertEmail(requiredEnv(env, 'SMOKE_USER_A_EMAIL'), 'SMOKE_USER_A_EMAIL'),
+      password: requiredEnv(env, 'SMOKE_USER_A_PASSWORD'),
+    },
+    userB: {
+      label: 'user B',
+      identifier: assertEmail(requiredEnv(env, 'SMOKE_USER_B_EMAIL'), 'SMOKE_USER_B_EMAIL'),
+      password: requiredEnv(env, 'SMOKE_USER_B_PASSWORD'),
+    },
   };
-  if (body) opts.body = JSON.stringify(body);
-  if (jwt) opts.headers['Authorization'] = `Bearer ${jwt}`;
-  const res = await fetch(url, opts);
-  return { status: res.status, data: await res.json().catch(() => null), ok: res.ok };
+  const identifiers = ROLE_NAMES.map(role => roles[role].identifier);
+  if (new Set(identifiers).size !== identifiers.length) {
+    throw new Error('SMOKE_ADMIN_EMAIL, SMOKE_USER_A_EMAIL and SMOKE_USER_B_EMAIL must identify three distinct accounts');
+  }
+
+  const fixture = {
+    propertyId: optionalEnv(env, 'SMOKE_FIXTURE_PROPERTY_ID'),
+    photoDocumentId: optionalEnv(env, 'SMOKE_PHOTO_DOCUMENT_ID'),
+    photoFilename: optionalEnv(env, 'SMOKE_PHOTO_FILENAME'),
+    foreignPropertyId: optionalEnv(env, 'SMOKE_FOREIGN_PROPERTY_ID'),
+  };
+  if ((fixture.photoDocumentId && !fixture.photoFilename) || (!fixture.photoDocumentId && fixture.photoFilename)) {
+    throw new Error('SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME must be provided together');
+  }
+
+  if (allowMutations) {
+    if (env.SMOKE_MUTATION_CONFIRM !== MUTATION_CONFIRM) {
+      throw new Error(`SMOKE_MUTATION_CONFIRM must equal ${MUTATION_CONFIRM} for fixture-only checks`);
+    }
+    if (!fixture.propertyId) {
+      throw new Error('SMOKE_FIXTURE_PROPERTY_ID is required when SMOKE_ALLOW_MUTATIONS=1');
+    }
+  }
+
+  return {
+    apiBaseUrl: normalizeBaseUrl(apiValue, 'SMOKE_API_URL', env),
+    uiBaseUrl: normalizeBaseUrl(uiValue, 'SMOKE_UI_URL', env),
+    roles,
+    allowMutations,
+    fixture,
+    requireDataSeparation: env.SMOKE_REQUIRE_DATA_SEPARATION !== '0',
+    secrets: ROLE_NAMES.flatMap(role => [roles[role].identifier, roles[role].password]),
+  };
 }
 
-async function run() {
-  console.log(`\n🧪 AKLAB Smoke Test`);
-  console.log(`   UI:  ${BASE_URL}`);
-  console.log(`   API: ${API_URL}`);
-  console.log(`   User: ${TEST_EMAIL}\n`);
+function maskIdentifier(value) {
+  const text = String(value || '');
+  const at = text.indexOf('@');
+  if (at <= 0) return '[redacted]';
+  return `${text.slice(0, 1)}***@***`;
+}
 
-  // === 1. Health checks ===
-  console.log('📡 Health checks:');
+function redactText(value, secrets = []) {
+  let text = String(value || '')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]')
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[REDACTED_EMAIL]');
+  for (const secret of secrets) {
+    if (secret) text = text.split(secret).join('[REDACTED]');
+  }
+  return text;
+}
 
-  await test('API health (/_health)', async () => {
-    const res = await fetch(`${API_URL}/_health`);
-    if (res.status !== 204) throw new Error(`Expected 204, got ${res.status}`);
-    ok('API health', `${res.status}`);
-  });
+function safePathSegment(value, name) {
+  if (typeof value !== 'string' || value.trim() === '' || value.includes('/') || value.includes('\\') || value.includes('..')) {
+    throw new Error(`${name} must be a safe path segment`);
+  }
+  return encodeURIComponent(value);
+}
 
-  await test('Frontend responds', async () => {
-    const res = await fetch(BASE_URL, { redirect: 'manual' });
-    if (res.status !== 200 && res.status !== 304) throw new Error(`Expected 200, got ${res.status}`);
-    ok('Frontend', `${res.status}`);
-  });
+function buildManualPipelineRequest(targetUserId) {
+  if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+    throw new Error('targetUserId must be a positive safe integer');
+  }
+  return {
+    method: 'POST',
+    path: '/api/pipeline/start',
+    body: { mode: 'full', targetUserId },
+  };
+}
 
-  // === 2. Auth ===
-  console.log('\n🔐 Auth:');
+function buildSmokePlan(config) {
+  return {
+    mode: 'read-only by default',
+    noAuth: [
+      { method: 'GET', path: '/_health', expect: [204] },
+      { method: 'GET', path: '/api/properties', expect: DENIAL_STATUSES },
+      { method: 'GET', path: '/api/properties/stats', expect: DENIAL_STATUSES },
+      { method: 'GET', path: '/api/setting', expect: DENIAL_STATUSES },
+      { method: 'GET', path: '/api/sources', expect: DENIAL_STATUSES },
+      { method: 'GET', path: '/api/pipeline/status', expect: DENIAL_STATUSES },
+      { method: 'GET', path: '/api/photos/<documentId>/<filename>', expect: DENIAL_STATUSES },
+    ],
+    authenticated: [
+      { role: 'admin', method: 'GET', path: '/api/me/context', expect: 200 },
+      { role: 'user A', method: 'GET', path: '/api/me/context', expect: 200 },
+      { role: 'user B', method: 'GET', path: '/api/me/context', expect: 200 },
+      { role: 'user A/B', method: 'GET', path: '/api/properties', expect: 200, scope: 'profile' },
+      { role: 'user A/B', method: 'GET', path: '/api/properties/stats', expect: 200, scope: 'profile' },
+      { role: 'user A/B', method: 'GET', path: '/api/properties/:documentId', expect: '200 own / 404 foreign' },
+      { role: 'admin', method: 'GET', path: '/api/admin/user-profiles/:userId', expect: 200 },
+    ],
+    ordinaryUserGlobalBoundary: [
+      { role: 'user A', method: 'GET', path: '/api/setting', expect: 403 },
+      { role: 'user A', method: 'GET', path: '/api/sources', expect: 403 },
+      { role: 'user A', method: 'GET', path: '/api/pipeline/status', expect: 403 },
+      { role: 'user A', method: 'PUT', path: '/api/setting', expect: 403, mutation: true },
+      { role: 'user A', method: 'PUT', path: '/api/sources/<id>', expect: 403, mutation: true },
+      { role: 'user A', method: 'POST', path: '/api/pipeline/start', expect: 403, mutation: true },
+    ],
+    fixtureMutations: [
+      { role: 'user A', method: 'PUT', path: '/api/me/properties/:documentId/status', expect: 'restore in finally' },
+      { role: 'user A', method: 'POST', path: '/api/me/properties/:documentId/comments', expect: 'delete in finally' },
+    ],
+    adminManualPipeline: {
+      request: '<not executed by smoke>',
+      contract: buildManualPipelineRequest(1),
+      note: 'Runtime manual pipeline acceptance is separate evidence; this harness never starts cron/queue work implicitly.',
+    },
+    runtimeNotes: [
+      'Cron/digest fan-out requires an exact supported fixture/runtime API and is not emulated through public endpoints.',
+      'Manual pipeline start is a side effect and is not called by the read-only harness.',
+      'Set SMOKE_ALLOW_MUTATIONS=1 plus SMOKE_MUTATION_CONFIRM=fixture-only only for an isolated fixture.',
+    ],
+    target: config ? { api: 'configured', ui: 'configured' } : undefined,
+  };
+}
 
-  await test('Login with test user', async () => {
-    const res = await api('POST', '/api/auth/local', {
-      identifier: TEST_EMAIL,
-      password: TEST_PASSWORD,
-    });
-    if (!res.ok) throw new Error(`Login failed: ${res.status} ${JSON.stringify(res.data)}`);
-    if (!res.data?.jwt) throw new Error('No JWT in response');
-    jwt = res.data.jwt;
-    ok('Login', `user=${res.data.user?.email}`);
-  });
+function createHttpClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  if (typeof fetchImpl !== 'function') throw new Error('fetch implementation is required');
+  const origin = normalizeBaseUrl(baseUrl, 'baseUrl', { SMOKE_ALLOW_PRODUCTION: '1' });
 
-  await test('GET /api/users/me with JWT', async () => {
-    const res = await api('GET', '/api/users/me');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
-    ok('Auth check', `user=${res.data?.email}`);
-  });
-
-  await test('GET /api/properties without JWT → blocked', async () => {
-    const savedJwt = jwt;
-    jwt = null;
+  async function requestUrl(url, method = 'GET', options = {}) {
+    const headers = { Accept: 'application/json', ...(options.headers || {}) };
+    const init = { method, headers };
+    if (options.token) headers.Authorization = `Bearer ${options.token}`;
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(options.body);
+    }
+    const controller = new AbortController();
+    init.signal = controller.signal;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    let response;
     try {
-      const res = await api('GET', '/api/properties');
-      if (res.ok) throw new Error(`Expected error, got ${res.status}`);
-      ok('No-auth blocked', `${res.status}`);
+      response = await fetchImpl(url, init);
+    } catch {
+      throw new Error(`HTTP request failed: ${method}`);
     } finally {
-      jwt = savedJwt;
+      clearTimeout(timer);
     }
-  });
-
-  // === 3. API endpoints (authenticated) ===
-  console.log('\n📦 API endpoints:');
-
-  await test('GET /api/properties', async () => {
-    const res = await api('GET', '/api/properties');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
-    const count = res.data?.data?.length || 0;
-    ok('Properties', `${count} items`);
-  });
-
-  await test('GET /api/sources', async () => {
-    const res = await api('GET', '/api/sources');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
-    const sources = res.data?.data || [];
-    const active = sources.filter(s => s.is_active);
-    ok('Sources', `${sources.length} total, ${active.length} active`);
-  });
-
-  await test('GET /api/setting', async () => {
-    const res = await api('GET', '/api/setting');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
-    ok('Setting', `threshold=${res.data?.data?.threshold_percent}`);
-  });
-
-  await test('GET /api/market-references', async () => {
-    const res = await api('GET', '/api/market-references');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
-    ok('Market references', `${res.data?.data?.length || 0} items`);
-  });
-
-  await test('GET /api/pipeline/status', async () => {
-    const res = await api('GET', '/api/pipeline/status');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status} ${JSON.stringify(res.data)}`);
-    ok('Pipeline status', `status=${res.data?.state?.status || 'idle'}`);
-  });
-
-  // === 4. Data integrity ===
-  console.log('\n🔍 Data integrity:');
-
-  await test('Active sources have correct parsers', async () => {
-    const res = await api('GET', '/api/sources');
-    const sources = res.data?.data || [];
-    const validParsers = ['fabrikant', 'fedresurs', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf', 'sberbank-ast', 'invest-mosreg', 'investmoscow', 'roseltorg', 'm-ets'];
-    for (const src of sources) {
-      if (src.is_active && !validParsers.includes(src.parser)) {
-        throw new Error(`Source ${src.slug} has unknown parser: ${src.parser}`);
-      }
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
     }
-    ok('Parser names valid');
+    return { status: response.status, ok: response.ok, data };
+  }
+
+  async function request(method, path, options = {}) {
+    if (typeof path !== 'string' || !path.startsWith('/')) throw new Error('API path must start with /');
+    return requestUrl(`${origin}${path}`, method, options);
+  }
+
+  async function login(credentials) {
+    const response = await request('POST', '/api/auth/local', {
+      body: { identifier: credentials.identifier, password: credentials.password },
+    });
+    const token = response.data?.jwt;
+    const userId = response.data?.user?.id;
+    if (response.status !== 200 || typeof token !== 'string' || token.length < 10 || !Number.isSafeInteger(userId) || userId <= 0) {
+      throw new Error('login failed');
+    }
+    return { token, userId };
+  }
+
+  return { request, requestUrl, login, origin };
+}
+
+function assertStatus(response, expected, name) {
+  const expectedStatuses = Array.isArray(expected) ? expected : [expected];
+  if (!response || !expectedStatuses.includes(response.status)) {
+    throw new Error(`${name}: unexpected HTTP status`);
+  }
+}
+
+function assertDenied(response, name) {
+  assertStatus(response, DENIAL_STATUSES, name);
+}
+
+function assertForbidden(response, name) {
+  assertStatus(response, 403, name);
+}
+
+function responseData(response, name) {
+  const value = response?.data?.data;
+  if (value === undefined) throw new Error(`${name}: missing data envelope`);
+  return value;
+}
+
+function responseRows(response, name) {
+  const value = responseData(response, name);
+  if (!Array.isArray(value)) throw new Error(`${name}: expected scoped list`);
+  return value;
+}
+
+function responseStats(response, name) {
+  const value = response?.data?.data ?? response?.data;
+  if (!isRecord(value)) throw new Error(`${name}: expected stats DTO`);
+  return value;
+}
+
+function rowId(row) {
+  if (!isRecord(row)) return null;
+  const value = row.documentId ?? row.document_id ?? row.id;
+  return value === undefined || value === null ? null : String(value);
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).sort().join(',')}]`;
+  if (isRecord(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+function arrayValues(value) {
+  return Array.isArray(value) ? value.map(item => String(item).toLowerCase()).filter(Boolean) : [];
+}
+
+function setsDisjoint(left, right) {
+  const rightSet = new Set(right);
+  return left.length > 0 && right.length > 0 && left.every(item => !rightSet.has(item));
+}
+
+function rangesDisjoint(leftFrom, leftTo, rightFrom, rightTo) {
+  const lf = leftFrom === null || leftFrom === undefined ? -Infinity : Number(leftFrom);
+  const lt = leftTo === null || leftTo === undefined ? Infinity : Number(leftTo);
+  const rf = rightFrom === null || rightFrom === undefined ? -Infinity : Number(rightFrom);
+  const rt = rightTo === null || rightTo === undefined ? Infinity : Number(rightTo);
+  if (![lf, lt, rf, rt].every(Number.isFinite) && ![lf, lt, rf, rt].some(value => value === Infinity || value === -Infinity)) return false;
+  return lt < rf || rt < lf;
+}
+
+function assertProfilesIncompatible(left, right) {
+  if (!isRecord(left) || !isRecord(right)) throw new Error('profile response is malformed');
+  const leftRegions = arrayValues(left.regions);
+  const rightRegions = arrayValues(right.regions);
+  const leftTypes = arrayValues(left.property_types);
+  const rightTypes = arrayValues(right.property_types);
+  const incompatible = setsDisjoint(leftRegions, rightRegions)
+    || setsDisjoint(leftTypes, rightTypes)
+    || rangesDisjoint(left.price_from, left.price_to, right.price_from, right.price_to)
+    || rangesDisjoint(left.area_from, left.area_to, right.area_from, right.area_to);
+  if (!incompatible) throw new Error('user A and user B profiles overlap');
+  return true;
+}
+
+function assertListSeparation(leftRows, rightRows, requireSeparation = true) {
+  const leftIds = new Set(leftRows.map(rowId).filter(Boolean));
+  const rightIds = new Set(rightRows.map(rowId).filter(Boolean));
+  const leftOnly = [...leftIds].filter(id => !rightIds.has(id));
+  const rightOnly = [...rightIds].filter(id => !leftIds.has(id));
+  const equalPayload = stableJson(leftRows) === stableJson(rightRows);
+  if (requireSeparation && (leftRows.length === 0 || rightRows.length === 0)) {
+    throw new Error('profile separation fixture returned an empty user list');
+  }
+  if (requireSeparation && (leftIds.size !== leftRows.length || rightIds.size !== rightRows.length)) {
+    throw new Error('scoped list contains a row without a stable property id');
+  }
+  if (requireSeparation && (leftOnly.length === 0 || rightOnly.length === 0)) {
+    throw new Error('user A and user B lists have no exclusive fixture rows');
+  }
+  if (requireSeparation && equalPayload) {
+    throw new Error('user A and user B lists are not separated');
+  }
+  return { leftOnly, rightOnly, overlap: [...leftIds].filter(id => rightIds.has(id)) };
+}
+
+function assertStatsSeparation(left, right, requireSeparation = true) {
+  if (requireSeparation && stableJson(left) === stableJson(right)) {
+    throw new Error('user A and user B stats are not separated');
+  }
+}
+
+function extractCommentId(response) {
+  const value = response?.data?.data ?? response?.data;
+  if (!isRecord(value)) return null;
+  const id = value.id ?? value.documentId;
+  return id === undefined || id === null ? null : String(id);
+}
+
+function statusValue(response) {
+  const value = response?.data?.data ?? response?.data;
+  return isRecord(value) && typeof value.status === 'string' ? value.status : 'new';
+}
+
+function logLine(logger, method, text) {
+  const fn = logger && typeof logger[method] === 'function' ? logger[method] : logger && typeof logger.log === 'function' ? logger.log : null;
+  if (fn) fn.call(logger, text);
+}
+
+function safeErrorMessage(error, secrets) {
+  return redactText(error instanceof Error ? error.message : 'check failed', secrets)
+    .replace(/https?:\/\/\S+/g, '[URL]')
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[HOST]');
+}
+
+async function runSmoke({ config, client, uiClient, logger = console } = {}) {
+  if (!config || !client) throw new Error('runSmoke requires config and client');
+  const result = { passed: [], failed: [], skipped: [] };
+  const check = async (name, fn) => {
+    try {
+      await fn();
+      result.passed.push(name);
+      logLine(logger, 'log', `  ✅ ${name}`);
+    } catch (error) {
+      const detail = safeErrorMessage(error, config.secrets);
+      result.failed.push({ name, detail });
+      logLine(logger, 'log', `  ❌ ${name} — ${detail}`);
+    }
+  };
+  const skip = (name, reason) => {
+    result.skipped.push({ name, reason });
+    logLine(logger, 'log', `  ⏭️ ${name} — ${reason}`);
+  };
+
+  logLine(logger, 'log', '\n🧪 AKLAB multi-user smoke (read-only by default)');
+
+  await check('API health is public', async () => {
+    const response = await client.request('GET', '/_health');
+    assertStatus(response, 204, 'health');
   });
+  if (uiClient) {
+    await check('Frontend health responds', async () => {
+      const response = await uiClient.requestUrl(uiClient.origin, 'GET');
+      assertStatus(response, [200, 304], 'frontend');
+    });
+  } else {
+    skip('Frontend health responds', 'UI client not supplied');
+  }
 
-  await test('Properties have required fields', async () => {
-    const res = await api('GET', '/api/properties');
-    const props = res.data?.data || [];
-    for (const p of props) {
-      if (!p.external_id) throw new Error(`Property ${p.id} missing external_id`);
-      if (!p.source) throw new Error(`Property ${p.id} missing source`);
-    }
-    if (props.length > 0) {
-      const withPrice = props.filter(p => p.price != null);
-      const withArea = props.filter(p => p.area_sqm != null);
-      ok('Properties valid', `${props.length} total, ${withPrice.length} with price, ${withArea.length} with area`);
-    } else {
-      ok('Properties valid', '0 items (empty)');
-    }
-  });
-
-  await test('Setting has parsing rules fields', async () => {
-    const res = await api('GET', '/api/setting');
-    const setting = res.data?.data;
-    if (!setting) throw new Error('No setting data');
-
-    // stop_words should be an array
-    if (!Array.isArray(setting.stop_words)) {
-      throw new Error(`stop_words is not an array: ${typeof setting.stop_words}`);
-    }
-    if (setting.stop_words.length === 0) {
-      throw new Error('stop_words is empty');
-    }
-
-    // area_from/area_to should exist (can be null)
-    if (!('area_from' in setting)) throw new Error('area_from missing');
-    if (!('area_to' in setting)) throw new Error('area_to missing');
-
-    // monitored_regions should be an array
-    if (!Array.isArray(setting.monitored_regions)) {
-      throw new Error(`monitored_regions is not an array`);
-    }
-
-    // parse_depth should be a number
-    if (typeof setting.parse_depth !== 'number') {
-      throw new Error(`parse_depth is not a number: ${typeof setting.parse_depth}`);
-    }
-
-    ok('Parsing rules', `stop_words=${setting.stop_words.length}, depth=${setting.parse_depth}, regions=${setting.monitored_regions.length}`);
-  });
-
-  await test('GET /api/focus-rules', async () => {
-    const res = await api('GET', '/api/focus-rules');
-    if (!res.ok) throw new Error(`Expected 200, got ${res.status}`);
-    const rules = res.data?.data || [];
-    ok('Focus rules', `${rules.length} rules`);
-  });
-
-  // === 5. Microservices ===
-  console.log('\n⚙️  Microservices:');
-
-  const microservices = [
-    { name: 'Parser-fabrikant', port: 1345 },
-    { name: 'Parser-torgi-gov', port: 1346 },
-    { name: 'Parser-aggregator-bankrot', port: 1348 },
-    { name: 'Parser-alfalot', port: 1349 },
-    { name: 'Parser-etprf', port: 1350 },
-    { name: 'Parser-sberbank-ast', port: 1351 },
-    { name: 'Parser-invest-mosreg', port: 1352 },
-    { name: 'Parser-investmoscow', port: 1353 },
-    { name: 'Parser-roseltorg', port: 1354 },
-    { name: 'Parser-m-ets', port: 1355 },
-    { name: 'Analyzer', port: 1341 },
-    { name: 'Digest', port: 1342 },
+  const noAuthChecks = [
+    ['No-auth properties are denied', '/api/properties'],
+    ['No-auth property stats are denied', '/api/properties/stats'],
+    ['No-auth settings are denied', '/api/setting'],
+    ['No-auth sources are denied', '/api/sources'],
+    ['No-auth pipeline status is denied', '/api/pipeline/status'],
   ];
+  for (const [name, path] of noAuthChecks) {
+    await check(name, async () => assertDenied(await client.request('GET', path), name));
+  }
+  const photoDocumentId = config.fixture.photoDocumentId || 'smoke-document';
+  const photoFilename = config.fixture.photoFilename || 'smoke.jpg';
+  await check('No-auth photos are denied', async () => {
+    const path = `/api/photos/${safePathSegment(photoDocumentId, 'photo document')}/${safePathSegment(photoFilename, 'photo filename')}`;
+    assertDenied(await client.request('GET', path), 'photo');
+  });
 
-  for (const svc of microservices) {
-    await test(`${svc.name} health (:${svc.port})`, async () => {
-      try {
-        const res = await fetch(`http://localhost:${svc.port}/health`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (res.ok) {
-          ok(`${svc.name}`, `port ${svc.port} ✓`);
-        } else {
-          fail(`${svc.name}`, `port ${svc.port} → ${res.status}`);
-        }
-      } catch {
-        // Can't reach from outside — skip gracefully
-        ok(`${svc.name}`, `port ${svc.port} (skip — remote)`);
+  const sessions = {};
+  for (const role of ROLE_NAMES) {
+    await check(`Login ${config.roles[role].label}`, async () => {
+      sessions[role] = await client.login(config.roles[role]);
+    });
+  }
+  if (ROLE_NAMES.some(role => !sessions[role])) {
+    skip('Authenticated multi-user checks', 'one or more role logins failed');
+    skip('Cron/digest runtime evidence', 'not emulated by this harness; run the separate dev acceptance procedure');
+    return result;
+  }
+
+  for (const role of ROLE_NAMES) {
+    await check(`${config.roles[role].label} /me/context`, async () => {
+      const response = await client.request('GET', '/api/me/context', { token: sessions[role].token });
+      assertStatus(response, 200, 'context');
+      const context = responseData(response, 'context');
+      if (!isRecord(context) || context.user?.id !== sessions[role].userId || (role !== 'admin' && context.profileReady !== true) || context.multiuserEnabled !== true) {
+        throw new Error('context does not confirm active scoped multi-user session');
       }
+      const roleType = context.role?.type;
+      if (role === 'admin' && roleType !== ADMIN_ROLE_TYPE) throw new Error('admin role is not AKLAB Admin');
+      if (role !== 'admin' && roleType === ADMIN_ROLE_TYPE) throw new Error('ordinary user has admin role');
     });
   }
 
-  // === Summary ===
-  console.log(`\n${'═'.repeat(40)}`);
-  console.log(`  ✅ Passed: ${passed}`);
-  if (failed > 0) console.log(`  ❌ Failed: ${failed}`);
-  console.log(`${'═'.repeat(40)}\n`);
+  const profiles = {};
+  for (const role of ['userA', 'userB']) {
+    await check(`${config.roles[role].label} profile`, async () => {
+      const response = await client.request('GET', '/api/me/profile', { token: sessions[role].token });
+      assertStatus(response, 200, 'profile');
+      const profile = responseData(response, 'profile');
+      if (!isRecord(profile) || profile.user_id !== sessions[role].userId || !Array.isArray(profile.regions) || !Array.isArray(profile.property_types)) {
+        throw new Error('profile ownership or filter fields are invalid');
+      }
+      profiles[role] = profile;
+    });
+  }
+  if (profiles.userA && profiles.userB) {
+    await check('User A and user B profiles are incompatible', async () => assertProfilesIncompatible(profiles.userA, profiles.userB));
+  }
 
-  process.exit(failed > 0 ? 1 : 0);
+  const scoped = {};
+  for (const role of ['userA', 'userB']) {
+    scoped[role] = {};
+    await check(`${config.roles[role].label} scoped list`, async () => {
+      const response = await client.request('GET', '/api/properties?pagination%5BpageSize%5D=100', { token: sessions[role].token });
+      assertStatus(response, 200, 'properties');
+      scoped[role].rows = responseRows(response, 'properties');
+    });
+    await check(`${config.roles[role].label} scoped stats`, async () => {
+      const response = await client.request('GET', '/api/properties/stats', { token: sessions[role].token });
+      assertStatus(response, 200, 'stats');
+      scoped[role].stats = responseStats(response, 'stats');
+    });
+  }
+  if (scoped.userA?.rows && scoped.userB?.rows) {
+    let separation;
+    await check('User A and user B lists are separated', async () => {
+      separation = assertListSeparation(scoped.userA.rows, scoped.userB.rows, config.requireDataSeparation);
+    });
+    if (separation) {
+      const foreignId = config.fixture.foreignPropertyId || separation.leftOnly[0];
+      const ownId = separation.leftOnly[0] || separation.rightOnly[0] || rowId(scoped.userA.rows[0]);
+      if (ownId) {
+        await check('Scoped detail is available to the matching user', async () => {
+          const response = await client.request('GET', `/api/properties/${encodeURIComponent(ownId)}`, { token: sessions.userA.token });
+          assertStatus(response, 200, 'own detail');
+        });
+      } else {
+        skip('Scoped detail is available to the matching user', 'no property fixture in user A list');
+      }
+      if (foreignId) {
+        await check('Foreign scoped detail returns 404', async () => {
+          const response = await client.request('GET', `/api/properties/${encodeURIComponent(foreignId)}`, { token: sessions.userB.token });
+          assertStatus(response, 404, 'foreign detail');
+        });
+      } else {
+        skip('Foreign scoped detail returns 404', 'no user-A-only property fixture');
+      }
+    }
+  }
+  if (scoped.userA?.stats && scoped.userB?.stats) {
+    await check('User A and user B stats are separated', async () => assertStatsSeparation(scoped.userA.stats, scoped.userB.stats, config.requireDataSeparation));
+  }
+
+  await check('Ordinary user cannot read global settings', async () => assertForbidden(await client.request('GET', '/api/setting', { token: sessions.userA.token }), 'settings'));
+  await check('Ordinary user cannot read global sources', async () => assertForbidden(await client.request('GET', '/api/sources', { token: sessions.userA.token }), 'sources'));
+  await check('Ordinary user cannot read pipeline telemetry', async () => assertForbidden(await client.request('GET', '/api/pipeline/status', { token: sessions.userA.token }), 'pipeline'));
+
+  await check('Admin can read user B target profile', async () => {
+    const response = await client.request('GET', `/api/admin/user-profiles/${sessions.userB.userId}`, { token: sessions.admin.token });
+    assertStatus(response, 200, 'admin target profile');
+    const profile = responseData(response, 'admin target profile');
+    if (!isRecord(profile) || profile.user_id !== sessions.userB.userId) throw new Error('admin target profile mismatch');
+  });
+  await check('Admin manual pipeline target contract is explicit', async () => {
+    const request = buildManualPipelineRequest(sessions.userB.userId);
+    if (request.body.targetUserId !== sessions.userB.userId || request.body.mode !== 'full') throw new Error('manual pipeline target contract mismatch');
+  });
+
+  if (config.fixture.photoDocumentId && config.fixture.photoFilename) {
+    await check('Scoped JWT can access fixture photo', async () => {
+      const path = `/api/photos/${safePathSegment(config.fixture.photoDocumentId, 'photo document')}/${safePathSegment(config.fixture.photoFilename, 'photo filename')}`;
+      const response = await client.request('GET', path, { token: sessions.userA.token });
+      assertStatus(response, 200, 'scoped photo');
+    });
+  } else {
+    skip('Scoped JWT can access fixture photo', 'set SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME for private-media acceptance');
+  }
+
+  if (config.allowMutations) {
+    await runMutationChecks({ config, client, sessions, check });
+  } else {
+    skip('Status/comment isolation', 'read-only by default; opt in with SMOKE_ALLOW_MUTATIONS=1 and fixture-only confirmation');
+    skip('Ordinary-user mutation denial', 'mutation probes are opt-in and use no-op payloads');
+  }
+
+  skip('Cron/digest runtime evidence', 'not emulated through unsupported public endpoints; verify exact cron fan-out manually in dev acceptance');
+  skip('Manual pipeline execution', 'contract checked without starting a run; execute only as separate explicitly approved runtime evidence');
+  return result;
 }
 
-run().catch(err => {
-  console.error('Fatal:', err);
-  process.exit(1);
-});
+async function runMutationChecks({ config, client, sessions, check }) {
+  const propertyId = config.fixture.propertyId;
+  const encodedPropertyId = encodeURIComponent(propertyId);
+
+  let fixtureVisible = false;
+  await check('Mutation fixture is visible to both users', async () => {
+    const [a, b] = await Promise.all([
+      client.request('GET', `/api/properties/${encodedPropertyId}`, { token: sessions.userA.token }),
+      client.request('GET', `/api/properties/${encodedPropertyId}`, { token: sessions.userB.token }),
+    ]);
+    assertStatus(a, 200, 'user A fixture');
+    assertStatus(b, 200, 'user B fixture');
+    fixtureVisible = true;
+  });
+  if (!fixtureVisible) return;
+
+  let originalStatus = 'new';
+  let fixtureReady = false;
+  try {
+    const initial = await client.request('GET', `/api/me/properties/${encodedPropertyId}/status`, { token: sessions.userA.token });
+    assertStatus(initial, 200, 'initial status');
+    originalStatus = statusValue(initial);
+    fixtureReady = true;
+  } catch {
+    fixtureReady = false;
+  }
+
+  if (fixtureReady) {
+    await check('Status change is isolated and restored', async () => {
+      const statusPath = `/api/me/properties/${encodedPropertyId}/status`;
+      try {
+        const changed = await client.request('PUT', statusPath, {
+          token: sessions.userA.token,
+          body: { data: { status: 'in_progress' } },
+        });
+        assertStatus(changed, 200, 'status update');
+        const [a, b] = await Promise.all([
+          client.request('GET', statusPath, { token: sessions.userA.token }),
+          client.request('GET', statusPath, { token: sessions.userB.token }),
+        ]);
+        assertStatus(a, 200, 'user A changed status');
+        assertStatus(b, 200, 'user B status');
+        if (statusValue(a) !== 'in_progress') throw new Error('user A status did not change');
+        if (statusValue(b) !== originalStatus) throw new Error('user B status changed with user A');
+      } finally {
+        const restored = originalStatus === 'new'
+          ? await client.request('DELETE', statusPath, { token: sessions.userA.token })
+          : await client.request('PUT', statusPath, { token: sessions.userA.token, body: { data: { status: originalStatus } } });
+        assertStatus(restored, [200, 204], 'status restore');
+      }
+    });
+  } else {
+    await check('Status change is isolated and restored', async () => {
+      throw new Error('initial status was unavailable; mutation was not attempted');
+    });
+  }
+
+  await check('Comment change is isolated and restored', async () => {
+    const marker = `smoke-fixture-${randomUUID()}`;
+    let createAccepted = false;
+    let commentId = null;
+    try {
+      const created = await client.request('POST', `/api/me/properties/${encodedPropertyId}/comments`, {
+        token: sessions.userA.token,
+        body: { data: { text: marker } },
+      });
+      createAccepted = created.status === 201 || created.status === 200;
+      if (!createAccepted) throw new Error('comment create was not accepted');
+      commentId = extractCommentId(created);
+      if (!commentId) throw new Error('comment id missing; refusing broad cleanup');
+      const [a, b] = await Promise.all([
+        client.request('GET', `/api/me/properties/${encodedPropertyId}/comments`, { token: sessions.userA.token }),
+        client.request('GET', `/api/me/properties/${encodedPropertyId}/comments`, { token: sessions.userB.token }),
+      ]);
+      assertStatus(a, 200, 'user A comments');
+      assertStatus(b, 200, 'user B comments');
+      const aComments = Array.isArray(a.data) ? a.data : a.data?.data;
+      const bComments = Array.isArray(b.data) ? b.data : b.data?.data;
+      if (!Array.isArray(aComments) || !aComments.some(item => String(item?.id ?? item?.documentId) === commentId)) {
+        throw new Error('user A cannot read its fixture comment');
+      }
+      if (!Array.isArray(bComments) || bComments.some(item => String(item?.id ?? item?.documentId) === commentId)) {
+        throw new Error('user B can read user A comment');
+      }
+    } finally {
+      if (createAccepted && !commentId) throw new Error('comment was created without an id; manual cleanup is required');
+      if (commentId) {
+        const response = await client.request('DELETE', `/api/me/properties/${encodedPropertyId}/comments/${encodeURIComponent(commentId)}`, { token: sessions.userA.token });
+        assertStatus(response, [200, 204], 'comment restore');
+      }
+    }
+  });
+
+  const denialProbes = [
+    ['Ordinary user cannot mutate global settings', 'PUT', '/api/setting', { data: {} }],
+    ['Ordinary user cannot mutate global sources', 'PUT', '/api/sources/__smoke_denied__', { data: {} }],
+    ['Ordinary user cannot start a pipeline', 'POST', '/api/pipeline/start', { mode: 'full', targetUserId: sessions.userB.userId }],
+  ];
+  for (const [name, method, path, body] of denialProbes) {
+    await check(name, async () => {
+      const response = await client.request(method, path, { token: sessions.userA.token, body });
+      assertForbidden(response, name);
+    });
+  }
+}
+
+function helpText() {
+  return `AKLAB multi-user smoke harness\n\nUsage:\n  node scripts/smoke-test.js              # explicit dev acceptance target\n  node scripts/smoke-test.js --local      # only with explicit fixture credentials\n  node scripts/smoke-test.js --print-plan # validate env and print no-network plan\n  node scripts/smoke-test.js --help\n\nRequired environment:\n  SMOKE_API_URL, SMOKE_UI_URL\n  SMOKE_ADMIN_EMAIL, SMOKE_ADMIN_PASSWORD\n  SMOKE_USER_A_EMAIL, SMOKE_USER_A_PASSWORD\n  SMOKE_USER_B_EMAIL, SMOKE_USER_B_PASSWORD\n\nOptional fixture environment:\n  SMOKE_PHOTO_DOCUMENT_ID, SMOKE_PHOTO_FILENAME\n  SMOKE_FOREIGN_PROPERTY_ID, SMOKE_FIXTURE_PROPERTY_ID\n\nMutations are disabled by default. Fixture-only status/comment probes require:\n  SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only\n\nProduction URLs are rejected unless SMOKE_ALLOW_PRODUCTION=1 is explicit.\nCron/queue fan-out and manual pipeline execution are separate runtime evidence.\n`;
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help')) {
+    process.stdout.write(helpText());
+    return;
+  }
+  try {
+    const config = createSmokeConfig(process.env, argv);
+    if (argv.includes('--print-plan')) {
+      process.stdout.write(`${JSON.stringify(buildSmokePlan(config), null, 2)}\n`);
+      return;
+    }
+    const client = createHttpClient({ baseUrl: config.apiBaseUrl });
+    const uiClient = createHttpClient({ baseUrl: config.uiBaseUrl });
+    const result = await runSmoke({ config, client, uiClient });
+    process.stdout.write(`\nSummary: passed=${result.passed.length} failed=${result.failed.length} skipped=${result.skipped.length}\n`);
+    if (result.failed.length > 0) process.exitCode = 1;
+  } catch (error) {
+    process.stderr.write(`${safeErrorMessage(error, [])}\n`);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = {
+  ADMIN_ROLE_TYPE,
+  DENIAL_STATUSES,
+  MUTATION_CONFIRM,
+  assertDenied,
+  assertForbidden,
+  assertListSeparation,
+  assertProfilesIncompatible,
+  assertStatsSeparation,
+  buildManualPipelineRequest,
+  buildSmokePlan,
+  createHttpClient,
+  createSmokeConfig,
+  maskIdentifier,
+  redactText,
+  runMutationChecks,
+  runSmoke,
+};
+
+if (require.main === module) {
+  main().catch(() => {
+    process.exitCode = 1;
+  });
+}

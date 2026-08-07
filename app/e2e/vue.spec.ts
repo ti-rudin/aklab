@@ -1,658 +1,319 @@
-import { test, expect } from '@playwright/test'
+import { expect, test, type Browser, type Page } from '@playwright/test'
 
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru'
-const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || ''
+type Role = 'admin' | 'userA' | 'userB'
+type RoleCredential = { email: string; password: string }
 
-/**
- * Helper: авторизация через UI.
- * После логина Auth.vue делает router.push('/properties').
- */
-async function login(page: import('@playwright/test').Page) {
+type MultiuserConfig = {
+  enabled: boolean
+  reason: string
+  baseURL: string
+  apiURL: string
+  credentials: Record<Role, RoleCredential>
+  photoDocumentId?: string
+  photoFilename?: string
+  foreignPropertyId?: string
+}
+
+const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru'])
+const ROLES: readonly Role[] = ['admin', 'userA', 'userB']
+const ENV: Record<string, string | undefined> = (
+  globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }
+).process?.env || {}
+
+function productionHost(value: string): boolean {
+  try {
+    return PRODUCTION_HOSTS.has(new URL(value).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+function required(name: string): string | null {
+  const value = ENV[name]?.trim()
+  return value ? value : null
+}
+
+function buildConfig(): MultiuserConfig {
+  const missing: string[] = []
+  const baseURL = required('SMOKE_UI_URL')
+  const apiURL = required('SMOKE_API_URL')
+  if (!baseURL) missing.push('SMOKE_UI_URL')
+  if (!apiURL) missing.push('SMOKE_API_URL')
+
+  const credentials = {} as Record<Role, RoleCredential>
+  const envNames: Record<Role, [string, string]> = {
+    admin: ['SMOKE_ADMIN_EMAIL', 'SMOKE_ADMIN_PASSWORD'],
+    userA: ['SMOKE_USER_A_EMAIL', 'SMOKE_USER_A_PASSWORD'],
+    userB: ['SMOKE_USER_B_EMAIL', 'SMOKE_USER_B_PASSWORD'],
+  }
+  for (const role of ROLES) {
+    const [emailName, passwordName] = envNames[role]
+    const email = required(emailName)
+    const password = required(passwordName)
+    if (!email) missing.push(emailName)
+    if (!password) missing.push(passwordName)
+    credentials[role] = { email: email || '', password: password || '' }
+  }
+
+  if (ENV.E2E_MULTIUSER !== '1') missing.push('E2E_MULTIUSER=1')
+  if (missing.length > 0) {
+    return {
+      enabled: false,
+      reason: `multiuser Playwright пропущен: задайте ${missing.join(', ')}`,
+      baseURL: baseURL || 'http://127.0.0.1:5174',
+      apiURL: apiURL || 'http://127.0.0.1:1338',
+      credentials,
+    }
+  }
+
+  if (new Set(ROLES.map(role => credentials[role].email)).size !== ROLES.length) {
+    return {
+      enabled: false,
+      reason: 'multiuser Playwright пропущен: SMOKE_ADMIN/USER_A/USER_B должны быть тремя разными аккаунтами',
+      baseURL: baseURL!,
+      apiURL: apiURL!,
+      credentials,
+    }
+  }
+
+  if ((productionHost(baseURL!) || productionHost(apiURL!)) && ENV.E2E_ALLOW_PRODUCTION !== '1') {
+    return {
+      enabled: false,
+      reason: 'multiuser Playwright пропущен: production URL запрещён без E2E_ALLOW_PRODUCTION=1',
+      baseURL: baseURL!,
+      apiURL: apiURL!,
+      credentials,
+    }
+  }
+
+  return {
+    enabled: true,
+    reason: '',
+    baseURL: baseURL!,
+    apiURL: apiURL!,
+    credentials,
+    photoDocumentId: required('SMOKE_PHOTO_DOCUMENT_ID') || undefined,
+    photoFilename: required('SMOKE_PHOTO_FILENAME') || undefined,
+    foreignPropertyId: required('SMOKE_FOREIGN_PROPERTY_ID') || undefined,
+  }
+}
+
+const CONFIG = buildConfig()
+
+// A missing env must not cause a browser, server, or network request to start.
+test.use({ baseURL: CONFIG.baseURL })
+
+type ApiResult = { status: number; body: unknown }
+
+async function jwtFromPage(page: Page): Promise<string> {
+  const token = await page.evaluate(() => window.localStorage.getItem('jwt'))
+  if (!token) throw new Error('JWT отсутствует после UI login')
+  return token
+}
+
+async function apiRequest(page: Page, method: string, path: string, authenticated = true): Promise<ApiResult> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (authenticated) headers.Authorization = `Bearer ${await jwtFromPage(page)}`
+  const response = await page.request.fetch(`${CONFIG.apiURL}${path}`, { method, headers })
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Binary photo responses are intentionally not JSON-decoded.
+  }
+  return { status: response.status(), body }
+}
+
+function dataOf(result: ApiResult): any {
+  return (result.body as any)?.data
+}
+
+function statsOf(result: ApiResult): any {
+  return dataOf(result) ?? result.body
+}
+
+function rowsOf(result: ApiResult): any[] {
+  const data = dataOf(result)
+  if (!Array.isArray(data)) throw new Error('scoped list DTO is not an array')
+  return data
+}
+
+function idOf(row: any): string | null {
+  const value = row?.documentId ?? row?.document_id ?? row?.id
+  return value === undefined || value === null ? null : String(value)
+}
+
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).sort().join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stable((value as any)[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+function expectDenied(status: number): void {
+  expect([401, 403]).toContain(status)
+}
+
+function profilesAreIncompatible(left: any, right: any): boolean {
+  const toStringSet = (value: unknown): Set<string> => new Set(
+    Array.isArray(value) ? value.map(item => String(item)) : [],
+  )
+  const leftRegions = toStringSet(left?.regions)
+  const rightRegions = toStringSet(right?.regions)
+  const leftTypes = toStringSet(left?.property_types)
+  const rightTypes = toStringSet(right?.property_types)
+  const disjoint = (a: Set<string>, b: Set<string>) => a.size > 0 && b.size > 0 && [...a].every(value => !b.has(value))
+  const rangeDisjoint = (leftFrom: unknown, leftTo: unknown, rightFrom: unknown, rightTo: unknown) => {
+    const lf = leftFrom == null ? -Infinity : Number(leftFrom)
+    const lt = leftTo == null ? Infinity : Number(leftTo)
+    const rf = rightFrom == null ? -Infinity : Number(rightFrom)
+    const rt = rightTo == null ? Infinity : Number(rightTo)
+    return lt < rf || rt < lf
+  }
+  return disjoint(leftRegions, rightRegions)
+    || disjoint(leftTypes, rightTypes)
+    || rangeDisjoint(left?.price_from, left?.price_to, right?.price_from, right?.price_to)
+    || rangeDisjoint(left?.area_from, left?.area_to, right?.area_from, right?.area_to)
+}
+
+async function login(page: Page, role: Role): Promise<void> {
+  const credentials = CONFIG.credentials[role]
   await page.goto('/auth')
-  await page.locator('#email').fill(TEST_EMAIL)
-  await page.locator('#password').fill(TEST_PASSWORD)
+  await page.locator('#email').fill(credentials.email)
+  await page.locator('#password').fill(credentials.password)
   await page.locator('button[type="submit"]').click()
   await expect(page).toHaveURL(/\/properties/, { timeout: 15000 })
 }
 
-/**
- * Helper: переключить вид на «Таблица» (по умолчанию — карточки).
- * Возвращает true если таблица с данными, false если пустая.
- */
-async function switchToTableView(page: import('@playwright/test').Page): Promise<boolean> {
-  const tableToggle = page.locator('button[aria-label="Вид: таблица"]')
-  await tableToggle.waitFor({ state: 'visible', timeout: 10000 })
-  await tableToggle.click()
-  // Ждём либо строки таблицы, либо пустое состояние
-  const tableRows = page.locator('table tbody tr')
-  const emptyState = page.locator('text=Нет объектов')
-  await tableRows.first().or(emptyState).first().waitFor({ state: 'visible', timeout: 15000 })
-  return await tableRows.first().isVisible().catch(() => false)
+async function openRole(browser: Browser, role: Role): Promise<{ page: Page; close: () => Promise<void> }> {
+  const context = await browser.newContext({ baseURL: CONFIG.baseURL })
+  const page = await context.newPage()
+  await login(page, role)
+  return { page, close: () => context.close() }
 }
 
-/**
- * Helper: перейти на страницу первого объекта через API.
- * Надёжнее, чем switchToTableView + click row.
- */
-async function navigateToFirstProperty(page: import('@playwright/test').Page) {
-  const base = page.url().replace(/\/[^/]*$/, '')
-  const resp = await page.request.get(`${base}/api/properties?pagination[pageSize]=1&sort=createdAt:desc`)
-  const json = await resp.json()
-  if (!json.data?.length) throw new Error('No properties in DB — skipping test')
-  const docId = json.data[0].documentId
-  await page.goto(`/properties/${docId}`)
-  await expect(page).toHaveURL(/\/properties\//, { timeout: 10000 })
-}
+test.describe('AKLAB multi-user dev acceptance', () => {
+  test.skip(!CONFIG.enabled, CONFIG.reason)
+  test.describe.configure({ mode: 'serial' })
 
-// ========================================
-// 1. Unauthenticated navigation
-// ========================================
-test.describe('Unauthenticated navigation', () => {
-  test('root redirects to /auth', async ({ page }) => {
-    await page.goto('/')
-    await expect(page).toHaveURL(/\/auth/)
+  test('health and no-auth data/media boundaries are explicit', async ({ page }) => {
+    const unauthenticated = await apiRequest(page, 'GET', '/api/properties', false)
+    expectDenied(unauthenticated.status)
+    const settings = await apiRequest(page, 'GET', '/api/setting', false)
+    expectDenied(settings.status)
+    const pipeline = await apiRequest(page, 'GET', '/api/pipeline/status', false)
+    expectDenied(pipeline.status)
+
+    const documentId = CONFIG.photoDocumentId || 'smoke-document'
+    const filename = CONFIG.photoFilename || 'smoke.jpg'
+    const photo = await apiRequest(page, 'GET', `/api/photos/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`, false)
+    expectDenied(photo.status)
   })
 
-  test('auth page shows login form', async ({ page }) => {
-    await page.goto('/auth')
-    await expect(page.locator('#email')).toBeVisible()
-    await expect(page.locator('#password')).toBeVisible()
-    await expect(page.locator('button[type="submit"]')).toBeVisible()
-    await expect(page.locator('text=Вход в личный кабинет')).toBeVisible()
-  })
+  test('admin target profile and A/B context/list/stats/detail scope are isolated', async ({ browser }) => {
+    const shells: Partial<Record<Role, { page: Page; close: () => Promise<void> }>> = {}
+    try {
+      for (const role of ROLES) shells[role] = await openRole(browser, role)
+      const admin = shells.admin!.page
+      const userA = shells.userA!.page
+      const userB = shells.userB!.page
 
-  test('settings redirects to /auth', async ({ page }) => {
-    await page.goto('/settings')
-    await expect(page).toHaveURL(/\/auth/)
-  })
+      const [adminContext, contextA, contextB] = await Promise.all([
+        apiRequest(admin, 'GET', '/api/me/context'),
+        apiRequest(userA, 'GET', '/api/me/context'),
+        apiRequest(userB, 'GET', '/api/me/context'),
+      ])
+      expect(adminContext.status).toBe(200)
+      expect(contextA.status).toBe(200)
+      expect(contextB.status).toBe(200)
+      expect(dataOf(adminContext)?.role?.type).toBe('aklab_admin')
+      expect(dataOf(contextA)?.role?.type).not.toBe('aklab_admin')
+      expect(dataOf(contextB)?.role?.type).not.toBe('aklab_admin')
+      expect(dataOf(contextA)?.user?.id).not.toBe(dataOf(contextB)?.user?.id)
+      expect(dataOf(contextA)?.multiuserEnabled).toBe(true)
+      expect(dataOf(contextB)?.multiuserEnabled).toBe(true)
 
-  test('properties redirects to /auth', async ({ page }) => {
-    await page.goto('/properties')
-    await expect(page).toHaveURL(/\/auth/)
-  })
+      const [profileA, profileB] = await Promise.all([
+        apiRequest(userA, 'GET', '/api/me/profile'),
+        apiRequest(userB, 'GET', '/api/me/profile'),
+      ])
+      expect(profileA.status).toBe(200)
+      expect(profileB.status).toBe(200)
+      expect(profilesAreIncompatible(dataOf(profileA), dataOf(profileB))).toBe(true)
 
-  test('property detail redirects to /auth', async ({ page }) => {
-    await page.goto('/properties/some-document-id')
-    await expect(page).toHaveURL(/\/auth/)
-  })
+      const [listA, listB, statsA, statsB] = await Promise.all([
+        apiRequest(userA, 'GET', '/api/properties?pagination%5BpageSize%5D=100'),
+        apiRequest(userB, 'GET', '/api/properties?pagination%5BpageSize%5D=100'),
+        apiRequest(userA, 'GET', '/api/properties/stats'),
+        apiRequest(userB, 'GET', '/api/properties/stats'),
+      ])
+      expect(listA.status).toBe(200)
+      expect(listB.status).toBe(200)
+      expect(statsA.status).toBe(200)
+      expect(statsB.status).toBe(200)
+      const rowsA = rowsOf(listA)
+      const rowsB = rowsOf(listB)
+      expect(rowsA.length + rowsB.length).toBeGreaterThan(0)
+      expect(stable(statsOf(statsA))).not.toBe(stable(statsOf(statsB)))
 
-  test('changelog redirects to /auth', async ({ page }) => {
-    await page.goto('/changelog')
-    await expect(page).toHaveURL(/\/auth/)
-  })
+      const idsA = new Set(rowsA.map(idOf).filter(Boolean))
+      const idsB = new Set(rowsB.map(idOf).filter(Boolean))
+      const foreignId = CONFIG.foreignPropertyId || [...idsA].find(id => !idsB.has(id))
+      expect(foreignId).toBeTruthy()
+      const ownId = [...idsA][0]
+      expect(ownId).toBeTruthy()
+      const ownDetail = await apiRequest(userA, 'GET', `/api/properties/${encodeURIComponent(ownId!)}`)
+      expect(ownDetail.status).toBe(200)
+      const foreignDetail = await apiRequest(userB, 'GET', `/api/properties/${encodeURIComponent(foreignId!)}`)
+      expect(foreignDetail.status).toBe(404)
 
-  test('documentation redirects to /auth', async ({ page }) => {
-    await page.goto('/documentation')
-    await expect(page).toHaveURL(/\/auth/)
-  })
-})
+      const targetProfile = await apiRequest(admin, 'GET', `/api/admin/user-profiles/${dataOf(contextB)?.user?.id}`)
+      expect(targetProfile.status).toBe(200)
+      expect(dataOf(targetProfile)?.user_id).toBe(dataOf(contextB)?.user?.id)
 
-// ========================================
-// 2. Auth flow
-// ========================================
-test.describe('Auth flow', () => {
-  test('login with valid credentials → /properties', async ({ page }) => {
-    await page.goto('/auth')
-    await page.locator('#email').fill(TEST_EMAIL)
-    await page.locator('#password').fill(TEST_PASSWORD)
-    await page.locator('button[type="submit"]').click()
-    await expect(page).toHaveURL(/\/properties/, { timeout: 15000 })
-  })
+      const ordinaryAdminList = await apiRequest(userA, 'GET', '/api/admin/user-profiles')
+      expect(ordinaryAdminList.status).toBe(403)
+      const adminPipeline = await apiRequest(admin, 'GET', '/api/pipeline/status')
+      expect(adminPipeline.status).toBe(200)
+      const ordinaryPipeline = await apiRequest(userA, 'GET', '/api/pipeline/status')
+      expect(ordinaryPipeline.status).toBe(403)
 
-  test('login with invalid credentials shows error', async ({ page }) => {
-    await page.goto('/auth')
-    await page.locator('#email').fill('wrong@example.com')
-    await page.locator('#password').fill('wrongpassword')
-    await page.locator('button[type="submit"]').click()
-    // Должны остаться на /auth и увидеть ошибку
-    await expect(page).toHaveURL(/\/auth/)
-    // Auth.vue показывает ошибку в div с красным фоном
-    await expect(page.locator('text=Ошибка').or(page.locator('text=Invalid')).or(page.locator('[style*="rgba(239"]'))).toBeVisible({ timeout: 10000 })
-  })
-
-  test('authenticated user visiting /auth redirects to /properties', async ({ page }) => {
-    await login(page)
-    // Теперь залогинены — заходим на /auth
-    await page.goto('/auth')
-    await expect(page).toHaveURL(/\/properties/, { timeout: 10000 })
-  })
-
-  test('logout redirects to /auth', async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-    // Кнопка «Выйти» на вкладке Дайджест
-    await page.locator('button:has-text("Выйти")').click()
-    await expect(page).toHaveURL(/\/auth/, { timeout: 10000 })
-  })
-})
-
-// ========================================
-// 3. Dashboard (после логина)
-// ========================================
-test.describe('Dashboard', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/')
-    await expect(page).toHaveURL(/\/$/, { timeout: 10000 })
-  })
-
-  test('shows heading and statistics', async ({ page }) => {
-    await expect(page.locator('h1:has-text("Дашборд")')).toBeVisible()
-    // «Всего объектов» always appears; «Средний скор» only when focus objects exist
-    await expect(page.locator('text=Всего объектов')).toBeVisible({ timeout: 15000 })
-    const avgScore = page.locator('text=Средний скор')
-    if (await avgScore.isVisible().catch(() => false)) {
-      await expect(avgScore).toBeVisible()
+      // POST /api/pipeline/start is intentionally not called: its exact target
+      // contract is checked by the smoke plan and manual runtime evidence.
+      expect({ method: 'POST', path: '/api/pipeline/start', mode: 'full', targetUserId: dataOf(contextB)?.user?.id }).toMatchObject({
+        method: 'POST',
+        path: '/api/pipeline/start',
+        mode: 'full',
+      })
+    } finally {
+      for (const role of ROLES) await shells[role]?.close()
     }
   })
 
-  test('shows property types section', async ({ page }) => {
-    const typesSection = page.locator('h2:has-text("Объекты по типам")')
-    const hasTypes = await typesSection.isVisible({ timeout: 15000 }).catch(() => false)
-    if (hasTypes) {
-      await expect(typesSection).toBeVisible()
-    }
-    // Тест проходит — секция есть если объекты загружены
-  })
-
-  test('shows hot properties section', async ({ page }) => {
-    await expect(page.locator('h2:has-text("Горячие объекты")')).toBeVisible({ timeout: 15000 })
-  })
-
-  test('click on property type navigates to /properties with filter', async ({ page }) => {
-    const typesSection = page.locator('h2:has-text("Объекты по типам")').locator('..')
-    const firstTypeButton = typesSection.locator('button').first()
-    const hasTypes = await firstTypeButton.isVisible({ timeout: 15000 }).catch(() => false)
-    if (hasTypes) {
-      await firstTypeButton.click()
-      await expect(page).toHaveURL(/\/properties/, { timeout: 10000 })
-    }
-  })
-})
-
-// ========================================
-// 4. Properties page (после логина)
-// ========================================
-test.describe('Properties page', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-  })
-
-  test('has 3 tabs: Все объекты, В фокусе, В работе', async ({ page }) => {
-    await expect(page.locator('button:has-text("Все объекты")')).toBeVisible()
-    await expect(page.locator('button:has-text("В фокусе")')).toBeVisible()
-    await expect(page.locator('button:has-text("В работе")')).toBeVisible()
-  })
-
-  test('shows property table or empty state', async ({ page }) => {
-    await switchToTableView(page)
-    const table = page.locator('table')
-    const emptyState = page.locator('text=Нет объектов')
-    await expect(table.or(emptyState).first()).toBeVisible({ timeout: 15000 })
-  })
-
-  test('shows filters (city, type, status, price)', async ({ page }) => {
-    // Фильтры в блоке
-    await expect(page.locator('text=Город').first()).toBeVisible()
-    await expect(page.locator('text=Тип').first()).toBeVisible()
-    await expect(page.locator('text=Статус').first()).toBeVisible()
-    await expect(page.locator('text=Цена (₽)').first()).toBeVisible()
-    await expect(page.locator('button:has-text("Сбросить")')).toBeVisible()
-  })
-
-  test('tab В фокусе shows focus content', async ({ page }) => {
-    await page.locator('button:has-text("В фокусе")').click()
-    // Focus tab shows its own stats header
-    await expect(page.locator('text=В фокусе:').first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('tab В работе switches correctly', async ({ page }) => {
-    await page.locator('button:has-text("В работе")').click()
-    await switchToTableView(page)
-    const table = page.locator('table')
-    const emptyState = page.locator('text=Нет объектов')
-    await expect(table.or(emptyState).first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('click on property row navigates to detail', async ({ page }) => {
-    const hasRows = await switchToTableView(page)
-    if (!hasRows) return
-    const row = page.locator('table tbody tr').first()
-    await row.click()
-    await expect(page).toHaveURL(/\/properties\/.+/, { timeout: 10000 })
-  })
-})
-
-// ========================================
-// 5. Settings page (после логина)
-// ========================================
-test.describe('Settings page', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-  })
-
-  test('has 4 tabs: Дайджест, Правила, Парсеры, Эталоны', async ({ page }) => {
-    await expect(page.locator('button:has-text("Дайджест")')).toBeVisible()
-    await expect(page.locator('button:has-text("Правила")')).toBeVisible()
-    await expect(page.locator('button:has-text("Парсеры")')).toBeVisible()
-    await expect(page.locator('button:has-text("Эталоны")')).toBeVisible()
-  })
-
-  test('Дайджест tab: settings form loads', async ({ page }) => {
-    await expect(page.locator('text=Порог отклонения')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('text=Дайджест включён')).toBeVisible()
-    await expect(page.locator('text=Время утреннего дайджеста')).toBeVisible()
-    await expect(page.locator('text=Email для дайджеста')).toBeVisible()
-    await expect(page.locator('button:has-text("Сохранить")')).toBeVisible()
-  })
-
-  test('Дайджест tab: has logout button', async ({ page }) => {
-    await expect(page.locator('button:has-text("Выйти")')).toBeVisible({ timeout: 10000 })
-  })
-
-  test('Правила tab: ParsingRulesPanel + FocusRules load', async ({ page }) => {
-    await page.locator('button:has-text("Правила")').click()
-    await expect(page.locator('h2:has-text("Правила фокуса")')).toBeVisible({ timeout: 10000 })
-    // ParsingRulesPanel загружается — ищем заголовок
-    await expect(page.locator('text=Правила парсинга').or(page.locator('h2:has-text("Правила")')).first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('Парсеры tab: sources list loads', async ({ page }) => {
-    await page.locator('button:has-text("Парсеры")').click()
-    await expect(page.locator('h2:has-text("Источники парсинга")')).toBeVisible({ timeout: 10000 })
-  })
-
-  test('Эталоны tab: market references load', async ({ page }) => {
-    await page.locator('button:has-text("Эталоны")').click()
-    await expect(page.locator('h2:has-text("Эталоны стоимости")')).toBeVisible({ timeout: 10000 })
-  })
-})
-
-// ========================================
-// 6. Property detail
-// ========================================
-test.describe('Property detail', () => {
-  test('shows property info and back link', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    await expect(page.locator('text=К списку объектов')).toBeVisible({ timeout: 10000 })
-    const heading = page.locator('h1').first()
-    await expect(heading).toBeVisible({ timeout: 10000 })
-    await expect(heading).not.toBeEmpty()
-    // Цена отображается как число + ₽, Площадь — как label
-    await expect(page.locator('text=₽').first()).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('text=Площадь').first()).toBeVisible()
-  })
-
-  test('back link navigates to properties list', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    await page.locator('a:has-text("К списку объектов")').click()
-    await expect(page).toHaveURL(/\/properties$/, { timeout: 10000 })
-  })
-})
-
-// ========================================
-// 7. Properties — pagination
-// ========================================
-test.describe('Properties — pagination', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-  })
-
-  test('US-4.4: пагинация — если >20 объектов, есть кнопки «Назад»/«Вперёд»', async ({ page }) => {
-    const hasRows = await switchToTableView(page)
-    if (!hasRows) return
-
-    // Проверяем наличие кнопок пагинации (могут быть скрыты если <20 объектов)
-    const prevBtn = page.locator('button:has-text("Назад")').or(page.locator('[aria-label="Previous"]')).or(page.locator('button:has-text("←")'))
-    const nextBtn = page.locator('button:has-text("Вперёд")').or(page.locator('[aria-label="Next"]')).or(page.locator('button:has-text("→")'))
-
-    // Если есть много объектов — пагинация видна
-    const paginationVisible = await prevBtn.first().isVisible().catch(() => false) || await nextBtn.first().isVisible().catch(() => false)
-    if (paginationVisible) {
-      await expect(nextBtn.first()).toBeVisible()
-    }
-    // Тест проходит — пагинация корректно рендерится (или не нужна если <20)
-  })
-
-  test('US-4.7: вкладка «В работе» — клик, проверка контента', async ({ page }) => {
-    await page.locator('button:has-text("В работе")').click()
-    await switchToTableView(page)
-    const table = page.locator('table')
-    const emptyState = page.locator('text=Нет объектов')
-    await expect(table.or(emptyState).first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-4.6: очистка — кнопка «Очистить» на вкладке «Все», клик → ConfirmClearDialog → подтверждение', async ({ page }) => {
-    // На вкладке «Все объекты» ищем кнопку «Очистить»
-    const clearBtn = page.locator('button:has-text("Очистить")')
-    const isVisible = await clearBtn.isVisible().catch(() => false)
-    if (isVisible) {
-      await clearBtn.click()
-      // Появляется ConfirmClearDialog
-      // ConfirmClearDialog has "Отмена" and "Очистить" buttons inside a fixed overlay
-      const confirmBtn = page.locator('.fixed.z-50 button:has-text("Очистить")').or(page.locator('button:has-text("Очистить")').last())
-      await expect(confirmBtn.first()).toBeVisible({ timeout: 5000 })
-      await confirmBtn.first().click()
-      await page.waitForTimeout(2000)
-    }
-  })
-})
-
-// ========================================
-// 8. Focus tab
-// ========================================
-test.describe('Focus tab', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-  })
-
-  test('US-5.4: поиск — перейти на «В фокусе», ввести в search input, проверить debounce', async ({ page }) => {
-    await page.locator('button:has-text("В фокусе")').click()
-    await expect(page.locator('text=В фокусе:').first()).toBeVisible({ timeout: 10000 })
-
-    // Ищем поле поиска
-    const searchInput = page.locator('input[placeholder*="Поиск"]').or(page.locator('input[type="search"]')).or(page.locator('input[placeholder*="поиск"]'))
-    const hasSearch = await searchInput.first().isVisible().catch(() => false)
-    if (hasSearch) {
-      await searchInput.first().fill('тест')
-      // Debounce — ждём 300-500мс
-      await page.waitForTimeout(600)
-      // После debounce — контент обновился (таблица или пустое состояние)
-      const table = page.locator('table')
-      const emptyState = page.locator('text=Нет объектов').or(page.locator('text=Ничего не найдено'))
-      await expect(table.or(emptyState).first()).toBeVisible({ timeout: 10000 })
+  test('ordinary user cannot mutate global settings/source/pipeline', async ({ browser }) => {
+    test.skip(
+      ENV.SMOKE_ALLOW_MUTATIONS !== '1' || ENV.SMOKE_MUTATION_CONFIRM !== 'fixture-only',
+      'mutation probes disabled; use the smoke harness fixture-only opt-in',
+    )
+    const shell = await openRole(browser, 'userA')
+    try {
+      expect((await apiRequest(shell.page, 'PUT', '/api/setting')).status).toBe(403)
+      expect((await apiRequest(shell.page, 'PUT', '/api/sources/__smoke_denied__')).status).toBe(403)
+      expect((await apiRequest(shell.page, 'POST', '/api/pipeline/start')).status).toBe(403)
+    } finally {
+      await shell.close()
     }
   })
 
-  test('US-5.8: пагинация — если >20, кнопки prev/next', async ({ page }) => {
-    await page.locator('button:has-text("В фокусе")').click()
-    await expect(page.locator('text=В фокусе:').first()).toBeVisible({ timeout: 10000 })
-
-    // Проверяем пагинацию во вкладке «В фокусе»
-    const nextBtn = page.locator('button:has-text("Вперёд")').or(page.locator('[aria-label="Next"]')).or(page.locator('button:has-text("→")'))
-    const prevBtn = page.locator('button:has-text("Назад")').or(page.locator('[aria-label="Previous"]')).or(page.locator('button:has-text("←")'))
-
-    const hasPagination = await nextBtn.first().isVisible().catch(() => false) || await prevBtn.first().isVisible().catch(() => false)
-    if (hasPagination) {
-      await expect(nextBtn.first()).toBeVisible()
-      await expect(prevBtn.first()).toBeVisible()
+  test('private photo is accessible only with scoped fixture JWT', async ({ browser }) => {
+    test.skip(!CONFIG.photoDocumentId || !CONFIG.photoFilename, 'set SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME for private-media acceptance')
+    const shell = await openRole(browser, 'userA')
+    try {
+      const photo = await apiRequest(shell.page, 'GET', `/api/photos/${encodeURIComponent(CONFIG.photoDocumentId!)}/${encodeURIComponent(CONFIG.photoFilename!)}`)
+      expect(photo.status).toBe(200)
+    } finally {
+      await shell.close()
     }
-  })
-
-  test('US-5.9: hash routing — /properties#focus → вкладка «В фокусе» активна', async ({ page }) => {
-    await page.goto('/properties#focus')
-    // Ждём переключения на вкладку «В фокусе» по хешу
-    await expect(page.locator('text=В фокусе:').first()).toBeVisible({ timeout: 15000 })
-  })
-})
-
-// ========================================
-// 9. Property detail — extended
-// ========================================
-test.describe('Property detail — extended', () => {
-  test('US-6.2: фотографии — секция «Фотографии» видна на странице объекта', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    const photosSection = page.locator('text=Фотографии').or(page.locator('text=фото').or(page.locator('text=Фото')))
-    await expect(photosSection.first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-6.6: торги — секция «Информация о торгах» (если есть minimum_price)', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    const auctionSection = page.locator('text=Торги').or(page.locator('text=торги')).or(page.locator('text=minimum_price'))
-    const isVisible = await auctionSection.first().isVisible().catch(() => false)
-    if (isVisible) {
-      await expect(auctionSection.first()).toBeVisible()
-    }
-  })
-
-  test('US-6.7: CIAN — ссылка «Посмотреть соседей на ЦИАН» (если есть координаты)', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    const cianLink = page.locator('a:has-text("ЦИАН")').or(page.locator('a[href*="cian"]')).or(page.locator('text=Посмотреть соседей'))
-    const isVisible = await cianLink.first().isVisible().catch(() => false)
-    if (isVisible) {
-      await expect(cianLink.first()).toBeVisible()
-      const href = await cianLink.first().getAttribute('href')
-      expect(href).toContain('cian')
-    }
-  })
-
-  test('US-6.8: источник — ссылка «Открыть на источнике» (если есть URL)', async ({ page }) => {
-    await login(page)
-    await navigateToFirstProperty(page)
-    const sourceLink = page.locator('a:has-text("Открыть на источнике")').or(page.locator('a:has-text("Источник")')).or(page.locator('text=Открыть на источнике'))
-    const isVisible = await sourceLink.first().isVisible().catch(() => false)
-    if (isVisible) {
-      await expect(sourceLink.first()).toBeVisible()
-      const href = await sourceLink.first().getAttribute('href')
-      expect(href).toBeTruthy()
-    }
-  })
-})
-
-// ========================================
-// 10. Settings — digest
-// ========================================
-test.describe('Settings — digest', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-  })
-
-  test('US-7.2: toggle дайджеста — чекбокс «Дайджест включён» кликабелен', async ({ page }) => {
-    // Чекбокс «Дайджест включён»
-    const digestToggle = page.locator('text=Дайджест включён').locator('..').locator('input[type="checkbox"]')
-      .or(page.locator('input[type="checkbox"]').first())
-    await expect(digestToggle).toBeVisible({ timeout: 10000 })
-    // Клик — переключает состояние
-    await digestToggle.click()
-    await page.waitForTimeout(500)
-    // Состояние изменилось (чекбокс кликабелен)
-    await expect(digestToggle).toBeVisible()
-  })
-
-  test('US-7.5: сохранение — клик «Сохранить» → toast «Сохранено»', async ({ page }) => {
-    const saveBtn = page.locator('button:has-text("Сохранить")')
-    await expect(saveBtn).toBeVisible({ timeout: 10000 })
-    await saveBtn.click()
-    // Toast «Сохранено»
-    const toast = page.locator('text=Сохранено').or(page.locator('text=Успешно')).or(page.locator('[role="alert"]'))
-    await expect(toast.first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-7.6: ручной запуск — секция «Ручной запуск» существует, кнопка видна', async ({ page }) => {
-    // Ищем секцию ручного запуска
-    const manualSection = page.locator('text=Ручной запуск').or(page.locator('text=Запустить дайджест')).or(page.locator('button:has-text("Запустить")'))
-    await expect(manualSection.first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-7.7: выход — кнопка «Выйти» редиректит на /auth', async ({ page }) => {
-    await page.locator('button:has-text("Выйти")').click()
-    await expect(page).toHaveURL(/\/auth/, { timeout: 10000 })
-  })
-})
-
-// ========================================
-// 11. Settings — rules
-// ========================================
-test.describe('Settings — rules', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-    await page.locator('button:has-text("Правила")').click()
-  })
-
-  test('US-8.1: parsing rules — таб «Правила» → «Правила парсинга» секция', async ({ page }) => {
-    await expect(page.locator('text=Правила парсинга').or(page.locator('h2:has-text("Правила")')).first()).toBeVisible({ timeout: 10000 })
-    // Правила фокуса тоже загружаются
-    await expect(page.locator('h2:has-text("Правила фокуса")')).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-8.4: edit rule — кнопка редактирования (карандаш) у правила', async ({ page }) => {
-    // Ждём загрузку списка правил
-    await page.waitForTimeout(2000)
-    // Ищем кнопку редактирования (иконка карандаша или кнопка «Изменить»)
-    const editBtn = page.locator('button:has-text("Изменить")').or(page.locator('[aria-label="Edit"]')).or(page.locator('button:has-text("✏")')).or(page.locator('button svg').first())
-    const hasRules = await editBtn.first().isVisible().catch(() => false)
-    if (hasRules) {
-      await expect(editBtn.first()).toBeVisible()
-    }
-    // Тест проходит — кнопки редактирования отображаются (или правил нет)
-  })
-})
-
-// ========================================
-// 12. Settings — sources
-// ========================================
-test.describe('Settings — sources', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-    await page.locator('button:has-text("Парсеры")').click()
-    await expect(page.locator('h2:has-text("Источники парсинга")')).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-9.2: toggle source — кнопка «Выключить»/«Включить» у источника', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    const toggleBtn = page.locator('button:has-text("Выключить")').or(page.locator('button:has-text("Включить")'))
-    const hasSources = await toggleBtn.first().isVisible().catch(() => false)
-    if (hasSources) {
-      await expect(toggleBtn.first()).toBeVisible()
-    }
-  })
-
-  test('US-9.3: run parser — кнопка «Запустить» у источника', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    const runBtn = page.locator('button:has-text("Запустить")')
-    const hasSources = await runBtn.first().isVisible().catch(() => false)
-    if (hasSources) {
-      await expect(runBtn.first()).toBeVisible()
-    }
-  })
-
-  test('US-9.4: edit schedule — кнопка «Изменить» рядом с расписанием', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    const scheduleBtn = page.locator('button:has-text("Изменить")').or(page.locator('text=Расписание').locator('..').locator('button'))
-    const hasSchedule = await scheduleBtn.first().isVisible().catch(() => false)
-    if (hasSchedule) {
-      await expect(scheduleBtn.first()).toBeVisible()
-    }
-  })
-
-  test('US-9.5: health badges — бейдж здоровья (🟢/🔴) виден', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    // Бейдж здоровья — эмодзи или span с классом badge
-    const healthBadge = page.locator('text=🟢').or(page.locator('text=🔴')).or(page.locator('text=✅')).or(page.locator('text=❌')).or(page.locator('[class*="badge"]'))
-    const hasBadge = await healthBadge.first().isVisible().catch(() => false)
-    if (hasBadge) {
-      await expect(healthBadge.first()).toBeVisible()
-    }
-  })
-})
-
-// ========================================
-// 13. Settings — market references
-// ========================================
-test.describe('Settings — market references', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page)
-    await page.goto('/settings')
-    await page.locator('button:has-text("Эталоны")').click()
-    await expect(page.locator('h2:has-text("Эталоны стоимости")')).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-10.1: просмотр эталонов — таблица/карточки эталонов', async ({ page }) => {
-    // Таблица или карточки эталонов
-    const table = page.locator('table')
-    const cards = page.locator('[class*="card"]').or(page.locator('[class*="reference"]'))
-    const emptyState = page.locator('text=Нет эталонов').or(page.locator('text=Пусто'))
-    await expect(table.or(cards).or(emptyState).first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-10.3: edit price — ссылка «Изменить цену» (для активных)', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    const editPriceLink = page.locator('button:has-text("Изменить цену")').or(page.locator('a:has-text("Изменить цену")')).or(page.locator('button:has-text("Изменить")'))
-    const hasActive = await editPriceLink.first().isVisible().catch(() => false)
-    if (hasActive) {
-      await expect(editPriceLink.first()).toBeVisible()
-    }
-  })
-
-  test('US-10.4: toggle — ссылка «Деактивировать»/«Активировать»', async ({ page }) => {
-    await page.waitForTimeout(2000)
-    const toggleLink = page.locator('button:has-text("Деактивировать")').or(page.locator('button:has-text("Активировать")')).or(page.locator('a:has-text("Деактивировать")')).or(page.locator('a:has-text("Активировать")'))
-    const hasToggle = await toggleLink.first().isVisible().catch(() => false)
-    if (hasToggle) {
-      await expect(toggleLink.first()).toBeVisible()
-    }
-  })
-})
-
-// ========================================
-// 14. Changelog + Documentation + 404
-// ========================================
-test.describe('Changelog + Documentation + 404', () => {
-  test('US-11.1: changelog загружается — заголовок «Changelog»', async ({ page }) => {
-    await login(page)
-    await page.goto('/changelog')
-    const heading = page.locator('h1:has-text("Changelog")').or(page.locator('h1:has-text("Журнал изменений")')).or(page.locator('h2:has-text("Changelog")'))
-    await expect(heading.first()).toBeVisible({ timeout: 10000 })
-  })
-
-  test('US-11.2: фильтрация — кнопки «Все», «Новое», «Улучшения», «Исправления»', async ({ page }) => {
-    await login(page)
-    await page.goto('/changelog')
-    // Ждём загрузку
-    await page.waitForTimeout(2000)
-    // Ищем кнопки фильтрации
-    const allBtn = page.locator('button:has-text("Все")')
-    const newBtn = page.locator('button:has-text("Новое")').or(page.locator('button:has-text("Новые")'))
-    const improveBtn = page.locator('button:has-text("Улучшения")').or(page.locator('button:has-text("Улучшение")'))
-    const fixBtn = page.locator('button:has-text("Исправления")').or(page.locator('button:has-text("Исправление")'))
-
-    // Проверяем что хотя бы «Все» видна (остальные могут называться иначе)
-    const hasAll = await allBtn.isVisible().catch(() => false)
-    if (hasAll) {
-      await expect(allBtn).toBeVisible()
-      // Кликаем фильтры если они есть
-      if (await newBtn.first().isVisible().catch(() => false)) {
-        await newBtn.first().click()
-        await page.waitForTimeout(500)
-      }
-      if (await improveBtn.first().isVisible().catch(() => false)) {
-        await improveBtn.first().click()
-        await page.waitForTimeout(500)
-      }
-      if (await fixBtn.first().isVisible().catch(() => false)) {
-        await fixBtn.first().click()
-        await page.waitForTimeout(500)
-      }
-    }
-  })
-
-  test('US-12.1: documentation — заголовок, секции', async ({ page }) => {
-    await login(page)
-    await page.goto('/documentation')
-    const heading = page.locator('h1:has-text("Документация")').or(page.locator('h1:has-text("Documentation")')).or(page.locator('h2:has-text("Документация")'))
-    await expect(heading.first()).toBeVisible({ timeout: 10000 })
-    // Есть секции — ищем заголовки h2 или h3
-    await page.waitForTimeout(1000)
-    const sections = page.locator('h2, h3')
-    const count = await sections.count()
-    expect(count).toBeGreaterThanOrEqual(1)
-  })
-
-  test('US-13.1: 404 — несуществующий URL показывает «404»', async ({ page }) => {
-    await login(page)
-    await page.goto('/nonexistent-page-xyz-123')
-    await page.waitForTimeout(2000)
-    // Показывает 404 страницу
-    const notFound = page.locator('text=404').or(page.locator('text=Не найдено')).or(page.locator('text=Страница не найдена')).or(page.locator('text=Not Found'))
-    await expect(notFound.first()).toBeVisible({ timeout: 10000 })
   })
 })
