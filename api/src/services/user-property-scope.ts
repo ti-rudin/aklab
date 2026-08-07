@@ -51,9 +51,15 @@ export interface UserPropertyDto {
   area_sqm: unknown;
   price: unknown;
   price_per_sqm: unknown;
+  manual_price_per_sqm: unknown;
   property_type: unknown;
   auction_type: unknown;
+  published_at_source: unknown;
   description: unknown;
+  contacts: unknown;
+  photos_downloaded: boolean;
+  latitude: unknown;
+  longitude: unknown;
   is_undervalued: unknown;
   deviation_percent: unknown;
   focus_score: unknown;
@@ -169,9 +175,15 @@ const SELECT_COLUMNS = [
   'p.area_sqm AS area_sqm',
   'p.price AS price',
   'p.price_per_sqm AS price_per_sqm',
+  'p.manual_price_per_sqm AS manual_price_per_sqm',
   'p.property_type AS property_type',
   'p.auction_type AS auction_type',
+  'p.published_at_source AS published_at_source',
   'p.description AS description',
+  'p.contacts AS contacts',
+  'p.photos_downloaded AS photos_downloaded',
+  'p.latitude AS latitude',
+  'p.longitude AS longitude',
   'p.is_undervalued AS is_undervalued',
   'p.deviation_percent AS deviation_percent',
   'p.focus_score AS focus_score',
@@ -495,6 +507,13 @@ function safeJsonArray(value: unknown, stringsOnly = false): unknown[] {
   return parsed;
 }
 
+function mapSqliteBoolean(value: unknown): boolean {
+  // The explicit SELECT always supplies this column; absent legacy/mock rows fail closed to false.
+  if (value === undefined || value === 0) return false;
+  if (value === 1) return true;
+  throw new UserPropertyScopeQueryError();
+}
+
 function mapDto(row: Record<string, unknown>): UserPropertyDto {
   if (typeof row.document_id !== 'string' || row.document_id === '') throw new UserPropertyScopeQueryError();
   const rawStatus = row.personal_status;
@@ -518,9 +537,15 @@ function mapDto(row: Record<string, unknown>): UserPropertyDto {
     area_sqm: row.area_sqm,
     price: row.price,
     price_per_sqm: row.price_per_sqm,
+    manual_price_per_sqm: row.manual_price_per_sqm,
     property_type: row.property_type,
     auction_type: row.auction_type,
+    published_at_source: row.published_at_source,
     description: row.description,
+    contacts: row.contacts,
+    photos_downloaded: mapSqliteBoolean(row.photos_downloaded),
+    latitude: row.latitude,
+    longitude: row.longitude,
     is_undervalued: row.is_undervalued,
     deviation_percent: row.deviation_percent,
     focus_score: row.focus_score,

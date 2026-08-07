@@ -200,11 +200,17 @@ describe('UserPropertyScopeRepository', () => {
         area_sqm: 100,
         price: 2_000_000,
         price_per_sqm: 20_000,
+        manual_price_per_sqm: 18_500,
         property_type: 'office',
         is_undervalued: true,
         deviation_percent: 30,
         focus_score: 20,
         personal_status: 'viewed',
+        published_at_source: '2026-08-06T08:00:00.000Z',
+        contacts: '{"phone":"+7 999 000-00-00"}',
+        photos_downloaded: 1,
+        latitude: 55.75,
+        longitude: 37.61,
         tags: '["new"]',
         photo_urls: '["https://example.test/photo.jpg"]',
         photos: '[{"url":"https://example.test/photo.jpg"}]',
@@ -222,9 +228,16 @@ describe('UserPropertyScopeRepository', () => {
         source: 'etprf',
         external_id: 'ext-7',
         city: 'moscow',
+        price_per_sqm: 20_000,
+        manual_price_per_sqm: 18_500,
         property_type: 'office',
         focus_score: 20,
         personal_status: 'viewed',
+        published_at_source: '2026-08-06T08:00:00.000Z',
+        contacts: '{"phone":"+7 999 000-00-00"}',
+        photos_downloaded: 1,
+        latitude: 55.75,
+        longitude: 37.61,
         tags: '["new"]',
         photos: 'not-json',
       }] });
@@ -238,6 +251,13 @@ describe('UserPropertyScopeRepository', () => {
       data: [expect.objectContaining({
         documentId: 'property-7',
         status: 'viewed',
+        price_per_sqm: 20_000,
+        manual_price_per_sqm: 18_500,
+        published_at_source: '2026-08-06T08:00:00.000Z',
+        contacts: '{"phone":"+7 999 000-00-00"}',
+        photos_downloaded: true,
+        latitude: 55.75,
+        longitude: 37.61,
         tags: ['new'],
         photos: [{ url: 'https://example.test/photo.jpg' }],
       })],
@@ -246,6 +266,13 @@ describe('UserPropertyScopeRepository', () => {
     await expect(repository.detail(7, 'property-7', request)).resolves.toMatchObject({
       documentId: 'property-7',
       status: 'viewed',
+      price_per_sqm: 20_000,
+      manual_price_per_sqm: 18_500,
+      published_at_source: '2026-08-06T08:00:00.000Z',
+      contacts: '{"phone":"+7 999 000-00-00"}',
+      photos_downloaded: true,
+      latitude: 55.75,
+      longitude: 37.61,
       tags: ['new'],
       photos: [],
     });
@@ -263,6 +290,17 @@ describe('UserPropertyScopeRepository', () => {
     expect((listCall[0] as string)).not.toContain('user_states');
     expect((listCall[0] as string)).not.toContain('profile_id');
     expect((listCall[0] as string)).not.toContain('author');
+    for (const field of [
+      'price_per_sqm',
+      'manual_price_per_sqm',
+      'published_at_source',
+      'contacts',
+      'photos_downloaded',
+      'latitude',
+      'longitude',
+    ]) {
+      expect(listCall[0]).toContain(`p.${field} AS ${field}`);
+    }
   });
 
   it('returns null for a detail outside scope instead of exposing a forbidden distinction', async () => {
@@ -286,6 +324,7 @@ describe('UserPropertyScopeRepository', () => {
       city: 'moscow',
       property_type: 'office',
       personal_status: null,
+      photos_downloaded: 0,
       status: 'rejected',
       tags: '{bad json',
       photos: '{"private":true}',
@@ -303,6 +342,20 @@ describe('UserPropertyScopeRepository', () => {
     for (const privateKey of ['id', 'user_id', 'comments', 'authors', 'profile_id', 'status_global']) {
       expect(result.data[0]).not.toHaveProperty(privateKey);
     }
+  });
+
+  it('fails closed when photos_downloaded is not the SQLite 0/1 representation', async () => {
+    const strapi = rawStrapi();
+    strapi.raw
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [{
+        document_id: 'property-7',
+        personal_status: null,
+        photos_downloaded: '1',
+      }] });
+    const repository = createUserPropertyScopeRepository(strapi, vi.fn().mockResolvedValue(profile));
+
+    await expect(repository.list(7, {})).rejects.toMatchObject({ code: 'USER_PROPERTY_SCOPE_QUERY_ERROR' });
   });
 
   it('aggregates stats from the same profile-visible scope while applying virtual new status semantics', async () => {
