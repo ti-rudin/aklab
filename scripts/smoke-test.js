@@ -27,6 +27,9 @@ const TRUSTED_TARGET_PAIRS = [
   { kind: 'local', ui: 'http://127.0.0.1:5174', api: 'http://127.0.0.1:1338' },
 ];
 const PERSONAL_STATUSES = new Set(['new', 'in_progress', 'viewed', 'rejected']);
+const PROFILE_REGIONS = new Set(['moscow', 'mo', 'other']);
+const PROFILE_PROPERTY_TYPES = new Set(['office', 'warehouse', 'retail', 'production', 'free_purpose', 'apartment', 'land', 'other']);
+const NON_NEGATIVE_DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -351,15 +354,37 @@ function stableJson(value) {
   return JSON.stringify(value);
 }
 
-function arrayValues(value) {
-  return Array.isArray(value) ? value.map(item => String(item).toLowerCase()).filter(Boolean) : [];
+function normalizedProfileArray(value, allowlist = null, maxItems = 128, maxLength = 256) {
+  if (!Array.isArray(value) || value.length > maxItems) throw new Error('profile response is malformed');
+  const normalized = value.map(item => {
+    if (typeof item !== 'string') throw new Error('profile response is malformed');
+    const text = item.trim().toLowerCase();
+    if (text === '' || text.length > maxLength || /[\u0000-\u001f\u007f]/.test(text)
+      || (allowlist && !allowlist.has(text))) {
+      throw new Error('profile response is malformed');
+    }
+    return text;
+  });
+  return [...new Set(normalized)].sort();
+}
+
+function normalizedBound(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0) throw new Error('profile response is malformed');
+    return value;
+  }
+  if (typeof value === 'string' && NON_NEGATIVE_DECIMAL.test(value)) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  throw new Error('profile response is malformed');
 }
 
 function normalizedRange(from, to) {
-  const lower = from === null || from === undefined ? null : Number(from);
-  const upper = to === null || to === undefined ? null : Number(to);
-  if ((lower !== null && !Number.isFinite(lower)) || (upper !== null && !Number.isFinite(upper))
-    || (lower !== null && upper !== null && lower > upper)) {
+  const lower = normalizedBound(from);
+  const upper = normalizedBound(to);
+  if (lower !== null && upper !== null && lower > upper) {
     throw new Error('profile response is malformed');
   }
   return [lower, upper];
@@ -380,11 +405,11 @@ function sharedValues(left, right) {
 function assertProfilesDistinctWithOverlap(left, right) {
   if (!isRecord(left) || !isRecord(right)) throw new Error('profile response is malformed');
   const profileShape = profile => ({
-    regions: [...new Set(arrayValues(profile.regions))].sort(),
-    property_types: [...new Set(arrayValues(profile.property_types))].sort(),
+    regions: normalizedProfileArray(profile.regions, PROFILE_REGIONS),
+    property_types: normalizedProfileArray(profile.property_types, PROFILE_PROPERTY_TYPES),
     price: normalizedRange(profile.price_from, profile.price_to),
     area: normalizedRange(profile.area_from, profile.area_to),
-    stop_words: [...new Set(arrayValues(profile.stop_words))].sort(),
+    stop_words: normalizedProfileArray(profile.stop_words),
   });
   const leftShape = profileShape(left);
   const rightShape = profileShape(right);

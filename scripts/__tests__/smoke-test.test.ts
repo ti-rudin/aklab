@@ -150,9 +150,34 @@ describe('multiuser smoke helpers', () => {
 
     expect(assertProfilesDistinctWithOverlap(left, right)).toBe(true);
     expect(() => assertProfilesDistinctWithOverlap(left, { ...left })).toThrow('profiles are identical');
+    expect(() => assertProfilesDistinctWithOverlap(left, {
+      ...left,
+      regions: [' OTHER ', 'MOSCOW', 'moscow'],
+      property_types: [' FREE_PURPOSE ', 'free_purpose'],
+      price_from: '100',
+      price_to: '1000',
+      stop_words: [' LEFT-ONLY ', 'left-only'],
+    })).toThrow('profiles are identical');
     expect(() => assertProfilesDistinctWithOverlap(left, { ...right, regions: ['mo'] })).toThrow('shared candidate scope');
     expect(() => assertProfilesDistinctWithOverlap(left, { ...right, property_types: ['office'] })).toThrow('shared candidate scope');
     expect(() => assertProfilesDistinctWithOverlap(left, { ...right, price_from: 2001, price_to: 3000 })).toThrow('shared candidate scope');
+
+    for (const malformed of [
+      { ...right, price_from: '' },
+      { ...right, price_from: true },
+      { ...right, price_from: -1 },
+      { ...right, price_from: '01' },
+      { ...right, price_from: '1e3' },
+      { ...right, price_from: Number.NaN },
+      { ...right, price_from: Number.POSITIVE_INFINITY },
+      { ...right, regions: [42] },
+      { ...right, regions: [' '] },
+      { ...right, regions: ['unknown-region'] },
+      { ...right, property_types: ['unknown-type'] },
+      { ...right, stop_words: [false] },
+    ]) {
+      expect(() => assertProfilesDistinctWithOverlap(left, malformed)).toThrow('profile response is malformed');
+    }
   });
 
   it('rejects insecure remote URLs, embedded credentials and base paths', () => {
