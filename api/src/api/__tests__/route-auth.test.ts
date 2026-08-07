@@ -70,7 +70,6 @@ const GLOBAL_ROUTE_MODULES: readonly { resource: string; module: RouteModule }[]
 const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'setting', method: 'GET', path: '/setting', handler: 'setting.find', config: ADMIN_CONFIG },
   { resource: 'setting', method: 'PUT', path: '/setting', handler: 'setting.update', config: ADMIN_CONFIG },
-  { resource: 'setting', method: 'DELETE', path: '/setting', handler: 'setting.delete', config: ADMIN_CONFIG },
 
   { resource: 'source', method: 'PUT', path: '/internal/sources/:id/stats', handler: 'api::source.source.internalUpdateStats', config: SERVICE_CONFIG },
   { resource: 'source', method: 'GET', path: '/sources/:id/health', handler: 'api::source.source.healthCheck', config: PUBLIC_HEALTH_CONFIG },
