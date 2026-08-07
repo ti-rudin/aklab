@@ -103,6 +103,30 @@ describe('compileUserPropertyScope', () => {
     expect(compiled.bindings).toEqual(expect.arrayContaining([1_000_000, 20_000_000, 50, 2_000]));
   });
 
+  it('adds a strict parameterized half-open-to-closed first-seen window only for internal callers', () => {
+    const compiled = compileUserPropertyScope(profile, {
+      firstSeenAfter: '2026-08-06T12:00:00.000Z',
+      firstSeenAtOrBefore: '2026-08-07T12:00:00.000Z',
+    });
+
+    expect(compiled.whereSql).toContain('p.first_seen_at > ? AND p.first_seen_at <= ?');
+    expect(compiled.bindings.slice(-2)).toEqual([
+      '2026-08-06T12:00:00.000Z',
+      '2026-08-07T12:00:00.000Z',
+    ]);
+    expect(compiled.whereSql).not.toContain('2026-08-06');
+    expect(compiled.whereSql).not.toContain('2026-08-07');
+
+    for (const request of [
+      { firstSeenAfter: '2026-08-06T12:00:00Z', firstSeenAtOrBefore: '2026-08-07T12:00:00.000Z' },
+      { firstSeenAfter: '2026-08-07T12:00:00.000Z', firstSeenAtOrBefore: '2026-08-06T12:00:00.000Z' },
+      { firstSeenAfter: '2026-08-06T12:00:00.000Z' },
+      { firstSeenAtOrBefore: '2026-08-07T12:00:00.000Z' },
+    ]) {
+      expect(() => compileUserPropertyScope(profile, request)).toThrow(UserPropertyScopeValidationError);
+    }
+  });
+
   it('uses a fixed allowlisted SQL identifier for sorting and bounded pagination', () => {
     expect(compileUserPropertyScope(profile, { sort: 'createdAt', page: 1, pageSize: 100 }).orderBySql)
       .toBe('p.created_at ASC');

@@ -13,6 +13,9 @@ export interface UserPropertyScopeRequest {
   sort?: string;
   page?: number;
   pageSize?: number;
+  /** Internal-only freshness bounds; public controllers do not expose these keys. */
+  firstSeenAfter?: string;
+  firstSeenAtOrBefore?: string;
 }
 
 export interface UserPropertyScopeStrapi {
@@ -229,6 +232,20 @@ function normalizeEnumFilter<T extends string>(
   return normalized;
 }
 
+const EXACT_UTC_ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function normalizeExactUtcIso(value: unknown): string {
+  if (
+    typeof value !== 'string'
+    || !EXACT_UTC_ISO_PATTERN.test(value)
+    || Number.isNaN(Date.parse(value))
+    || new Date(value).toISOString() !== value
+  ) {
+    throw new UserPropertyScopeValidationError();
+  }
+  return value;
+}
+
 function normalizeRequest(request: UserPropertyScopeRequest | undefined): {
   city: Region[];
   propertyType: PropertyType[];
@@ -239,6 +256,8 @@ function normalizeRequest(request: UserPropertyScopeRequest | undefined): {
   sort: string;
   page: number;
   pageSize: number;
+  firstSeenAfter?: string;
+  firstSeenAtOrBefore?: string;
 } {
   if (request !== undefined && !isRecord(request)) throw new UserPropertyScopeValidationError();
   const input = (request || {}) as Record<string, unknown>;
@@ -252,6 +271,8 @@ function normalizeRequest(request: UserPropertyScopeRequest | undefined): {
     'sort',
     'page',
     'pageSize',
+    'firstSeenAfter',
+    'firstSeenAtOrBefore',
   ]);
   if (Object.keys(input).some(key => !allowedKeys.has(key))) {
     throw new UserPropertyScopeValidationError();
@@ -323,7 +344,32 @@ function normalizeRequest(request: UserPropertyScopeRequest | undefined): {
     throw new UserPropertyScopeValidationError();
   }
 
-  return { city, propertyType, status, search, focusThreshold, documentId, sort, page, pageSize };
+  let firstSeenAfter: string | undefined;
+  let firstSeenAtOrBefore: string | undefined;
+  if (input.firstSeenAfter !== undefined || input.firstSeenAtOrBefore !== undefined) {
+    if (input.firstSeenAfter === undefined || input.firstSeenAtOrBefore === undefined) {
+      throw new UserPropertyScopeValidationError();
+    }
+    firstSeenAfter = normalizeExactUtcIso(input.firstSeenAfter);
+    firstSeenAtOrBefore = normalizeExactUtcIso(input.firstSeenAtOrBefore);
+    if (Date.parse(firstSeenAfter) >= Date.parse(firstSeenAtOrBefore)) {
+      throw new UserPropertyScopeValidationError();
+    }
+  }
+
+  return {
+    city,
+    propertyType,
+    status,
+    search,
+    focusThreshold,
+    documentId,
+    sort,
+    page,
+    pageSize,
+    firstSeenAfter,
+    firstSeenAtOrBefore,
+  };
 }
 
 function escapeLike(value: string): string {
@@ -401,6 +447,10 @@ export function compileUserPropertyScope(
   if (normalizedRequest.documentId !== undefined) {
     where.push('p.document_id = ?');
     bindings.push(normalizedRequest.documentId);
+  }
+  if (normalizedRequest.firstSeenAfter !== undefined && normalizedRequest.firstSeenAtOrBefore !== undefined) {
+    where.push('p.first_seen_at > ? AND p.first_seen_at <= ?');
+    bindings.push(normalizedRequest.firstSeenAfter, normalizedRequest.firstSeenAtOrBefore);
   }
 
   return Object.freeze({

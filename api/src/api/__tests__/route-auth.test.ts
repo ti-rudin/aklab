@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import cronRoutes from '../cron/routes/cron';
 import cronLogRoutes from '../cron-log/routes/cron-log';
+import digestProjectionRoutes from '../digest-projection/routes/digest-projection';
 import focusRuleRoutes from '../focus-rule/routes/focus-rule';
 import marketReferenceRoutes from '../market-reference/routes/market-reference';
 import pipelineRoutes from '../pipeline/routes/pipeline';
@@ -63,6 +64,7 @@ const GLOBAL_ROUTE_MODULES: readonly { resource: string; module: RouteModule }[]
   { resource: 'cron-log', module: cronLogRoutes },
   { resource: 'pipeline', module: pipelineRoutes },
   { resource: 'parser-run-source', module: parserRunSourceRoutes },
+  { resource: 'digest-projection', module: digestProjectionRoutes },
 ];
 
 const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
@@ -112,6 +114,9 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
 
   { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/running', handler: 'api::parser-run-source.parser-run-source.markRunningInternal', config: SERVICE_CONFIG },
   { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/terminal', handler: 'api::parser-run-source.parser-run-source.finishInternal', config: SERVICE_CONFIG },
+
+  { resource: 'digest-projection', method: 'POST', path: '/internal/digest/properties', handler: 'api::digest-projection.digest-projection.properties', config: SERVICE_CONFIG },
+  { resource: 'digest-projection', method: 'POST', path: '/internal/digest/delivery', handler: 'api::digest-projection.digest-projection.delivery', config: SERVICE_CONFIG },
 ];
 
 const PROPERTY_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
