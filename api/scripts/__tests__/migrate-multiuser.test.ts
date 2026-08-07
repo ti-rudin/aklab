@@ -13,20 +13,22 @@ let tempDir = '';
 let dbPath = '';
 let db: any = null;
 
-function createFixture() {
+function createFixture({ runtimeSchemaShape = false } = {}) {
   db = new Database(dbPath);
   db.pragma('foreign_keys = ON');
-  // Strapi 5.51.2 derives relation tables as *_links and stores the owning
-  // and inverse relation IDs in the corresponding *_id columns. This fixture
-  // models that physical direction, not only the content-type JSON. Residual
-  // risk: a real target DB must still pass the CLI's PRAGMA-based audit before
-  // apply; this synthetic fixture cannot prove every deployed DB variation.
+  const unique = runtimeSchemaShape ? '' : 'UNIQUE';
+  const duplicateFk = (column: string, target: string) => runtimeSchemaShape
+    ? `, FOREIGN KEY (${column}) REFERENCES ${target}(id)`
+    : '';
+  // The rollout fixture can model the deployed Strapi SQLite shape: relation
+  // tables expose duplicate-identical FK metadata and field-level `unique`
+  // declarations are not materialized as physical unique indexes.
   db.exec(`
     CREATE TABLE up_roles (
       id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
-      type TEXT UNIQUE
+      type TEXT ${unique}
     );
     CREATE TABLE up_users (
       id INTEGER PRIMARY KEY,
@@ -50,16 +52,16 @@ function createFixture() {
       id INTEGER PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES up_users(id),
       role_id INTEGER NOT NULL REFERENCES up_roles(id),
-      UNIQUE(user_id, role_id)
+      UNIQUE(user_id, role_id)${duplicateFk('user_id', 'up_users')}${duplicateFk('role_id', 'up_roles')}
     );
     CREATE TABLE properties (
       id INTEGER PRIMARY KEY,
-      document_id TEXT NOT NULL UNIQUE,
+      document_id TEXT NOT NULL ${unique},
       status TEXT NOT NULL
     );
     CREATE TABLE user_profiles (
       id INTEGER PRIMARY KEY,
-      user_id INTEGER NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL ${unique},
       regions TEXT NOT NULL,
       property_types TEXT NOT NULL,
       price_from REAL,
@@ -76,26 +78,26 @@ function createFixture() {
       user_profile_id INTEGER NOT NULL REFERENCES user_profiles(id),
       user_id INTEGER NOT NULL REFERENCES up_users(id),
       user_order REAL,
-      UNIQUE(user_profile_id, user_id)
+      UNIQUE(user_profile_id, user_id)${duplicateFk('user_profile_id', 'user_profiles')}${duplicateFk('user_id', 'up_users')}
     );
     CREATE TABLE user_property_states (
       id INTEGER PRIMARY KEY,
       user_id INTEGER NOT NULL,
       property_document_id TEXT NOT NULL,
-      identity_key TEXT NOT NULL UNIQUE,
+      identity_key TEXT NOT NULL ${unique},
       status TEXT NOT NULL
     );
     CREATE TABLE user_property_states_user_links (
       id INTEGER PRIMARY KEY,
       user_property_state_id INTEGER NOT NULL REFERENCES user_property_states(id),
       user_id INTEGER NOT NULL REFERENCES up_users(id),
-      UNIQUE(user_property_state_id, user_id)
+      UNIQUE(user_property_state_id, user_id)${duplicateFk('user_property_state_id', 'user_property_states')}${duplicateFk('user_id', 'up_users')}
     );
     CREATE TABLE user_property_states_property_links (
       id INTEGER PRIMARY KEY,
       user_property_state_id INTEGER NOT NULL REFERENCES user_property_states(id),
       property_id INTEGER NOT NULL REFERENCES properties(id),
-      UNIQUE(user_property_state_id, property_id)
+      UNIQUE(user_property_state_id, property_id)${duplicateFk('user_property_state_id', 'user_property_states')}${duplicateFk('property_id', 'properties')}
     );
     CREATE TABLE user_comments (
       id INTEGER PRIMARY KEY,
@@ -105,13 +107,13 @@ function createFixture() {
       id INTEGER PRIMARY KEY,
       user_comment_id INTEGER NOT NULL REFERENCES user_comments(id),
       property_id INTEGER NOT NULL REFERENCES properties(id),
-      UNIQUE(user_comment_id, property_id)
+      UNIQUE(user_comment_id, property_id)${duplicateFk('user_comment_id', 'user_comments')}${duplicateFk('property_id', 'properties')}
     );
     CREATE TABLE user_comments_author_links (
       id INTEGER PRIMARY KEY,
       user_comment_id INTEGER NOT NULL REFERENCES user_comments(id),
       user_id INTEGER NOT NULL REFERENCES up_users(id),
-      UNIQUE(user_comment_id, user_id)
+      UNIQUE(user_comment_id, user_id)${duplicateFk('user_comment_id', 'user_comments')}${duplicateFk('user_id', 'up_users')}
     );
   `);
 
@@ -204,6 +206,74 @@ describe('migrate-multiuser offline CLI', () => {
     expect(report.counts.aklab_admin_role.assigned_users).toBe(0);
     expect(JSON.stringify(report)).not.toContain(TARGET_EMAIL.toLowerCase());
     expect(snapshotBytes()).toEqual(before);
+  });
+
+  it('audits the deployed Strapi schema shape read-only and reports missing unique constraints', () => {
+    db.close();
+    fs.rmSync(dbPath);
+    createFixture({ runtimeSchemaShape: true });
+    const before = snapshotBytes();
+
+    const report = auditDatabase(db, TARGET_EMAIL);
+
+    expect(report.schema.ready).toBe(false);
+    expect(report.schema.unique_constraints).toEqual({
+      role_type: false,
+      property_document_id: false,
+      profile_user_id: false,
+      state_identity_key: false,
+    });
+    expect(report.counts.users).toBe(3);
+    expect(snapshotBytes()).toEqual(before);
+  });
+
+  it('prepares runtime unique constraints transactionally and remains idempotent', () => {
+    db.close();
+    fs.rmSync(dbPath);
+    createFixture({ runtimeSchemaShape: true });
+    const firstBackup = path.join(tempDir, 'runtime-before.db');
+
+    const first = applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath: firstBackup });
+
+    expect(first.before.schema.ready).toBe(false);
+    expect(first.after.schema.ready).toBe(true);
+    expect(first.after.schema.unique_constraints).toEqual({
+      role_type: true,
+      property_document_id: true,
+      profile_user_id: true,
+      state_identity_key: true,
+    });
+    expect(backupSummary(firstBackup)).toEqual({ integrity: 'ok', profiles: 1, commentAuthors: 1 });
+
+    const second = applyMigration({
+      dbPath,
+      targetUserEmail: TARGET_EMAIL,
+      backupPath: path.join(tempDir, 'runtime-before-second.db'),
+    });
+    expect(second.after.schema.ready).toBe(true);
+    expect(second.changes).toEqual({
+      profiles_created: 0,
+      states_created: 0,
+      comments_authored: 0,
+      role_created: 0,
+      role_assigned: 0,
+    });
+  });
+
+  it('rejects duplicate runtime unique values before creating a backup', () => {
+    db.close();
+    fs.rmSync(dbPath);
+    createFixture({ runtimeSchemaShape: true });
+    db.prepare('INSERT INTO up_roles (id, name, description, type) VALUES (?, ?, ?, ?)')
+      .run(4, 'Duplicate', 'duplicate type', 'authenticated');
+    const before = snapshotBytes();
+    const backupPath = path.join(tempDir, 'duplicate-unique-before.db');
+
+    expect(() => applyMigration({ dbPath, targetUserEmail: TARGET_EMAIL, backupPath }))
+      .toThrow(/duplicate/i);
+
+    expect(snapshotBytes()).toEqual(before);
+    expect(fs.existsSync(backupPath)).toBe(false);
   });
 
   it('requires explicit absolute database and backup paths', () => {
