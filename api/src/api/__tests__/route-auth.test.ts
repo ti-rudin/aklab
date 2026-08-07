@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import cronRoutes from '../cron/routes/cron';
 import cronLogRoutes from '../cron-log/routes/cron-log';
+import focusRuleRoutes from '../focus-rule/routes/focus-rule';
 import marketReferenceRoutes from '../market-reference/routes/market-reference';
 import pipelineRoutes from '../pipeline/routes/pipeline';
 import parserRunSourceRoutes from '../parser-run-source/routes/parser-run-source';
@@ -8,64 +9,142 @@ import propertyRoutes from '../property/routes/property';
 import settingRoutes from '../setting/routes/setting';
 import sourceRoutes from '../source/routes/source';
 
+type RouteConfig = {
+  auth: unknown;
+  policies: readonly string[];
+};
+
 type Route = {
   method: string;
   path: string;
-  config: { auth: unknown; policies: string[] };
+  handler: string;
+  config?: RouteConfig;
 };
 
-function getRoute(routes: { routes: Route[] }, method: string, path: string): Route {
+type RouteModule = {
+  routes: readonly Route[];
+};
+
+type RouteExpectation = {
+  resource: string;
+  method: string;
+  path: string;
+  handler: string;
+  config: RouteConfig;
+};
+
+const ADMIN_CONFIG = {
+  auth: false,
+  policies: ['global::authenticated-user', 'global::aklab-admin'],
+} as const;
+
+const SERVICE_CONFIG = {
+  auth: false,
+  policies: ['global::service-token'],
+} as const;
+
+const PUBLIC_HEALTH_CONFIG = {
+  auth: false,
+  policies: [],
+} as const;
+
+const GLOBAL_ROUTE_MODULES: readonly { resource: string; module: RouteModule }[] = [
+  { resource: 'setting', module: settingRoutes },
+  { resource: 'source', module: sourceRoutes },
+  { resource: 'market-reference', module: marketReferenceRoutes },
+  { resource: 'focus-rule', module: focusRuleRoutes },
+  { resource: 'cron', module: cronRoutes },
+  { resource: 'cron-log', module: cronLogRoutes },
+  { resource: 'pipeline', module: pipelineRoutes },
+  { resource: 'parser-run-source', module: parserRunSourceRoutes },
+];
+
+const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
+  { resource: 'setting', method: 'GET', path: '/setting', handler: 'setting.find', config: ADMIN_CONFIG },
+  { resource: 'setting', method: 'PUT', path: '/setting', handler: 'setting.update', config: ADMIN_CONFIG },
+  { resource: 'setting', method: 'DELETE', path: '/setting', handler: 'setting.delete', config: ADMIN_CONFIG },
+
+  { resource: 'source', method: 'PUT', path: '/internal/sources/:id/stats', handler: 'api::source.source.internalUpdateStats', config: SERVICE_CONFIG },
+  { resource: 'source', method: 'GET', path: '/sources/:id/health', handler: 'api::source.source.healthCheck', config: PUBLIC_HEALTH_CONFIG },
+  { resource: 'source', method: 'GET', path: '/sources', handler: 'api::source.source.find', config: ADMIN_CONFIG },
+  { resource: 'source', method: 'GET', path: '/sources/:id', handler: 'api::source.source.findOne', config: ADMIN_CONFIG },
+  { resource: 'source', method: 'POST', path: '/sources', handler: 'api::source.source.create', config: ADMIN_CONFIG },
+  { resource: 'source', method: 'PUT', path: '/sources/:id', handler: 'api::source.source.update', config: ADMIN_CONFIG },
+  { resource: 'source', method: 'DELETE', path: '/sources/:id', handler: 'api::source.source.delete', config: ADMIN_CONFIG },
+
+  { resource: 'market-reference', method: 'GET', path: '/market-references', handler: 'market-reference.find', config: ADMIN_CONFIG },
+  { resource: 'market-reference', method: 'GET', path: '/market-references/:id', handler: 'market-reference.findOne', config: ADMIN_CONFIG },
+  { resource: 'market-reference', method: 'POST', path: '/market-references', handler: 'market-reference.create', config: ADMIN_CONFIG },
+  { resource: 'market-reference', method: 'PUT', path: '/market-references/:id', handler: 'market-reference.update', config: ADMIN_CONFIG },
+  { resource: 'market-reference', method: 'DELETE', path: '/market-references/:id', handler: 'market-reference.delete', config: ADMIN_CONFIG },
+
+  { resource: 'focus-rule', method: 'GET', path: '/focus-rules', handler: 'focus-rule.find', config: ADMIN_CONFIG },
+  { resource: 'focus-rule', method: 'GET', path: '/focus-rules/:id', handler: 'focus-rule.findOne', config: ADMIN_CONFIG },
+  { resource: 'focus-rule', method: 'POST', path: '/focus-rules', handler: 'focus-rule.create', config: ADMIN_CONFIG },
+  { resource: 'focus-rule', method: 'PUT', path: '/focus-rules/:id', handler: 'focus-rule.update', config: ADMIN_CONFIG },
+  { resource: 'focus-rule', method: 'DELETE', path: '/focus-rules/:id', handler: 'focus-rule.delete', config: ADMIN_CONFIG },
+
+  { resource: 'cron', method: 'GET', path: '/cron/queue-stats', handler: 'cron.queueStats', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'POST', path: '/cron/parse/:slug', handler: 'cron.parseSource', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'POST', path: '/cron/analyze', handler: 'cron.analyzeAll', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'POST', path: '/cron/digest', handler: 'cron.sendDigest', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'POST', path: '/cron/score', handler: 'cron.scoreProperties', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'GET', path: '/cron/analyze-progress', handler: 'cron.analyzeProgress', config: ADMIN_CONFIG },
+
+  { resource: 'cron-log', method: 'POST', path: '/internal/cron-logs', handler: 'cron-log.internalCreate', config: SERVICE_CONFIG },
+  { resource: 'cron-log', method: 'GET', path: '/cron-logs', handler: 'cron-log.find', config: ADMIN_CONFIG },
+  { resource: 'cron-log', method: 'GET', path: '/cron-logs/:id', handler: 'cron-log.findOne', config: ADMIN_CONFIG },
+  { resource: 'cron-log', method: 'POST', path: '/cron-logs', handler: 'cron-log.create', config: ADMIN_CONFIG },
+  { resource: 'cron-log', method: 'PUT', path: '/cron-logs/:id', handler: 'cron-log.update', config: ADMIN_CONFIG },
+  { resource: 'cron-log', method: 'DELETE', path: '/cron-logs/:id', handler: 'cron-log.delete', config: ADMIN_CONFIG },
+
+  { resource: 'pipeline', method: 'POST', path: '/pipeline/start', handler: 'pipeline.start', config: ADMIN_CONFIG },
+  { resource: 'pipeline', method: 'POST', path: '/pipeline/cancel', handler: 'pipeline.cancel', config: ADMIN_CONFIG },
+  { resource: 'pipeline', method: 'POST', path: '/pipeline/reset', handler: 'pipeline.reset', config: ADMIN_CONFIG },
+  { resource: 'pipeline', method: 'GET', path: '/pipeline/status', handler: 'pipeline.status', config: ADMIN_CONFIG },
+  { resource: 'pipeline', method: 'GET', path: '/pipeline/stream', handler: 'pipeline.stream', config: ADMIN_CONFIG },
+
+  { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/running', handler: 'api::parser-run-source.parser-run-source.markRunningInternal', config: SERVICE_CONFIG },
+  { resource: 'parser-run-source', method: 'PUT', path: '/internal/parser-run-sources/:identityKey/terminal', handler: 'api::parser-run-source.parser-run-source.finishInternal', config: SERVICE_CONFIG },
+];
+
+function routeKey(resource: string, route: Pick<RouteExpectation, 'method' | 'path'>): string {
+  return `${resource}|${route.method}|${route.path}`;
+}
+
+function getRoute(routes: RouteModule, method: string, path: string): Route {
   const route = routes.routes.find((candidate) => candidate.method === method && candidate.path === path);
   if (!route) throw new Error(`Route not found: ${method} ${path}`);
   return route;
 }
 
-describe('auth boundary for UI mutations', () => {
-  const uiMutations: Array<[string, { routes: Route[] }, string, string]> = [
-    ['cron parse', cronRoutes, 'POST', '/cron/parse/:slug'],
-    ['cron analyze', cronRoutes, 'POST', '/cron/analyze'],
-    ['cron digest', cronRoutes, 'POST', '/cron/digest'],
-    ['cron score', cronRoutes, 'POST', '/cron/score'],
-    ['cron log create', cronLogRoutes, 'POST', '/cron-logs'],
-    ['cron log update', cronLogRoutes, 'PUT', '/cron-logs/:id'],
-    ['cron log delete', cronLogRoutes, 'DELETE', '/cron-logs/:id'],
-    ['market reference create', marketReferenceRoutes, 'POST', '/market-references'],
-    ['market reference update', marketReferenceRoutes, 'PUT', '/market-references/:id'],
-    ['market reference delete', marketReferenceRoutes, 'DELETE', '/market-references/:id'],
-    ['pipeline start', pipelineRoutes, 'POST', '/pipeline/start'],
-    ['pipeline cancel', pipelineRoutes, 'POST', '/pipeline/cancel'],
-    ['pipeline reset', pipelineRoutes, 'POST', '/pipeline/reset'],
-    ['property clear', propertyRoutes, 'POST', '/properties/clear-new'],
-    ['property photo fetch', propertyRoutes, 'POST', '/properties/:id/fetch-photos'],
-    ['property create', propertyRoutes, 'POST', '/properties'],
-    ['property update', propertyRoutes, 'PUT', '/properties/:id'],
-    ['property delete', propertyRoutes, 'DELETE', '/properties/:id'],
-    ['setting update', settingRoutes, 'PUT', '/setting'],
-    ['setting delete', settingRoutes, 'DELETE', '/setting'],
-    ['source create', sourceRoutes, 'POST', '/sources'],
-    ['source update', sourceRoutes, 'PUT', '/sources/:id'],
-    ['source delete', sourceRoutes, 'DELETE', '/sources/:id'],
-  ];
+describe('global/admin API route boundary', () => {
+  it('classifies every allowed global route exactly once and preserves its contract', () => {
+    const actualRoutes = GLOBAL_ROUTE_MODULES.flatMap(({ resource, module }) => (
+      module.routes.map((route) => ({ resource, route }))
+    ));
+    const actualKeys = actualRoutes.map(({ resource, route }) => routeKey(resource, route));
+    const expectedKeys = GLOBAL_ROUTE_EXPECTATIONS.map((route) => routeKey(route.resource, route));
 
-  it.each(uiMutations)('%s requires an authenticated user', (_name, routes, method, path) => {
-    expect(getRoute(routes, method, path).config).toEqual({
-      auth: false,
-      policies: ['global::authenticated-user'],
-    });
+    expect(new Set(actualKeys).size).toBe(actualKeys.length);
+    expect(new Set(expectedKeys).size).toBe(expectedKeys.length);
+    expect([...actualKeys].sort()).toEqual([...expectedKeys].sort());
+
+    for (const expected of GLOBAL_ROUTE_EXPECTATIONS) {
+      const actual = actualRoutes.find(({ resource, route }) => routeKey(resource, route) === routeKey(expected.resource, expected));
+      expect(actual?.route).toEqual({
+        method: expected.method,
+        path: expected.path,
+        handler: expected.handler,
+        config: expected.config,
+      });
+    }
   });
 
   it('keeps parser-only writes behind the service token policy', () => {
     expect(getRoute(propertyRoutes, 'POST', '/properties/upsert').config)
       .toEqual({ auth: false, policies: ['global::service-token'] });
     expect(getRoute(propertyRoutes, 'PUT', '/internal/properties/:id').config)
-      .toEqual({ auth: false, policies: ['global::service-token'] });
-    expect(getRoute(sourceRoutes, 'PUT', '/internal/sources/:id/stats').config)
-      .toEqual({ auth: false, policies: ['global::service-token'] });
-    expect(getRoute(cronLogRoutes, 'POST', '/internal/cron-logs').config)
-      .toEqual({ auth: false, policies: ['global::service-token'] });
-    expect(getRoute(parserRunSourceRoutes, 'PUT', '/internal/parser-run-sources/:identityKey/running').config)
-      .toEqual({ auth: false, policies: ['global::service-token'] });
-    expect(getRoute(parserRunSourceRoutes, 'PUT', '/internal/parser-run-sources/:identityKey/terminal').config)
       .toEqual({ auth: false, policies: ['global::service-token'] });
   });
 });
