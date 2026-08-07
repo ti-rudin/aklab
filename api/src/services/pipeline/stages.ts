@@ -444,8 +444,20 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   const filterSnapshot = ctx.getFilterSnapshot();
   const telemetry = createParserRunTelemetry(ctx.strapi);
   if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
-    await persistDigestCounters(telemetry, { runId, scheduled: 0, sent: 0, skipped: 0, failed: 0 });
-    await updateState(ctx.strapi, { stage: 'digest_done', errors }, 'Дайджест пропущен — нет готовых профилей');
+    const counters = { scheduled: 0, sent: 0, skipped: 0, failed: 0 };
+    await persistDigestCounters(telemetry, { runId, ...counters });
+    await updateState(
+      ctx.strapi,
+      {
+        stage: 'digest_done',
+        errors,
+        digest_scheduled: counters.scheduled,
+        digest_sent: counters.sent,
+        digest_skipped: counters.skipped,
+        digest_failed: counters.failed,
+      },
+      'Дайджест пропущен — нет готовых профилей',
+    );
     return { sent: false, errors };
   }
 
@@ -503,7 +515,14 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   const sent = sentCount > 0;
   await updateState(
     ctx.strapi,
-    { stage: 'digest_done', errors },
+    {
+      stage: 'digest_done',
+      errors,
+      digest_scheduled: counters.scheduled,
+      digest_sent: counters.sent,
+      digest_skipped: counters.skipped,
+      digest_failed: counters.failed,
+    },
     `Дайджест: ${sentCount} отправлено, ${skippedCount} пропущено, ${failedCount} ошибок`,
   );
   return { sent, errors };

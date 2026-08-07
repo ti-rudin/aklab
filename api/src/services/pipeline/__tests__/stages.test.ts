@@ -194,6 +194,18 @@ describe('digest stage immutable multi-user fan-out', () => {
       expect(JSON.stringify(call[1])).not.toMatch(/smtpTo|date|filterSnapshot|profileId/);
     }
     expect(mockSetDigestCounters).toHaveBeenCalledWith({ runId: 'run-1', scheduled: 2, sent: 2, skipped: 0, failed: 0 });
+    expect(mockUpdateState).toHaveBeenLastCalledWith(
+      ctx.strapi,
+      {
+        stage: 'digest_done',
+        errors: [],
+        digest_scheduled: 2,
+        digest_sent: 2,
+        digest_skipped: 0,
+        digest_failed: 0,
+      },
+      'Дайджест: 2 отправлено, 0 пропущено, 0 ошибок',
+    );
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -215,7 +227,14 @@ describe('digest stage immutable multi-user fan-out', () => {
     expect(query).not.toHaveBeenCalled();
     expect(mockUpdateState).toHaveBeenLastCalledWith(
       ctx.strapi,
-      { stage: 'digest_done', errors: [] },
+      {
+        stage: 'digest_done',
+        errors: [],
+        digest_scheduled: 0,
+        digest_sent: 0,
+        digest_skipped: 0,
+        digest_failed: 0,
+      },
       'Дайджест пропущен — нет готовых профилей',
     );
   });
@@ -235,6 +254,20 @@ describe('digest stage immutable multi-user fan-out', () => {
       errors: ['Дайджест: 1 задач завершились с ошибкой'],
     });
     expect(mockSetDigestCounters).toHaveBeenCalledWith({ runId: 'run-1', scheduled: 3, sent: 1, skipped: 1, failed: 1 });
+    const counters = mockSetDigestCounters.mock.calls[0][0];
+    expect(counters.scheduled).toBe(counters.sent + counters.skipped + counters.failed);
+    expect(mockUpdateState).toHaveBeenLastCalledWith(
+      ctx.strapi,
+      {
+        stage: 'digest_done',
+        errors: ['Дайджест: 1 задач завершились с ошибкой'],
+        digest_scheduled: 3,
+        digest_sent: 1,
+        digest_skipped: 1,
+        digest_failed: 1,
+      },
+      'Дайджест: 1 отправлено, 1 пропущено, 1 ошибок',
+    );
     expect(JSON.stringify(mockUpdateState.mock.calls)).not.toContain('secret@example.test');
     expect(JSON.stringify(mockUpdateState.mock.calls)).not.toContain('private body');
   });
@@ -249,6 +282,38 @@ describe('digest stage immutable multi-user fan-out', () => {
       errors: ['Дайджест: 1 задач завершились с ошибкой'],
     });
     expect(mockSetDigestCounters).toHaveBeenCalledWith({ runId: 'run-1', scheduled: 1, sent: 0, skipped: 0, failed: 1 });
+    const counters = mockSetDigestCounters.mock.calls[0][0];
+    expect(counters.scheduled).toBe(counters.sent + counters.skipped + counters.failed);
+  });
+
+  it('counts missing jobs as failed while preserving the aggregate invariant', async () => {
+    const { ctx } = makeDigestCtx([{ userId: 7 }, { userId: 11 }]);
+    let nextId = 451;
+    mockAddToQueue.mockImplementation((name: string, data: any) => ({ id: nextId++, status: 'queued', name, data }));
+    mockGetJob.mockImplementation((id: number) => id === 451
+      ? { id, status: 'completed', result: { sent: true, count: 1 } }
+      : null);
+
+    await expect(digest(ctx)).resolves.toEqual({
+      sent: true,
+      errors: ['Дайджест: 1 задач завершились с ошибкой'],
+    });
+
+    expect(mockSetDigestCounters).toHaveBeenCalledWith({ runId: 'run-1', scheduled: 2, sent: 1, skipped: 0, failed: 1 });
+    const counters = mockSetDigestCounters.mock.calls[0][0];
+    expect(counters.scheduled).toBe(counters.sent + counters.skipped + counters.failed);
+    expect(mockUpdateState).toHaveBeenLastCalledWith(
+      ctx.strapi,
+      {
+        stage: 'digest_done',
+        errors: ['Дайджест: 1 задач завершились с ошибкой'],
+        digest_scheduled: 2,
+        digest_sent: 1,
+        digest_skipped: 0,
+        digest_failed: 1,
+      },
+      'Дайджест: 1 отправлено, 0 пропущено, 1 ошибок',
+    );
   });
 
   it('records each returned job before persisting digest counters', async () => {
@@ -261,6 +326,22 @@ describe('digest stage immutable multi-user fan-out', () => {
 
     expect(ctx.recordJobIds).toHaveBeenCalledTimes(2);
     expect(ctx.recordJobIds.mock.invocationCallOrder.at(-1)).toBeLessThan(mockSetDigestCounters.mock.invocationCallOrder[0]);
+    expect(mockSetDigestCounters.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateState.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it('fails the digest stage when the aggregate state update fails after telemetry persistence', async () => {
+    const { ctx } = makeDigestCtx([{ userId: 7 }]);
+    mockAddToQueue.mockReturnValue({ id: 551, status: 'queued', name: 'digest-send' });
+    mockGetJob.mockReturnValue({ id: 551, status: 'completed', result: { sent: true, count: 1 } });
+    mockUpdateState.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('state write failed'));
+
+    await expect(digest(ctx)).rejects.toThrow('state write failed');
+    expect(mockSetDigestCounters).toHaveBeenCalledWith({ runId: 'run-1', scheduled: 1, sent: 1, skipped: 0, failed: 0 });
+    expect(mockSetDigestCounters.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateState.mock.invocationCallOrder.at(-1)!,
+    );
   });
 
   it('stops enqueueing after cancellation while awaiting already-owned jobs', async () => {

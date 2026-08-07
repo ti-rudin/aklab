@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { emptyState, getState, sanitizePipelineState } from '../state';
 
 describe('pipeline state snapshot privacy', () => {
+  it('initializes digest outcome counters to zero in durable and sanitized state', () => {
+    const state = emptyState();
+
+    expect(state).toMatchObject({
+      digest_scheduled: 0,
+      digest_sent: 0,
+      digest_skipped: 0,
+      digest_failed: 0,
+    });
+    expect(sanitizePipelineState(state)).toMatchObject({
+      digest_scheduled: 0,
+      digest_sent: 0,
+      digest_skipped: 0,
+      digest_failed: 0,
+    });
+  });
+
   it('keeps snapshot metadata but never exposes the full snapshot or user ids', () => {
     const state = {
       ...emptyState(),
@@ -24,6 +41,10 @@ describe('pipeline state snapshot privacy', () => {
       errors: ['one error'],
       sources_total: 2,
       sources_done: 1,
+      digest_scheduled: 7,
+      digest_sent: 3,
+      digest_skipped: 2,
+      digest_failed: 2,
     } as any;
 
     const sanitized = sanitizePipelineState(state);
@@ -36,6 +57,10 @@ describe('pipeline state snapshot privacy', () => {
       filter_snapshot_window_end_at: '2026-08-07T10:00:00.000Z',
       sources_total: 2,
       sources_done: 1,
+      digest_scheduled: 7,
+      digest_sent: 3,
+      digest_skipped: 2,
+      digest_failed: 2,
     });
     expect(Object.hasOwn(sanitized, 'filter_snapshot')).toBe(false);
     expect(Object.hasOwn(sanitized, 'target_user_id')).toBe(false);
@@ -47,6 +72,42 @@ describe('pipeline state snapshot privacy', () => {
     sanitized.errors.push('two errors');
     expect(state.job_ids).toEqual([11]);
     expect(state.errors).toEqual(['one error']);
+  });
+
+  it('preserves valid digest outcome counters and defaults missing or invalid values to zero on reload', async () => {
+    const findOne = vi.fn().mockResolvedValue({
+      pipeline_state: {
+        ...emptyState(),
+        digest_scheduled: 7,
+        digest_sent: 3,
+        digest_skipped: 2,
+        digest_failed: 2,
+      },
+    });
+    const strapi = { db: { query: vi.fn().mockReturnValue({ findOne }) } } as any;
+
+    await expect(getState(strapi)).resolves.toMatchObject({
+      digest_scheduled: 7,
+      digest_sent: 3,
+      digest_skipped: 2,
+      digest_failed: 2,
+    });
+
+    findOne.mockResolvedValueOnce({
+      pipeline_state: {
+        digest_scheduled: -1,
+        digest_sent: 1.5,
+        digest_skipped: '2',
+        digest_failed: Number.POSITIVE_INFINITY,
+      },
+    });
+
+    await expect(getState(strapi)).resolves.toMatchObject({
+      digest_scheduled: 0,
+      digest_sent: 0,
+      digest_skipped: 0,
+      digest_failed: 0,
+    });
   });
 
   it('returns a blocking recovery state instead of idle when durable state is unreadable', async () => {

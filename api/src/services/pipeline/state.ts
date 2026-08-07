@@ -46,6 +46,10 @@ export interface PipelineState {
   analyze_done: number;
   undervalued_count: number;
   objects_created: number;
+  digest_scheduled: number;
+  digest_sent: number;
+  digest_skipped: number;
+  digest_failed: number;
   errors: string[];
   started_at: string;
   updated_at: string;
@@ -57,7 +61,34 @@ export interface PipelineState {
   filter_snapshot_window_end_at: string | null;
 }
 
-export type SanitizedPipelineState = Omit<PipelineState, 'filter_snapshot'>;
+export type SanitizedPipelineState = Pick<
+  PipelineState,
+  | 'run_id'
+  | 'job_ids'
+  | 'status'
+  | 'stage'
+  | 'message'
+  | 'trigger'
+  | 'sources_total'
+  | 'sources_done'
+  | 'details_fetched'
+  | 'details_needed'
+  | 'analyze_total'
+  | 'analyze_done'
+  | 'undervalued_count'
+  | 'objects_created'
+  | 'digest_scheduled'
+  | 'digest_sent'
+  | 'digest_skipped'
+  | 'digest_failed'
+  | 'errors'
+  | 'started_at'
+  | 'updated_at'
+  | 'filter_snapshot_hash'
+  | 'filter_snapshot_scope'
+  | 'filter_snapshot_schema_version'
+  | 'filter_snapshot_window_end_at'
+>;
 
 export class PipelineDepthError extends Error {
   readonly code = 'PIPELINE_INPUT_INVALID';
@@ -77,6 +108,10 @@ export function validateDepth(value: unknown): asserts value is number {
 
 // ── Helpers ──
 
+function safeNonNegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
 export function emptyState(): PipelineState {
   return {
     run_id: null,
@@ -93,6 +128,10 @@ export function emptyState(): PipelineState {
     analyze_done: 0,
     undervalued_count: 0,
     objects_created: 0,
+    digest_scheduled: 0,
+    digest_sent: 0,
+    digest_skipped: 0,
+    digest_failed: 0,
     errors: [],
     started_at: '',
     updated_at: '',
@@ -140,6 +179,10 @@ export function sanitizePipelineState(state: PipelineState): SanitizedPipelineSt
     analyze_done: state.analyze_done,
     undervalued_count: state.undervalued_count,
     objects_created: state.objects_created,
+    digest_scheduled: safeNonNegativeInteger(state.digest_scheduled),
+    digest_sent: safeNonNegativeInteger(state.digest_sent),
+    digest_skipped: safeNonNegativeInteger(state.digest_skipped),
+    digest_failed: safeNonNegativeInteger(state.digest_failed),
     errors: Array.isArray(state.errors) ? [...state.errors] : [],
     started_at: state.started_at,
     updated_at: state.updated_at,
@@ -171,6 +214,10 @@ export async function getState(strapi: StrapiInstance): Promise<PipelineState> {
         filter_snapshot_scope: stored?.filter_snapshot_scope ?? null,
         filter_snapshot_schema_version: stored?.filter_snapshot_schema_version ?? null,
         filter_snapshot_window_end_at: stored?.filter_snapshot_window_end_at ?? null,
+        digest_scheduled: safeNonNegativeInteger(stored?.digest_scheduled),
+        digest_sent: safeNonNegativeInteger(stored?.digest_sent),
+        digest_skipped: safeNonNegativeInteger(stored?.digest_skipped),
+        digest_failed: safeNonNegativeInteger(stored?.digest_failed),
       };
     }
   } catch {
@@ -198,6 +245,10 @@ export async function updateState(
     message: message ?? patch.message ?? current.message,
     updated_at: new Date().toISOString(),
   };
+  updated.digest_scheduled = safeNonNegativeInteger(updated.digest_scheduled);
+  updated.digest_sent = safeNonNegativeInteger(updated.digest_sent);
+  updated.digest_skipped = safeNonNegativeInteger(updated.digest_skipped);
+  updated.digest_failed = safeNonNegativeInteger(updated.digest_failed);
 
   try {
     const setting = await strapi.db.query('api::setting.setting').findOne({});
