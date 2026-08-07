@@ -504,7 +504,7 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
   });
   if (uiClient) {
     await check('Frontend health responds', async () => {
-      const response = await uiClient.requestUrl(uiClient.origin, 'GET');
+      const response = await uiClient.requestUrl(uiClient.origin, 'GET', { headers: { Accept: 'text/html' } });
       assertStatus(response, [200, 304], 'frontend');
     });
   } else {
