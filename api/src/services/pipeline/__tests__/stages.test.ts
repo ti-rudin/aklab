@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAddToQueue, mockGetJob, mockEnsureSourceStage, mockAttachSourceStageJob, mockUpdateState } = vi.hoisted(() => ({
+const {
+  mockAddToQueue,
+  mockGetJob,
+  mockEnsureSourceStage,
+  mockAttachSourceStageJob,
+  mockUpdateState,
+  mockScorePropertiesBatch,
+} = vi.hoisted(() => ({
   mockAddToQueue: vi.fn(),
   mockGetJob: vi.fn(),
   mockEnsureSourceStage: vi.fn(),
   mockAttachSourceStageJob: vi.fn(),
   mockUpdateState: vi.fn(),
+  mockScorePropertiesBatch: vi.fn(),
 }));
 
 vi.mock('../../queueService', () => ({
@@ -19,8 +27,9 @@ vi.mock('../../parser-run-telemetry', () => ({
   })),
 }));
 vi.mock('../state', () => ({ updateState: mockUpdateState }));
+vi.mock('../../focusEngine', () => ({ scorePropertiesBatch: mockScorePropertiesBatch }));
 
-import { parseAll } from '../stages';
+import { analyze, parseAll } from '../stages';
 
 const filterSnapshot = Object.freeze({
   schemaVersion: 1 as const,
@@ -62,6 +71,7 @@ beforeEach(() => {
   mockEnsureSourceStage.mockResolvedValue(undefined);
   mockAttachSourceStageJob.mockResolvedValue(undefined);
   mockUpdateState.mockResolvedValue(undefined);
+  mockScorePropertiesBatch.mockResolvedValue({ scored: 1, in_focus: 1, by_tag: {} });
 });
 
 describe('parse stage canonical snapshot propagation', () => {
@@ -92,5 +102,34 @@ describe('parse stage canonical snapshot propagation', () => {
     await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: [] });
     expect(ctx.strapi.entityService.findMany).not.toHaveBeenCalled();
     expect(mockAddToQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('analyze stage canonical candidate selection', () => {
+  it('uses only the shared is_undervalued marker and ignores legacy Property.status', async () => {
+    const ctx = makeCtx();
+    ctx.getFilterSnapshot.mockReturnValue(null);
+    const candidate = {
+      id: 7,
+      documentId: 'property-viewed',
+      status: 'viewed',
+      is_undervalued: null,
+    };
+    const undervaluedQuery = vi.fn().mockResolvedValue([{ id: candidate.id }]);
+    ctx.strapi.entityService.findMany.mockResolvedValue([candidate]);
+    ctx.strapi.db = {
+      query: vi.fn(() => ({ findMany: undervaluedQuery })),
+    };
+
+    await expect(analyze(ctx)).resolves.toEqual({ undervalued: 1, errors: [] });
+
+    expect(ctx.strapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
+      filters: { is_undervalued: { $null: true } },
+      limit: -1,
+    });
+    const filters = ctx.strapi.entityService.findMany.mock.calls[0][1].filters;
+    expect(filters).not.toHaveProperty('status');
+    expect(filters.is_undervalued).toEqual({ $null: true });
+    expect(mockScorePropertiesBatch).toHaveBeenCalledTimes(1);
   });
 });

@@ -26,7 +26,7 @@ const mockStrapi = {
 // @ts-ignore
 global.strapi = mockStrapi;
 
-import { scoreProperty, scoreAllProperties } from '../focusEngine';
+import { scoreProperty, scoreAllProperties, scorePropertiesBatch } from '../focusEngine';
 
 describe('scoreProperty', () => {
   const makeRule = (overrides: Partial<any> = {}): any => ({
@@ -636,18 +636,28 @@ describe('scoreAllProperties', () => {
     expect(mockConnectionRaw).not.toHaveBeenCalled();
   });
 
-  it('should query with status=new filter', async () => {
+  it('should query shared properties without a legacy status restriction while preserving city and price filters', async () => {
     const rules = [makeRule()];
     mockStrapi.entityService.findMany.mockResolvedValue(rules);
-    mockQueryFindMany.mockResolvedValue([]);
+    const properties = [
+      { id: 1, status: 'viewed', city: 'moscow', price: 500000, focus_score: 0, tags: [] },
+    ];
+    mockQueryFindMany.mockResolvedValueOnce(properties);
+    mockQueryFindMany.mockResolvedValueOnce([{ id: 1, focus_score: 0, tags: '[]' }]);
+    mockQueryFindMany.mockResolvedValueOnce([]);
+    mockQueryUpdate.mockResolvedValue({});
+    mockStrapi.entityService.create.mockResolvedValue({});
 
-    await scoreAllProperties();
+    await scorePropertiesBatch({ city: ['moscow'], priceFrom: 100000, priceTo: 1000000 });
 
-    expect(mockQueryFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { status: 'new' },
-        orderBy: { id: 'asc' },
-      }),
-    );
+    const firstQuery = mockQueryFindMany.mock.calls[0][0];
+    expect(firstQuery).toEqual(expect.objectContaining({
+      where: {
+        city: { $in: ['moscow'] },
+        price: { $gte: 100000, $lte: 1000000 },
+      },
+      orderBy: { id: 'asc' },
+    }));
+    expect(firstQuery.where).not.toHaveProperty('status');
   });
 });

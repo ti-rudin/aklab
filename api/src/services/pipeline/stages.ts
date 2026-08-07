@@ -312,19 +312,15 @@ export async function analyze(ctx: PipelineContext): Promise<{ undervalued: numb
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
-  const filterSnapshot = ctx.getFilterSnapshot();
-  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
-    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет готовых профилей');
-    return { undervalued: 0, errors };
-  }
-
-  const analysisWhere: any = { status: 'new', is_undervalued: { $null: true } };
+  // Shared analysis candidates are selected only by the canonical marker;
+  // personal status and user/profile filters do not apply here.
+  const analysisWhere: any = { is_undervalued: { $null: true } };
 
   if (ctx.isCancelled()) return { undervalued: 0, errors };
   const properties = await ctx.strapi.entityService.findMany('api::property.property', { filters: analysisWhere, limit: -1 });
   const total = properties?.length || 0;
   if (!total) {
-    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет новых объектов');
+    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет необработанных shared объектов');
     return { undervalued: 0, errors };
   }
 
