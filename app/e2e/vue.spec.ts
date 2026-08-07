@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { assertProfilesDistinctWithOverlap } from '../../scripts/smoke-test.js'
 
 type Role = 'admin' | 'userA' | 'userB'
 type RoleCredential = { email: string; password: string }
@@ -184,28 +185,6 @@ function expectDenied(status: number): void {
   expect([401, 403]).toContain(status)
 }
 
-function profilesAreIncompatible(left: any, right: any): boolean {
-  const toStringSet = (value: unknown): Set<string> => new Set(
-    Array.isArray(value) ? value.map(item => String(item)) : [],
-  )
-  const leftRegions = toStringSet(left?.regions)
-  const rightRegions = toStringSet(right?.regions)
-  const leftTypes = toStringSet(left?.property_types)
-  const rightTypes = toStringSet(right?.property_types)
-  const disjoint = (a: Set<string>, b: Set<string>) => a.size > 0 && b.size > 0 && [...a].every(value => !b.has(value))
-  const rangeDisjoint = (leftFrom: unknown, leftTo: unknown, rightFrom: unknown, rightTo: unknown) => {
-    const lf = leftFrom == null ? -Infinity : Number(leftFrom)
-    const lt = leftTo == null ? Infinity : Number(leftTo)
-    const rf = rightFrom == null ? -Infinity : Number(rightFrom)
-    const rt = rightTo == null ? Infinity : Number(rightTo)
-    return lt < rf || rt < lf
-  }
-  return disjoint(leftRegions, rightRegions)
-    || disjoint(leftTypes, rightTypes)
-    || rangeDisjoint(left?.price_from, left?.price_to, right?.price_from, right?.price_to)
-    || rangeDisjoint(left?.area_from, left?.area_to, right?.area_from, right?.area_to)
-}
-
 async function login(page: Page, role: Role): Promise<void> {
   const credentials = CONFIG.credentials[role]
   await page.goto('/auth')
@@ -277,7 +256,7 @@ test.describe('AKLAB multi-user dev acceptance', () => {
       expect(profileB.status).toBe(200)
       expect(dataOf(profileA)?.user_id).toBe(dataOf(contextA)?.user?.id)
       expect(dataOf(profileB)?.user_id).toBe(dataOf(contextB)?.user?.id)
-      expect(profilesAreIncompatible(dataOf(profileA), dataOf(profileB))).toBe(true)
+      expect(assertProfilesDistinctWithOverlap(dataOf(profileA), dataOf(profileB))).toBe(true)
 
       const [listA, listB, statsA, statsB] = await Promise.all([
         apiRequest(userA, 'GET', '/api/properties?page=1&pageSize=100'),
