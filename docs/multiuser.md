@@ -107,6 +107,10 @@ branch, exact target SHA после fast-forward и отсутствие server-
 `main`, сверяет SHA с `origin/main` и применяет только fast-forward. До любых
 PM2/build/DB side effects он отказывается от dirty/raced состояния; stash,
 floating pull и server-side release authorship запрещены regression-тестом.
+После первого failed attempt повторный запуск должен передать
+`--rollback-ref <last-known-good-SHA>`; после успешного health gate script сам
+атомарно сохраняет last-success SHA вне checkout. Текущий server HEAD после
+неуспешной сборки/health-проверки не считается доказанным rollback target.
 Dev-host использует общий PM2 daemon с другим проектом, поэтому Node-version
 mismatch также fail-closed: deploy не выполняет автоматический `pm2 update`.
 

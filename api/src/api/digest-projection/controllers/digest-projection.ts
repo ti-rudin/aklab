@@ -1,4 +1,3 @@
-import { factories } from '@strapi/strapi';
 import {
   createDigestProjectionService,
   DigestProjectionConflictError,
@@ -58,11 +57,11 @@ function mapServiceError(ctx: any, error: unknown): void {
   ctx.body = { error: 'Internal server error' };
 }
 
-export default factories.createCoreController('api::digest-projection.digest-projection' as any, ({ strapi }) => {
+export function createDigestProjectionController(strapi: any) {
   const service = createDigestProjectionService(strapi as any);
 
   return {
-    async properties(ctx) {
+    async properties(ctx: any) {
       const data = exactData(ctx, PROPERTIES_FIELDS);
       if (!data) {
         badRequest(ctx);
@@ -75,7 +74,7 @@ export default factories.createCoreController('api::digest-projection.digest-pro
       }
     },
 
-    async delivery(ctx) {
+    async delivery(ctx: any) {
       const data = exactData(ctx, DELIVERY_FIELDS);
       if (!data) {
         badRequest(ctx);
@@ -88,4 +87,20 @@ export default factories.createCoreController('api::digest-projection.digest-pro
       }
     },
   };
-});
+}
+
+function runtimeController() {
+  const runtimeStrapi = (globalThis as any).strapi;
+  if (!runtimeStrapi) throw new Error('Strapi runtime is unavailable');
+  return createDigestProjectionController(runtimeStrapi);
+}
+
+export default {
+  async properties(ctx: any) {
+    return runtimeController().properties(ctx);
+  },
+
+  async delivery(ctx: any) {
+    return runtimeController().delivery(ctx);
+  },
+};

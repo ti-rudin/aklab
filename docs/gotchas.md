@@ -358,3 +358,17 @@
     одновременно AKLAB и TODOIT. Dev deploy при Node-version mismatch обязан
     остановиться до build/restart и запросить отдельное infrastructure решение;
     нельзя автоматически менять daemon в AKLAB deploy script.
+
+85. **Route-only Strapi namespace не является content type** — controller для
+    custom internal routes без `content-types/*/schema.json` экспортировать plain
+    object с actions. `factories.createCoreController(uid, ...)` требует реально
+    зарегистрированный UID и при route composition читает `contentType.kind`;
+    фиктивный UID приводит к startup crash до открытия HTTP-порта. Contract test
+    обязан проверять object-shaped default export, а dev acceptance — реальный
+    Strapi health после route registration.
+
+86. **Failed checkout не равен last-known-good rollback SHA** — fast-forward и
+    clean Git доказывают только source identity, но не successful runtime. Dev
+    deploy принимает explicit `--rollback-ref` и хранит last-success SHA вне
+    checkout только после core/service health gates. Health failure должен идти
+    через `ERR` trap; прямой `exit 1` внутри gate обходит trap Bash.

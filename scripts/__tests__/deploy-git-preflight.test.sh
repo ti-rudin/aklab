@@ -70,6 +70,10 @@ assert_eq "$(git -C "$SERVER" rev-parse HEAD)" "$EXPECTED_SHA"
 # Dev deploy must use the same immutable helper and deterministic installs.
 bash -n "$ROOT/scripts/deploy-dev.sh"
 grep -q 'ensure_deploy_git_preflight.*EXPECTED_SHA' "$ROOT/scripts/deploy-dev.sh" || fail 'deploy-dev does not use exact-SHA preflight'
+grep -q -- '--rollback-ref' "$ROOT/scripts/deploy-dev.sh" || fail 'deploy-dev has no explicit rollback ref'
+grep -q 'LAST_SUCCESS_FILE' "$ROOT/scripts/deploy-dev.sh" || fail 'deploy-dev has no persistent last-success state'
+grep -q 'verify_runtime_health' "$ROOT/scripts/deploy-dev.sh" || fail 'deploy-dev has no reusable health gate'
+grep -q 'trap - ERR' "$ROOT/scripts/deploy-dev.sh" || fail 'rollback does not disable recursive ERR traps'
 grep -q 'npm ci --include=dev' "$ROOT/scripts/deploy-dev.sh" || fail 'deploy-dev does not use npm ci'
 if grep -Eq 'git stash|git pull|npm install|git checkout -- \.' "$ROOT/scripts/deploy-dev.sh"; then
   fail 'deploy-dev contains a mutable deployment operation'
