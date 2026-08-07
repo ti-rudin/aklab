@@ -7,20 +7,62 @@ import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
 import { createParserRunTelemetry } from '../parser-run-telemetry';
 import { broadcastSSE } from '../pipeline-sse';
-import type { PipelineState, RunOptions } from './state';
-import { getState, updateState, resetState, emptyState, tryAcquireIdleState } from './state';
+import { buildAllActiveSnapshot, buildSingleUserSnapshot } from '../user-profile';
+import type { UserFilterSnapshot } from '../user-profile';
+import type { PipelineState } from './state';
+import { getState, updateState, resetState, emptyState, tryAcquireIdleState, sanitizePipelineState, validateDepth } from './state';
 import { parseAll, analyze, digest } from './stages';
 import type { PipelineContext } from './stages';
 
 export type PipelineMode = 'full' | 'parse' | 'analyze' | 'digest';
 
+export class PipelineBusyError extends Error {
+  readonly code = 'PIPELINE_BUSY';
+
+  constructor() {
+    super('Pipeline уже выполняется или отменяется');
+    this.name = 'PipelineBusyError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+export class PipelineInputError extends Error {
+  readonly code = 'PIPELINE_INPUT_INVALID';
+
+  constructor() {
+    super('Invalid pipeline input.');
+    this.name = 'PipelineInputError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+export class PipelineConfigurationError extends Error {
+  readonly code = 'PIPELINE_CONFIGURATION_INVALID';
+
+  constructor() {
+    super('Pipeline configuration is invalid.');
+    this.name = 'PipelineConfigurationError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+type PreparedRun = {
+  depth: number;
+  snapshot: UserFilterSnapshot | null;
+  noOp: boolean;
+};
+
 // Re-export types for external consumers
 export type { PipelineStage, PipelineStatus, PipelineState } from './state';
+export { sanitizePipelineState, validateDepth } from './state';
 
 export class PipelineService implements PipelineContext {
   strapi: StrapiInstance;
   private activeRunId: string | null = null;
   private activeParserRunId: number | null = null;
+  private activeFilterSnapshot: UserFilterSnapshot | null = null;
+  /** True while this process still has a live preflight/stage handler. */
+  private handlerActive = false;
   private cancelRequestedRunId: string | null = null;
   private activeJobIds = new Set<number>();
   /** Prevent duplicate cancellation requests when cancel and a stage deadline race. */
@@ -74,15 +116,23 @@ export class PipelineService implements PipelineContext {
 
     const jobIds = [...new Set(state.job_ids)];
     this.activeRunId = runId;
+    this.handlerActive = false;
     this.cancelRequestedRunId = runId;
     this.activeJobIds = new Set(jobIds);
     this.cancellationRequestedJobIds.clear();
     this.recoveringRunId = runId;
 
-    await this.updateState(
-      { status: 'cancelling' },
-      'Восстановление после рестарта: отменяем только задачи сохранённого запуска и ожидаем terminal states',
-    );
+    try {
+      await updateState(
+        this.strapi,
+        { status: 'cancelling' },
+        'Восстановление после рестарта: отменяем только задачи сохранённого запуска и ожидаем terminal states',
+        true,
+      );
+    } catch {
+      this.strapi.log.error('[pipeline] Recovery state persistence failed; cancellation not started');
+      return;
+    }
 
     try {
       const snapshot = this.recordedJobSnapshot(jobIds);
@@ -91,14 +141,14 @@ export class PipelineService implements PipelineContext {
       }
       await this.requestCancellation(snapshot.liveJobIds, 'Восстановление после рестарта: ожидаем terminal states задач');
     } catch (err: any) {
-      const reason = `Восстановление run ${runId} остановлено: ${err?.message || err}`;
+      const reason = `Восстановление run ${runId} остановлено: ошибка проверки очереди`;
       this.strapi.log.error(`[pipeline] ${reason}`);
       await this.publishRecoveryError(runId, reason);
       return;
     }
 
     void this.finalizeRecoveredRun(runId, jobIds).catch(async (err: any) => {
-      const reason = `Восстановление run ${runId} завершилось ошибкой: ${err?.message || err}`;
+      const reason = `Восстановление run ${runId} завершилось ошибкой проверки очереди`;
       this.strapi.log.error(`[pipeline] ${reason}`);
       await this.publishRecoveryError(runId, reason);
     });
@@ -136,12 +186,13 @@ export class PipelineService implements PipelineContext {
     try {
       acquired = await tryAcquireIdleState(this.strapi, initialState);
     } catch (err: any) {
-      this.strapi.log.error(`[pipeline] Failed to atomically acquire lifecycle lock: ${err?.message || err}`);
+      this.strapi.log.error('[pipeline] Failed to atomically acquire lifecycle lock');
       return null;
     }
     if (!acquired) return null;
 
     this.activeRunId = runId;
+    this.handlerActive = true;
     this.cancelRequestedRunId = null;
     this.activeJobIds.clear();
     this.cancellationRequestedJobIds.clear();
@@ -150,54 +201,244 @@ export class PipelineService implements PipelineContext {
       if (!Number.isSafeInteger(parserRun?.id)) throw new Error('Parser run telemetry row has no numeric id');
       this.activeParserRunId = parserRun.id;
     } catch (err: any) {
-      this.activeRunId = null;
+      this.handlerActive = false;
       this.activeParserRunId = null;
-      await this.updateState({
-        status: 'idle',
-        stage: 'error',
-        errors: [`Parser telemetry: ${err?.message || err}`],
-      }, 'Не удалось создать telemetry-запись запуска');
+      const message = 'Не удалось создать telemetry-запись запуска';
+      try {
+        await updateState(this.strapi, {
+          status: 'idle',
+          stage: 'error',
+          errors: [message],
+        }, message, true);
+        this.activeRunId = null;
+      } catch {
+        // Keep the in-memory lock if durable idle cleanup failed. A retry must
+        // not enqueue another run while the persisted lifecycle is uncertain.
+        this.strapi.log.error('[pipeline] Telemetry preflight cleanup failed; lifecycle lock retained');
+      }
       throw err;
     }
     return runId;
   }
 
   /**
-   * Start a background run and immediately return its stable id to the API client.
-   * All modes use the same lifecycle lock; partial modes cannot mutate state outside it.
+   * Resolve all run inputs after lifecycle lock + parser telemetry creation and
+   * before the first queue job. The selected snapshot is built exactly once.
    */
-  async start(mode: PipelineMode, depth: number, filters?: RunOptions['filters'], trigger: 'manual' | 'cron' = 'manual'): Promise<string> {
-    const runId = await this.acquireLock(trigger, mode);
-    if (!runId) throw new Error('Pipeline уже выполняется или отменяется');
+  private async prepareRun(
+    runId: string,
+    depth: number | undefined,
+    targetUserId: unknown,
+    trigger: 'manual' | 'cron',
+  ): Promise<PreparedRun> {
+    let resolvedDepth: number;
+    if (depth === undefined) {
+      let setting: any;
+      try {
+        setting = await this.strapi.db.query('api::setting.setting').findOne({});
+      } catch {
+        throw new PipelineConfigurationError();
+      }
+      try {
+        validateDepth(setting?.parse_depth);
+      } catch {
+        throw new PipelineConfigurationError();
+      }
+      resolvedDepth = setting.parse_depth;
+    } else {
+      validateDepth(depth);
+      resolvedDepth = depth;
+    }
 
-    void this.executeRun(runId, mode, depth, filters).catch((err: any) => {
-      // executeRun owns its error state; this guard only prevents an unhandled promise.
-      this.strapi.log.error(`[pipeline] Unhandled run ${runId} error: ${err?.message || err}`);
+    let snapshot: UserFilterSnapshot | null;
+    if (trigger === 'cron') {
+      if (targetUserId !== undefined) throw new PipelineInputError();
+      snapshot = await buildAllActiveSnapshot(this.strapi as any);
+    } else {
+      if (typeof targetUserId !== 'number' || !Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+        throw new PipelineInputError();
+      }
+      snapshot = await buildSingleUserSnapshot(this.strapi as any, targetUserId);
+    }
+
+    const profileScope = snapshot?.scope ?? 'none';
+    await updateState(this.strapi, {
+      filter_snapshot: snapshot,
+      filter_snapshot_hash: snapshot?.hash ?? null,
+      filter_snapshot_scope: profileScope,
+      filter_snapshot_schema_version: snapshot?.schemaVersion ?? null,
+      filter_snapshot_window_end_at: snapshot?.windowEndAt ?? null,
+    }, undefined, true);
+    await createParserRunTelemetry(this.strapi).ensureParserRunSnapshot({
+      runId,
+      profileScope,
+      ...(profileScope === 'single' && typeof targetUserId === 'number' ? { targetUserId } : {}),
+      snapshot,
+    });
+
+    this.activeFilterSnapshot = snapshot;
+    return { depth: resolvedDepth, snapshot, noOp: !snapshot || snapshot.profiles.length === 0 };
+  }
+
+  private safeExecutionMessage(error: unknown): string {
+    const code = typeof (error as any)?.code === 'string' ? (error as any).code : '';
+    if (code === 'USER_PROFILE_UNAVAILABLE') return 'Профиль пользователя недоступен для запуска.';
+    if (code === 'USER_PROFILE_MALFORMED') return 'Сохранённый профиль пользователя некорректен.';
+    if (code === 'PIPELINE_CONFIGURATION_INVALID') return 'Настройка pipeline некорректна.';
+    if (code === 'PARSER_RUN_SNAPSHOT_CONFLICT') return 'Конфликт immutable snapshot запуска.';
+    return 'Ошибка выполнения pipeline.';
+  }
+
+  private async finishParserTelemetry(
+    runId: string,
+    status: 'succeeded' | 'degraded' | 'failed' | 'cancelled',
+    errorSummary?: string,
+  ): Promise<boolean> {
+    try {
+      await createParserRunTelemetry(this.strapi).finishParserRun({
+        runId,
+        status,
+        ...(errorSummary ? { errorSummary } : {}),
+      });
+      return true;
+    } catch {
+      this.strapi.log.error('[pipeline] Parser telemetry terminal persistence failed');
+      return false;
+    }
+  }
+
+  private async persistTerminalState(patch: Partial<PipelineState>, message: string): Promise<boolean> {
+    try {
+      await updateState(this.strapi, patch, message, true);
+      return true;
+    } catch {
+      this.strapi.log.error('[pipeline] Terminal pipeline state persistence failed; lifecycle lock retained');
+      return false;
+    }
+  }
+
+  private async blockLifecycle(message: string, errors: string[]): Promise<boolean> {
+    try {
+      await updateState(this.strapi, { status: 'cancelling', stage: 'error', errors }, message, true);
+      return true;
+    } catch {
+      this.strapi.log.error('[pipeline] Could not persist lifecycle recovery lock');
+      return false;
+    }
+  }
+
+  private async failBeforeExecution(runId: string, error: unknown): Promise<void> {
+    const message = this.safeExecutionMessage(error);
+    let stateIsIdle = false;
+    try {
+      // Preflight failure must be fail-closed. Do not release the in-memory
+      // lifecycle unless the durable state really became terminal/idle.
+      await updateState(this.strapi, { status: 'idle', stage: 'error', errors: [message] }, message, true);
+      stateIsIdle = true;
+    } catch {
+      this.strapi.log.error('[pipeline] Preflight state cleanup failed; lifecycle lock retained');
+    }
+
+    const telemetryFinished = await this.finishParserTelemetry(runId, 'failed', message);
+
+    if (stateIsIdle && !telemetryFinished) {
+      // A terminal telemetry failure must not leave the service claiming a
+      // clean idle run. Preserve a durable blocking state if possible.
+      stateIsIdle = !(await this.blockLifecycle('Pipeline preflight requires operator recovery', [message]));
+    }
+
+    if (stateIsIdle) {
+      broadcastSSE('error', sanitizePipelineState(await this.getState()));
+      this.releaseLifecycle(runId);
+    } else {
+      // Keep activeRunId when the durable state is uncertain or explicitly
+      // blocking. forceReset() remains the deliberate operator escape hatch.
+      this.handlerActive = false;
+      this.activeParserRunId = null;
+      this.activeFilterSnapshot = null;
+      this.cancelRequestedRunId = null;
+      this.activeJobIds.clear();
+      this.cancellationRequestedJobIds.clear();
+    }
+  }
+
+  private releaseLifecycle(runId: string): void {
+    if (this.activeRunId !== runId) return;
+    this.activeRunId = null;
+    this.handlerActive = false;
+    this.activeParserRunId = null;
+    this.activeFilterSnapshot = null;
+    this.cancelRequestedRunId = null;
+    this.activeJobIds.clear();
+    this.cancellationRequestedJobIds.clear();
+  }
+
+  /** Start a background run after its fail-closed snapshot preflight. */
+  async start(mode: PipelineMode, depth: number | undefined, targetUserId?: unknown, trigger: 'manual' | 'cron' = 'manual'): Promise<string> {
+    const runId = await this.acquireLock(trigger, mode);
+    if (!runId) throw new PipelineBusyError();
+
+    let prepared: PreparedRun;
+    try {
+      prepared = await this.prepareRun(runId, depth, targetUserId, trigger);
+    } catch (error) {
+      await this.failBeforeExecution(runId, error);
+      throw error;
+    }
+    this.handlerActive = true;
+    void this.executeRun(runId, mode, prepared).catch((err: any) => {
+      this.handlerActive = false;
+      this.strapi.log.error(`[pipeline] Unhandled run ${runId} error: ${this.safeExecutionMessage(err)}`);
     });
     return runId;
   }
 
-  /** Backward-compatible awaited entry point used by cron for a full pipeline. */
-  async run(depth: number, filters?: RunOptions['filters'], trigger: 'manual' | 'cron' = 'manual'): Promise<void> {
+  /** Awaited full-pipeline entry point used by cron. It never accepts a target. */
+  async run(depth: number | undefined, targetUserId?: unknown, trigger: 'manual' | 'cron' = 'manual'): Promise<void> {
     const runId = await this.acquireLock(trigger, 'full');
-    if (!runId) throw new Error('Pipeline уже выполняется или отменяется');
-    await this.executeRun(runId, 'full', depth, filters);
+    if (!runId) throw new PipelineBusyError();
+    let prepared: PreparedRun;
+    try {
+      prepared = await this.prepareRun(runId, depth, targetUserId, trigger);
+    } catch (error) {
+      await this.failBeforeExecution(runId, error);
+      throw error;
+    }
+    this.handlerActive = true;
+    await this.executeRun(runId, 'full', prepared);
   }
 
-  private async executeRun(runId: string, mode: PipelineMode, depth: number, filters?: RunOptions['filters']): Promise<void> {
+  private async executeRun(runId: string, mode: PipelineMode, prepared: PreparedRun): Promise<void> {
     const allErrors: string[] = [];
     let releaseLifecycle = false;
     let parserRunStatus: 'succeeded' | 'degraded' | 'failed' | 'cancelled' | null = null;
 
     try {
+      if (prepared.noOp) {
+        const cancelled = this.isCancelled();
+        parserRunStatus = cancelled ? 'cancelled' : 'succeeded';
+        if (!await this.finishParserTelemetry(runId, parserRunStatus)) {
+          await this.blockLifecycle('Pipeline telemetry requires operator recovery', ['Не удалось завершить telemetry pipeline.']);
+          return;
+        }
+        if (!await this.persistTerminalState({
+          status: 'idle',
+          stage: cancelled ? 'cancelled' : 'done',
+          errors: [],
+        }, cancelled ? 'Пайплайн отменён' : 'Пайплайн завершён без готовых профилей')) return;
+        broadcastSSE('done', sanitizePipelineState(await this.getState()));
+        releaseLifecycle = true;
+        return;
+      }
+
       if ((mode === 'full' || mode === 'parse') && !this.isCancelled()) {
-        const parseResult = await this.parseAll(depth, filters);
+        const parseResult = await this.parseAll(prepared.depth);
         allErrors.push(...parseResult.errors);
         if (!await this.waitForRunJobsToSettle(runId, 'После парсинга проверяем terminal states задач текущего запуска')) return;
       }
 
       if ((mode === 'full' || mode === 'analyze') && !this.isCancelled()) {
-        const analyzeResult = await this.analyze(filters);
+        const analyzeResult = await this.analyze();
         allErrors.push(...analyzeResult.errors);
         if (!await this.waitForRunJobsToSettle(runId, 'После анализа проверяем terminal states задач текущего запуска')) return;
       }
@@ -212,62 +453,48 @@ export class PipelineService implements PipelineContext {
       // current-run handler is still pending or active.
       if (!await this.waitForRunJobsToSettle(runId, 'Ожидаем завершения задач текущего запуска')) return;
 
-      if (this.isCancelled()) {
-        await this.updateState({
-          status: 'idle',
-          stage: 'cancelled',
-          errors: allErrors,
-        }, 'Пайплайн отменён');
-      } else if (allErrors.length > 0) {
-        await this.updateState({
-          status: 'idle',
-          stage: 'done_with_errors',
-          errors: allErrors,
-        }, 'Пайплайн завершён с ошибками');
-      } else {
-        await this.updateState({
-          status: 'idle',
-          stage: 'done',
-          errors: [],
-        }, '✓ Пайплайн завершён');
-      }
       parserRunStatus = this.isCancelled() ? 'cancelled' : (allErrors.length > 0 ? 'degraded' : 'succeeded');
-      try {
-        await createParserRunTelemetry(this.strapi).finishParserRun({
-          runId,
-          status: parserRunStatus,
-          ...(allErrors.length ? { errorSummary: allErrors.join('\n') } : {}),
-        });
-      } catch (telemetryError: any) {
-        this.strapi.log.error(`[pipeline] Cannot finish parser telemetry ${runId}: ${telemetryError?.message || telemetryError}`);
+      if (!await this.finishParserTelemetry(runId, parserRunStatus, allErrors.length ? allErrors.join('\n') : undefined)) {
+        await this.blockLifecycle('Pipeline telemetry requires operator recovery', ['Не удалось завершить telemetry pipeline.']);
+        return;
       }
-      broadcastSSE('done', await this.getState());
+      if (!await this.persistTerminalState(
+        this.isCancelled()
+          ? { status: 'idle', stage: 'cancelled', errors: allErrors }
+          : allErrors.length > 0
+            ? { status: 'idle', stage: 'done_with_errors', errors: allErrors }
+            : { status: 'idle', stage: 'done', errors: [] },
+        this.isCancelled()
+          ? 'Пайплайн отменён'
+          : allErrors.length > 0
+            ? 'Пайплайн завершён с ошибками'
+            : '✓ Пайплайн завершён',
+      )) return;
+      broadcastSSE('done', sanitizePipelineState(await this.getState()));
       releaseLifecycle = true;
     } catch (err: any) {
-      allErrors.push(`Pipeline: ${err.message}`);
-      if (!await this.waitForRunJobsToSettle(runId, `Ошибка pipeline: ${err.message}; ожидаем terminal states задач`)) return;
+      const safeMessage = this.safeExecutionMessage(err);
+      allErrors.push(safeMessage);
+      if (!await this.waitForRunJobsToSettle(runId, `${safeMessage}; ожидаем terminal states задач`)) return;
       const cancelled = this.isCancelled();
-      await this.updateState({
+      parserRunStatus = cancelled ? 'cancelled' : 'failed';
+      if (!await this.finishParserTelemetry(runId, parserRunStatus, allErrors.join('\n'))) {
+        await this.blockLifecycle('Pipeline telemetry requires operator recovery', ['Не удалось завершить telemetry pipeline.']);
+        return;
+      }
+      if (!await this.persistTerminalState({
         status: 'idle',
         stage: cancelled ? 'cancelled' : 'error',
         errors: allErrors,
-      }, cancelled ? 'Пайплайн отменён' : `Ошибка: ${err.message}`);
-      parserRunStatus = cancelled ? 'cancelled' : 'failed';
-      try {
-        await createParserRunTelemetry(this.strapi).finishParserRun({
-          runId,
-          status: parserRunStatus,
-          errorSummary: allErrors.join('\n'),
-        });
-      } catch (telemetryError: any) {
-        this.strapi.log.error(`[pipeline] Cannot finish parser telemetry ${runId}: ${telemetryError?.message || telemetryError}`);
-      }
-      broadcastSSE(cancelled ? 'done' : 'error', await this.getState());
+      }, cancelled ? 'Пайплайн отменён' : safeMessage)) return;
+      broadcastSSE(cancelled ? 'done' : 'error', sanitizePipelineState(await this.getState()));
       releaseLifecycle = true;
     } finally {
+      this.handlerActive = false;
       if (releaseLifecycle && this.activeRunId === runId) {
         this.activeRunId = null;
         this.activeParserRunId = null;
+        this.activeFilterSnapshot = null;
         this.cancelRequestedRunId = null;
         this.activeJobIds.clear();
         this.cancellationRequestedJobIds.clear();
@@ -285,6 +512,10 @@ export class PipelineService implements PipelineContext {
   getParserRunId(): number {
     if (!this.activeParserRunId) throw new Error('Parser run telemetry is not active');
     return this.activeParserRunId;
+  }
+
+  getFilterSnapshot(): UserFilterSnapshot | null {
+    return this.activeFilterSnapshot;
   }
 
   async recordJobIds(ids: number[]): Promise<void> {
@@ -306,7 +537,7 @@ export class PipelineService implements PipelineContext {
     if (!runId) throw new Error('Pipeline run is not active');
 
     this.cancelRequestedRunId = runId;
-    await this.updateState({ status: 'cancelling' }, message);
+    await updateState(this.strapi, { status: 'cancelling' }, message, true);
 
     const qs = getQueueService();
     for (const id of new Set(jobIds)) {
@@ -315,7 +546,7 @@ export class PipelineService implements PipelineContext {
       try {
         job = qs.getJob(id);
       } catch (err: any) {
-        this.strapi.log.warn(`[pipeline] Failed to inspect job ${id} before cancellation: ${err?.message || err}`);
+        this.strapi.log.warn(`[pipeline] Failed to inspect job ${id} before cancellation`);
         continue;
       }
       // Never send a cancellation request to terminal work. This is essential
@@ -327,7 +558,7 @@ export class PipelineService implements PipelineContext {
       try {
         qs.requestCancellation(id);
       } catch (err: any) {
-        this.strapi.log.warn(`[pipeline] Failed to request cancellation for job ${id}: ${err?.message || err}`);
+        this.strapi.log.warn(`[pipeline] Failed to request cancellation for job ${id}`);
       }
     }
   }
@@ -363,8 +594,11 @@ export class PipelineService implements PipelineContext {
         throw new Error(`не найдены сохранённые jobs: ${snapshot.missingJobIds.join(', ')}`);
       }
       if (!snapshot.liveJobIds.length) {
-        await this.updateState({ status: 'idle', stage: 'cancelled' }, 'Пайплайн отменён после восстановления API');
-        broadcastSSE('done', await this.getState());
+        if (!await this.persistTerminalState({ status: 'idle', stage: 'cancelled' }, 'Пайплайн отменён после восстановления API')) {
+          await this.blockLifecycle('Recovery requires operator reset', ['Не удалось завершить восстановленный pipeline.']);
+          return;
+        }
+        broadcastSSE('done', sanitizePipelineState(await this.getState()));
         this.releaseRecoveredLifecycle(runId);
         return;
       }
@@ -377,18 +611,26 @@ export class PipelineService implements PipelineContext {
   private async publishRecoveryError(runId: string | null, reason: string): Promise<void> {
     const state = await this.getState();
     if (runId && state.run_id !== runId) return;
-    await this.updateState({
-      status: 'cancelling',
-      stage: 'error',
-      errors: [...state.errors, `Recovery: ${reason}`],
-    }, reason);
-    broadcastSSE('error', await this.getState());
+    try {
+      await updateState(this.strapi, {
+        status: 'cancelling',
+        stage: 'error',
+        errors: [...state.errors, `Recovery: ${reason}`],
+      }, reason, true);
+    } catch {
+      this.strapi.log.error('[pipeline] Recovery error state persistence failed; lifecycle lock retained');
+      return;
+    }
+    broadcastSSE('error', sanitizePipelineState(await this.getState()));
     if (runId) this.releaseRecoveredLifecycle(runId);
   }
 
   private releaseRecoveredLifecycle(runId: string): void {
     if (this.activeRunId !== runId) return;
     this.activeRunId = null;
+    this.handlerActive = false;
+    this.activeParserRunId = null;
+    this.activeFilterSnapshot = null;
     this.cancelRequestedRunId = null;
     this.activeJobIds.clear();
     this.cancellationRequestedJobIds.clear();
@@ -403,7 +645,7 @@ export class PipelineService implements PipelineContext {
       const jobIds = [...new Set([...state.job_ids, ...this.activeJobIds])];
       return this.recordedJobSnapshot(jobIds);
     } catch (err: any) {
-      this.strapi.log.error(`[pipeline] Cannot inspect jobs for run ${runId}: ${err?.message || err}`);
+      this.strapi.log.error(`[pipeline] Cannot inspect jobs for run ${runId}`);
       return null;
     }
   }
@@ -416,11 +658,11 @@ export class PipelineService implements PipelineContext {
   private async waitForRunJobsToSettle(runId: string, message: string): Promise<boolean> {
     let snapshot = await this.currentRunJobSnapshot(runId);
     if (snapshot === null) {
-      await this.updateState({ status: 'cancelling' }, `${message}; не удалось проверить состояние очереди, lifecycle lock сохранён`);
+      await updateState(this.strapi, { status: 'cancelling' }, `${message}; не удалось проверить состояние очереди, lifecycle lock сохранён`, true);
       return false;
     }
     if (snapshot.missingJobIds.length) {
-      await this.updateState({ status: 'cancelling' }, `${message}; не найдены recorded jobs (${snapshot.missingJobIds.join(', ')}), lifecycle lock сохранён`);
+      await updateState(this.strapi, { status: 'cancelling' }, `${message}; не найдены recorded jobs (${snapshot.missingJobIds.join(', ')}), lifecycle lock сохранён`, true);
       return false;
     }
     if (!snapshot.liveJobIds.length) return true;
@@ -430,11 +672,11 @@ export class PipelineService implements PipelineContext {
       await new Promise<void>(resolve => setTimeout(resolve, 1_000));
       snapshot = await this.currentRunJobSnapshot(runId);
       if (snapshot === null) {
-        await this.updateState({ status: 'cancelling' }, `${message}; не удалось проверить состояние очереди, lifecycle lock сохранён`);
+        await updateState(this.strapi, { status: 'cancelling' }, `${message}; не удалось проверить состояние очереди, lifecycle lock сохранён`, true);
         return false;
       }
       if (snapshot.missingJobIds.length) {
-        await this.updateState({ status: 'cancelling' }, `${message}; не найдены recorded jobs (${snapshot.missingJobIds.join(', ')}), lifecycle lock сохранён`);
+        await updateState(this.strapi, { status: 'cancelling' }, `${message}; не найдены recorded jobs (${snapshot.missingJobIds.join(', ')}), lifecycle lock сохранён`, true);
         return false;
       }
       if (!snapshot.liveJobIds.length) return true;
@@ -461,13 +703,13 @@ export class PipelineService implements PipelineContext {
     // Bootstrap normally claims this lifecycle through recoverAfterRestart(). Keep
     // a safe fallback for a cancel request racing bootstrap: inspect only durable,
     // run-owned ids and request cancellation only while they are nonterminal.
-    await this.updateState({ status: 'cancelling' }, 'Отмена запрошена: ожидаем завершения активных задач');
+    await updateState(this.strapi, { status: 'cancelling' }, 'Отмена запрошена: ожидаем завершения активных задач', true);
     try {
       const snapshot = this.recordedJobSnapshot([...ids]);
       const qs = getQueueService();
       for (const id of snapshot.liveJobIds) qs.requestCancellation(id);
     } catch (err: any) {
-      this.strapi.log.warn(`[pipeline] Failed to request cancellation for persisted run ${runId}: ${err?.message || err}`);
+      this.strapi.log.warn(`[pipeline] Failed to request cancellation for persisted run ${runId}`);
     }
   }
 
@@ -477,12 +719,21 @@ export class PipelineService implements PipelineContext {
    */
   async forceReset(): Promise<void> {
     const state = await this.getState();
+    if (!state.run_id && this.activeRunId) {
+      throw new Error('Нельзя сбросить pipeline: durable lifecycle не подтверждён.');
+    }
+    if (state.run_id && this.activeRunId && this.activeRunId !== state.run_id) {
+      throw new Error('Нельзя сбросить pipeline: другой lifecycle всё ещё активен.');
+    }
+    if (state.run_id && (this.handlerActive || this.recoveringRunId === state.run_id)) {
+      throw new Error('Нельзя сбросить активный pipeline: дождитесь terminal jobs или отмените запуск');
+    }
     if (state.job_ids.length) {
       let snapshot;
       try {
         snapshot = this.recordedJobSnapshot(state.job_ids);
-      } catch (err: any) {
-        throw new Error(`Нельзя безопасно сбросить pipeline: не удалось проверить recorded jobs (${err?.message || err})`);
+      } catch {
+        throw new Error('Нельзя безопасно сбросить pipeline: не удалось проверить recorded jobs.');
       }
       if (snapshot.liveJobIds.length) {
         throw new Error('Нельзя сбросить активный pipeline: дождитесь terminal jobs или отмените запуск');
@@ -492,9 +743,10 @@ export class PipelineService implements PipelineContext {
       }
     }
     // An operator reset is the only escape hatch for irrecoverable recovery
-    // state. Stop its background finalizer and release its reconstituted lock.
-    if (state.run_id && this.recoveringRunId === state.run_id) this.releaseRecoveredLifecycle(state.run_id);
+    // state. Reset durable state first; only then stop its finalizer/release its lock.
     await this.resetState();
+    if (state.run_id && this.recoveringRunId === state.run_id) this.releaseRecoveredLifecycle(state.run_id);
+    if (state.run_id && this.activeRunId === state.run_id) this.releaseLifecycle(state.run_id);
   }
 
   isCancelled(): boolean {
@@ -503,12 +755,12 @@ export class PipelineService implements PipelineContext {
 
   // ── Stage delegates ────────────────────────────────────────────────────────
 
-  async parseAll(depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
-    return parseAll(this, depth, filters);
+  async parseAll(depth: number): Promise<{ created: number; errors: string[] }> {
+    return parseAll(this, depth);
   }
 
-  async analyze(filters?: RunOptions['filters']): Promise<{ undervalued: number; errors: string[] }> {
-    return analyze(this, filters);
+  async analyze(): Promise<{ undervalued: number; errors: string[] }> {
+    return analyze(this);
   }
 
   async digest(): Promise<{ sent: boolean; errors: string[] }> {

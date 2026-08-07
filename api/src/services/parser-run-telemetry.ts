@@ -1,4 +1,7 @@
+import { canonicalJson, type UserFilterSnapshot } from '@aklab/parse-rules';
+
 type ParserStage = 'scan' | 'details';
+export type ParserRunProfileScope = 'all' | 'single' | 'none';
 type SourceStageStatus =
   | 'queued'
   | 'running'
@@ -59,6 +62,16 @@ const ZERO_COUNTERS: StageCounters = {
   failed: 0,
 };
 
+export class ParserRunSnapshotConflictError extends Error {
+  readonly code = 'PARSER_RUN_SNAPSHOT_CONFLICT';
+
+  constructor() {
+    super('Parser run filter snapshot is already persisted with different metadata.');
+    this.name = 'ParserRunSnapshotConflictError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 function identityKey(runId: string, sourceSlug: string, stage: ParserStage): string {
   return `${runId}:${sourceSlug}:${stage}`;
 }
@@ -67,6 +80,20 @@ function assertOwned(row: any, jobId: number, key: string): void {
   if (!row) throw new Error(`Telemetry row does not exist: ${key}`);
   if (Number(row.job_id) !== jobId) {
     throw new Error(`Queue job ${jobId} does not own telemetry row ${key}`);
+  }
+}
+
+function decodeStoredSnapshot(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function sameSnapshot(left: unknown, right: UserFilterSnapshot | null): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  try {
+    return canonicalJson(decodeStoredSnapshot(left)) === canonicalJson(right);
+  } catch {
+    return false;
   }
 }
 
@@ -93,6 +120,76 @@ export function createParserRunTelemetry(strapi: any) {
           started_at: new Date().toISOString(),
         },
       });
+    },
+
+    /**
+     * Persist the one immutable snapshot selected for a parser run. The first
+     * successful call wins; retries may only repeat the exact same metadata.
+     */
+    async ensureParserRunSnapshot({ runId, profileScope, targetUserId, snapshot }: {
+      runId: string;
+      profileScope: ParserRunProfileScope;
+      targetUserId?: number;
+      snapshot: UserFilterSnapshot | null;
+    }) {
+      const existing = await parserRuns().findOne({ where: { run_id: runId } });
+      if (!existing) throw new Error(`Parser run does not exist: ${runId}`);
+
+      const expectedTarget = profileScope === 'single' ? targetUserId : undefined;
+      const hasMetadata = existing.profile_scope != null
+        || existing.filter_snapshot_hash != null
+        || existing.filter_snapshot_schema_version != null
+        || existing.filter_snapshot != null
+        || existing.target_user_id != null;
+      const matches = existing.profile_scope === profileScope
+        && (expectedTarget === undefined
+          ? existing.target_user_id == null
+          : Number(existing.target_user_id) === expectedTarget)
+        && (existing.filter_snapshot_hash ?? null) === (snapshot?.hash ?? null)
+        && (existing.filter_snapshot_schema_version ?? null) === (snapshot?.schemaVersion ?? null)
+        && sameSnapshot(existing.filter_snapshot ?? null, snapshot);
+
+      if (hasMetadata) {
+        if (!matches) throw new ParserRunSnapshotConflictError();
+        return existing;
+      }
+
+      const firstWrite = await parserRuns().update({
+        // Conditional update makes the first metadata write atomic across API
+        // processes. A find-then-unconditional-update would let two builders
+        // overwrite each other's immutable snapshot.
+        where: {
+          id: existing.id,
+          profile_scope: null,
+          target_user_id: null,
+          filter_snapshot: null,
+          filter_snapshot_hash: null,
+          filter_snapshot_schema_version: null,
+        },
+        data: {
+          profile_scope: profileScope,
+          ...(expectedTarget === undefined ? {} : { target_user_id: expectedTarget }),
+          filter_snapshot: snapshot,
+          filter_snapshot_hash: snapshot?.hash ?? null,
+          filter_snapshot_schema_version: snapshot?.schemaVersion ?? null,
+        },
+      });
+      if (firstWrite) return firstWrite;
+
+      // Another process won the conditional write. Re-read the winner and
+      // accept only an exact replay; otherwise fail closed without overwriting.
+      const winner = await parserRuns().findOne({ where: { run_id: runId } });
+      if (winner) {
+        const winnerMatches = winner.profile_scope === profileScope
+          && (expectedTarget === undefined
+            ? winner.target_user_id == null
+            : Number(winner.target_user_id) === expectedTarget)
+          && (winner.filter_snapshot_hash ?? null) === (snapshot?.hash ?? null)
+          && (winner.filter_snapshot_schema_version ?? null) === (snapshot?.schemaVersion ?? null)
+          && sameSnapshot(winner.filter_snapshot ?? null, snapshot);
+        if (winnerMatches) return winner;
+      }
+      throw new ParserRunSnapshotConflictError();
     },
 
     async finishParserRun({ runId, status, errorSummary }: {

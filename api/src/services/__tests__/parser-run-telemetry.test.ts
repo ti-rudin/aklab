@@ -139,6 +139,89 @@ describe('parser run telemetry', () => {
     });
   });
 
+  it('persists immutable filter snapshot metadata and rejects a conflicting overwrite', async () => {
+    const snapshot = {
+      schemaVersion: 1,
+      scope: 'single',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      windowEndAt: '2026-08-07T10:00:00.000Z',
+      profiles: [],
+      hash: 'a'.repeat(64),
+    } as any;
+    const update = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', profile_scope: 'single' });
+    const findOne = vi.fn()
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running' })
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running', profile_scope: 'single', filter_snapshot_hash: snapshot.hash, filter_snapshot_schema_version: 1, filter_snapshot: snapshot, target_user_id: 7 })
+      .mockResolvedValueOnce({ id: 3, run_id: 'run-1', status: 'running', profile_scope: 'single', filter_snapshot_hash: 'b'.repeat(64), filter_snapshot_schema_version: 1, filter_snapshot: { ...snapshot, hash: 'b'.repeat(64) }, target_user_id: 7 });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await telemetry.ensureParserRunSnapshot({
+      runId: 'run-1',
+      profileScope: 'single',
+      targetUserId: 7,
+      snapshot,
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 3,
+        profile_scope: null,
+        target_user_id: null,
+        filter_snapshot: null,
+        filter_snapshot_hash: null,
+        filter_snapshot_schema_version: null,
+      }),
+      data: expect.objectContaining({
+        profile_scope: 'single',
+        target_user_id: 7,
+        filter_snapshot: snapshot,
+        filter_snapshot_hash: snapshot.hash,
+        filter_snapshot_schema_version: 1,
+      }),
+    });
+
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).resolves.toBeDefined();
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).rejects.toThrow('snapshot');
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a concurrent conflicting snapshot after the conditional first write loses the race', async () => {
+    const first = { id: 3, run_id: 'run-1', status: 'running' };
+    const winner = {
+      id: 3,
+      run_id: 'run-1',
+      profile_scope: 'single',
+      target_user_id: 8,
+      filter_snapshot_hash: 'b'.repeat(64),
+      filter_snapshot_schema_version: 1,
+      filter_snapshot: { schemaVersion: 1, scope: 'single', profiles: [], hash: 'b'.repeat(64) },
+    };
+    const findOne = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(winner);
+    const update = vi.fn().mockResolvedValue(null);
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+    const snapshot = {
+      schemaVersion: 1,
+      scope: 'single',
+      createdAt: '2026-08-07T10:00:00.000Z',
+      windowEndAt: '2026-08-07T10:00:00.000Z',
+      profiles: [],
+      hash: 'a'.repeat(64),
+    } as any;
+
+    await expect(telemetry.ensureParserRunSnapshot({
+      runId: 'run-1', profileScope: 'single', targetUserId: 7, snapshot,
+    })).rejects.toThrow('snapshot');
+    expect(findOne).toHaveBeenCalledTimes(2);
+  });
+
   it('reconciles a worker success to the queue terminal failure for the same job', async () => {
     const update = vi.fn().mockResolvedValue({ id: 7, status: 'cancelled' });
     const telemetry = createParserRunTelemetry({

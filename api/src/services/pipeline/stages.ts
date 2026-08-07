@@ -8,8 +8,7 @@ import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
 import { createParserRunTelemetry } from '../parser-run-telemetry';
 import { scorePropertiesBatch } from '../focusEngine';
-import { buildParseRules } from '../parseRules';
-import type { RunOptions } from './state';
+import type { UserFilterSnapshot } from '../user-profile';
 import { updateState } from './state';
 
 export interface PipelineContext {
@@ -19,6 +18,8 @@ export interface PipelineContext {
   requestCancellation(jobIds: number[], message: string): Promise<void>;
   getRunId(): string;
   getParserRunId(): number;
+  /** The one immutable snapshot selected during lifecycle preflight. */
+  getFilterSnapshot(): UserFilterSnapshot | null;
   recordJobIds(ids: number[]): Promise<void>;
   getSourceStats(slugs: string[]): Promise<any[]>;
 }
@@ -144,18 +145,23 @@ async function reconcileQueueFailures(
         errorMessage,
       });
     } catch (error: any) {
-      ctx.strapi.log.error(`[pipeline] Cannot reconcile ${stage} telemetry job ${job.id}: ${error?.message || error}`);
+      ctx.strapi.log.error(`[pipeline] Cannot reconcile ${stage} telemetry job`);
     }
   }
 }
 
 // ── Parse ───────────────────────────────────────────────────────────────────
 
-export async function parseAll(ctx: PipelineContext, depth: number, filters?: RunOptions['filters']): Promise<{ created: number; errors: string[] }> {
+export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ created: number; errors: string[] }> {
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
   const scanArtifactId = `scan-${runId}`; // trace/artifact identifier, not idempotency
+  const filterSnapshot = ctx.getFilterSnapshot();
+  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
+    await updateState(ctx.strapi, { stage: 'parsing_done', sources_total: 0, sources_done: 0 }, 'Парсинг пропущен — нет готовых профилей');
+    return { created: 0, errors };
+  }
 
   const sources = await ctx.strapi.entityService.findMany('api::source.source', {
     filters: { is_active: true },
@@ -176,11 +182,6 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
     objects_created: 0,
   }, `Фаза 1: сканирование... (0/${total})`);
 
-  const settings = await ctx.strapi.db.query('api::setting.setting').findOne({});
-  const rules = buildParseRules(settings);
-  if (filters?.priceFrom != null) rules.priceFrom = filters.priceFrom;
-  if (filters?.priceTo != null) rules.priceTo = filters.priceTo;
-  if (filters?.city?.length) rules.cities = filters.city;
 
   const scanJobs: Array<{ slug: string; id: number }> = [];
   const telemetry = createParserRunTelemetry(ctx.strapi);
@@ -200,7 +201,8 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       sourceId: src.id,
       documentId: src.documentId,
       depth,
-      rules,
+      filterSnapshot,
+      filterSnapshotHash: filterSnapshot.hash,
       correlationId: scanArtifactId,
       phase: 'scan',
       telemetryIdentityKey: `${runId}:${src.slug}:scan`,
@@ -261,7 +263,8 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
       sourceId: src.id,
       documentId: src.documentId,
       depth,
-      rules,
+      filterSnapshot,
+      filterSnapshotHash: filterSnapshot.hash,
       correlationId: scanArtifactId,
       phase: 'details',
       telemetryIdentityKey: `${runId}:${slug}:details`,
@@ -304,32 +307,17 @@ export async function parseAll(ctx: PipelineContext, depth: number, filters?: Ru
 
 // ── Analyze ─────────────────────────────────────────────────────────────────
 
-export async function analyze(ctx: PipelineContext, filters?: RunOptions['filters']): Promise<{ undervalued: number; errors: string[] }> {
+export async function analyze(ctx: PipelineContext): Promise<{ undervalued: number; errors: string[] }> {
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
+  const filterSnapshot = ctx.getFilterSnapshot();
+  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
+    await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет готовых профилей');
+    return { undervalued: 0, errors };
+  }
 
   const analysisWhere: any = { status: 'new', is_undervalued: { $null: true } };
-  if (filters?.priceFrom != null && !isNaN(filters.priceFrom)) analysisWhere.price = { ...(analysisWhere.price || {}), $gte: filters.priceFrom };
-  if (filters?.priceTo != null && !isNaN(filters.priceTo)) analysisWhere.price = { ...(analysisWhere.price || {}), $lte: filters.priceTo };
-  if (filters?.city?.length) analysisWhere.city = { $in: filters.city };
-
-  if (filters?.force) {
-    // `analysisWhere` intentionally selects only unanalysed candidates. Force
-    // must first reset the same filtered status='new' set without that null
-    // predicate, then query fresh analysis candidates after the reset.
-    const resetWhere = { ...analysisWhere };
-    delete resetWhere.is_undervalued;
-    if (ctx.isCancelled()) return { undervalued: 0, errors };
-    const toReset = await ctx.strapi.db.query('api::property.property').findMany({ where: resetWhere, select: ['documentId'] });
-    for (const prop of toReset || []) {
-      if (ctx.isCancelled()) return { undervalued: 0, errors };
-      await ctx.strapi.db.query('api::property.property').update({
-        where: { documentId: prop.documentId },
-        data: { is_undervalued: null, deviation: null, price_per_sqm_ref: null },
-      });
-    }
-  }
 
   if (ctx.isCancelled()) return { undervalued: 0, errors };
   const properties = await ctx.strapi.entityService.findMany('api::property.property', { filters: analysisWhere, limit: -1 });
@@ -346,7 +334,6 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
     const documentId = (prop as any).documentId;
     const job = qs.addToQueue('analyze-property', {
       documentId,
-      threshold: filters?.threshold,
     }, {
       correlationId: `analyze-${runId}`,
       idempotencyKey: `${runId}:${documentId}:analyze`,
@@ -364,15 +351,10 @@ export async function analyze(ctx: PipelineContext, filters?: RunOptions['filter
 
   try {
     await updateState(ctx.strapi, { message: 'Расчёт focus score...' });
-    await scorePropertiesBatch({
-      city: filters?.city,
-      priceFrom: filters?.priceFrom,
-      priceTo: filters?.priceTo,
-      threshold: filters?.threshold,
-    });
+    await scorePropertiesBatch();
   } catch (err: any) {
-    errors.push(`Score: ${err.message}`);
-    ctx.strapi.log.error(`[pipeline] Score error: ${err.message}`);
+    errors.push('Score: расчёт focus score завершился ошибкой');
+    ctx.strapi.log.error('[pipeline] Score calculation failed');
   }
 
   const undervaluedRows = await ctx.strapi.db.query('api::property.property').findMany({
@@ -395,6 +377,11 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   const qs = getQueueService();
   const errors: string[] = [];
   const runId = ctx.getRunId();
+  const filterSnapshot = ctx.getFilterSnapshot();
+  if (!filterSnapshot || filterSnapshot.profiles.length === 0) {
+    await updateState(ctx.strapi, { stage: 'digest_done' }, 'Дайджест пропущен — нет готовых профилей');
+    return { sent: false, errors };
+  }
   const setting = await ctx.strapi.db.query('api::setting.setting').findOne({});
   if (setting?.digest_enabled === false) {
     await updateState(ctx.strapi, { stage: 'digest_done' }, 'Дайджест отключён в настройках');

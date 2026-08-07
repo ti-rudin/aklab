@@ -7,6 +7,7 @@
 
 import type { StrapiInstance } from '../../types/strapi';
 import { broadcastSSE } from '../pipeline-sse';
+import type { UserFilterSnapshot } from '../user-profile';
 
 // ── Types ──
 
@@ -48,18 +49,30 @@ export interface PipelineState {
   errors: string[];
   started_at: string;
   updated_at: string;
+  /** Private, run-scoped immutable filter snapshot. Never expose through API/SSE. */
+  filter_snapshot: UserFilterSnapshot | null;
+  filter_snapshot_hash: string | null;
+  filter_snapshot_scope: 'all' | 'single' | 'none' | null;
+  filter_snapshot_schema_version: number | null;
+  filter_snapshot_window_end_at: string | null;
 }
 
-export interface RunOptions {
-  depth?: number;
-  filters?: {
-    priceFrom?: number;
-    priceTo?: number;
-    city?: string[];
-    threshold?: number;
-    force?: boolean;
-  };
-  trigger?: 'manual' | 'cron';
+export type SanitizedPipelineState = Omit<PipelineState, 'filter_snapshot'>;
+
+export class PipelineDepthError extends Error {
+  readonly code = 'PIPELINE_INPUT_INVALID';
+
+  constructor() {
+    super('Pipeline depth must be an integer from 1 to 1000.');
+    this.name = 'PipelineDepthError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+export function validateDepth(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 1000) {
+    throw new PipelineDepthError();
+  }
 }
 
 // ── Helpers ──
@@ -83,6 +96,57 @@ export function emptyState(): PipelineState {
     errors: [],
     started_at: '',
     updated_at: '',
+    filter_snapshot: null,
+    filter_snapshot_hash: null,
+    filter_snapshot_scope: null,
+    filter_snapshot_schema_version: null,
+    filter_snapshot_window_end_at: null,
+  };
+}
+
+function unreadableState(): PipelineState {
+  const state = emptyState();
+  const message = 'Состояние pipeline не удалось прочитать; требуется восстановление.';
+  return {
+    ...state,
+    status: 'cancelling',
+    stage: 'error',
+    message,
+    errors: [message],
+  };
+}
+
+/**
+ * Public/admin state representation. The full snapshot is intentionally kept
+ * only in the private Setting JSON and parser_run audit row.
+ */
+export function sanitizePipelineState(state: PipelineState): SanitizedPipelineState {
+  // Do not spread the private state here. Besides the immutable snapshot and
+  // target id, a stale/forward-compatible state row may contain additional
+  // private fields. Clone the two mutable collections as well: callers of the
+  // controller/SSE boundary must not be able to mutate the private state graph.
+  return {
+    run_id: state.run_id,
+    job_ids: Array.isArray(state.job_ids) ? [...state.job_ids] : [],
+    status: state.status,
+    stage: state.stage,
+    message: state.message,
+    trigger: state.trigger,
+    sources_total: state.sources_total,
+    sources_done: state.sources_done,
+    details_fetched: state.details_fetched,
+    details_needed: state.details_needed,
+    analyze_total: state.analyze_total,
+    analyze_done: state.analyze_done,
+    undervalued_count: state.undervalued_count,
+    objects_created: state.objects_created,
+    errors: Array.isArray(state.errors) ? [...state.errors] : [],
+    started_at: state.started_at,
+    updated_at: state.updated_at,
+    filter_snapshot_hash: state.filter_snapshot_hash,
+    filter_snapshot_scope: state.filter_snapshot_scope,
+    filter_snapshot_schema_version: state.filter_snapshot_schema_version,
+    filter_snapshot_window_end_at: state.filter_snapshot_window_end_at,
   };
 }
 
@@ -102,13 +166,25 @@ export async function getState(strapi: StrapiInstance): Promise<PipelineState> {
         ...stored,
         run_id: stored?.run_id ?? null,
         job_ids: Array.isArray(stored?.job_ids) ? stored.job_ids : [],
+        filter_snapshot: stored?.filter_snapshot ?? null,
+        filter_snapshot_hash: stored?.filter_snapshot_hash ?? null,
+        filter_snapshot_scope: stored?.filter_snapshot_scope ?? null,
+        filter_snapshot_schema_version: stored?.filter_snapshot_schema_version ?? null,
+        filter_snapshot_window_end_at: stored?.filter_snapshot_window_end_at ?? null,
       };
     }
-  } catch { /* ok */ }
+  } catch {
+    return unreadableState();
+  }
   return emptyState();
 }
 
-export async function updateState(strapi: StrapiInstance, patch: Partial<PipelineState>, message?: string): Promise<void> {
+export async function updateState(
+  strapi: StrapiInstance,
+  patch: Partial<PipelineState>,
+  message?: string,
+  failClosed = false,
+): Promise<void> {
   const current = await getState(strapi);
   // Prevent implicit status downgrade from 'running' to 'idle'
   // Only explicit status changes (via patch.status) can change it
@@ -130,9 +206,12 @@ export async function updateState(strapi: StrapiInstance, patch: Partial<Pipelin
         where: { id: setting.id },
         data: { pipeline_state: updated },
       });
+    } else if (failClosed) {
+      throw new Error('Pipeline setting row is missing.');
     }
   } catch (err: any) {
-    strapi.log.warn(`[pipeline] Failed to update state: ${err.message}`);
+    strapi.log.warn('[pipeline] Failed to update state persistence');
+    if (failClosed) throw new Error('Pipeline state persistence failed.');
   }
 
   // DEBUG: log status transitions
@@ -141,7 +220,7 @@ export async function updateState(strapi: StrapiInstance, patch: Partial<Pipelin
   }
 
   // SSE broadcast
-  broadcastSSE('progress', updated);
+  broadcastSSE('progress', sanitizePipelineState(updated));
 }
 
 /**
@@ -168,19 +247,16 @@ export async function tryAcquireIdleState(strapi: StrapiInstance, nextState: Pip
       : [];
   if (rows.length !== 1) return false;
 
-  broadcastSSE('progress', nextState);
+  broadcastSSE('progress', sanitizePipelineState(nextState));
   return true;
 }
 
 export async function resetState(strapi: StrapiInstance): Promise<void> {
-  try {
-    const setting = await strapi.db.query('api::setting.setting').findOne({});
-    if (setting) {
-      await strapi.db.query('api::setting.setting').update({
-        where: { id: setting.id },
-        data: { pipeline_state: null },
-      });
-    }
-  } catch { /* ok */ }
-  broadcastSSE('progress', emptyState());
+  const setting = await strapi.db.query('api::setting.setting').findOne({});
+  if (!setting) throw new Error('Pipeline setting row is missing.');
+  await strapi.db.query('api::setting.setting').update({
+    where: { id: setting.id },
+    data: { pipeline_state: null },
+  });
+  broadcastSSE('progress', sanitizePipelineState(emptyState()));
 }
