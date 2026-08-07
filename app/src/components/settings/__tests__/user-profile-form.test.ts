@@ -75,6 +75,7 @@ describe('user-profile-form contracts', () => {
     expect(() => profilePayload({ ...validDraft(), profile_version: 1, regions: ['moscow', 'invalid-region'] })).toThrow()
     expect(() => profilePayload({ ...validDraft(), profile_version: 1, price_from: 'not-a-number' })).toThrow()
     expect(() => normalizeStopWords([42])).toThrow()
+    expect(() => profilePayload({ ...validDraft(), profile_version: '1' })).toThrow()
   })
 
   it('serializes only the exact profile update body and strips protected DTO fields', () => {

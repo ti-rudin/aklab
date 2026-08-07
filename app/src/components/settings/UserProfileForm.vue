@@ -103,12 +103,13 @@ async function submit() {
     const payload = profilePayload({ ...draft.value, profile_version: profileVersion.value })
     const response = await api.put('/me/profile', { data: payload })
     const updated = responseProfile(response)
-    if (updated && Number.isSafeInteger(updated.profile_version)) {
-      profileVersion.value = updated.profile_version as number
-      draft.value = profileDraftFromDto(updated)
-    } else {
-      profileVersion.value += 1
-    }
+    if (
+      !updated
+      || !Number.isSafeInteger(updated.profile_version)
+      || (updated.profile_version as number) < profileVersion.value
+    ) throw new Error('Некорректный ответ профиля')
+    profileVersion.value = updated.profile_version as number
+    draft.value = profileDraftFromDto(updated)
     conflict.value = false
     saved.value = true
     await authStore.refreshContext()
@@ -117,7 +118,8 @@ async function submit() {
       conflict.value = true
       error.value = 'Профиль был изменён в другом окне; черновик не заменён'
     } else {
-      error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'Ошибка сохранения профиля'
+      error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message
+        || (cause instanceof Error ? cause.message : 'Ошибка сохранения профиля')
     }
   } finally {
     saving.value = false

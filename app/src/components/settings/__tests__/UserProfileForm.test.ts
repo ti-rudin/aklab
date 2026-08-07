@@ -83,4 +83,17 @@ describe('UserProfileForm', () => {
     expect(wrapper.text()).toContain('изменён')
     expect(wrapper.find('[data-testid="profile-reload"]').exists()).toBe(true)
   })
+
+  it('fails closed on a malformed update acknowledgement', async () => {
+    const wrapper = setup()
+    await flushPromises()
+    ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: { data: {} } })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(refreshContext).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Некорректный ответ профиля')
+    expect(wrapper.text()).not.toContain('Профиль сохранён')
+  })
 })

@@ -196,8 +196,8 @@ export function profilePayload(dto: ProfileInput): ProfileUpdatePayload {
   const error = validateProfileDraft(draft)
   if (error) throw new Error(error)
 
-  const expectedVersion = Number(dto.profile_version)
-  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+  const expectedVersion = dto.profile_version
+  if (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
     throw new Error('Некорректная версия профиля')
   }
 

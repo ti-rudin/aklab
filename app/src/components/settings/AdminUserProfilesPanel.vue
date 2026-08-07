@@ -4,6 +4,7 @@
     <p class="text-xs mb-6" style="color: var(--text-muted)">Администратор может изменить фильтры и дайджест выбранного пользователя. Учетные данные и роли здесь недоступны.</p>
 
     <div v-if="listError" class="mb-4 text-sm" style="color: #fca5a5">{{ listError }}</div>
+    <div v-if="error && !draft" class="mb-4 text-sm" style="color: #fca5a5">{{ error }}</div>
     <div v-if="listLoading" class="space-y-3">
       <div v-for="line in 3" :key="line" class="skeleton h-14 rounded-xl" />
     </div>
@@ -79,6 +80,7 @@ const saving = ref(false)
 const conflict = ref(false)
 const error = ref('')
 const listError = ref('')
+let requestGeneration = 0
 
 function profileFromResponse(response: unknown): Partial<ProfileDto> | null {
   const value = (response as { data?: { data?: unknown } })?.data?.data
@@ -102,36 +104,49 @@ async function loadUsers() {
   }
 }
 
-async function loadSelected(userId: number, replace = true) {
+async function loadSelected(userId: number, replace = true, generation = ++requestGeneration) {
   if (replace) profileLoading.value = true
   else reloading.value = true
   error.value = ''
   try {
     const response = await api.get(`/admin/user-profiles/${userId}`)
+    if (generation !== requestGeneration) return
     const profile = profileFromResponse(response)
-    if (!profile || !Number.isSafeInteger(profile.profile_version)) throw new Error('Некорректный ответ профиля')
+    if (!profile || profile.user_id !== userId || !Number.isSafeInteger(profile.profile_version)) {
+      throw new Error('Некорректный ответ профиля')
+    }
     selectedUserId.value = userId
     draft.value = profileDraftFromDto(profile)
     profileVersion.value = profile.profile_version as number
     conflict.value = false
   } catch (cause) {
-    error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'Не удалось загрузить профиль'
+    if (generation !== requestGeneration) return
+    draft.value = null
+    profileVersion.value = null
+    error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message
+      || (cause instanceof Error ? cause.message : 'Не удалось загрузить профиль')
   } finally {
-    profileLoading.value = false
-    reloading.value = false
+    if (generation === requestGeneration) {
+      profileLoading.value = false
+      reloading.value = false
+    }
   }
 }
 
 async function selectUser(userId: number) {
+  const generation = ++requestGeneration
   selectedUserId.value = userId
   draft.value = null
   profileVersion.value = null
   conflict.value = false
-  await loadSelected(userId)
+  await loadSelected(userId, true, generation)
 }
 
 async function reloadSelected() {
-  if (selectedUserId.value !== null) await loadSelected(selectedUserId.value, false)
+  if (selectedUserId.value !== null) {
+    const generation = ++requestGeneration
+    await loadSelected(selectedUserId.value, false, generation)
+  }
 }
 
 async function submit() {
@@ -144,26 +159,33 @@ async function submit() {
   }
 
   saving.value = true
+  const generation = requestGeneration
+  const userId = selectedUserId.value
   try {
     const payload = profilePayload({ ...draft.value, profile_version: profileVersion.value })
-    const response = await api.put(`/admin/user-profiles/${selectedUserId.value}`, { data: payload })
+    const response = await api.put(`/admin/user-profiles/${userId}`, { data: payload })
+    if (generation !== requestGeneration || selectedUserId.value !== userId) return
     const updated = profileFromResponse(response)
-    if (updated && Number.isSafeInteger(updated.profile_version)) {
-      profileVersion.value = updated.profile_version as number
-      draft.value = profileDraftFromDto(updated)
-    } else {
-      profileVersion.value += 1
-    }
+    if (
+      !updated
+      || updated.user_id !== userId
+      || !Number.isSafeInteger(updated.profile_version)
+      || (updated.profile_version as number) < profileVersion.value
+    ) throw new Error('Некорректный ответ профиля')
+    profileVersion.value = updated.profile_version as number
+    draft.value = profileDraftFromDto(updated)
     conflict.value = false
   } catch (cause) {
+    if (generation !== requestGeneration) return
     if (isVersionConflict(cause)) {
       conflict.value = true
       error.value = 'Профиль был изменён в другом окне; черновик не заменён'
     } else {
-      error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'Ошибка сохранения профиля'
+      error.value = (cause as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message
+        || (cause instanceof Error ? cause.message : 'Ошибка сохранения профиля')
     }
   } finally {
-    saving.value = false
+    if (generation === requestGeneration) saving.value = false
   }
 }
 

@@ -17,7 +17,7 @@
           max="100"
           step="any"
           :value="displayNumber(form.threshold_percent)"
-          :disabled="saving"
+          :disabled="saving || !loaded"
           class="w-full px-3 py-2 rounded-lg border text-sm"
           style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)"
           @input="setNumber('threshold_percent', ($event.target as HTMLInputElement).value)"
@@ -31,7 +31,7 @@
           data-testid="system-digest-time"
           type="time"
           :value="form.digest_time"
-          :disabled="saving"
+          :disabled="saving || !loaded"
           class="w-full px-3 py-2 rounded-lg border text-sm"
           style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)"
           @input="form.digest_time = ($event.target as HTMLInputElement).value"
@@ -48,7 +48,7 @@
           max="5000"
           step="1"
           :value="displayNumber(form.parse_depth)"
-          :disabled="saving"
+          :disabled="saving || !loaded"
           class="w-full px-3 py-2 rounded-lg border text-sm"
           style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)"
           @input="setNumber('parse_depth', ($event.target as HTMLInputElement).value)"
@@ -58,7 +58,7 @@
       <div class="flex items-center gap-3">
         <button
           type="submit"
-          :disabled="saving"
+          :disabled="saving || !loaded"
           class="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
           style="background: var(--accent)"
         >
@@ -82,14 +82,15 @@ type SystemForm = {
 }
 
 const form = reactive<SystemForm>({
-  threshold_percent: 20,
-  digest_time: '09:00',
-  parse_depth: 20,
+  threshold_percent: null,
+  digest_time: '',
+  parse_depth: null,
 })
 const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
+const loaded = ref(false)
 
 function setNumber(key: 'threshold_percent' | 'parse_depth', value: string) {
   form[key] = value.trim() === '' ? null : Number(value)
@@ -112,15 +113,29 @@ function validate(): string | null {
 
 async function load() {
   loading.value = true
+  loaded.value = false
   error.value = ''
   try {
     const response = await api.get('/setting')
     const data = response.data?.data || {}
-    form.threshold_percent = typeof data.threshold_percent === 'number' ? data.threshold_percent : 20
-    form.digest_time = typeof data.digest_time === 'string' ? data.digest_time : '09:00'
-    form.parse_depth = typeof data.parse_depth === 'number' ? data.parse_depth : 20
+    if (
+      typeof data.threshold_percent !== 'number'
+      || !Number.isFinite(data.threshold_percent)
+      || data.threshold_percent < 0
+      || data.threshold_percent > 100
+      || typeof data.digest_time !== 'string'
+      || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(data.digest_time)
+      || typeof data.parse_depth !== 'number'
+      || !Number.isInteger(data.parse_depth)
+      || data.parse_depth < 1
+      || data.parse_depth > 5000
+    ) throw new Error('Некорректный ответ системных настроек')
+    form.threshold_percent = data.threshold_percent
+    form.digest_time = data.digest_time
+    form.parse_depth = data.parse_depth
+    loaded.value = true
   } catch (cause: any) {
-    error.value = cause.response?.data?.error?.message || 'Не удалось загрузить системные настройки'
+    error.value = cause.response?.data?.error?.message || cause.message || 'Не удалось загрузить системные настройки'
   } finally {
     loading.value = false
   }
@@ -128,6 +143,10 @@ async function load() {
 
 async function submit() {
   saved.value = false
+  if (!loaded.value) {
+    error.value = error.value || 'Системные настройки не загружены'
+    return
+  }
   error.value = validate() || ''
   if (error.value) return
 

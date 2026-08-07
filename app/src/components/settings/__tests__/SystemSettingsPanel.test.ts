@@ -56,4 +56,17 @@ describe('SystemSettingsPanel', () => {
     await flushPromises()
     expect(api.put).not.toHaveBeenCalled()
   })
+
+  it('fails closed when the setting response has malformed exact fields', async () => {
+    ;(api.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { data: { threshold_percent: '20', digest_time: '09:00', parse_depth: 20 } },
+    })
+    const wrapper = mount(SystemSettingsPanel)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Некорректный ответ системных настроек')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.put).not.toHaveBeenCalled()
+  })
 })
