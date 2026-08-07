@@ -98,6 +98,7 @@ describe('multiuser smoke source boundary', () => {
     expect(source).not.toContain('pagination%5BpageSize%5D');
     expect(source).not.toContain("{ mode: 'full', targetUserId: sessions.userB.userId }");
     expect(source).not.toContain('row.document_id');
+    expect(source).toContain("uiClient.requestUrl(uiClient.origin, 'GET', { headers: { Accept: 'text/html' } })");
   });
 
   it('gates the Playwright acceptance spec on explicit multiuser test env', () => {
