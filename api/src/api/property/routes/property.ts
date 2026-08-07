@@ -19,12 +19,7 @@ export default {
       handler: 'property.upsert',
       config: { auth: false, policies: ['global::service-token'] },
     },
-    {
-      method: 'POST',
-      path: '/properties/clear-new',
-      handler: 'property.clearNew',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
-    },
+
     {
       method: 'GET',
       path: '/photos/:documentId/:filename',
@@ -41,13 +36,13 @@ export default {
       method: 'GET',
       path: '/properties/:id/geocode',
       handler: 'property.geocode',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'POST',
       path: '/properties/:id/fetch-photos',
       handler: 'property.fetchPhotos',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'GET',

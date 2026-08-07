@@ -2,7 +2,7 @@
  * property controller
  *
  * Тонкий контроллер: парсинг параметров → вызов service → ответ.
- * Кастомные эндпоинты: clearNew, servePhoto, getFocus, fetchPhotos.
+ * Кастомные эндпоинты: servePhoto, getFocus, fetchPhotos, geocode.
  */
 import { factories } from "@strapi/strapi";
 import * as path from "path";
@@ -132,6 +132,19 @@ function safePathSegment(value: unknown): value is string {
     && value !== '..';
 }
 
+function safeDocumentId(value: unknown): value is string {
+  return safePathSegment(value)
+    && value.length <= 256
+    && value === value.trim();
+}
+
+function finiteCoordinate(value: unknown): number {
+  if (value === null || value === undefined) return NaN;
+  if (typeof value === 'string' && value.trim() === '') return NaN;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 function scopeErrorResponse(ctx: any, error: unknown): void {
   if (error instanceof UserPropertyScopeValidationError) {
     ctx.status = 400;
@@ -195,15 +208,6 @@ export default factories.createCoreController("api::property.property", ({ strap
       }
       ctx.body = { data: property };
     });
-  },
-
-  /**
-   * POST /api/properties/clear-new
-   * Удалить все объекты кроме статуса "in_progress" (В работе).
-   */
-  async clearNew(ctx) {
-    const result = await strapi.service('api::property.property').clearNew();
-    ctx.body = result;
   },
 
   /**
@@ -335,41 +339,56 @@ export default factories.createCoreController("api::property.property", ({ strap
   },
 
   async fetchPhotos(ctx) {
-    const { id } = ctx.params;
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const id = ctx.params?.id;
+      if (!safeDocumentId(id)) {
+        throw new UserPropertyScopeValidationError();
+      }
 
-    const property = await strapi.db.query('api::property.property').findOne({
-      where: { documentId: id },
+      // The positive canonical predicate must run before the property read or queue side effect.
+      const visibleProperty = await repository.detail(userId, id, {});
+      if (visibleProperty === null) {
+        ctx.status = 404;
+        ctx.body = { error: 'Property not found' };
+        return;
+      }
+
+      const property = await strapi.db.query('api::property.property').findOne({
+        where: { documentId: id },
+      });
+
+      if (!property) {
+        ctx.status = 404;
+        ctx.body = { error: 'Property not found' };
+        return;
+      }
+
+      if (property.photos_downloaded) {
+        ctx.body = { queued: false, reason: 'already_downloaded', photos: property.photos };
+        return;
+      }
+
+      if (!property.url) {
+        ctx.body = { queued: false, reason: 'no_url' };
+        return;
+      }
+
+      try {
+        const qs = getQueueService();
+        qs.addToQueue('fetch-photos', {
+          documentId: property.documentId,
+          url: property.url,
+          source: property.source,
+        }, { correlationId: `photo-lazy-${property.documentId}` });
+
+        ctx.body = { queued: true };
+      } catch {
+        ctx.status = 500;
+        ctx.body = { error: 'Failed to queue photo fetch' };
+      }
     });
-
-    if (!property) {
-      ctx.status = 404;
-      ctx.body = { error: 'Property not found' };
-      return;
-    }
-
-    if (property.photos_downloaded) {
-      ctx.body = { queued: false, reason: 'already_downloaded', photos: property.photos };
-      return;
-    }
-
-    if (!property.url) {
-      ctx.body = { queued: false, reason: 'no_url' };
-      return;
-    }
-
-    try {
-      const qs = getQueueService();
-      qs.addToQueue('fetch-photos', {
-        documentId: property.documentId,
-        url: property.url,
-        source: property.source,
-      }, { correlationId: `photo-lazy-${property.documentId}` });
-
-      ctx.body = { queued: true };
-    } catch {
-      ctx.status = 500;
-      ctx.body = { error: 'Failed to queue photo fetch' };
-    }
   },
 
   /**
@@ -377,46 +396,68 @@ export default factories.createCoreController("api::property.property", ({ strap
    * Геокодирование объекта через Nominatim, кеширование в БД.
    */
   async geocode(ctx) {
-    const { id } = ctx.params;
-    const property = await strapi.db.query('api::property.property').findOne({
-      where: { documentId: id },
-    });
-    if (!property) {
-      ctx.status = 404;
-      ctx.body = { error: 'Property not found' };
-      return;
-    }
-    // Return cached coordinates if available
-    if (property.latitude && property.longitude) {
-      ctx.body = { latitude: property.latitude, longitude: property.longitude, cached: true };
-      return;
-    }
-    if (!property.address) {
-      ctx.status = 400;
-      ctx.body = { error: 'No address' };
-      return;
-    }
-    try {
-      const query = encodeURIComponent(property.address);
-      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
-        headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' }
-      });
-      const results = await resp.json() as any[];
-      if (results.length === 0) {
-        ctx.body = { latitude: null, longitude: null, cached: false };
+    await runScoped(ctx, async () => {
+      const repository = createUserPropertyScopeRepository(strapi);
+      const userId = actorId(ctx);
+      const id = ctx.params?.id;
+      if (!safeDocumentId(id)) {
+        throw new UserPropertyScopeValidationError();
+      }
+
+      // Scope-check before the property read, network call, and canonical cache write.
+      const visibleProperty = await repository.detail(userId, id, {});
+      if (visibleProperty === null) {
+        ctx.status = 404;
+        ctx.body = { error: 'Property not found' };
         return;
       }
-      const lat = parseFloat(results[0].lat);
-      const lng = parseFloat(results[0].lon);
-      // Cache in DB
-      await strapi.db.query('api::property.property').update({
+
+      const property = await strapi.db.query('api::property.property').findOne({
         where: { documentId: id },
-        data: { latitude: lat, longitude: lng },
       });
-      ctx.body = { latitude: lat, longitude: lng, cached: false };
-    } catch {
-      ctx.status = 500;
-      ctx.body = { error: 'Geocoding failed' };
-    }
+      if (!property) {
+        ctx.status = 404;
+        ctx.body = { error: 'Property not found' };
+        return;
+      }
+
+      const cachedLatitude = finiteCoordinate(property.latitude);
+      const cachedLongitude = finiteCoordinate(property.longitude);
+      if (Number.isFinite(cachedLatitude) && Number.isFinite(cachedLongitude)) {
+        ctx.body = { latitude: property.latitude, longitude: property.longitude, cached: true };
+        return;
+      }
+      if (!property.address) {
+        ctx.status = 400;
+        ctx.body = { error: 'No address' };
+        return;
+      }
+
+      try {
+        const query = encodeURIComponent(property.address);
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&accept-language=ru`, {
+          headers: { 'User-Agent': 'AKLAB/1.0 (monitoring@aklab.ru)' },
+        });
+        const results = await resp.json() as any[];
+        if (results.length === 0) {
+          ctx.body = { latitude: null, longitude: null, cached: false };
+          return;
+        }
+        const latitude = finiteCoordinate(results[0]?.lat);
+        const longitude = finiteCoordinate(results[0]?.lon);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          throw new Error('Invalid geocoder coordinates');
+        }
+
+        await strapi.db.query('api::property.property').update({
+          where: { documentId: id },
+          data: { latitude, longitude },
+        });
+        ctx.body = { latitude, longitude, cached: false };
+      } catch {
+        ctx.status = 500;
+        ctx.body = { error: 'Geocoding failed' };
+      }
+    });
   },
 }));

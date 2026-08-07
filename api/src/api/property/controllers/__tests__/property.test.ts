@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockCreateScopeRepository = vi.hoisted(() => vi.fn());
+const mockGetQueueService = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../services/user-property-scope', () => ({
   createUserPropertyScopeRepository: mockCreateScopeRepository,
@@ -9,6 +10,10 @@ vi.mock('../../../../services/user-property-scope', () => ({
   UserPropertyScopeMalformedError: class UserPropertyScopeMalformedError extends Error {},
   UserPropertyScopeUnavailableError: class UserPropertyScopeUnavailableError extends Error {},
   UserPropertyScopeQueryError: class UserPropertyScopeQueryError extends Error {},
+}));
+
+vi.mock('../../../../services/queueService', () => ({
+  getQueueService: mockGetQueueService,
 }));
 
 // --- Mock fs/promises ---
@@ -40,11 +45,11 @@ import propertyRoutes from '../../routes/property';
 function makeStrapi() {
   const mockService = {
     getFocusQuery: vi.fn(),
-    clearNew: vi.fn(),
     upsertByIdentity: vi.fn(),
   };
   const mockDbQuery = {
     findMany: vi.fn().mockResolvedValue([]),
+    findOne: vi.fn(),
     deleteMany: vi.fn(),
     update: vi.fn(),
   };
@@ -96,27 +101,9 @@ describe('property controller', () => {
     mockCreateScopeRepository.mockReturnValue(strapi._scopeRepository);
   });
 
-  // =================== clearNew ===================
-  describe('clearNew', () => {
-    it('should delegate to service.clearNew and return result', async () => {
-      const expectedResult = { deleted: 5, photosDeleted: 2 };
-      strapi._mockService.clearNew.mockResolvedValue(expectedResult);
-
-      const ctx = makeCtx();
-      await actions.clearNew(ctx);
-
-      expect(strapi.service).toHaveBeenCalledWith('api::property.property');
-      expect(strapi._mockService.clearNew).toHaveBeenCalled();
-      expect(ctx.body).toEqual(expectedResult);
-    });
-
-    it('should return 0 when nothing deleted', async () => {
-      strapi._mockService.clearNew.mockResolvedValue({ deleted: 0, photosDeleted: 0 });
-
-      const ctx = makeCtx();
-      await actions.clearNew(ctx);
-
-      expect(ctx.body).toEqual({ deleted: 0, photosDeleted: 0 });
+  describe('removed global cleanup action', () => {
+    it('does not expose clearNew from the controller', () => {
+      expect(actions.clearNew).toBeUndefined();
     });
   });
 
@@ -390,6 +377,105 @@ describe('property controller', () => {
     });
   });
 
+  describe('operational enrichment actions', () => {
+    it('returns 404 and performs no property read or network call when geocode scope denies access', async () => {
+      strapi._scopeRepository.detail.mockResolvedValue(null);
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'foreign' } });
+
+      await actions.geocode(ctx);
+
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'foreign', {});
+      expect(strapi.db.query).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(ctx.status).toBe(404);
+      expect(ctx.body).toEqual({ error: 'Property not found' });
+    });
+
+    it('checks scope before reading the property and calls geocoder before cache update', async () => {
+      const property = { documentId: 'doc123', address: 'Москва, Тверская 1', latitude: null, longitude: null };
+      strapi._mockDbQuery.findOne.mockResolvedValue(property);
+      const fetchMock = vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ lat: '55.75', lon: '37.61' }]),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'doc123' } });
+      await actions.geocode(ctx);
+
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'doc123', {});
+      expect(strapi._mockDbQuery.findOne).toHaveBeenCalledWith({ where: { documentId: 'doc123' } });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(strapi._mockDbQuery.update).toHaveBeenCalledWith({
+        where: { documentId: 'doc123' },
+        data: { latitude: 55.75, longitude: 37.61 },
+      });
+      expect(ctx.body).toEqual({ latitude: 55.75, longitude: 37.61, cached: false });
+      expect(strapi._scopeRepository.detail.mock.invocationCallOrder[0])
+        .toBeLessThan(strapi._mockDbQuery.findOne.mock.invocationCallOrder[0]);
+      expect(strapi._mockDbQuery.findOne.mock.invocationCallOrder[0])
+        .toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
+      expect(fetchMock.mock.invocationCallOrder[0])
+        .toBeLessThan(strapi._mockDbQuery.update.mock.invocationCallOrder[0]);
+    });
+
+    it('does not cache non-finite geocoder coordinates', async () => {
+      strapi._mockDbQuery.findOne.mockResolvedValue({
+        documentId: 'doc123', address: 'Москва, Тверская 1', latitude: null, longitude: null,
+      });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ lat: 'not-a-number', lon: '37.61' }]),
+      }));
+
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'doc123' } });
+      await actions.geocode(ctx);
+
+      expect(strapi._mockDbQuery.update).not.toHaveBeenCalled();
+      expect(ctx.status).toBe(500);
+      expect(ctx.body).toEqual({ error: 'Geocoding failed' });
+    });
+
+    it('returns 404 and performs no property read or queue work when fetch-photos scope denies access', async () => {
+      strapi._scopeRepository.detail.mockResolvedValue(null);
+      const queue = { addToQueue: vi.fn() };
+      mockGetQueueService.mockReturnValue(queue);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'foreign' } });
+
+      await actions.fetchPhotos(ctx);
+
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'foreign', {});
+      expect(strapi.db.query).not.toHaveBeenCalled();
+      expect(mockGetQueueService).not.toHaveBeenCalled();
+      expect(queue.addToQueue).not.toHaveBeenCalled();
+      expect(ctx.status).toBe(404);
+      expect(ctx.body).toEqual({ error: 'Property not found' });
+    });
+
+    it('checks scope before reading the property and queues fetch-photos only after visibility', async () => {
+      const property = {
+        documentId: 'doc123', photos_downloaded: false, url: 'https://source.test/lot', source: 'alfalot',
+      };
+      strapi._mockDbQuery.findOne.mockResolvedValue(property);
+      const queue = { addToQueue: vi.fn() };
+      mockGetQueueService.mockReturnValue(queue);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'doc123' } });
+
+      await actions.fetchPhotos(ctx);
+
+      expect(strapi._scopeRepository.detail).toHaveBeenCalledWith(7, 'doc123', {});
+      expect(strapi._mockDbQuery.findOne).toHaveBeenCalledWith({ where: { documentId: 'doc123' } });
+      expect(queue.addToQueue).toHaveBeenCalledWith('fetch-photos', {
+        documentId: 'doc123', url: property.url, source: property.source,
+      }, { correlationId: 'photo-lazy-doc123' });
+      expect(ctx.body).toEqual({ queued: true });
+      expect(strapi._scopeRepository.detail.mock.invocationCallOrder[0])
+        .toBeLessThan(strapi._mockDbQuery.findOne.mock.invocationCallOrder[0]);
+      expect(strapi._mockDbQuery.findOne.mock.invocationCallOrder[0])
+        .toBeLessThan(queue.addToQueue.mock.invocationCallOrder[0]);
+    });
+  });
+
 });
 
 describe('property internal route', () => {
@@ -400,5 +486,11 @@ describe('property internal route', () => {
       handler: 'property.internalUpdate',
       config: { auth: false, policies: ['global::service-token'] },
     });
+  });
+
+  it('does not expose the removed clearNew route', () => {
+    expect(propertyRoutes.routes).not.toContainEqual(expect.objectContaining({
+      method: 'POST', path: '/properties/clear-new', handler: 'property.clearNew',
+    }));
   });
 });

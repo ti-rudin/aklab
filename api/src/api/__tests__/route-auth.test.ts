@@ -117,19 +117,18 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
 const PROPERTY_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'property', method: 'PUT', path: '/internal/properties/:id', handler: 'property.internalUpdate', config: SERVICE_CONFIG },
   { resource: 'property', method: 'POST', path: '/properties/upsert', handler: 'property.upsert', config: SERVICE_CONFIG },
-  { resource: 'property', method: 'POST', path: '/properties/clear-new', handler: 'property.clearNew', config: ADMIN_CONFIG },
   { resource: 'property', method: 'GET', path: '/photos/:documentId/:filename', handler: 'property.servePhoto', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties/focus', handler: 'property.getFocus', config: USER_CONFIG },
-  { resource: 'property', method: 'GET', path: '/properties/:id/geocode', handler: 'property.geocode', config: ADMIN_CONFIG },
-  { resource: 'property', method: 'POST', path: '/properties/:id/fetch-photos', handler: 'property.fetchPhotos', config: ADMIN_CONFIG },
+  { resource: 'property', method: 'GET', path: '/properties/:id/geocode', handler: 'property.geocode', config: USER_CONFIG },
+  { resource: 'property', method: 'POST', path: '/properties/:id/fetch-photos', handler: 'property.fetchPhotos', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties/stats', handler: 'property.getStats', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties', handler: 'property.find', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties/:id', handler: 'property.findOne', config: USER_CONFIG },
 ];
 
 const PROPERTY_EVENT_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
-  { resource: 'property-event', method: 'GET', path: '/property-events', handler: 'property-event.find', config: ADMIN_CONFIG },
-  { resource: 'property-event', method: 'GET', path: '/property-events/:id', handler: 'property-event.findOne', config: ADMIN_CONFIG },
+  { resource: 'property-event', method: 'GET', path: '/me/properties/:documentId/events', handler: 'property-event.findMine', config: USER_CONFIG },
+  { resource: 'property-event', method: 'GET', path: '/me/properties/:documentId/events/:eventId', handler: 'property-event.findOneMine', config: USER_CONFIG },
 ];
 
 function routeKey(resource: string, route: Pick<RouteExpectation, 'method' | 'path'>): string {

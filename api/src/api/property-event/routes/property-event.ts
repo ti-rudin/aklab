@@ -1,21 +1,20 @@
 /**
- * property-event router
- *
- * Read-only: find + findOne. События создаются серверно через createEvent.
+ * User-scoped property-event router.
+ * Events are created server-side; no collection CRUD is exposed here.
  */
 export default {
   routes: [
     {
       method: 'GET',
-      path: '/property-events',
-      handler: 'property-event.find',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      path: '/me/properties/:documentId/events',
+      handler: 'property-event.findMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
     {
       method: 'GET',
-      path: '/property-events/:id',
-      handler: 'property-event.findOne',
-      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      path: '/me/properties/:documentId/events/:eventId',
+      handler: 'property-event.findOneMine',
+      config: { auth: false, policies: ['global::authenticated-user'] },
     },
   ],
 };
