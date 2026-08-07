@@ -111,6 +111,8 @@ describe('multiuser smoke source boundary', () => {
     expect(source).not.toContain('TEST_USER_EMAIL');
     expect(source).not.toContain('TEST_USER_PASSWORD');
     expect(source).toContain('E2E_ALLOW_PRODUCTION');
+    expect(source).toContain('assertProfilesDistinctWithOverlap');
+    expect(source).not.toContain('profilesAreIncompatible');
   });
 });
 
