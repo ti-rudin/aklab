@@ -127,6 +127,27 @@ function assertDigestCounters(counters: DigestCounters): void {
   }
 }
 
+const DIGEST_COUNTER_FIELDS = [
+  'digest_scheduled',
+  'digest_sent',
+  'digest_skipped',
+  'digest_failed',
+] as const;
+
+function storedDigestCounters(row: any): [number, number, number, number] {
+  const values = DIGEST_COUNTER_FIELDS.map(field => row?.[field] ?? 0);
+  if (values.some(value => typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Invalid persisted digest counters.');
+  }
+  return values as [number, number, number, number];
+}
+
+function sameDigestCounters(row: any, counters: DigestCounters): boolean {
+  const stored = storedDigestCounters(row);
+  const requested = [counters.scheduled, counters.sent, counters.skipped, counters.failed];
+  return stored.every((value, index) => value === requested[index]);
+}
+
 /** Run-scoped parser telemetry. Source remains a health summary, never a coordination record. */
 export function createParserRunTelemetry(strapi: any) {
   const sourceStages = () => strapi.db.query(SOURCE_STAGE_UID);
@@ -247,18 +268,22 @@ export function createParserRunTelemetry(strapi: any) {
       if (!existing) throw new Error('Parser run does not exist.');
       if (existing.status !== 'running') throw new Error('Parser run is not running.');
 
-      const samePersistedCounters = [
-        ['digest_scheduled', counters.scheduled],
-        ['digest_sent', counters.sent],
-        ['digest_skipped', counters.skipped],
-        ['digest_failed', counters.failed],
-      ].every(([field, value]) => existing[field] !== undefined && Number(existing[field]) === value);
-      if (samePersistedCounters && counters.scheduled > 0) return existing;
+      if (sameDigestCounters(existing, counters)) return existing;
+      if (storedDigestCounters(existing).some(value => value !== 0)) {
+        throw new Error('Conflicting digest counters are already persisted.');
+      }
 
       const updated = await parserRuns().update({
-        // The status predicate prevents a late digest finalizer from overwriting
-        // a terminal parser run after the lifecycle has moved on.
-        where: { id: existing.id, status: 'running' },
+        // First write wins from schema defaults. The full predicate prevents a
+        // concurrent finalizer or terminal transition from being overwritten.
+        where: {
+          id: existing.id,
+          status: 'running',
+          digest_scheduled: 0,
+          digest_sent: 0,
+          digest_skipped: 0,
+          digest_failed: 0,
+        },
         data: {
           digest_scheduled: counters.scheduled,
           digest_sent: counters.sent,
@@ -266,8 +291,11 @@ export function createParserRunTelemetry(strapi: any) {
           digest_failed: counters.failed,
         },
       });
-      if (!updated) throw new Error('Parser run changed before digest counters were persisted.');
-      return updated;
+      if (updated) return updated;
+
+      const winner = await parserRuns().findOne({ where: { run_id: counters.runId } });
+      if (winner && sameDigestCounters(winner, counters)) return winner;
+      throw new Error('Digest counters changed before persistence.');
     },
 
     async ensureSourceStage({ runId, sourceSlug, stage, jobId, parserRunId, sourceId }: EnsureSourceStage) {

@@ -278,9 +278,70 @@ describe('parser run telemetry', () => {
 
     expect(query).toHaveBeenCalledWith('api::parser-run.parser-run');
     expect(update).toHaveBeenCalledWith({
-      where: { id: 3, status: 'running' },
+      where: {
+        id: 3,
+        status: 'running',
+        digest_scheduled: 0,
+        digest_sent: 0,
+        digest_skipped: 0,
+        digest_failed: 0,
+      },
       data: { digest_scheduled: 3, digest_sent: 1, digest_skipped: 1, digest_failed: 1 },
     });
+  });
+
+  it('accepts only an exact replay and rejects conflicting persisted digest counters', async () => {
+    const update = vi.fn();
+    const findOne = vi.fn().mockResolvedValue({
+      id: 3,
+      run_id: 'run-1',
+      status: 'running',
+      digest_scheduled: 3,
+      digest_sent: 1,
+      digest_skipped: 1,
+      digest_failed: 1,
+    });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 1, skipped: 1, failed: 1 }))
+      .resolves.toMatchObject({ digest_scheduled: 3 });
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 3, sent: 2, skipped: 1, failed: 0 }))
+      .rejects.toThrow(/digest counters/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('accepts an exact concurrent CAS winner but never overwrites it', async () => {
+    const winner = {
+      id: 3,
+      run_id: 'run-1',
+      status: 'running',
+      digest_scheduled: 2,
+      digest_sent: 1,
+      digest_skipped: 1,
+      digest_failed: 0,
+    };
+    const findOne = vi.fn()
+      .mockResolvedValueOnce({
+        id: 3,
+        run_id: 'run-1',
+        status: 'running',
+        digest_scheduled: 0,
+        digest_sent: 0,
+        digest_skipped: 0,
+        digest_failed: 0,
+      })
+      .mockResolvedValueOnce(winner);
+    const update = vi.fn().mockResolvedValue(null);
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await expect(telemetry.setDigestCounters({ runId: 'run-1', scheduled: 2, sent: 1, skipped: 1, failed: 0 }))
+      .resolves.toBe(winner);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(findOne).toHaveBeenCalledTimes(2);
   });
 
   it('rejects unsafe digest counters and invariant violations before querying', async () => {
