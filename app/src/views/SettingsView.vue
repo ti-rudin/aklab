@@ -44,7 +44,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import UserProfileForm from '@/components/settings/UserProfileForm.vue'
 
-type TabId = 'personal' | 'profiles' | 'system' | 'rules' | 'sources' | 'references'
+type TabId = 'personal' | 'profiles' | 'system' | 'pipeline' | 'rules' | 'sources' | 'references'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -53,6 +53,7 @@ const isAdmin = computed(() => authStore.isAklabAdmin === true)
 const adminComponents: Record<Exclude<TabId, 'personal'>, ReturnType<typeof defineAsyncComponent>> = {
   profiles: defineAsyncComponent(() => import('@/components/settings/AdminUserProfilesPanel.vue')),
   system: defineAsyncComponent(() => import('@/components/settings/SystemSettingsPanel.vue')),
+  pipeline: defineAsyncComponent(() => import('@/components/properties/ParseLaunchPanel.vue')),
   rules: defineAsyncComponent(() => import('@/components/settings/RulesPanel.vue')),
   sources: defineAsyncComponent(() => import('@/components/settings/SourcesPanel.vue')),
   references: defineAsyncComponent(() => import('@/components/settings/MarketReferencesPanel.vue')),
@@ -65,6 +66,7 @@ const tabs = computed<Array<{ id: TabId; label: string }>>(() => {
     personal,
     { id: 'profiles', label: 'Профили пользователей' },
     { id: 'system', label: 'Система' },
+    { id: 'pipeline', label: 'Пайплайн' },
     { id: 'rules', label: 'Правила' },
     { id: 'sources', label: 'Источники' },
     { id: 'references', label: 'Эталоны' },

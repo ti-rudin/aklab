@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { reactive, ref } from 'vue'
 import SettingsView from '../SettingsView.vue'
 import api from '@/api/strapi'
 
@@ -36,6 +37,19 @@ vi.mock('@/components/settings/SourcesPanel.vue', () => ({
 vi.mock('@/components/settings/MarketReferencesPanel.vue', () => ({
   default: { template: '<div data-testid="admin-references">references</div>' },
 }))
+vi.mock('@/composables/usePipeline', () => ({
+  usePipeline: () => ({
+    state: reactive({
+      run_id: null, status: 'idle', stage: 'idle', message: '', sources_total: 0, sources_done: 0,
+      details_fetched: 0, details_needed: 0, analyze_total: 0, analyze_done: 0,
+      undervalued_count: 0, objects_created: 0, digest_scheduled: 0, digest_sent: 0,
+      digest_skipped: 0, digest_failed: 0, errors: [],
+    }),
+    requestError: ref(''),
+    isRunning: ref(false),
+    start: vi.fn(), cancel: vi.fn(), reset: vi.fn(), checkOnMount: vi.fn(),
+  }),
+}))
 
 describe('SettingsView', () => {
   beforeEach(() => {
@@ -55,7 +69,7 @@ describe('SettingsView', () => {
     expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/admin/'))
   })
 
-  it('shows all five admin-only tabs for an admin, but no pipeline tab', async () => {
+  it('shows all six admin-only tabs and mounts pipeline only after selection', async () => {
     admin = true
     const wrapper = mount(SettingsView)
     await flushPromises()
@@ -65,16 +79,23 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Правила')
     expect(wrapper.text()).toContain('Источники')
     expect(wrapper.text()).toContain('Эталоны')
-    expect(wrapper.text()).not.toContain('Пайплайн')
+    expect(wrapper.text()).toContain('Пайплайн')
+    expect(wrapper.find('[data-testid="admin-pipeline"]').exists()).toBe(false)
+
+    await wrapper.findAll('button').find(button => button.text().includes('Пайплайн'))!.trigger('click')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="admin-pipeline"]').exists()).toBe(true)
   })
 
   it('fails safe to personal profile when a non-admin forces an admin tab', async () => {
-    window.location.hash = '#system'
+    window.location.hash = '#pipeline'
     const wrapper = mount(SettingsView)
     await flushPromises()
 
     expect(wrapper.find('[data-testid="personal-profile"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('admin-system')
+    expect(wrapper.find('[data-testid="admin-pipeline"]').exists()).toBe(false)
     expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/setting'))
     expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/admin/'))
   })
