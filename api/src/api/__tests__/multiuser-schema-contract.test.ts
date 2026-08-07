@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import userCommentRoutes from '../user-comment/routes/user-comment';
 import userProfileRoutes from '../user-profile/routes/user-profile';
+import userPropertyStateRoutes from '../user-property-state/routes/user-property-state';
 
 type SchemaAttribute = Record<string, unknown>;
 type Schema = {
@@ -154,7 +156,6 @@ describe('multi-user additive schema contract', () => {
         config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
       },
     ]);
-    expect(existsSync(join(repoRoot, 'api/src/api/user-property-state/routes'))).toBe(false);
   });
 
   it('defines user property state with scalar identity and scalar-only indexes', () => {
@@ -199,6 +200,33 @@ describe('multi-user additive schema contract', () => {
       expect(index.columns).not.toContain('property');
       for (const column of index.columns) expect(scalarAttributes.has(column)).toBe(true);
     }
+
+    expect(userPropertyStateRoutes.routes).toEqual([
+      {
+        method: 'PUT',
+        path: '/me/properties/statuses',
+        handler: 'user-property-state.putStatuses',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'GET',
+        path: '/me/properties/:documentId/status',
+        handler: 'user-property-state.getState',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'PUT',
+        path: '/me/properties/:documentId/status',
+        handler: 'user-property-state.putState',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'DELETE',
+        path: '/me/properties/:documentId/status',
+        handler: 'user-property-state.deleteState',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+    ]);
   });
 
   it('adds only the reverse state relation to Property and preserves every legacy attribute', () => {
@@ -227,6 +255,33 @@ describe('multi-user additive schema contract', () => {
       target: 'plugin::users-permissions.user',
     });
     expect(comments.attributes.author?.required).not.toBe(true);
+
+    expect(userCommentRoutes.routes).toEqual([
+      {
+        method: 'GET',
+        path: '/me/properties/:documentId/comments',
+        handler: 'user-comment.listMine',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'POST',
+        path: '/me/properties/:documentId/comments',
+        handler: 'user-comment.createMine',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'PUT',
+        path: '/me/properties/:documentId/comments/:commentId',
+        handler: 'user-comment.updateMine',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'DELETE',
+        path: '/me/properties/:documentId/comments/:commentId',
+        handler: 'user-comment.deleteMine',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+    ]);
   });
 
   it('adds profile-scoped parser telemetry without removing legacy fields or adding PII', () => {
