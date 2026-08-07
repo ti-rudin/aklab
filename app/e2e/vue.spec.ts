@@ -9,6 +9,7 @@ type MultiuserConfig = {
   baseURL: string
   apiURL: string
   credentials: Record<Role, RoleCredential>
+  allowMutations?: boolean
   photoDocumentId?: string
   photoFilename?: string
   foreignPropertyId?: string
@@ -16,16 +17,36 @@ type MultiuserConfig = {
 
 const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru'])
 const ROLES: readonly Role[] = ['admin', 'userA', 'userB']
+const URLConstructor = (globalThis as any).URL
 const ENV: Record<string, string | undefined> = (
   globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }
 ).process?.env || {}
 
 function productionHost(value: string): boolean {
   try {
-    return PRODUCTION_HOSTS.has(new URL(value).hostname.toLowerCase())
+    return PRODUCTION_HOSTS.has(new URLConstructor(value).hostname.toLowerCase())
   } catch {
     return false
   }
+}
+
+function normalizeOrigin(value: string, name: string): string {
+  let url
+  try {
+    url = new URLConstructor(value)
+  } catch {
+    throw new Error(`${name} must be an absolute http(s) URL`)
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`${name} must use http or https`)
+  if (url.username || url.password) throw new Error(`${name} must not contain credentials`)
+  if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
+    throw new Error(`${name} must be an origin URL without path, query or hash`)
+  }
+  const loopback = new Set(['localhost', '127.0.0.1', '[::1]'])
+  if (url.protocol !== 'https:' && !loopback.has(url.hostname)) {
+    throw new Error(`${name} must use HTTPS for a remote target`)
+  }
+  return url.origin
 }
 
 function required(name: string): string | null {
@@ -60,8 +81,23 @@ function buildConfig(): MultiuserConfig {
     return {
       enabled: false,
       reason: `multiuser Playwright пропущен: задайте ${missing.join(', ')}`,
-      baseURL: baseURL || 'http://127.0.0.1:5174',
-      apiURL: apiURL || 'http://127.0.0.1:1338',
+      baseURL: 'http://127.0.0.1:5174',
+      apiURL: 'http://127.0.0.1:1338',
+      credentials,
+    }
+  }
+
+  let safeBaseURL: string
+  let safeApiURL: string
+  try {
+    safeBaseURL = normalizeOrigin(baseURL!, 'SMOKE_UI_URL')
+    safeApiURL = normalizeOrigin(apiURL!, 'SMOKE_API_URL')
+  } catch (error) {
+    return {
+      enabled: false,
+      reason: `multiuser Playwright пропущен: ${error instanceof Error ? error.message : 'invalid target URL'}`,
+      baseURL: 'http://127.0.0.1:5174',
+      apiURL: 'http://127.0.0.1:1338',
       credentials,
     }
   }
@@ -70,18 +106,18 @@ function buildConfig(): MultiuserConfig {
     return {
       enabled: false,
       reason: 'multiuser Playwright пропущен: SMOKE_ADMIN/USER_A/USER_B должны быть тремя разными аккаунтами',
-      baseURL: baseURL!,
-      apiURL: apiURL!,
+      baseURL: safeBaseURL,
+      apiURL: safeApiURL,
       credentials,
     }
   }
 
-  if ((productionHost(baseURL!) || productionHost(apiURL!)) && ENV.E2E_ALLOW_PRODUCTION !== '1') {
+  if ((productionHost(safeBaseURL) || productionHost(safeApiURL)) && ENV.E2E_ALLOW_PRODUCTION !== '1') {
     return {
       enabled: false,
       reason: 'multiuser Playwright пропущен: production URL запрещён без E2E_ALLOW_PRODUCTION=1',
-      baseURL: baseURL!,
-      apiURL: apiURL!,
+      baseURL: safeBaseURL,
+      apiURL: safeApiURL,
       credentials,
     }
   }
@@ -89,9 +125,10 @@ function buildConfig(): MultiuserConfig {
   return {
     enabled: true,
     reason: '',
-    baseURL: baseURL!,
-    apiURL: apiURL!,
+    baseURL: safeBaseURL,
+    apiURL: safeApiURL,
     credentials,
+    allowMutations: ENV.SMOKE_ALLOW_MUTATIONS === '1' && ENV.SMOKE_MUTATION_CONFIRM === 'fixture-only',
     photoDocumentId: required('SMOKE_PHOTO_DOCUMENT_ID') || undefined,
     photoFilename: required('SMOKE_PHOTO_FILENAME') || undefined,
     foreignPropertyId: required('SMOKE_FOREIGN_PROPERTY_ID') || undefined,
@@ -101,7 +138,7 @@ function buildConfig(): MultiuserConfig {
 const CONFIG = buildConfig()
 
 // A missing env must not cause a browser, server, or network request to start.
-test.use({ baseURL: CONFIG.baseURL })
+test.use({ baseURL: CONFIG.baseURL, trace: 'off', screenshot: 'off', video: 'off' })
 
 type ApiResult = { status: number; body: unknown }
 
@@ -139,8 +176,7 @@ function rowsOf(result: ApiResult): any[] {
 }
 
 function idOf(row: any): string | null {
-  const value = row?.documentId ?? row?.document_id ?? row?.id
-  return value === undefined || value === null ? null : String(value)
+  return typeof row?.documentId === 'string' && row.documentId !== '' ? row.documentId : null
 }
 
 function stable(value: unknown): string {
@@ -182,7 +218,13 @@ async function login(page: Page, role: Role): Promise<void> {
   await page.goto('/auth')
   await page.locator('#email').fill(credentials.email)
   await page.locator('#password').fill(credentials.password)
+  const authResponsePromise = page.waitForResponse(response => {
+    const url = new URLConstructor(response.url())
+    return response.request().method() === 'POST' && url.pathname === '/api/auth/local'
+  })
   await page.locator('button[type="submit"]').click()
+  const authResponse = await authResponsePromise
+  expect(new URLConstructor(authResponse.url()).origin).toBe(CONFIG.apiURL)
   await expect(page).toHaveURL(/\/properties/, { timeout: 15000 })
 }
 
@@ -243,8 +285,8 @@ test.describe('AKLAB multi-user dev acceptance', () => {
       expect(profilesAreIncompatible(dataOf(profileA), dataOf(profileB))).toBe(true)
 
       const [listA, listB, statsA, statsB] = await Promise.all([
-        apiRequest(userA, 'GET', '/api/properties?pagination%5BpageSize%5D=100'),
-        apiRequest(userB, 'GET', '/api/properties?pagination%5BpageSize%5D=100'),
+        apiRequest(userA, 'GET', '/api/properties?page=1&pageSize=100'),
+        apiRequest(userB, 'GET', '/api/properties?page=1&pageSize=100'),
         apiRequest(userA, 'GET', '/api/properties/stats'),
         apiRequest(userB, 'GET', '/api/properties/stats'),
       ])
@@ -293,8 +335,8 @@ test.describe('AKLAB multi-user dev acceptance', () => {
 
   test('ordinary user cannot mutate global settings/source/pipeline', async ({ browser }) => {
     test.skip(
-      ENV.SMOKE_ALLOW_MUTATIONS !== '1' || ENV.SMOKE_MUTATION_CONFIRM !== 'fixture-only',
-      'mutation probes disabled; use the smoke harness fixture-only opt-in',
+      !CONFIG.allowMutations,
+      'mutation probes disabled; require exact SMOKE_ALLOW_MUTATIONS=1 and SMOKE_MUTATION_CONFIRM=fixture-only',
     )
     const shell = await openRole(browser, 'userA')
     try {
@@ -306,14 +348,21 @@ test.describe('AKLAB multi-user dev acceptance', () => {
     }
   })
 
-  test('private photo is accessible only with scoped fixture JWT', async ({ browser }) => {
-    test.skip(!CONFIG.photoDocumentId || !CONFIG.photoFilename, 'set SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME for private-media acceptance')
-    const shell = await openRole(browser, 'userA')
+  test('private photo is accessible to user A and hidden from user B', async ({ browser }) => {
+    test.skip(!CONFIG.photoDocumentId || !CONFIG.photoFilename, 'set an A-only SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME')
+    const shellA = await openRole(browser, 'userA')
+    const shellB = await openRole(browser, 'userB')
     try {
-      const photo = await apiRequest(shell.page, 'GET', `/api/photos/${encodeURIComponent(CONFIG.photoDocumentId!)}/${encodeURIComponent(CONFIG.photoFilename!)}`)
-      expect(photo.status).toBe(200)
+      const path = `/api/photos/${encodeURIComponent(CONFIG.photoDocumentId!)}/${encodeURIComponent(CONFIG.photoFilename!)}`
+      const [allowed, foreign] = await Promise.all([
+        apiRequest(shellA.page, 'GET', path),
+        apiRequest(shellB.page, 'GET', path),
+      ])
+      expect(allowed.status).toBe(200)
+      expect(foreign.status).toBe(404)
     } finally {
-      await shell.close()
+      await shellA.close()
+      await shellB.close()
     }
   })
 })

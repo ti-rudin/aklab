@@ -10,8 +10,8 @@ Runbook опирается на план multi-user и на фактически
 - migration CLI находится в `api/scripts/migrate-multiuser.js`;
 - в `api/package.json` доступны `multiuser:audit` и `multiuser:migrate`;
 - CLI не поднимает Strapi и требует явные абсолютные `--db` и `--backup`;
-- `MULTIUSER_ENABLED` по умолчанию выключен: нестрогое значение, отличное от
-  `true`, означает `false`;
+- `MULTIUSER_ENABLED` включается только raw-значением `true`; пробелы, другой
+  регистр и любые иные значения означают `false`;
 - persistent private photo-root описан в
   [контракте storage](photo-storage-contract.md);
 - snapshot, profile scope и digest counters проверяются в
@@ -48,7 +48,7 @@ dev-host, не помещая их в документацию:
 
 ```bash
 REPO=/absolute/path/to/the/aklab-dev-checkout
-DEV_DB=/absolute/path/to/the/aklab-dev-checkout/api/.tmp/data.db
+DEV_DB=/absolute/path/to/the/persistent/dev/data.db
 BASELINE_BACKUP=/absolute/path/to/a/private/backup/multiuser-baseline-<UTC>.db
 MIGRATION_BACKUP=/absolute/path/to/a/private/backup/multiuser-before-migration-<UTC>.db
 IDEMPOTENCY_BACKUP=/absolute/path/to/a/private/backup/multiuser-second-apply-<UTC>.db
@@ -66,7 +66,7 @@ PRIVATE_PHOTO_ROOT=/absolute/path/to/the/persistent/private-photo-root
 целевом окружении, а evidence не должен находиться в Git checkout.
 
 ```bash
-set -u
+set -euo pipefail
 umask 077
 mkdir -p "$EVIDENCE_DIR"
 cd "$REPO"
@@ -160,11 +160,18 @@ runtime-проверки Wave C и выполняются только в раз
 ### A2. Acceptance Wave A
 
 - health доступен в разрешённом health-контуре;
-- legacy login/read path не изменился при flag OFF;
+- health и login доступны по своим контрактам; пользовательский traffic остаётся
+  quiesced до Wave B, если target ещё не имеет роли `aklab_admin`;
 - additive tables/relations присутствуют согласно schema contract;
 - no-auth data/settings/media по-прежнему закрыты или не расширены;
 - process manager после restart использует ожидаемый SHA и clean env;
 - при любом расхождении flag остаётся OFF, дальнейшие waves блокируются.
+
+Важно: feature flag не является authorization bypass. Политика `aklab-admin`
+проверяет свежую роль из БД и действует также при flag OFF. Поэтому нельзя
+объявлять legacy global settings/sources/pipeline доступными до назначения роли
+через проверенную migration. Между A1 и B2 держать rollout в maintenance/quiesced
+режиме, а не ослаблять policy статическим user ID/token или permissive fallback.
 
 ## 4. Wave B — audit, migration, idempotent re-audit
 
@@ -318,7 +325,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' "$API_BASE/api/properties"
 curl -sS -o /dev/null -w '%{http_code}\n' "$API_BASE/api/setting"
 curl -sS -o /dev/null -w '%{http_code}\n' "$API_BASE/api/pipeline/status"
 curl -sS -o /dev/null -w '%{http_code}\n' \
-  "$API_BASE/api/properties/<in-scope-document-id>/photos/<photo-id>"
+  "$API_BASE/api/photos/<in-scope-document-id>/<safe-filename>"
 ```
 
 Не подставлять в этот документ реальные IDs. Authenticated photo request с
@@ -344,41 +351,69 @@ scope; no-auth и foreign-scope запросы не должны раскрыв�
 - No-auth properties/settings/events/telemetry/media закрыты; login и health
   остаются доступными по их отдельному контракту.
 
-Текущий `npm run smoke` принимает только одну пару
-`TEST_USER_EMAIL`/`TEST_USER_PASSWORD` и годится как baseline для одной
-выбранной роли. Для acceptance A/B нужен dedicated multi-user smoke fixture или
-отдельный вызов уже добавленного target-SHA сценария; не объявлять один обычный
-smoke прогон доказательством isolation.
+Текущий `npm run smoke` — dedicated multi-user harness. Он требует явные
+`SMOKE_API_URL`, `SMOKE_UI_URL` и три разные пары credentials для admin/A/B,
+ничего не берёт из legacy `TEST_USER_*` и не имеет production fallback.
+Read-only проверки запускаются по умолчанию. Status/comment и harmless denial
+probes включаются только для изолированной fixture:
+
+```bash
+cd "$REPO"
+SMOKE_API_URL="$API_BASE" SMOKE_UI_URL="$APP_BASE" \
+SMOKE_ADMIN_EMAIL="$ADMIN_EMAIL" SMOKE_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+SMOKE_USER_A_EMAIL="$USER_A_EMAIL" SMOKE_USER_A_PASSWORD="$USER_A_PASSWORD" \
+SMOKE_USER_B_EMAIL="$USER_B_EMAIL" SMOKE_USER_B_PASSWORD="$USER_B_PASSWORD" \
+SMOKE_FIXTURE_PROPERTY_ID="${SHARED_FIXTURE_DOCUMENT_ID:?set shared A/B fixture}" \
+SMOKE_PHOTO_DOCUMENT_ID="${USER_A_ONLY_PHOTO_DOCUMENT_ID:?set A-only photo fixture}" \
+SMOKE_PHOTO_FILENAME="${PHOTO_FILENAME:?set safe stored filename}" \
+SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only \
+npm run smoke
+```
+
+Все переменные задаются только в защищённом окружении оператора. Harness не
+печатает email/password/JWT и обязан восстановить status/delete fixture comment
+в `finally`. Cron/queue и реальный pipeline start остаются отдельным evidence.
 
 ### C3. E2E evidence
 
-В текущем Playwright config доступны `BASE_URL`, `HEADLESS` и
-`--project=chromium`; при заданном `BASE_URL` webServer не запускается. Для
-каждой роли запускать только против разрешённого dev base URL, например:
+Playwright config больше не запускает Vite/dev/preview автоматически и работает
+только против уже развёрнутого target. Multi-user spec без полного fixture env
+помечается skipped до создания browser/page. Запускать его одним serial suite:
 
 ```bash
-cd "$REPO/app"
-BASE_URL="$APP_BASE" TEST_USER_EMAIL="$USER_A_EMAIL" \
-  TEST_USER_PASSWORD="$USER_A_PASSWORD" HEADLESS=true \
-  npx playwright test --project=chromium
+cd "$REPO"
+SMOKE_API_URL="$API_BASE" SMOKE_UI_URL="$APP_BASE" \
+SMOKE_ADMIN_EMAIL="$ADMIN_EMAIL" SMOKE_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+SMOKE_USER_A_EMAIL="$USER_A_EMAIL" SMOKE_USER_A_PASSWORD="$USER_A_PASSWORD" \
+SMOKE_USER_B_EMAIL="$USER_B_EMAIL" SMOKE_USER_B_PASSWORD="$USER_B_PASSWORD" \
+SMOKE_FOREIGN_PROPERTY_ID="${USER_A_ONLY_DOCUMENT_ID:?set A-only property fixture}" \
+SMOKE_PHOTO_DOCUMENT_ID="${USER_A_ONLY_PHOTO_DOCUMENT_ID:?set A-only photo fixture}" \
+SMOKE_PHOTO_FILENAME="${PHOTO_FILENAME:?set safe stored filename}" \
+SMOKE_ALLOW_MUTATIONS=1 SMOKE_MUTATION_CONFIRM=fixture-only \
+E2E_MULTIUSER=1 HEADLESS=1 npm run test:e2e -- --project=chromium
 ```
 
-Повторить для admin и B с их environment names, не выводя значения. Результат
-принимать только если dedicated multi-user specs проверяют: no-auth denial,
-A/B isolation, comment/status ownership, foreign detail 404, admin gating,
-blocked-user exclusion и private media. Обычный legacy `vue.spec.ts` без этих
-assertions — недостаточное доказательство; это явный implementation/fixture
-blocker для DoD, если target SHA ещё не добавляет такие specs.
+Spec проверяет no-auth denial, A/B profile/list/stats/detail isolation, foreign
+detail 404, admin gating и private media. Status/comment ownership доказывает
+mutating smoke fixture. Blocked-user exclusion, real manual pipeline и cron
+fan-out остаются отдельными runtime gates, а не эмулируются Playwright.
 
 ## 7. Manual single-target pipeline
 
 Запускать только admin actor и только после C0/C1:
 
 ```bash
+PIPELINE_BODY="$(node -e '
+  const depth = Number(process.argv[1]);
+  const targetUserId = Number(process.argv[2]);
+  if (!Number.isSafeInteger(depth) || depth < 1 || depth > 1000
+      || !Number.isSafeInteger(targetUserId) || targetUserId < 1) process.exit(2);
+  process.stdout.write(JSON.stringify({ mode: "full", depth, targetUserId }));
+' "${PIPELINE_DEPTH:?set validated depth}" "${USER_B_ID:?set target user id}")"
 curl --fail-with-body -sS \
   -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer ${ADMIN_AUTH_ENV:?set ADMIN_AUTH_ENV in the environment}" \
-  -d '{"mode":"full","depth":<validated-depth>,"targetUserId":<USER_B_ID>}' \
+  -H "Authorization: Bearer ${ADMIN_JWT:?set admin JWT in protected environment}" \
+  --data "$PIPELINE_BODY" \
   "$API_BASE/api/pipeline/start" \
   | tee "$EVIDENCE_DIR/manual-b-start.json"
 ```

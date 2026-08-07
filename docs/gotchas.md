@@ -253,16 +253,12 @@
     Symptom: `error TS18046: 'results' is of type 'unknown'`.
 58. **FocusFilters.priceFrom — string из input** — Vue `<input type="number">` даёт
     `string`, не `number`. Интерфейс `FocusFilters` должен принимать `string | number | null`.
-59. **Playwright config: BASE_URL env** — `app/playwright.config.ts` поддерживает
-    `BASE_URL` env для запуска E2E против production. Если `BASE_URL` задан —
-    webServer не запускается, используется указанный URL.
-    ```bash
-    BASE_URL=https://aklab.tirobots.ru TEST_USER_PASSWORD='***' HEADLESS=true \
-      npx playwright test --project=chromium
-    ```
-    Тестовый юзер: `test@aklab.tirobots.ru` (id=2). Пароль задаётся через
-    `TEST_USER_PASSWORD` env. Seeder обновляет пароль при каждом рестарте API —
-    менять пароль напрямую в БД бессмысленно.
+59. **Playwright acceptance не запускает dev-server** — `app/playwright.config.ts`
+    больше не стартует Vite/dev/preview. Multi-user spec требует явные
+    `SMOKE_UI_URL`, `SMOKE_API_URL`, три разные fixture credentials и
+    `E2E_MULTIUSER=1`; production target fail-closed без отдельного explicit
+    override. Запуск и полный fixture contract описаны в
+    [docs/multiuser.md](multiuser.md), §6 C3.
 60. **Seeder перезаписывает пароль test user** — `seedTestUser` в bootstrap
     обновляет пароль из `TEST_USER_PASSWORD` env при каждом старте API.
     Если нужно сменить пароль — менять в `.env` и рестартить API.
@@ -277,8 +273,10 @@
 62. **API token не работает с `config: {}` (auth required)** — Strapi 5 routes
     без явного `config` или с `config: {}` требуют JWT. API-токен (из `.env`)
     не проходит auth на таких endpoints -> `ForbiddenError: 500`.
-    **Решение**: в single-tenant приложении ВСЕ endpoints = `auth: false, policies: []`.
-    Пострадали: `market-references`, `sources`, `setting`, `cron-log`.
+    Старое single-tenant решение `auth: false, policies: []` для data routes
+    **запрещено** после multi-user wave. Custom routes используют JWT через
+    `global::authenticated-user`, а global controls дополнительно
+    `global::aklab-admin`; service token разрешён только dedicated internal routes.
     Gotcha #32/#24 (JWT протухает после restart) + этот = причина почему
     `config: {}` не работает в single-tenant.
 63. **Analyzer deviation: отрицательная != недооценка** — формула:
@@ -353,4 +351,4 @@
 
 82. **GNU `ln -sf` следует symlink-to-directory** (2026-07-19) — повторный deploy выполнял `ln -sf target api/node_modules/@aklab/parse-rules`; если destination уже был symlink на директорию, GNU ln создавал вложенную сломанную ссылку `lib/parse-rules/parse-rules`. Использовать `ln -sfn`, где `-n` запрещает dereference destination. После deploy проверять `git status --porcelain` и отсутствие вложенной ссылки. `npm install` также может менять только root version в `package-lock.json`; такой diff синхронизировать отдельным PR, не делать слепой `git checkout -- .` при наличии production backup/diagnostics.
 
-83. **Multi-user migration — только explicit absolute paths и dev gate** — `api/scripts/migrate-multiuser.js` в audit требует `--db=/absolute/...`, а apply дополнительно требует отдельный `--backup=/absolute/...`; implicit DB path, relative backup, Strapi bootstrap и server runtime запрещены. Порядок `feature OFF → audit → transactional migration → idempotent re-audit → private photo copy → dev-only flag ON` и rollback triggers записан в [docs/multiuser.md](multiuser.md). `MULTIUSER_ENABLED` fail-closed, legacy rows не удалять, private photo originals сохранять до отдельной cleanup wave.
+83. **Multi-user migration — только explicit absolute paths и dev gate** — `api/scripts/migrate-multiuser.js` в audit требует `--db=/absolute/...`, а apply дополнительно требует отдельный `--backup=/absolute/...`; implicit DB path, relative backup, Strapi bootstrap и server runtime запрещены. Порядок `feature OFF → audit → transactional migration → idempotent re-audit → private photo copy → dev-only flag ON` и rollback triggers записан в [docs/multiuser.md](multiuser.md). `MULTIUSER_ENABLED` включается только exact raw `true`; legacy rows не удалять, private photo originals сохранять до отдельной cleanup wave.

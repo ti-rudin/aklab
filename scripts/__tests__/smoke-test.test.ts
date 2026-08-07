@@ -5,6 +5,7 @@ import {
   assertListSeparation,
   buildManualPipelineRequest,
   buildSmokePlan,
+  createSmokeConfig,
   redactText,
   runMutationChecks,
 } from '../smoke-test.js';
@@ -92,6 +93,9 @@ describe('multiuser smoke source boundary', () => {
     expect(source).toContain('/api/me/context');
     expect(source).toContain('SMOKE_ALLOW_MUTATIONS');
     expect(source).toContain('SMOKE_MUTATION_CONFIRM');
+    expect(source).toContain('/api/properties?page=1&pageSize=100');
+    expect(source).not.toContain('pagination%5BpageSize%5D');
+    expect(source).not.toContain('row.document_id');
   });
 
   it('gates the Playwright acceptance spec on explicit multiuser test env', () => {
@@ -118,7 +122,13 @@ describe('multiuser smoke helpers', () => {
       body: { mode: 'full', targetUserId: 17 },
     });
     expect(buildSmokePlan({}).noAuth.some((entry: { path: string }) => entry.path === '/api/photos/<documentId>/<filename>')).toBe(true);
-    expect(() => assertListSeparation([{ id: 1 }], [{ id: 1 }], true)).toThrow('exclusive fixture rows');
+    expect(() => assertListSeparation([{ documentId: 'shared' }], [{ documentId: 'shared' }], true)).toThrow('exclusive fixture rows');
+  });
+
+  it('rejects insecure remote URLs, embedded credentials and base paths', () => {
+    expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'http://dev.example.test' }, [])).toThrow('HTTPS');
+    expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'https://name:secret@dev.example.test' }, [])).toThrow('credentials');
+    expect(() => createSmokeConfig({ ...SAFE_ENV, SMOKE_API_URL: 'https://dev.example.test/api' }, [])).toThrow('origin URL');
   });
 
   it('does not write a mutation when the shared fixture is not visible to both users', async () => {
@@ -154,5 +164,44 @@ describe('multiuser smoke helpers', () => {
 
     expect(checks).toContain('Mutation fixture is visible to both users');
     expect(calls.some(call => call.method === 'PUT' && call.path.includes('/status'))).toBe(false);
+  });
+
+  it('compares user B with its own initial status and restores user A', async () => {
+    let statusA = 'viewed';
+    const statusB = 'rejected';
+    const statusWrites: string[] = [];
+    const client = {
+      async request(method: string, path: string, options?: { token?: string; body?: any }) {
+        if (path === '/api/properties/fixture-property') return { status: 200, data: { data: { documentId: 'fixture-property' } } };
+        if (path.endsWith('/status') && method === 'GET') {
+          return { status: 200, data: { data: { status: options?.token === 'a-token' ? statusA : statusB } } };
+        }
+        if (path.endsWith('/status') && method === 'PUT') {
+          statusA = options?.body?.data?.status;
+          statusWrites.push(statusA);
+          return { status: 200, data: { data: { status: statusA } } };
+        }
+        if (path.endsWith('/comments') && method === 'POST') return { status: 201, data: { data: { id: 91 } } };
+        if (path.endsWith('/comments') && method === 'GET') {
+          return { status: 200, data: { data: options?.token === 'a-token' ? [{ id: 91 }] : [] } };
+        }
+        if (path.endsWith('/comments/91') && method === 'DELETE') return { status: 204, data: null };
+        return { status: 403, data: null };
+      },
+    };
+    const check = async (_name: string, fn: () => Promise<void>) => fn();
+
+    await runMutationChecks({
+      config: { fixture: { propertyId: 'fixture-property' }, secrets: [] },
+      client,
+      sessions: {
+        userA: { token: 'a-token', userId: 1 },
+        userB: { token: 'b-token', userId: 2 },
+      },
+      check,
+    });
+
+    expect(statusWrites).toEqual(['in_progress', 'viewed']);
+    expect(statusA).toBe('viewed');
   });
 });

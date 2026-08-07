@@ -98,12 +98,6 @@ export default defineConfig({
   /* Folder for test artifacts such as screenshots, videos, traces, etc. */
   // outputDir: 'test-results/',
 
-  /* Run your local dev server before starting the tests */
-  ...(BASE_URL ? {} : {
-    webServer: {
-      command: process.env.CI ? 'npm run preview' : 'npm run dev',
-      port: process.env.CI ? 4173 : 5174,
-      reuseExistingServer: !process.env.CI,
-    },
-  }),
+  // E2E runs only against an already deployed/started explicit target. Never
+  // auto-start Vite/dev/preview from the acceptance runner.
 })

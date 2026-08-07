@@ -21,6 +21,7 @@ const ADMIN_ROLE_TYPE = 'aklab_admin';
 const MUTATION_CONFIRM = 'fixture-only';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const PRODUCTION_HOSTS = new Set(['aklab.tirobots.ru', 'api-aklab.tirobots.ru']);
+const PERSONAL_STATUSES = new Set(['new', 'in_progress', 'viewed', 'rejected']);
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -64,8 +65,15 @@ function normalizeBaseUrl(value, name, env) {
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error(`${name} must use http or https`);
   }
-  if (parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '' && parsed.pathname !== '/')) {
-    throw new Error(`${name} must contain only an origin`);
+  if (parsed.username || parsed.password) {
+    throw new Error(`${name} must not contain credentials`);
+  }
+  if ((parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
+    throw new Error(`${name} must be an origin URL without path, query or hash`);
+  }
+  const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
+  if (parsed.protocol !== 'https:' && !loopback.has(parsed.hostname)) {
+    throw new Error(`${name} must use HTTPS for a remote target`);
   }
   if (isProductionUrl(value) && env.SMOKE_ALLOW_PRODUCTION !== '1') {
     throw new Error(`${name} points to protected production; set SMOKE_ALLOW_PRODUCTION=1 explicitly`);
@@ -315,8 +323,7 @@ function responseStats(response, name) {
 
 function rowId(row) {
   if (!isRecord(row)) return null;
-  const value = row.documentId ?? row.document_id ?? row.id;
-  return value === undefined || value === null ? null : String(value);
+  return typeof row.documentId === 'string' && row.documentId !== '' ? row.documentId : null;
 }
 
 function stableJson(value) {
@@ -393,7 +400,10 @@ function extractCommentId(response) {
 
 function statusValue(response) {
   const value = response?.data?.data ?? response?.data;
-  return isRecord(value) && typeof value.status === 'string' ? value.status : 'new';
+  if (!isRecord(value) || typeof value.status !== 'string' || !PERSONAL_STATUSES.has(value.status)) {
+    throw new Error('status response is malformed');
+  }
+  return value.status;
 }
 
 function logLine(logger, method, text) {
@@ -504,7 +514,7 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
   for (const role of ['userA', 'userB']) {
     scoped[role] = {};
     await check(`${config.roles[role].label} scoped list`, async () => {
-      const response = await client.request('GET', '/api/properties?pagination%5BpageSize%5D=100', { token: sessions[role].token });
+      const response = await client.request('GET', '/api/properties?page=1&pageSize=100', { token: sessions[role].token });
       assertStatus(response, 200, 'properties');
       scoped[role].rows = responseRows(response, 'properties');
     });
@@ -560,13 +570,17 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
   });
 
   if (config.fixture.photoDocumentId && config.fixture.photoFilename) {
-    await check('Scoped JWT can access fixture photo', async () => {
+    await check('Scoped photo is available to user A and hidden from user B', async () => {
       const path = `/api/photos/${safePathSegment(config.fixture.photoDocumentId, 'photo document')}/${safePathSegment(config.fixture.photoFilename, 'photo filename')}`;
-      const response = await client.request('GET', path, { token: sessions.userA.token });
-      assertStatus(response, 200, 'scoped photo');
+      const [allowed, foreign] = await Promise.all([
+        client.request('GET', path, { token: sessions.userA.token }),
+        client.request('GET', path, { token: sessions.userB.token }),
+      ]);
+      assertStatus(allowed, 200, 'scoped photo');
+      assertStatus(foreign, 404, 'foreign scoped photo');
     });
   } else {
-    skip('Scoped JWT can access fixture photo', 'set SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME for private-media acceptance');
+    skip('Scoped photo is available to user A and hidden from user B', 'set an A-only SMOKE_PHOTO_DOCUMENT_ID and SMOKE_PHOTO_FILENAME');
   }
 
   if (config.allowMutations) {
@@ -597,12 +611,18 @@ async function runMutationChecks({ config, client, sessions, check }) {
   });
   if (!fixtureVisible) return;
 
-  let originalStatus = 'new';
+  let originalStatusA = 'new';
+  let originalStatusB = 'new';
   let fixtureReady = false;
   try {
-    const initial = await client.request('GET', `/api/me/properties/${encodedPropertyId}/status`, { token: sessions.userA.token });
-    assertStatus(initial, 200, 'initial status');
-    originalStatus = statusValue(initial);
+    const [initialA, initialB] = await Promise.all([
+      client.request('GET', `/api/me/properties/${encodedPropertyId}/status`, { token: sessions.userA.token }),
+      client.request('GET', `/api/me/properties/${encodedPropertyId}/status`, { token: sessions.userB.token }),
+    ]);
+    assertStatus(initialA, 200, 'initial user A status');
+    assertStatus(initialB, 200, 'initial user B status');
+    originalStatusA = statusValue(initialA);
+    originalStatusB = statusValue(initialB);
     fixtureReady = true;
   } catch {
     fixtureReady = false;
@@ -611,10 +631,11 @@ async function runMutationChecks({ config, client, sessions, check }) {
   if (fixtureReady) {
     await check('Status change is isolated and restored', async () => {
       const statusPath = `/api/me/properties/${encodedPropertyId}/status`;
+      const changedStatus = originalStatusA === 'in_progress' ? 'viewed' : 'in_progress';
       try {
         const changed = await client.request('PUT', statusPath, {
           token: sessions.userA.token,
-          body: { data: { status: 'in_progress' } },
+          body: { data: { status: changedStatus } },
         });
         assertStatus(changed, 200, 'status update');
         const [a, b] = await Promise.all([
@@ -623,12 +644,12 @@ async function runMutationChecks({ config, client, sessions, check }) {
         ]);
         assertStatus(a, 200, 'user A changed status');
         assertStatus(b, 200, 'user B status');
-        if (statusValue(a) !== 'in_progress') throw new Error('user A status did not change');
-        if (statusValue(b) !== originalStatus) throw new Error('user B status changed with user A');
+        if (statusValue(a) !== changedStatus) throw new Error('user A status did not change');
+        if (statusValue(b) !== originalStatusB) throw new Error('user B status changed with user A');
       } finally {
-        const restored = originalStatus === 'new'
+        const restored = originalStatusA === 'new'
           ? await client.request('DELETE', statusPath, { token: sessions.userA.token })
-          : await client.request('PUT', statusPath, { token: sessions.userA.token, body: { data: { status: originalStatus } } });
+          : await client.request('PUT', statusPath, { token: sessions.userA.token, body: { data: { status: originalStatusA } } });
         assertStatus(restored, [200, 204], 'status restore');
       }
     });

@@ -849,25 +849,19 @@ UI-элементы: `<transition>` обёртка на `<router-view>`
 
 ### Запуск E2E тестов
 
+Multi-user acceptance не запускает локальный dev-server и не имеет production
+fallback. Он работает только против уже развёрнутого разрешённого target с
+явными admin/A/B credentials и fixture IDs:
+
 ```bash
-# Локально (запускает dev server автоматически)
-cd app && npx playwright test
-
-# Только chromium
-cd app && npx playwright test --project=chromium
-
-# Против production (без webServer)
-cd app && BASE_URL=https://aklab.tirobots.ru \
-  TEST_USER_PASSWORD='<password>' \
-  HEADLESS=true \
-  npx playwright test --project=chromium
+cd "$REPO"
+# Полный список обязательных SMOKE_* переменных — docs/multiuser.md, §6 C3.
+E2E_MULTIUSER=1 HEADLESS=1 npm run test:e2e -- --project=chromium
 ```
 
-Переменные окружения:
-- `BASE_URL` — URL для тестирования (по умолчанию: localhost:5174). Если задан — webServer не запускается.
-- `TEST_USER_EMAIL` — email тестового пользователя (по умолчанию: test@aklab.tirobots.ru)
-- `TEST_USER_PASSWORD` — пароль тестового пользователя (обязательно для тестов с авторизацией)
-- `HEADLESS=true` — запуск без GUI (обязательно на сервере)
+Без полного fixture env spec помечается skipped до создания browser/page.
+Production требует отдельной команды пользователя и explicit override. Пароли,
+email и JWT нельзя помещать в командную историю, отчёты или Git.
 
 ### Статистика покрытия
 

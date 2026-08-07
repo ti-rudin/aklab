@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { isMultiuserEnabled } from '../multiuser-feature'
 
 describe('isMultiuserEnabled', () => {
-  it('enables only trimmed case-insensitive true', () => {
+  it('enables only the exact string true', () => {
     expect(isMultiuserEnabled({ MULTIUSER_ENABLED: 'true' })).toBe(true)
-    expect(isMultiuserEnabled({ MULTIUSER_ENABLED: ' TRUE ' })).toBe(true)
-    expect(isMultiuserEnabled({ MULTIUSER_ENABLED: '\tTrUe\n' })).toBe(true)
   })
 
-  it.each([undefined, '', 'false', '0', '1', 'yes', 'enabled', ' true-ish '])(
+  it.each([undefined, '', 'false', '0', '1', 'yes', 'enabled', ' true ', 'TRUE', '\tTrUe\n', ' true-ish '])(
     'fails closed for %s',
     (value) => {
       expect(isMultiuserEnabled({ MULTIUSER_ENABLED: value })).toBe(false)
@@ -30,7 +28,7 @@ describe('isMultiuserEnabled', () => {
     env.MULTIUSER_ENABLED = 'false'
     expect(isMultiuserEnabled(env)).toBe(false)
     env.MULTIUSER_ENABLED = ' TRUE '
-    expect(isMultiuserEnabled(env)).toBe(true)
+    expect(isMultiuserEnabled(env)).toBe(false)
   })
 
   it('does not mutate process.env', () => {

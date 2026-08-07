@@ -287,7 +287,7 @@ deploy-prod.sh + бамп версии).
 - **Pipeline Orchestrator** (v1.1.0, разбит на модули в v1.1.25):
   - **Единый сервис** `api/src/services/pipeline/` — оркестрирует парсинг → анализ → дайджест.
     Разбит на 3 модуля: `state.ts` (get/update/reset state), `stages.ts` (parseAll/analyze/digest), `index.ts` (run/cancel/orchestrate).
-  - **SSE** (`api/src/services/pipeline-sse.ts`) — реалтайм прогресс через EventSource (без polling).
+  - **Progress transport (multi-user)** — frontend использует bounded JWT Axios polling `GET /api/pipeline/status`; legacy `/api/pipeline/stream` удалён и не является API surface.
   - **Pipeline State** — персистентное состояние в `setting.pipeline_state` (JSON singleton).
     Статусы: `idle | running | cancelling`. Стадии: `parsing_scan → parsing_scan_done → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`.
   - **Idempotency** — `if pipeline_state.status === 'running'` → reject (один pipeline одновременно).
@@ -296,10 +296,11 @@ deploy-prod.sh + бамп версии).
   - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
   - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
   - **Pre-filter** (v1.1.37) — preFilterProperty() в parse-handler фильтрует по city, stop words, area, price ДО fetchDetails. Экономия: вместо 291 fetchDetails → 15.
-  - **Двуфазный парсинг** (v1.1.37) — parse-handler разделён на Phase 1 (scan: парсинг списков + дедуп + предфильтр → файл) и Phase 2 (details: чтение файла + fetchDetails + createProperty). Pipeline синхронизирует фазы глобально: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1. Счётчики НЕ прыгают.  - API: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`, `GET /api/pipeline/stream` (SSE). Все endpoints — `auth: false`.
+  - **Двуфазный парсинг** (v1.1.37) — parse-handler разделён на Phase 1 (scan: парсинг списков + дедуп + предфильтр → файл) и Phase 2 (details: чтение файла + fetchDetails + createProperty). Pipeline синхронизирует фазы глобально: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1. Счётчики НЕ прыгают.
+  - **API (multi-user)**: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`; все требуют authenticated AKLAB Admin policy. SSE endpoint отсутствует.
   - **3 триггера в UI:**
     1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
-    2. **Ручной запуск** (`/settings` → таб «Дайджест») — полный pipeline: парсинг → анализ → дайджест. SSE reconnect при перезагрузке страницы.
+    2. **Ручной запуск** (`/settings`, admin-only) — полный pipeline по обязательному target user; reconnect выполняется JWT polling.
     3. **Пересчитать** (`/properties` → таб «В фокусе») — только scoring.
   - **Дайджест** — top-100 объектов из фокуса (по focus_score), НЕ только is_undervalued. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
   - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
