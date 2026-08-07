@@ -355,7 +355,7 @@ function stableJson(value) {
 }
 
 function normalizedProfileArray(value, allowlist = null, maxItems = 128, maxLength = 256) {
-  if (!Array.isArray(value) || value.length > maxItems) throw new Error('profile response is malformed');
+  if (!Array.isArray(value)) throw new Error('profile response is malformed');
   const normalized = value.map(item => {
     if (typeof item !== 'string') throw new Error('profile response is malformed');
     const text = item.trim().toLowerCase();
@@ -365,7 +365,9 @@ function normalizedProfileArray(value, allowlist = null, maxItems = 128, maxLeng
     }
     return text;
   });
-  return [...new Set(normalized)].sort();
+  const canonical = [...new Set(normalized)].sort();
+  if (canonical.length > maxItems) throw new Error('profile response is malformed');
+  return canonical;
 }
 
 function normalizedBound(value) {

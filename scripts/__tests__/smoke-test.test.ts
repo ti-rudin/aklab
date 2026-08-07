@@ -149,6 +149,17 @@ describe('multiuser smoke helpers', () => {
     };
 
     expect(assertProfilesDistinctWithOverlap(left, right)).toBe(true);
+    expect(assertProfilesDistinctWithOverlap(left, {
+      ...right,
+      stop_words: [
+        ...Array.from({ length: 129 }, () => 'duplicate'),
+        ...Array.from({ length: 127 }, (_, index) => `word-${index}`),
+      ],
+    })).toBe(true);
+    expect(() => assertProfilesDistinctWithOverlap(left, {
+      ...right,
+      stop_words: Array.from({ length: 129 }, (_, index) => `unique-${index}`),
+    })).toThrow('profile response is malformed');
     expect(() => assertProfilesDistinctWithOverlap(left, { ...left })).toThrow('profiles are identical');
     expect(() => assertProfilesDistinctWithOverlap(left, {
       ...left,
