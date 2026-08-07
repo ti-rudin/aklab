@@ -139,6 +139,12 @@ describe('multi-user additive schema contract', () => {
       },
       {
         method: 'GET',
+        path: '/me/context',
+        handler: 'user-profile.getMeContext',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'GET',
         path: '/admin/user-profiles',
         handler: 'user-profile.listAdmin',
         config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
