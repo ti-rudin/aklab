@@ -99,6 +99,8 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
   let pollTimer: TimerHandle | null = null
   let pollPromise: Promise<PhotoPollResult> | null = null
   let resolvePoll: ((result: PhotoPollResult) => void) | null = null
+  let mediaAbort: AbortController | null = null
+  let pollAbort: AbortController | null = null
   let disposed = false
 
   function revokeLightbox(): void {
@@ -116,6 +118,8 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
 
   function resetMedia(): void {
     mediaGeneration += 1
+    mediaAbort?.abort()
+    mediaAbort = null
     revokeLightbox()
     revokeThumbnails()
     retainedBlobs.clear()
@@ -125,6 +129,8 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
 
   function stopPolling(): void {
     pollGeneration += 1
+    pollAbort?.abort()
+    pollAbort = null
     if (pollTimer !== null) {
       timers.clearTimeout(pollTimer)
       pollTimer = null
@@ -143,6 +149,8 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
     if (disposed) return
     resetMedia()
     const generation = mediaGeneration
+    const abort = new AbortController()
+    mediaAbort = abort
     loading.value = true
     const candidates = Array.isArray(paths) ? paths : []
     const uniquePaths = [...new Set(candidates.filter((path): path is string => typeof path === 'string'))]
@@ -154,7 +162,7 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
       }
 
       try {
-        const response = await apiClient.get(path, { responseType: 'blob' })
+        const response = await apiClient.get(path, { responseType: 'blob', signal: abort.signal })
         const blob = responseBlob(response.data)
         if (disposed || generation !== mediaGeneration) return
         retainedBlobs.set(path, blob)
@@ -166,7 +174,10 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
       }
     }))
 
-    if (generation === mediaGeneration && !disposed) loading.value = false
+    if (generation === mediaGeneration && !disposed) {
+      if (mediaAbort === abort) mediaAbort = null
+      loading.value = false
+    }
   }
 
   function openLightbox(pathOrIndex: string | number): string | null {
@@ -201,6 +212,8 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
     if (pollPromise) return pollPromise
 
     const run = ++pollGeneration
+    const abort = new AbortController()
+    pollAbort = abort
     let attempts = 0
     let promise!: Promise<PhotoPollResult>
 
@@ -212,6 +225,7 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
       }
       polling.value = false
       pollState.value = result.status
+      if (pollAbort === abort) pollAbort = null
       const resolve = resolvePoll
       if (pollPromise === promise) {
         pollPromise = null
@@ -243,7 +257,7 @@ export function usePropertyMedia(options: PropertyMediaOptions = {}) {
           }
           attempts += 1
           try {
-            const response = await apiClient.get(`/properties/${documentId}`)
+            const response = await apiClient.get(`/properties/${documentId}`, { signal: abort.signal })
             if (run !== pollGeneration || disposed) {
               finish({ status: 'stopped' })
               return

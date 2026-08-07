@@ -68,13 +68,13 @@
 
       <!-- ==================== ССЫЛКИ ==================== -->
       <div class="flex flex-wrap items-center gap-3">
-        <a v-if="property.url" :href="property.url" target="_blank" rel="noopener"
+        <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener"
           class="inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--accent)">
           Открыть на источнике →
         </a>
         <span v-else class="text-sm" style="color: var(--text-muted)">Ссылка на источник недоступна</span>
 
-        <span v-if="property.url && cianUrl" class="text-sm" style="color: var(--text-muted)">·</span>
+        <span v-if="sourceUrl && cianUrl" class="text-sm" style="color: var(--text-muted)">·</span>
 
         <a v-if="cianUrl" :href="cianUrl" target="_blank" rel="noopener"
           class="inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--accent)">
@@ -365,6 +365,7 @@ const showFullDesc = ref(false)
 const photoLoading = ref(false)
 const photoTerminal = ref<'no_url' | 'downloaded' | 'error' | null>(null)
 const detailsOpen = ref(false)
+let pageGeneration = 0
 
 const statuses = [
   { value: 'new', label: 'Новый' },
@@ -424,6 +425,7 @@ watch(() => lightbox.open, (open) => {
 })
 
 onUnmounted(() => {
+  pageGeneration += 1
   stopPolling()
   closeLightbox()
   document.removeEventListener('keydown', onLightboxKeydown)
@@ -438,7 +440,11 @@ function isPropertyDetail(value: unknown): value is Property {
 }
 
 async function applyPhotoDetail(detail: Record<string, unknown>, documentId: string): Promise<void> {
-  if (!isPropertyDetail(detail) || detail.documentId !== documentId || !property.value) {
+  if (
+    !isPropertyDetail(detail)
+    || detail.documentId !== documentId
+    || property.value?.documentId !== documentId
+  ) {
     throw new Error('Invalid scoped photo detail')
   }
   property.value = { ...property.value, ...detail }
@@ -457,12 +463,16 @@ async function triggerPhotoFetch(): Promise<void> {
   const current = property.value
   if (!current || photoLoading.value) return
   const documentId = current.documentId
+  const generation = pageGeneration
+  const isCurrent = () => generation === pageGeneration && property.value?.documentId === documentId
   photoLoading.value = true
   photoTerminal.value = null
   try {
     const { data } = await api.post(`/properties/${documentId}/fetch-photos`)
+    if (!isCurrent()) return
     if (data?.queued === true) {
       const result = await pollForPhotos(documentId, (detail) => applyPhotoDetail(detail, documentId))
+      if (!isCurrent()) return
       if (result.status === 'downloaded') photoTerminal.value = 'downloaded'
       else if (result.status === 'error') {
         photoTerminal.value = 'error'
@@ -481,10 +491,12 @@ async function triggerPhotoFetch(): Promise<void> {
     }
     throw new Error('Invalid photo queue response')
   } catch {
-    photoTerminal.value = 'error'
-    toast.error('Не удалось загрузить фотографии')
+    if (isCurrent()) {
+      photoTerminal.value = 'error'
+      toast.error('Не удалось загрузить фотографии')
+    }
   } finally {
-    photoLoading.value = false
+    if (isCurrent()) photoLoading.value = false
   }
 }
 
@@ -497,57 +509,90 @@ const cianUrl = computed(() => {
   return `https://www.cian.ru/map/?deal_type=sale&offer_type=commercial&object_type[0]=1&object_type[1]=2&object_type[2]=5&center=${lng},${lat}&zoom=16`
 })
 
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
+const sourceUrl = computed(() => safeHttpUrl(property.value?.url))
+
 async function geocodeAddress() {
-  if (!property.value?.address || property.value.latitude) return
+  const current = property.value
+  if (!current?.address || current.latitude) return
+  const documentId = current.documentId
+  const generation = pageGeneration
   geocoding.value = true
   try {
-    const { data } = await api.get(`/properties/${property.value.documentId}/geocode`)
-    if (data.latitude && data.longitude) {
+    const { data } = await api.get(`/properties/${documentId}/geocode`)
+    if (
+      generation === pageGeneration
+      && property.value?.documentId === documentId
+      && data.latitude
+      && data.longitude
+    ) {
       property.value.latitude = data.latitude
       property.value.longitude = data.longitude
     }
   } catch { /* geocode — non-critical, button won't show */ }
-  finally { geocoding.value = false }
+  finally {
+    if (generation === pageGeneration) geocoding.value = false
+  }
 }
 
-async function fetchProperty(): Promise<void> {
+async function fetchProperty(): Promise<boolean> {
+  const generation = ++pageGeneration
   const documentId = route.params.id as string
   loading.value = true
   error.value = ''
   property.value = null
   comments.value = []
   events.value = []
+  photoLoading.value = false
+  photoTerminal.value = null
+  geocoding.value = false
   stopPolling()
   resetMedia()
 
   try {
     // Detail is the scope gate. It has no query and no dependent request can precede it.
     const { data } = await api.get(`/properties/${documentId}`)
-    if (!isPropertyDetail(data?.data)) {
+    if (generation !== pageGeneration) return false
+    if (!isPropertyDetail(data?.data) || data.data.documentId !== documentId) {
       error.value = 'Объект не найден'
-      return
+      return false
     }
 
     property.value = data.data
     if (data.data.photos_downloaded === true) {
       await loadMedia(documentId, data.data.photos)
+      if (generation !== pageGeneration) return false
     }
 
     const [commentsResult, eventsResult] = await Promise.allSettled([
       api.get(`/me/properties/${documentId}/comments`),
       api.get(`/me/properties/${documentId}/events`, { params: { page: 1, pageSize: 100 } }),
     ])
+    if (generation !== pageGeneration) return false
     if (commentsResult.status === 'fulfilled') {
       comments.value = commentsResult.value.data?.data || []
     }
     if (eventsResult.status === 'fulfilled') {
       events.value = eventsResult.value.data?.data || []
     }
+    return true
   } catch (e: any) {
-    property.value = null
-    error.value = e.response?.data?.error?.message || 'Объект не найден'
+    if (generation === pageGeneration) {
+      property.value = null
+      error.value = e.response?.data?.error?.message || 'Объект не найден'
+    }
+    return false
   } finally {
-    loading.value = false
+    if (generation === pageGeneration) loading.value = false
   }
 }
 
@@ -612,8 +657,8 @@ async function addComment(): Promise<void> {
 }
 
 async function loadPage(): Promise<void> {
-  await fetchProperty()
-  if (!property.value) return
+  const loaded = await fetchProperty()
+  if (!loaded || !property.value) return
   geocodeAddress() // scoped and non-critical
   if (!property.value.photos_downloaded) void triggerPhotoFetch()
 }

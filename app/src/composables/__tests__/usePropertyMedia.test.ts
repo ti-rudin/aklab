@@ -58,7 +58,10 @@ describe('usePropertyMedia', () => {
 
     await media.load('doc-1', ['/photos/doc-1/first.jpg'])
 
-    expect(mockedApi.get).toHaveBeenCalledWith('/photos/doc-1/first.jpg', { responseType: 'blob' })
+    expect(mockedApi.get).toHaveBeenCalledWith('/photos/doc-1/first.jpg', {
+      responseType: 'blob',
+      signal: expect.any(AbortSignal),
+    })
     expect(media.thumbnails.value).toEqual([
       { path: '/photos/doc-1/first.jpg', url: 'blob:test-1' },
     ])
@@ -173,6 +176,9 @@ describe('usePropertyMedia', () => {
     expect(mockedApi.get).toHaveBeenCalledTimes(1)
 
     media.cleanup()
+    const requestSignal = mockedApi.get.mock.calls[0]?.[1]?.signal
+    expect(requestSignal).toBeInstanceOf(AbortSignal)
+    expect(requestSignal?.aborted).toBe(true)
     resolveRequest({ data: { data: { photos_downloaded: false } } })
     await polling
     await vi.advanceTimersByTimeAsync(500)

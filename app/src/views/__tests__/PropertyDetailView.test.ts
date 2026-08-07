@@ -12,14 +12,25 @@ vi.mock('@/api/strapi', () => ({
   },
 }))
 
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'doc-1' } }),
-}))
+vi.mock('vue-router', async () => {
+  const { ref } = await vi.importActual<typeof import('vue')>('vue')
+  const routeId = ref('doc-1')
+  return {
+    useRoute: () => ({
+      params: {
+        get id() { return routeId.value },
+      },
+    }),
+    __routeId: routeId,
+  }
+})
 
 import api from '@/api/strapi'
+import * as routerMock from 'vue-router'
 import PropertyDetailView from '../PropertyDetailView.vue'
 
 const mockedApi = vi.mocked(api)
+const routeId = (routerMock as unknown as { __routeId: { value: string } }).__routeId
 let wrapper: VueWrapper | undefined
 
 const property = {
@@ -84,6 +95,7 @@ async function mountReady() {
 describe('PropertyDetailView scoped contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeId.value = 'doc-1'
     wrapper = undefined
   })
 
@@ -118,6 +130,90 @@ describe('PropertyDetailView scoped contract', () => {
     expect(mockedApi.get).toHaveBeenCalledWith('/properties/doc-1')
     expect(mockedApi.post).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Объект не найден')
+  })
+
+  it('rejects a detail DTO for another document before dependent side effects', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: { data: { ...property, documentId: 'doc-other' } },
+    })
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+
+    await flushPromises()
+
+    expect(mockedApi.get).toHaveBeenCalledTimes(1)
+    expect(mockedApi.post).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Объект не найден')
+  })
+
+  it('does not render a clickable source link for a non-http scraped URL', async () => {
+    setupApi()
+    mockedApi.get.mockImplementation(async (url: string) => {
+      if (url === '/properties/doc-1') {
+        return { data: { data: { ...property, url: 'javascript:alert(1)' } } }
+      }
+      if (url === '/me/properties/doc-1/comments') return { data: { data: [] } }
+      if (url === '/me/properties/doc-1/events') return { data: { data: [], meta: {} } }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('a[href^="javascript:"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Ссылка на источник недоступна')
+  })
+
+  it('ignores a late detail response after the route changes to another document', async () => {
+    let resolveFirst!: (value: unknown) => void
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url === '/properties/doc-1') {
+        return new Promise((resolve) => { resolveFirst = resolve })
+      }
+      if (url === '/properties/doc-2') {
+        return Promise.resolve({ data: { data: { ...property, documentId: 'doc-2', title: 'Объект B' } } })
+      }
+      if (url === '/me/properties/doc-2/comments') return Promise.resolve({ data: { data: [] } })
+      if (url === '/me/properties/doc-2/events') return Promise.resolve({ data: { data: [], meta: {} } })
+      throw new Error(`unexpected GET ${url}`)
+    })
+    mockedApi.post.mockResolvedValue({ data: { queued: false, reason: 'no_url' } })
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+    await flushPromises()
+
+    routeId.value = 'doc-2'
+    await flushPromises()
+    expect(wrapper.text()).toContain('Объект B')
+
+    resolveFirst({ data: { data: { ...property, title: 'Поздний объект A' } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Объект B')
+    expect(wrapper.text()).not.toContain('Поздний объект A')
+    expect(mockedApi.get).not.toHaveBeenCalledWith('/me/properties/doc-1/comments')
+    expect(mockedApi.get).not.toHaveBeenCalledWith('/me/properties/doc-1/events', expect.anything())
+    expect(mockedApi.post).not.toHaveBeenCalledWith('/properties/doc-1/fetch-photos')
+  })
+
+  it('does not perform dependent side effects when an in-flight detail resolves after unmount', async () => {
+    let resolveDetail!: (value: unknown) => void
+    mockedApi.get.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve }))
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+    await flushPromises()
+
+    wrapper.unmount()
+    resolveDetail({ data: { data: { ...property } } })
+    await flushPromises()
+
+    expect(mockedApi.get).toHaveBeenCalledTimes(1)
+    expect(mockedApi.post).not.toHaveBeenCalled()
   })
 
   it('handles no_url as a terminal lazy-fetch response without starting detail polling', async () => {
