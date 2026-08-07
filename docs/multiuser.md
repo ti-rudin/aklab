@@ -358,10 +358,13 @@ scope; no-auth и foreign-scope запросы не должны раскрыв�
 - **Admin:** видит только разрешённые global settings/sources/pipeline controls;
   ordinary user получает `403` на global mutation и не может выбрать чужого
   target через body/query.
-- **A и B:** имеют несовместимые полные профили (region + type + price/area +
-  stop words), чтобы доказать OR профилей без смешивания полей.
-- Catalog/dashboard/focus/stats A и B различаются; один canonical property,
-  подходящий обоим, хранится и создаётся один раз.
+- **A и B:** имеют различающиеся полные профили с контролируемым пересечением:
+  хотя бы один общий region/type и пересекающиеся price/area ranges сохраняют
+  shared fixture, а дополнительные region/type/stop-word значения создают
+  exclusive rows. Scoped list и stats обязаны отдельно доказать left-only и
+  right-only результаты — одно лишь различие profile payload недостаточно.
+- Один canonical property, подходящий обоим, хранится и создаётся один раз;
+  он используется только как dedicated shared mutation fixture.
 - Status/comment A не виден и не меняется B; чужой detail ID отвечает neutral
   `404`.
 - Blocked/unconfirmed user не входит в active snapshot и не получает digest;

@@ -355,31 +355,45 @@ function arrayValues(value) {
   return Array.isArray(value) ? value.map(item => String(item).toLowerCase()).filter(Boolean) : [];
 }
 
-function setsDisjoint(left, right) {
+function normalizedRange(from, to) {
+  const lower = from === null || from === undefined ? null : Number(from);
+  const upper = to === null || to === undefined ? null : Number(to);
+  if ((lower !== null && !Number.isFinite(lower)) || (upper !== null && !Number.isFinite(upper))
+    || (lower !== null && upper !== null && lower > upper)) {
+    throw new Error('profile response is malformed');
+  }
+  return [lower, upper];
+}
+
+function rangesOverlap(left, right) {
+  const [leftFrom, leftTo] = left;
+  const [rightFrom, rightTo] = right;
+  return (leftTo === null || rightFrom === null || leftTo >= rightFrom)
+    && (rightTo === null || leftFrom === null || rightTo >= leftFrom);
+}
+
+function sharedValues(left, right) {
   const rightSet = new Set(right);
-  return left.length > 0 && right.length > 0 && left.every(item => !rightSet.has(item));
+  return left.filter(value => rightSet.has(value));
 }
 
-function rangesDisjoint(leftFrom, leftTo, rightFrom, rightTo) {
-  const lf = leftFrom === null || leftFrom === undefined ? -Infinity : Number(leftFrom);
-  const lt = leftTo === null || leftTo === undefined ? Infinity : Number(leftTo);
-  const rf = rightFrom === null || rightFrom === undefined ? -Infinity : Number(rightFrom);
-  const rt = rightTo === null || rightTo === undefined ? Infinity : Number(rightTo);
-  if (![lf, lt, rf, rt].every(Number.isFinite) && ![lf, lt, rf, rt].some(value => value === Infinity || value === -Infinity)) return false;
-  return lt < rf || rt < lf;
-}
-
-function assertProfilesIncompatible(left, right) {
+function assertProfilesDistinctWithOverlap(left, right) {
   if (!isRecord(left) || !isRecord(right)) throw new Error('profile response is malformed');
-  const leftRegions = arrayValues(left.regions);
-  const rightRegions = arrayValues(right.regions);
-  const leftTypes = arrayValues(left.property_types);
-  const rightTypes = arrayValues(right.property_types);
-  const incompatible = setsDisjoint(leftRegions, rightRegions)
-    || setsDisjoint(leftTypes, rightTypes)
-    || rangesDisjoint(left.price_from, left.price_to, right.price_from, right.price_to)
-    || rangesDisjoint(left.area_from, left.area_to, right.area_from, right.area_to);
-  if (!incompatible) throw new Error('user A and user B profiles overlap');
+  const profileShape = profile => ({
+    regions: [...new Set(arrayValues(profile.regions))].sort(),
+    property_types: [...new Set(arrayValues(profile.property_types))].sort(),
+    price: normalizedRange(profile.price_from, profile.price_to),
+    area: normalizedRange(profile.area_from, profile.area_to),
+    stop_words: [...new Set(arrayValues(profile.stop_words))].sort(),
+  });
+  const leftShape = profileShape(left);
+  const rightShape = profileShape(right);
+  if (stableJson(leftShape) === stableJson(rightShape)) throw new Error('user A and user B profiles are identical');
+  const hasSharedCandidateScope = sharedValues(leftShape.regions, rightShape.regions).length > 0
+    && sharedValues(leftShape.property_types, rightShape.property_types).length > 0
+    && rangesOverlap(leftShape.price, rightShape.price)
+    && rangesOverlap(leftShape.area, rightShape.area);
+  if (!hasSharedCandidateScope) throw new Error('user A and user B profiles have no shared candidate scope');
   return true;
 }
 
@@ -526,7 +540,7 @@ async function runSmoke({ config, client, uiClient, logger = console } = {}) {
     });
   }
   if (profiles.userA && profiles.userB) {
-    await check('User A and user B profiles are incompatible', async () => assertProfilesIncompatible(profiles.userA, profiles.userB));
+    await check('User A and user B profiles are distinct with overlap', async () => assertProfilesDistinctWithOverlap(profiles.userA, profiles.userB));
   }
 
   const scoped = {};
@@ -797,7 +811,7 @@ module.exports = {
   assertDenied,
   assertForbidden,
   assertListSeparation,
-  assertProfilesIncompatible,
+  assertProfilesDistinctWithOverlap,
   assertStatsSeparation,
   buildManualPipelineRequest,
   buildSmokePlan,

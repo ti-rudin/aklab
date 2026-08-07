@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   assertListSeparation,
+  assertProfilesDistinctWithOverlap,
   buildManualPipelineRequest,
   buildSmokePlan,
   createSmokeConfig,
@@ -125,6 +126,33 @@ describe('multiuser smoke helpers', () => {
     expect(buildSmokePlan({}).noAuth.some((entry: { path: string }) => entry.path === '/api/photos/<documentId>/<filename>')).toBe(true);
     expect(() => assertListSeparation([{ documentId: 'shared' }], [{ documentId: 'shared' }])).toThrow('exclusive fixture rows');
     expect(() => assertListSeparation([], [])).toThrow('empty user list');
+  });
+
+  it('requires distinct profiles with a controlled shared candidate scope', () => {
+    const left = {
+      regions: ['moscow', 'other'],
+      property_types: ['free_purpose'],
+      price_from: 100,
+      price_to: 1000,
+      area_from: null,
+      area_to: null,
+      stop_words: ['left-only'],
+    };
+    const right = {
+      regions: ['other'],
+      property_types: ['free_purpose', 'office'],
+      price_from: 500,
+      price_to: 2000,
+      area_from: null,
+      area_to: null,
+      stop_words: ['right-only'],
+    };
+
+    expect(assertProfilesDistinctWithOverlap(left, right)).toBe(true);
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...left })).toThrow('profiles are identical');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, regions: ['mo'] })).toThrow('shared candidate scope');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, property_types: ['office'] })).toThrow('shared candidate scope');
+    expect(() => assertProfilesDistinctWithOverlap(left, { ...right, price_from: 2001, price_to: 3000 })).toThrow('shared candidate scope');
   });
 
   it('rejects insecure remote URLs, embedded credentials and base paths', () => {
