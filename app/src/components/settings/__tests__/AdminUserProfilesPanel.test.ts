@@ -116,4 +116,20 @@ describe('AdminUserProfilesPanel', () => {
 
     expect(wrapper.get('[data-testid="profile-digest-email"]').element).toHaveProperty('value', 'second@example.test')
   })
+
+  it('rejects an impossible target profile version jump', async () => {
+    const wrapper = setup()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-user-42"]').trigger('click')
+    await flushPromises()
+    ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { data: { ...selectedProfile, profile_version: 99 } },
+    })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Некорректный ответ профиля')
+    expect(wrapper.text()).not.toContain('Профиль пользователя сохранён')
+  })
 })

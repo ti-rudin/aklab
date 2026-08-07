@@ -96,4 +96,18 @@ describe('UserProfileForm', () => {
     expect(wrapper.text()).toContain('Некорректный ответ профиля')
     expect(wrapper.text()).not.toContain('Профиль сохранён')
   })
+
+  it('rejects an impossible profile version jump in the acknowledgement', async () => {
+    const wrapper = setup()
+    await flushPromises()
+    ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { data: { ...profile, profile_version: 99 } },
+    })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(refreshContext).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Некорректный ответ профиля')
+  })
 })

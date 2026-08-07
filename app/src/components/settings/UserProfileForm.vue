@@ -98,15 +98,16 @@ async function submit() {
     return
   }
 
+  const currentVersion = profileVersion.value
   saving.value = true
   try {
-    const payload = profilePayload({ ...draft.value, profile_version: profileVersion.value })
+    const payload = profilePayload({ ...draft.value, profile_version: currentVersion })
     const response = await api.put('/me/profile', { data: payload })
     const updated = responseProfile(response)
     if (
       !updated
       || !Number.isSafeInteger(updated.profile_version)
-      || (updated.profile_version as number) < profileVersion.value
+      || ![currentVersion, currentVersion + 1].includes(updated.profile_version as number)
     ) throw new Error('Некорректный ответ профиля')
     profileVersion.value = updated.profile_version as number
     draft.value = profileDraftFromDto(updated)

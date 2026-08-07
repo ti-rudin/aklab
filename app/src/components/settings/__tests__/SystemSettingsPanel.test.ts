@@ -9,7 +9,9 @@ function setup() {
   ;(api.get as ReturnType<typeof vi.fn>).mockResolvedValue({
     data: { data: { threshold_percent: 20, digest_time: '09:00', parse_depth: 20, smtp_to: 'must-not-bind@example.test' } },
   })
-  ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { data: {} } })
+  ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+    data: { data: { threshold_percent: 100, digest_time: '09:00', parse_depth: 5000 } },
+  })
   return mount(SystemSettingsPanel)
 }
 
@@ -68,5 +70,17 @@ describe('SystemSettingsPanel', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('does not report success for a malformed update acknowledgement', async () => {
+    const wrapper = setup()
+    await flushPromises()
+    ;(api.put as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: { data: {} } })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Некорректный ответ системных настроек')
+    expect(wrapper.text()).not.toContain('Сохранено')
   })
 })

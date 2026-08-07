@@ -161,8 +161,9 @@ async function submit() {
   saving.value = true
   const generation = requestGeneration
   const userId = selectedUserId.value
+  const currentVersion = profileVersion.value
   try {
-    const payload = profilePayload({ ...draft.value, profile_version: profileVersion.value })
+    const payload = profilePayload({ ...draft.value, profile_version: currentVersion })
     const response = await api.put(`/admin/user-profiles/${userId}`, { data: payload })
     if (generation !== requestGeneration || selectedUserId.value !== userId) return
     const updated = profileFromResponse(response)
@@ -170,7 +171,7 @@ async function submit() {
       !updated
       || updated.user_id !== userId
       || !Number.isSafeInteger(updated.profile_version)
-      || (updated.profile_version as number) < profileVersion.value
+      || ![currentVersion, currentVersion + 1].includes(updated.profile_version as number)
     ) throw new Error('Некорректный ответ профиля')
     profileVersion.value = updated.profile_version as number
     draft.value = profileDraftFromDto(updated)

@@ -152,16 +152,32 @@ async function submit() {
 
   saving.value = true
   try {
-    await api.put('/setting', {
+    const response = await api.put('/setting', {
       data: {
         threshold_percent: form.threshold_percent,
         digest_time: form.digest_time,
         parse_depth: form.parse_depth,
       },
     })
+    const updated = response.data?.data || {}
+    if (
+      typeof updated.threshold_percent !== 'number'
+      || !Number.isFinite(updated.threshold_percent)
+      || updated.threshold_percent < 0
+      || updated.threshold_percent > 100
+      || typeof updated.digest_time !== 'string'
+      || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(updated.digest_time)
+      || typeof updated.parse_depth !== 'number'
+      || !Number.isInteger(updated.parse_depth)
+      || updated.parse_depth < 1
+      || updated.parse_depth > 5000
+    ) throw new Error('Некорректный ответ системных настроек')
+    form.threshold_percent = updated.threshold_percent
+    form.digest_time = updated.digest_time
+    form.parse_depth = updated.parse_depth
     saved.value = true
   } catch (cause: any) {
-    error.value = cause.response?.data?.error?.message || 'Ошибка сохранения системных настроек'
+    error.value = cause.response?.data?.error?.message || cause.message || 'Ошибка сохранения системных настроек'
   } finally {
     saving.value = false
   }
