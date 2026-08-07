@@ -107,6 +107,8 @@ branch, exact target SHA после fast-forward и отсутствие server-
 `main`, сверяет SHA с `origin/main` и применяет только fast-forward. До любых
 PM2/build/DB side effects он отказывается от dirty/raced состояния; stash,
 floating pull и server-side release authorship запрещены regression-тестом.
+Dev-host использует общий PM2 daemon с другим проектом, поэтому Node-version
+mismatch также fail-closed: deploy не выполняет автоматический `pm2 update`.
 
 ### 2.2 Доступные локальные проверки
 
