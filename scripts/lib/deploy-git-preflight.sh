@@ -8,12 +8,12 @@ ensure_deploy_git_preflight() {
 
   branch="$(git branch --show-current)"
   if [ "$branch" != "main" ]; then
-    echo "[deploy] ERROR: production worktree must be on main, got '${branch:-detached}'" >&2
+    echo "[deploy] ERROR: deployment worktree must be on main, got '${branch:-detached}'" >&2
     return 1
   fi
 
   if [ -n "$(git status --porcelain)" ]; then
-    echo "[deploy] ERROR: production worktree has local changes; refusing to stash, reset, or deploy" >&2
+    echo "[deploy] ERROR: deployment worktree has local changes; refusing to stash, reset, or deploy" >&2
     git status --short >&2
     return 1
   fi

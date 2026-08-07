@@ -382,7 +382,7 @@ deploy-prod.sh + бамп версии).
 - **Auto-deploy на prod отключён** — только `workflow_dispatch` (ручной запуск).
 - **DocumentationView** — контент вынесен в `app/public/docs/architecture.md`, рендер через marked (850→~120 строк Vue).
 - **health-check.js** — проверяет все 15 сервисов из services.json (было 2).
-- **Multi-user rollout** — проверяемый dev-only порядок `feature OFF → audit → migration → idempotent re-audit → private photo copy → dev cutover` и rollback с exact SHA описан в [docs/multiuser.md](multiuser.md). Текущая архитектура additive: `MULTIUSER_ENABLED` fail-closed по умолчанию `false`, legacy `Setting`/`Property.status` сохраняются, а private photo-root задаётся через `PRIVATE_PHOTO_ROOT`; runtime rollout ещё не выполнен в этой docs-волне.
+- **Multi-user rollout** — проверяемый dev-only порядок `feature OFF → audit → migration → idempotent re-audit → private photo copy → dev cutover` и rollback с exact SHA описан в [docs/multiuser.md](multiuser.md). `scripts/deploy-dev.sh` — immutable exact-SHA applier (`--ref`, clean `main`, fast-forward only, WAL-safe baseline backup, feature-OFF gate). Архитектура additive: legacy `Setting`/`Property.status` сохраняются, private photo-root задаётся через `PRIVATE_PHOTO_ROOT`; runtime rollout выполняется только по явной команде.
 
 
 ## Strapi 5 — gotchas

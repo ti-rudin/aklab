@@ -103,10 +103,10 @@ branch, exact target SHA после fast-forward и отсутствие server-
 штатную immutable процедуру из AKLAB deploy skill либо сначала получить
 отдельно проверенный wrapper.
 
-Важно: текущий `scripts/deploy-dev.sh` в этом checkout исторически содержит
-legacy `git pull`, stash/reset rollback и не принимает `--ref`. Поэтому его нельзя
-выдавать за exact-SHA gate без отдельной проверки/замены deploy path. Это
-документационный prerequisite, а не повод ослаблять gate.
+`scripts/deploy-dev.sh` принимает обязательный `--ref <SHA>`, требует clean
+`main`, сверяет SHA с `origin/main` и применяет только fast-forward. До любых
+PM2/build/DB side effects он отказывается от dirty/raced состояния; stash,
+floating pull и server-side release authorship запрещены regression-тестом.
 
 ### 2.2 Доступные локальные проверки
 
@@ -416,7 +416,7 @@ PIPELINE_BODY="$(node -e '
 ' "${PIPELINE_DEPTH:?set validated depth}" "${USER_B_ID:?set target user id}")"
 curl --fail-with-body -sS \
   -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer ${ADMIN_JWT:?set admin JWT in protected environment}" \
+  -H "Authorization: Bearer ${ADMIN_JWT:?set in protected environment}" \
   --data "$PIPELINE_BODY" \
   "$API_BASE/api/pipeline/start" \
   | tee "$EVIDENCE_DIR/manual-b-start.json"

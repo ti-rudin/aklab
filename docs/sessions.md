@@ -8,7 +8,7 @@
 - ✅ Зафиксированы текущие факты: migration CLI offline и privacy-safe, `MULTIUSER_ENABLED` fail-closed; `PRIVATE_PHOTO_ROOT` остаётся отдельным persistent storage contract.
 - ⚠️ В этой docs-волне не выполнялись dev/prod deploy, restart, migration против реальной runtime DB, photo copy, SMTP или server E2E. Production требует отдельной команды пользователя.
 - ✅ Добавлен dedicated multi-user smoke/E2E harness для admin/A/B, scoped list/stats/detail/media и opt-in status/comment isolation; локально проверены unit contracts и Playwright discovery без запуска browser/server/network. Live dev acceptance ещё не выполнялся.
-- ⚠️ Текущий `scripts/deploy-dev.sh` не является exact-SHA applier без отдельного approved wrapper: он содержит legacy `git pull`/stash/reset и не принимает `--ref`.
+- ✅ `scripts/deploy-dev.sh` переведён на immutable exact-SHA contract: обязательный `--ref`, clean `main`, `origin/main` race gate, fast-forward only, `npm ci`, WAL-safe baseline backup и feature-OFF gate до Wave A restart.
 
 ## Session handoff (v1.1.79 — manual immutable deploy, GitHub Actions disabled)
 **Сделано 6 августа 2026:**
