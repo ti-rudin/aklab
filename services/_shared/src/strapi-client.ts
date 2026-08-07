@@ -315,8 +315,11 @@ export async function updateSourceStats(documentId: string, data: {
   if (putRes.ok) {
     console.log(`[strapi-client:updateStats] docId=${documentId} PUT OK →`, JSON.stringify(updateData));
   } else {
-    const body = await putRes.text();
-    logger.warn(`updateSourceStats PUT failed (${putRes.status}): ${body}`);
+    // The final details path awaits this call before terminal telemetry and
+    // artifact cleanup. Non-2xx must therefore be observable to preserve the
+    // retry artifact. Never include an upstream body: it may contain PII.
+    logger.warn(`updateSourceStats PUT failed (${putRes.status})`);
+    throw new Error(`updateSourceStats failed (${putRes.status})`);
   }
 }
 

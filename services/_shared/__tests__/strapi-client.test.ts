@@ -363,15 +363,17 @@ describe('updateSourceStats()', () => {
     expect(putBody.total_found).toBeUndefined();
   });
 
-  test('warns on PUT failure but does not throw', async () => {
+  test('rejects a non-2xx PUT without exposing the response body', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ error: 'not found' }, 404)
+      mockJsonResponse({ error: 'private-upstream-body' }, 404)
     );
 
-    // Should not throw
-    await expect(
-      updateSourceStats('doc-missing', { last_parse_status: 'error' })
-    ).resolves.toBeUndefined();
+    const error = await updateSourceStats('doc-missing', { last_parse_status: 'error' })
+      .then(() => null, value => value);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe('updateSourceStats failed (404)');
+    expect(error.message).not.toContain('private-upstream-body');
   });
 });
 
