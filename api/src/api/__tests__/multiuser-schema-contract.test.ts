@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import userProfileRoutes from '../user-profile/routes/user-profile';
 
 type SchemaAttribute = Record<string, unknown>;
 type Schema = {
@@ -78,7 +79,7 @@ const legacyParserRunAttributes = [
 ];
 
 describe('multi-user additive schema contract', () => {
-  it('defines a route-free user profile with exact ownership and filter constraints', () => {
+  it('defines a user profile with exact ownership, filters, and only explicit protected routes', () => {
     const profile = schema('api/src/api/user-profile/content-types/user-profile/schema.json');
     expectCollectionWithoutDrafts(profile, 'user-profile');
     expect(Object.keys(profile.attributes).sort()).toEqual([
@@ -121,9 +122,39 @@ describe('multi-user additive schema contract', () => {
       min: 1,
     });
 
-    for (const namespace of ['user-profile', 'user-property-state']) {
-      expect(existsSync(join(repoRoot, `api/src/api/${namespace}/routes`))).toBe(false);
-    }
+    expect(userProfileRoutes.routes).toEqual([
+      {
+        method: 'GET',
+        path: '/me/profile',
+        handler: 'user-profile.getMe',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'PUT',
+        path: '/me/profile',
+        handler: 'user-profile.updateMe',
+        config: { auth: false, policies: ['global::authenticated-user'] },
+      },
+      {
+        method: 'GET',
+        path: '/admin/user-profiles',
+        handler: 'user-profile.listAdmin',
+        config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      },
+      {
+        method: 'GET',
+        path: '/admin/user-profiles/:userId',
+        handler: 'user-profile.getAdmin',
+        config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      },
+      {
+        method: 'PUT',
+        path: '/admin/user-profiles/:userId',
+        handler: 'user-profile.updateAdmin',
+        config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+      },
+    ]);
+    expect(existsSync(join(repoRoot, 'api/src/api/user-property-state/routes'))).toBe(false);
   });
 
   it('defines user property state with scalar identity and scalar-only indexes', () => {
