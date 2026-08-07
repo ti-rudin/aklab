@@ -1,51 +1,55 @@
 /**
- * Composable for property list filters (city, type, status, source, price range).
- * Provides reactive filters with localStorage persistence.
+ * Supported catalog filters only.
+ *
+ * The scoped API does not expose source/price/newSince or nested filter
+ * controls. Persist only the two flat multi-value filters; search is a
+ * transient view concern.
  */
 import { reactive, ref, watch } from 'vue'
 
 const STORAGE_KEY = 'aklab-property-filters'
 
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
 export function usePropertyFilters() {
   const filters = reactive({
     city: [] as string[],
-    status: '',
-    source: '',
     property_type: [] as string[],
-    priceFrom: null as number | null,
-    priceTo: null as number | null,
   })
 
   const searchQuery = ref('')
 
-  // Load from localStorage
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
-      if (parsed.city) filters.city = parsed.city
-      if (parsed.source) filters.source = parsed.source
-      if (parsed.property_type) filters.property_type = parsed.property_type
-      if (parsed.priceFrom != null) filters.priceFrom = parsed.priceFrom
-      if (parsed.priceTo != null) filters.priceTo = parsed.priceTo
+      filters.city = stringArray(parsed.city)
+      filters.property_type = stringArray(parsed.property_type)
     }
-  } catch {}
+  } catch {
+    // localStorage is optional (private browsing/corrupt legacy value).
+  }
 
-  // Save to localStorage on change
-  watch(filters, (val) => {
+  watch(filters, (value) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
-    } catch {}
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        city: value.city,
+        property_type: value.property_type,
+      }))
+    } catch {
+      // Ignore storage quota/privacy errors; the in-memory filters remain valid.
+    }
   }, { deep: true })
 
   function resetFilters() {
     searchQuery.value = ''
     filters.city = []
-    filters.status = ''
-    filters.source = ''
     filters.property_type = []
-    filters.priceFrom = null
-    filters.priceTo = null
   }
 
   return { filters, searchQuery, resetFilters }

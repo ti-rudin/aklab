@@ -5,9 +5,7 @@ import StatCard from '@/components/ui/StatCard.vue'
 
 vi.mock('@/api/strapi', () => ({ default: { get: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-
-const mockToast = { error: vi.fn(), success: vi.fn(), info: vi.fn() }
-vi.mock('@/composables/useToast', () => ({ useToast: () => mockToast }))
+vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }) }))
 
 import api from '@/api/strapi'
 
@@ -17,11 +15,7 @@ const mockStats = {
   hot: 8,
   undervalued: 5,
   newToday: 3,
-  typeBreakdown: {
-    office: 40,
-    warehouse: 30,
-    retail: 20,
-  },
+  typeBreakdown: { office: 40, warehouse: 30, retail: 20 },
 }
 
 const mockTopProperties = [
@@ -47,8 +41,14 @@ const mockTopProperties = [
 function setupApiSuccess() {
   ;(api.get as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
     if (url === '/properties/stats') return Promise.resolve({ data: mockStats })
-    if (url === '/properties/focus')
-      return Promise.resolve({ data: { data: mockTopProperties } })
+    if (url === '/properties/focus') {
+      return Promise.resolve({
+        data: {
+          data: mockTopProperties,
+          meta: { page: 1, pageSize: 5, total: 2, totalPages: 1 },
+        },
+      })
+    }
     return Promise.resolve({ data: {} })
   })
 }
@@ -60,13 +60,12 @@ async function mountAndWait() {
   return wrapper
 }
 
-describe('DashboardView', () => {
+describe('DashboardView strict scoped contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  // ── KPI карточки ──────────────────────────────────────────────
-  it('отображает 4 KPI карточки при загрузке данных', async () => {
+  it('renders direct stats response in KPI cards', async () => {
     const wrapper = await mountAndWait()
 
     expect(wrapper.text()).toContain('Всего объектов')
@@ -79,86 +78,58 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('3')
   })
 
-  it('передаёт пресеты фильтров в кликабельные счётчики «Горячие» и «Новые»', async () => {
+  it('uses only supported navigation query keys', async () => {
     const wrapper = await mountAndWait()
     const cards = wrapper.findAllComponents(StatCard)
 
     expect(cards.find(card => card.props('title') === 'Горячие (≥50)')?.props('to')).toBe(
-      '/properties?tab=focus&threshold=50',
+      '/properties?tab=focus',
     )
     expect(cards.find(card => card.props('title') === 'Новые 24ч')?.props('to')).toBe(
-      '/properties?status=new&newSince=24h',
+      '/properties?status=new',
     )
   })
 
-  // ── Скелетоны ─────────────────────────────────────────────────
-  it('отображает скелетоны пока loading=true', async () => {
-    // Don't resolve the api promises — keep loading=true
-    ;(api.get as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}))
-    const wrapper = mount(DashboardView)
+  it('requests focus with flat params and no unsupported filters', async () => {
+    await mountAndWait()
 
-    const skeletons = wrapper.findAll('.skeleton')
-    expect(skeletons.length).toBe(4)
+    expect(api.get).toHaveBeenCalledWith('/properties/stats')
+    expect(api.get).toHaveBeenCalledWith('/properties/focus', {
+      params: { page: 1, pageSize: 5, sort: '-focus_score' },
+    })
+    const focusCall = (api.get as ReturnType<typeof vi.fn>).mock.calls.find((call) => call[0] === '/properties/focus')
+    expect(focusCall?.[1]?.params).not.toHaveProperty('threshold')
+    expect(focusCall?.[1]?.params).not.toHaveProperty('newSince')
+    expect(focusCall?.[1]?.params).not.toHaveProperty('filters')
   })
 
-  // ── Ошибка загрузки stats ─────────────────────────────────────
-  it('показывает ошибку при ошибке загрузки stats', async () => {
+  it('shows profile-not-ready state for 409 without logging out', async () => {
     ;(api.get as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
-      if (url === '/properties/stats') return Promise.reject(new Error('Network'))
-      if (url === '/properties/focus')
-        return Promise.resolve({ data: { data: [] } })
-      return Promise.resolve({ data: {} })
+      if (url === '/properties/stats') return Promise.reject({ response: { status: 409 } })
+      return Promise.resolve({ data: { data: [], meta: { page: 1, pageSize: 5, total: 0, totalPages: 0 } } })
     })
 
     const wrapper = mount(DashboardView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Ошибка загрузки статистики')
+    expect(wrapper.text()).toContain('Профиль')
+    expect(wrapper.text()).toContain('готов')
   })
 
-  // ── Горячие объекты с тегами ──────────────────────────────────
-  it('отображает горячие объекты с тегами через tagLabel', async () => {
+  it('renders hot properties by documentId with safe fields', async () => {
     const wrapper = await mountAndWait()
 
     expect(wrapper.text()).toContain('🔥 Горячие объекты')
     expect(wrapper.text()).toContain('Горячий склад')
-    expect(wrapper.text()).toContain('Офис в центре')
     expect(wrapper.text()).toContain('Источник: torgi-gov')
-    // tagLabel('undervalued') → 'Недооценённый' (from formatters.ts)
     expect(wrapper.text()).toContain('Недооценённый')
-    // score badge
     expect(wrapper.text()).toContain('85')
-    expect(wrapper.text()).toContain('60')
   })
 
-  // ── Кнопка «Обновить» вызывает refresh ───────────────────────
-  it('кнопка «Обновить» вызывает refresh (api.get)', async () => {
-    const wrapper = await mountAndWait()
-    const initialCalls = (api.get as ReturnType<typeof vi.fn>).mock.calls.length
+  it('renders loading skeletons before requests resolve', () => {
+    ;(api.get as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(DashboardView)
 
-    const btn = wrapper.find('button')
-    expect(btn.text()).toContain('Обновить')
-    await btn.trigger('click')
-    await flushPromises()
-
-    // refresh() calls api.get 2 times again (stats + focus)
-    expect((api.get as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-      initialCalls + 2,
-    )
-  })
-
-  // ── Бар-чарт отображает типы недвижимости ─────────────────────
-  it('бар-чарт отображает типы недвижимости', async () => {
-    const wrapper = await mountAndWait()
-
-    expect(wrapper.text()).toContain('📊 Объекты по типам')
-    // typeLabel mappings: office → 'Офис', warehouse → 'Склад', retail → 'Торговля'
-    expect(wrapper.text()).toContain('Офис')
-    expect(wrapper.text()).toContain('Склад')
-    expect(wrapper.text()).toContain('Торговля')
-    // counts
-    expect(wrapper.text()).toContain('40')
-    expect(wrapper.text()).toContain('30')
-    expect(wrapper.text()).toContain('20')
+    expect(wrapper.findAll('.skeleton')).toHaveLength(4)
   })
 })

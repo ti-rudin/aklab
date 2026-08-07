@@ -1,7 +1,6 @@
 <template>
-  <!-- Фильтры -->
+  <!-- Supported flat filters only -->
   <div class="radius-lg p-3 sm:p-4 border mb-6 space-y-3" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
-    <!-- Поиск + переключатель вида -->
     <div class="flex gap-2 items-center">
       <div class="relative flex-1">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style="color: var(--text-muted)">🔍</span>
@@ -11,14 +10,12 @@
       </div>
       <ViewToggle v-model="viewMode" />
     </div>
-    <!-- Мобильный тоггл фильтров -->
     <button @click="filtersOpen = !filtersOpen"
       class="sm:hidden flex items-center gap-2 text-sm w-full py-1"
       style="color: var(--text-muted)">
       <span>{{ filtersOpen ? '▼' : '▶' }}</span>
       <span>Фильтры</span>
     </button>
-    <!-- Фильтры -->
     <div class="flex-wrap gap-x-4 gap-y-3 items-end" :class="filtersOpen ? 'flex' : 'hidden sm:flex'">
       <div>
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Город</label>
@@ -28,64 +25,28 @@
         <label class="block text-xs mb-1" style="color: var(--text-muted)">Тип</label>
         <FilterChips v-model="filters.property_type" :options="typeOptions" />
       </div>
-      <div v-if="status !== 'in_progress'">
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Статус</label>
-        <select v-model="filters.status" class="px-2 py-1.5 radius-md border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option value="new">Новый</option>
-          <option value="viewed">Просмотрен</option>
-          <option value="rejected">Отклонён</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Источник</label>
-        <select v-model="filters.source" class="px-2 py-1.5 radius-md border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
-          <option value="">Все</option>
-          <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs mb-1" style="color: var(--text-muted)">Цена (₽)</label>
-        <div class="flex gap-1 items-center">
-          <input v-model.number="filters.priceFrom" type="number" placeholder="от" min="0"
-            class="w-24 px-2 py-1.5 radius-md border text-sm"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-          <span class="text-xs" style="color: var(--text-muted)">—</span>
-          <input v-model.number="filters.priceTo" type="number" placeholder="до" min="0"
-            class="w-24 px-2 py-1.5 radius-md border text-sm"
-            style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)" />
-        </div>
-      </div>
       <button @click="handleResetFilters" class="px-3 py-1.5 radius-md border text-sm hover:opacity-80 self-end" style="border-color: var(--border-subtle); color: var(--text-muted)">Сбросить</button>
     </div>
-    <p v-if="newSinceHours" class="text-xs" style="color: var(--text-muted)">
-      Период: последние {{ newSinceHours }} ч.
-    </p>
   </div>
 
-  <!-- Loading -->
   <SkeletonTable v-if="loading" :rows="6" />
 
-  <!-- Пусто -->
   <div v-else-if="items.length === 0" class="text-center py-16">
     <p class="text-lg mb-2" style="color: var(--text-muted)">Нет объектов</p>
     <p class="text-sm" style="color: var(--text-muted)">Парсеры ещё не нашли подходящих объектов</p>
   </div>
 
-  <!-- Карточки -->
   <div v-else-if="viewMode === 'cards'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <PropertyCard
       v-for="(item, idx) in items"
-      :key="item.id"
+      :key="item.documentId"
       :item="item"
       variant="default"
       class="stagger-item"
       :style="{ '--i': idx }"
-
     />
   </div>
 
-  <!-- Таблица -->
   <PropertyTable
     v-else
     :items="items"
@@ -96,7 +57,6 @@
     @sort="toggleSort"
   />
 
-  <!-- Пагинация -->
   <div v-if="totalPages > 1" class="flex justify-center items-center gap-1 sm:gap-2 mt-6">
     <button @click="page > 1 && page--" :disabled="page <= 1"
       class="px-2 py-1 sm:px-3 radius-md text-sm disabled:opacity-40"
@@ -128,32 +88,23 @@ import PropertyCard from '@/components/properties/PropertyCard.vue'
 import PropertyTable from '@/components/properties/PropertyTable.vue'
 import ViewToggle from '@/components/properties/ViewToggle.vue'
 import FilterChips from '@/components/properties/FilterChips.vue'
-import { usePropertyData } from '@/composables/usePropertyData'
+import { usePropertyData, type PropertyQuery } from '@/composables/usePropertyData'
 import { usePropertyFilters } from '@/composables/usePropertyFilters'
 
 const props = defineProps<{
+  /** "new" is the literal all view; only work emits a status query. */
   status: 'new' | 'in_progress'
 }>()
 
 const router = useRouter()
 const route = useRoute()
-
 const { properties: items, loading, total, fetchProperties } = usePropertyData()
 const { filters, searchQuery, resetFilters } = usePropertyFilters()
-const newSinceHours = ref(0)
 
-// ========================
-// View mode (persisted)
-// ========================
 const viewMode = ref<'cards' | 'table'>((localStorage.getItem('aklab-view-mode') as 'cards' | 'table') || 'cards')
-watch(viewMode, (v) => {
-  try { localStorage.setItem('aklab-view-mode', v) } catch {}
+watch(viewMode, (value) => {
+  try { localStorage.setItem('aklab-view-mode', value) } catch {}
 })
-
-// ========================
-// Static options
-// ========================
-const sources = ['fedresurs', 'aggregator-bankrot', 'torgi-gov', 'investmoscow', 'invest-mosreg', 'roseltorg', 'fabrikant', 'alfalot', 'etprf', 'sberbank-ast', 'm-ets']
 
 const typeOptions = [
   { value: 'office', label: 'Офис' },
@@ -171,11 +122,8 @@ const cityOptions = [
   { value: 'other', label: 'Другой' },
 ]
 
-// ========================
-// Sort
-// ========================
 const sort = reactive({
-  field: 'createdAt' as string,
+  field: 'createdAt',
   direction: 'desc' as 'asc' | 'desc',
 })
 
@@ -188,16 +136,29 @@ function toggleSort(field: string) {
   }
 }
 
-// ========================
-// Mobile filter toggle
-// ========================
 const filtersOpen = ref(false)
+const pageSize = 25
+const page = ref(1)
+const ready = ref(false)
+const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
-// ========================
-// Search debounce
-// ========================
+const visiblePages = computed(() => {
+  const pages: (number | string)[] = []
+  const totalPageCount = totalPages.value
+  const current = page.value
+  if (totalPageCount <= 7) {
+    for (let i = 1; i <= totalPageCount; i++) pages.push(i)
+    return pages
+  }
+  pages.push(1)
+  if (current > 3) pages.push('...')
+  for (let i = Math.max(2, current - 1); i <= Math.min(totalPageCount - 1, current + 1); i++) pages.push(i)
+  if (current < totalPageCount - 2) pages.push('...')
+  pages.push(totalPageCount)
+  return pages
+})
+
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
-
 function onSearchInput() {
   if (searchDebounce) clearTimeout(searchDebounce)
   searchDebounce = setTimeout(() => {
@@ -206,99 +167,62 @@ function onSearchInput() {
   }, 400)
 }
 
-// ========================
-// Pagination
-// ========================
-const pageSize = 25
-const page = ref(1)
-const totalPages = computed(() => Math.ceil(total.value / pageSize))
+function queryList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []
+  return values.filter((item): item is string => typeof item === 'string')
+    .flatMap(item => item.split(','))
+    .map(item => item.trim())
+    .filter(Boolean)
+}
 
-const visiblePages = computed(() => {
-  const t = totalPages.value
-  const current = page.value
-  const pages: (number | string)[] = []
-  if (t <= 7) {
-    for (let i = 1; i <= t; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  if (current > 3) pages.push('...')
-  const start = Math.max(2, current - 1)
-  const end = Math.min(t - 1, current + 1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (current < t - 2) pages.push('...')
-  pages.push(t)
-  return pages
-})
+function queryText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
 
-// ========================
-// Fetch
-// ========================
-async function fetchItems() {
-  const params: any = {
-    sort: `${sort.field}:${sort.direction}`,
-    pagination: { page: page.value, pageSize },
+function fetchItems() {
+  const params: PropertyQuery = {
+    sort: sort.direction === 'desc' ? `-${sort.field}` : sort.field,
+    page: page.value,
+    pageSize,
   }
-  const f: any = {}
-  // Base filter: hide in_progress on "Все объекты", show only in_progress on "В работе"
-  if (props.status === 'in_progress') {
-    f.status = { $eq: 'in_progress' }
-  } else {
-    f.status = { $ne: 'in_progress' }
-  }
-  if (filters.city.length) f.city = { $in: filters.city }
-  if (filters.status) f.status = { $eq: filters.status }
-  if (filters.source) f.source = { $eq: filters.source }
-  if (filters.property_type.length) f.property_type = { $in: filters.property_type }
-  if (filters.priceFrom) f.price = { ...f.price, $gte: filters.priceFrom }
-  if (filters.priceTo) f.price = { ...f.price, $lte: filters.priceTo }
-  if (newSinceHours.value > 0) {
-    f.first_seen_at = { $gte: new Date(Date.now() - newSinceHours.value * 60 * 60 * 1000).toISOString() }
-  }
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim()
-    f.$or = [
-      { title: { $containsi: q } },
-      { address: { $containsi: q } },
-    ]
-  }
-  if (Object.keys(f).length) params.filters = f
-  await fetchProperties(params)
+
+  // "Все объекты" is literal all: no status parameter. Work is a shortcut.
+  if (props.status === 'in_progress') params.status = 'in_progress'
+  if (filters.city.length) params.city = filters.city.join(',')
+  if (filters.property_type.length) params.property_type = filters.property_type.join(',')
+  const search = searchQuery.value.trim()
+  if (search) params.search = search
+
+  void fetchProperties(params)
 }
 
 function handleResetFilters() {
   resetFilters()
-  newSinceHours.value = 0
   sort.field = 'createdAt'
   sort.direction = 'desc'
   page.value = 1
 }
 
-// ========================
-// Watchers
-// ========================
-watch([filters, page, sort], ([, newPage], [, oldPage]) => {
-  if (newPage === oldPage) {
-    if (page.value !== 1) {
-      page.value = 1
-    } else {
-      fetchItems()
-    }
-    return
-  }
+watch(filters, () => {
+  if (!ready.value) return
+  page.value = 1
   fetchItems()
 }, { deep: true })
 
-// ========================
-// Navigation
-// ========================
+watch(page, () => {
+  if (ready.value) fetchItems()
+})
+
+watch(sort, () => {
+  if (!ready.value) return
+  page.value = 1
+  fetchItems()
+}, { deep: true })
+
 function openProperty(item: { documentId: string }) {
   router.push(`/properties/${item.documentId}`)
 }
 
-// ========================
-// Expose for parent
-// ========================
 function refresh() {
   page.value = 1
   fetchItems()
@@ -306,35 +230,21 @@ function refresh() {
 
 defineExpose({ refresh, total })
 
-// ========================
-// Lifecycle
-// ========================
 onMounted(() => {
-  // Read all query params from URL
-  const q = route.query
-  const newSince = q.newSince === '24h' ? 24 : 0
-  newSinceHours.value = newSince
-  if (q.status === 'new' || q.status === 'viewed' || q.status === 'rejected') filters.status = q.status
-  if (q.property_type) filters.property_type = Array.isArray(q.property_type) ? q.property_type as string[] : (q.property_type as string).split(',')
-  if (q.city) filters.city = Array.isArray(q.city) ? q.city as string[] : (q.city as string).split(',')
-  if (q.priceFrom) filters.priceFrom = Number(q.priceFrom)
-  if (q.priceTo) filters.priceTo = Number(q.priceTo)
-  if (q.source) filters.source = q.source as string
+  const query = route.query ?? {}
+  filters.city = queryList(query.city)
+  filters.property_type = queryList(query.property_type)
+  searchQuery.value = queryText(query.search)
+  ready.value = true
   fetchItems()
 })
 
-// ========================
-// Sync filters to URL
-// ========================
-watch(filters, () => {
+watch([filters, searchQuery], () => {
+  if (!ready.value) return
   const query: Record<string, string> = {}
-  if (filters.status) query.status = filters.status
-  if (newSinceHours.value === 24) query.newSince = '24h'
-  if (filters.property_type.length) query.property_type = filters.property_type.join(',')
   if (filters.city.length) query.city = filters.city.join(',')
-  if (filters.priceFrom != null) query.priceFrom = String(filters.priceFrom)
-  if (filters.priceTo != null) query.priceTo = String(filters.priceTo)
-  if (filters.source) query.source = filters.source
+  if (filters.property_type.length) query.property_type = filters.property_type.join(',')
+  if (searchQuery.value.trim()) query.search = searchQuery.value.trim()
   router.replace({ query })
 }, { deep: true })
 </script>

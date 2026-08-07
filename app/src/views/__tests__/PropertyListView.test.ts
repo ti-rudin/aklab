@@ -6,21 +6,10 @@ vi.mock('@/api/strapi', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 
 const mockPush = vi.fn()
 let mockRouteHash = ''
+let mockRouteQuery: Record<string, string | string[]> = {}
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush }),
-  useRoute: () => ({ params: {}, hash: mockRouteHash }),
-}))
-
-const mockToast = { error: vi.fn(), success: vi.fn(), info: vi.fn() }
-vi.mock('@/composables/useToast', () => ({ useToast: () => mockToast }))
-
-vi.mock('@/components/properties/ParseLaunchPanel.vue', () => ({
-  default: {
-    name: 'ParseLaunchPanel',
-    template: '<div class="mock-parse-panel" />',
-    props: ['parseDepth'],
-    emits: ['update:parseDepth', 'done'],
-  },
+  useRoute: () => ({ params: {}, hash: mockRouteHash, query: mockRouteQuery }),
 }))
 
 vi.mock('@/components/properties/PropertyAllTab.vue', () => ({
@@ -40,184 +29,66 @@ vi.mock('@/components/properties/PropertyFocusTab.vue', () => ({
   },
 }))
 
-vi.mock('@/components/properties/ConfirmClearDialog.vue', () => ({
-  default: {
-    name: 'ConfirmClearDialog',
-    template:
-      '<div v-if="visible" class="mock-confirm-dialog"><button class="confirm-btn" @click="$emit(\'confirm\')">Да</button></div>',
-    props: ['visible'],
-    emits: ['confirm', 'cancel'],
-  },
-}))
-
 import api from '@/api/strapi'
 
-function mountView() {
-  return mount(PropertyListView)
-}
-
-async function mountAndWait(hash = '') {
+async function mountAndWait(hash = '', query: Record<string, string | string[]> = {}) {
   mockRouteHash = hash
-  const wrapper = mountView()
+  mockRouteQuery = query
+  const wrapper = mount(PropertyListView)
   await flushPromises()
   return wrapper
 }
 
-describe('PropertyListView', () => {
+describe('PropertyListView strict scoped contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRouteHash = ''
+    mockRouteQuery = {}
   })
 
-  // ── 3 вкладки ─────────────────────────────────────────────────
-  it('отображает 3 вкладки: «Все объекты», «В фокусе», «В работе»', async () => {
+  it('renders all, focus and work tabs', async () => {
     const wrapper = await mountAndWait()
-
-    const tabs = wrapper.findAll('button').filter((b) =>
-      ['Все объекты', 'В фокусе', 'В работе'].includes(b.text()),
+    const tabs = wrapper.findAll('button').filter((button) =>
+      ['Все объекты', 'В фокусе', 'В работе'].includes(button.text()),
     )
-    expect(tabs).toHaveLength(3)
-    expect(tabs[0].text()).toBe('Все объекты')
-    expect(tabs[1].text()).toBe('В фокусе')
-    expect(tabs[2].text()).toBe('В работе')
+
+    expect(tabs.map((tab) => tab.text())).toEqual(['Все объекты', 'В фокусе', 'В работе'])
   })
 
-  // ── Вкладка «Все объекты» активна по умолчанию ────────────────
-  it('вкладка «Все объекты» активна по умолчанию', async () => {
+  it('does not render parse launch or clear-new UI', async () => {
     const wrapper = await mountAndWait()
 
-    // PropertyAllTab mock renders for "all" tab
     expect(wrapper.find('.mock-all-tab').exists()).toBe(true)
-    expect(wrapper.find('.mock-parse-panel').exists()).toBe(true)
-    // Focus tab should NOT be rendered
-    expect(wrapper.find('.mock-focus-tab').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Очистить')
+    expect(wrapper.text()).not.toContain('Запуск парсинга')
+    expect(wrapper.find('.mock-confirm-dialog').exists()).toBe(false)
+    expect(api.post).not.toHaveBeenCalled()
   })
 
-  // ── Переключение вкладок ──────────────────────────────────────
-  it('переключение вкладок отображает соответствующий контент', async () => {
+  it('passes literal all and work status shortcuts to the respective tabs', async () => {
     const wrapper = await mountAndWait()
+    const all = wrapper.findComponent({ name: 'PropertyAllTab' })
+    expect(all.props('status')).toBe('new')
 
-    // Click "В фокусе"
-    const focusTab = wrapper.findAll('button').find((b) => b.text() === 'В фокусе')!
-    await focusTab.trigger('click')
+    const workButton = wrapper.findAll('button').find((button) => button.text() === 'В работе')!
+    await workButton.trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.mock-focus-tab').exists()).toBe(true)
-    // ParseLaunchPanel hidden on focus tab
-    expect(wrapper.find('.mock-parse-panel').exists()).toBe(false)
-
-    // Click "В работе"
-    const workTab = wrapper.findAll('button').find((b) => b.text() === 'В работе')!
-    await workTab.trigger('click')
-    await flushPromises()
-
-    // PropertyAllTab rendered for work status, no parse panel
-    expect(wrapper.find('.mock-parse-panel').exists()).toBe(false)
+    const work = wrapper.findComponent({ name: 'PropertyAllTab' })
+    expect(work.props('status')).toBe('in_progress')
   })
 
-  // ── Кнопка «Очистить» видна только на вкладке «Все объекты» ───
-  it('кнопка «Очистить» видна только на вкладке «Все объекты»', async () => {
-    const wrapper = await mountAndWait()
+  it('selects focus safely from hash or query even when route mocks include query', async () => {
+    const byHash = await mountAndWait('#focus')
+    expect(byHash.find('.mock-focus-tab').exists()).toBe(true)
 
-    // On "all" tab — button visible
-    const clearBtnAll = wrapper.findAll('button').find((b) => b.text() === 'Очистить')
-    expect(clearBtnAll).toBeTruthy()
-
-    // Switch to "В фокусе"
-    const focusTab = wrapper.findAll('button').find((b) => b.text() === 'В фокусе')!
-    await focusTab.trigger('click')
-    await flushPromises()
-
-    const clearBtnFocus = wrapper.findAll('button').find((b) => b.text() === 'Очистить')
-    expect(clearBtnFocus).toBeUndefined()
-
-    // Switch to "В работе"
-    const workTab = wrapper.findAll('button').find((b) => b.text() === 'В работе')!
-    await workTab.trigger('click')
-    await flushPromises()
-
-    const clearBtnWork = wrapper.findAll('button').find((b) => b.text() === 'Очистить')
-    expect(clearBtnWork).toBeUndefined()
+    const byQuery = await mountAndWait('', { tab: 'focus' })
+    expect(byQuery.find('.mock-focus-tab').exists()).toBe(true)
   })
 
-  // ── ConfirmClearDialog при клике на «Очистить» ────────────────
-  it('показывает ConfirmClearDialog при клике на «Очистить»', async () => {
-    const wrapper = await mountAndWait()
+  it('selects work from the supported status shortcut', async () => {
+    const wrapper = await mountAndWait('', { status: 'in_progress' })
 
-    const clearBtn = wrapper.findAll('button').find((b) => b.text() === 'Очистить')!
-    await clearBtn.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('.mock-confirm-dialog').exists()).toBe(true)
-  })
-
-  // ── executeClearNew вызывает api.post ──────────────────────────
-  it('executeClearNew вызывает api.post(\'/properties/clear-new\')', async () => {
-    ;(api.post as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { deleted: 5, photosDeleted: 2 },
-    })
-
-    const wrapper = await mountAndWait()
-
-    // Click "Очистить"
-    const clearBtn = wrapper.findAll('button').find((b) => b.text() === 'Очистить')!
-    await clearBtn.trigger('click')
-    await flushPromises()
-
-    // Click confirm button inside dialog
-    const confirmBtn = wrapper.find('.confirm-btn')
-    await confirmBtn.trigger('click')
-    await flushPromises()
-
-    expect(api.post).toHaveBeenCalledWith('/properties/clear-new')
-  })
-
-  // ── toast.success при успешной очистке ────────────────────────
-  it('toast.success при успешной очистке', async () => {
-    ;(api.post as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { deleted: 3, photosDeleted: 0 },
-    })
-
-    const wrapper = await mountAndWait()
-
-    const clearBtn = wrapper.findAll('button').find((b) => b.text() === 'Очистить')!
-    await clearBtn.trigger('click')
-    await flushPromises()
-
-    const confirmBtn = wrapper.find('.confirm-btn')
-    await confirmBtn.trigger('click')
-    await flushPromises()
-
-    expect(mockToast.success).toHaveBeenCalledWith('Удалено 3 объектов')
-  })
-
-  // ── toast.error при ошибке ────────────────────────────────────
-  it('toast.error при ошибке очистки', async () => {
-    ;(api.post as ReturnType<typeof vi.fn>).mockRejectedValue({
-      response: { data: { error: { message: 'Forbidden' } } },
-      message: 'Request failed',
-    })
-
-    const wrapper = await mountAndWait()
-
-    const clearBtn = wrapper.findAll('button').find((b) => b.text() === 'Очистить')!
-    await clearBtn.trigger('click')
-    await flushPromises()
-
-    const confirmBtn = wrapper.find('.confirm-btn')
-    await confirmBtn.trigger('click')
-    await flushPromises()
-
-    expect(mockToast.error).toHaveBeenCalledWith('Ошибка: Forbidden')
-  })
-
-  // ── hash #focus активирует вкладку «В фокусе» ────────────────
-  it('hash #focus активирует вкладку «В фокусе»', async () => {
-    const wrapper = await mountAndWait('#focus')
-
-    // Focus tab should be rendered (since activeTab = 'focus')
-    expect(wrapper.find('.mock-focus-tab').exists()).toBe(true)
-    // Parse panel should NOT be rendered
-    expect(wrapper.find('.mock-parse-panel').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'PropertyAllTab' }).props('status')).toBe('in_progress')
   })
 })
