@@ -164,6 +164,10 @@ grep -q 'restore_deploy_artifacts.*|| return 1' <<< "$RESTORE_RUNTIME_BODY" || f
 grep -q 'PRESERVE_ARTIFACT_BACKUP=true' <<< "$ROLLBACK_BODY" || fail 'incomplete fallback does not retain its recovery snapshot'
 START_OR_RESTART_COUNT="$(grep -c 'pm2 startOrRestart ecosystem.config.js' "$ROOT/scripts/deploy-dev.sh" || true)"
 assert_eq "$START_OR_RESTART_COUNT" '3'
+ECOSYSTEM_FLAG_TRUE="$(cd "$ROOT" && DOTENV_CONFIG_QUIET=true MULTIUSER_ENABLED=true node -e "const app=require('./ecosystem.config.js').apps.find(x=>x.name==='aklab-api');process.stdout.write(String(app?.env?.MULTIUSER_ENABLED))")"
+ECOSYSTEM_FLAG_FALSE="$(cd "$ROOT" && DOTENV_CONFIG_QUIET=true MULTIUSER_ENABLED=false node -e "const app=require('./ecosystem.config.js').apps.find(x=>x.name==='aklab-api');process.stdout.write(String(app?.env?.MULTIUSER_ENABLED))")"
+assert_eq "$ECOSYSTEM_FLAG_TRUE" 'true'
+assert_eq "$ECOSYSTEM_FLAG_FALSE" 'false'
 if grep -q 'pm2 start ecosystem.config.js' "$ROOT/scripts/deploy-dev.sh"; then
   fail 'deploy uses PM2 start, which rejects already-managed AKLAB applications'
 fi

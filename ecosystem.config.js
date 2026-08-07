@@ -42,6 +42,7 @@ const coreApps = [
       DATABASE_FILENAME: process.env.DATABASE_FILENAME || '',
       PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
       PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
+      MULTIUSER_ENABLED: process.env.MULTIUSER_ENABLED || 'false',
       STRAPI_ADMIN_EMAIL: process.env.STRAPI_ADMIN_EMAIL || '',
       STRAPI_ADMIN_PASSWORD: process.env.STRAPI_ADMIN_PASSWORD || '',
     },
