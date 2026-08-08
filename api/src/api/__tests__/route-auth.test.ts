@@ -68,6 +68,7 @@ const GLOBAL_ROUTE_MODULES: readonly { resource: string; module: RouteModule }[]
 ];
 
 const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
+  { resource: 'setting', method: 'GET', path: '/internal/setting/analyzer', handler: 'setting.internalFindAnalyzer', config: SERVICE_CONFIG },
   { resource: 'setting', method: 'GET', path: '/setting', handler: 'setting.find', config: ADMIN_CONFIG },
   { resource: 'setting', method: 'PUT', path: '/setting', handler: 'setting.update', config: ADMIN_CONFIG },
 
@@ -79,6 +80,7 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'source', method: 'PUT', path: '/sources/:id', handler: 'api::source.source.update', config: ADMIN_CONFIG },
   { resource: 'source', method: 'DELETE', path: '/sources/:id', handler: 'api::source.source.delete', config: ADMIN_CONFIG },
 
+  { resource: 'market-reference', method: 'GET', path: '/internal/market-references/active', handler: 'market-reference.internalFindActive', config: SERVICE_CONFIG },
   { resource: 'market-reference', method: 'GET', path: '/market-references', handler: 'market-reference.find', config: ADMIN_CONFIG },
   { resource: 'market-reference', method: 'GET', path: '/market-references/:id', handler: 'market-reference.findOne', config: ADMIN_CONFIG },
   { resource: 'market-reference', method: 'POST', path: '/market-references', handler: 'market-reference.create', config: ADMIN_CONFIG },
