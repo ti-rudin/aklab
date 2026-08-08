@@ -186,4 +186,25 @@ if grep -Eq 'git stash|git pull|npm install|git checkout -- \.' "$ROOT/scripts/d
   fail 'deploy-dev contains a mutable deployment operation'
 fi
 
-echo 'PASS: deploy git preflight rejects dirty/raced state and deploy-dev uses immutable exact-SHA flow'
+# Production deploy must reuse the section-aware PM2 parser and must not mutate
+# the shared PM2 daemon. Its rollback DB is invocation-scoped and the ERR trap is
+# armed only after that backup exists, so a Git preflight failure cannot restore
+# a stale generic database snapshot.
+PROD_DEPLOY="$ROOT/scripts/deploy-prod.sh"
+bash -n "$PROD_DEPLOY"
+grep -q 'parse_pm2_daemon_node_version' "$PROD_DEPLOY" || fail 'deploy-prod does not use the section-aware PM2 daemon parser'
+if grep -q 'pm2 update' "$PROD_DEPLOY"; then
+  fail 'deploy-prod can mutate the shared PM2 daemon'
+fi
+grep -q '^ROLLBACK_DB_BACKUP=""$' "$PROD_DEPLOY" || fail 'deploy-prod has no invocation-scoped DB rollback path'
+if grep -q 'api/.tmp/data.db.bak' "$PROD_DEPLOY"; then
+  fail 'deploy-prod can restore the stale generic data.db.bak snapshot'
+fi
+BACKUP_READY_LINE="$(grep -n '^    ROLLBACK_DB_BACKUP="$DB_BACKUP_CANDIDATE"$' "$PROD_DEPLOY" | head -1 | cut -d: -f1)"
+PROD_TRAP_LINE="$(grep -n '^trap on_deploy_error ERR$' "$PROD_DEPLOY" | head -1 | cut -d: -f1)"
+[ -n "$BACKUP_READY_LINE" ] && [ -n "$PROD_TRAP_LINE" ] && [ "$BACKUP_READY_LINE" -lt "$PROD_TRAP_LINE" ] \
+  || fail 'deploy-prod arms rollback before the invocation-scoped DB backup is ready'
+grep -q '^  trap - ERR$' "$PROD_DEPLOY" || fail 'deploy-prod error handler does not disable recursive ERR traps'
+grep -q '^  exit "$deploy_rc"$' "$PROD_DEPLOY" || fail 'deploy-prod error handler can hide the original non-zero exit'
+
+echo 'PASS: deploy git preflight rejects dirty/raced state and deploy scripts use safe exact-SHA rollback contracts'
