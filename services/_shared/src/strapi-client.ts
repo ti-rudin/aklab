@@ -416,7 +416,7 @@ export async function finishParserRunSourceStage(identityKey: string, payload: {
  * Получить Property по documentId (для analyzer).
  */
 export async function fetchProperty(documentId: string): Promise<any> {
-  const res = await fetch(`${BASE}/properties/${documentId}`, { headers: HEADERS });
+  const res = await fetch(`${BASE}/internal/properties/${encodeURIComponent(documentId)}`, { headers: HEADERS });
   if (!res.ok) throw new Error(`fetchProperty failed (${res.status})`);
   const data = (await res.json()) as StrapiResponse<any>;
   return data.data;
@@ -426,18 +426,19 @@ export async function fetchProperty(documentId: string): Promise<any> {
  * Найти активный MarketReference по city + property_type (для analyzer).
  */
 export async function findActiveMarketReference(city: string, propertyType: string): Promise<any | null> {
-  const url = `${BASE}/market-references?filters[city][$eq]=${city}&filters[property_type][$eq]=${propertyType}&filters[is_active][$eq]=true&sort=effective_from:desc&pagination[limit]=1`;
+  const params = new URLSearchParams({ city, property_type: propertyType });
+  const url = `${BASE}/internal/market-references/active?${params.toString()}`;
   const res = await fetch(url, { headers: HEADERS });
   if (!res.ok) return null;
-  const data = (await res.json()) as StrapiResponse<any[]>;
-  return data.data?.[0] || null;
+  const data = (await res.json()) as StrapiResponse<any | null>;
+  return data.data ?? null;
 }
 
 /**
  * Получить singleton Setting (для analyzer/digest).
  */
 export async function fetchSetting(): Promise<any> {
-  const res = await fetch(`${BASE}/setting`, { headers: HEADERS });
+  const res = await fetch(`${BASE}/internal/setting/analyzer`, { headers: HEADERS });
   if (!res.ok) return null;
   const data = (await res.json()) as StrapiResponse<any>;
   return data.data;

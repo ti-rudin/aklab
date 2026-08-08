@@ -170,6 +170,40 @@ describe('property controller', () => {
     });
   });
 
+  describe('internalFindOne', () => {
+    it('reads a canonical property by documentId without user scope', async () => {
+      const property = { documentId: 'property-doc', title: 'Service property' };
+      strapi._mockDbQuery.findOne.mockResolvedValue(property);
+      const ctx = makeCtx({ params: { id: 'property-doc' } });
+
+      await actions.internalFindOne(ctx);
+
+      expect(strapi._mockDbQuery.findOne).toHaveBeenCalledWith({ where: { documentId: 'property-doc' } });
+      expect(strapi._scopeRepository.detail).not.toHaveBeenCalled();
+      expect(ctx.body).toEqual({ data: property });
+    });
+
+    it('returns 404 when the canonical property does not exist', async () => {
+      strapi._mockDbQuery.findOne.mockResolvedValue(null);
+      const ctx = makeCtx({ params: { id: 'missing-property' } });
+
+      await actions.internalFindOne(ctx);
+
+      expect(ctx.status).toBe(404);
+      expect(ctx.body).toEqual({ error: 'Property not found' });
+    });
+
+    it('rejects a malformed documentId before the canonical read', async () => {
+      const ctx = makeCtx({ params: { id: '../property' } });
+
+      await actions.internalFindOne(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid property id' });
+      expect(strapi._mockDbQuery.findOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('internalUpdate', () => {
     it('updates only analyzer/photo-owned fields by documentId', async () => {
       const fields = { is_undervalued: true, deviation_percent: 12.5, photos_downloaded: false };

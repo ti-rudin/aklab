@@ -458,9 +458,9 @@ describe('fetchProperty()', () => {
       mockJsonResponse({ data: prop })
     );
 
-    const result = await fetchProperty('doc-1');
+    const result = await fetchProperty('doc /1');
     expect(result).toEqual(prop);
-    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/properties/doc-1`);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/internal/properties/doc%20%2F1`);
   });
 
   test('throws on non-OK response', async () => {
@@ -482,21 +482,19 @@ describe('findActiveMarketReference()', () => {
   test('returns the first matching reference', async () => {
     const ref = { id: 5, city: 'moscow', property_type: 'office' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: [ref] })
+      mockJsonResponse({ data: ref })
     );
 
     const result = await findActiveMarketReference('moscow', 'office');
     expect(result).toEqual(ref);
 
     const url = (globalThis.fetch as any).mock.calls[0][0] as string;
-    expect(url).toContain('city][$eq]=moscow');
-    expect(url).toContain('property_type][$eq]=office');
-    expect(url).toContain('is_active][$eq]=true');
+    expect(url).toBe(`${BASE}/internal/market-references/active?city=moscow&property_type=office`);
   });
 
   test('returns null when no match', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: [] })
+      mockJsonResponse({ data: null })
     );
 
     const result = await findActiveMarketReference('unknown', 'other');
@@ -521,14 +519,14 @@ describe('fetchSetting()', () => {
   });
 
   test('returns singleton setting', async () => {
-    const setting = { id: 1, digest_enabled: true };
+    const setting = { threshold_percent: 20 };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       mockJsonResponse({ data: setting })
     );
 
     const result = await fetchSetting();
     expect(result).toEqual(setting);
-    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/setting`);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toBe(`${BASE}/internal/setting/analyzer`);
   });
 
   test('returns null on non-OK response', async () => {
