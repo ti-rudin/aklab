@@ -57,25 +57,19 @@ warn() { echo -e "${YELLOW}[deploy]${NC} $1"; }
 err()  { echo -e "${RED}[deploy]${NC} $1"; }
 
 # === PM2 daemon Node version check ===
-CURRENT_NODE_VER=$(node -v 2>/dev/null | sed 's/^v//')
-PM2_DAEMON_NODE=$(pm2 report 2>/dev/null | grep "node version" | awk '{print $NF}' || echo "unknown")
-if [ "$PM2_DAEMON_NODE" != "unknown" ] && [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
-  warn "PM2 daemon Node v${PM2_DAEMON_NODE} ≠ текущая v${CURRENT_NODE_VER}"
-  warn "Daemon перезапускается с правильным окружением..."
-  pm2 update 2>/dev/null || warn "pm2 update не удался — проверьте вручную"
-  log "PM2 daemon обновлён до Node v${CURRENT_NODE_VER}"
-  # Обновить systemd-сервис чтобы при перезагрузке использовалась правильная Node
-  PM2_SERVICE="/etc/systemd/system/pm2-rudin.service"
-  if [ -f "$PM2_SERVICE" ] && [ -w "$PM2_SERVICE" ]; then
-    NODE_BIN=$(which node)
-    NODE_DIR=$(dirname "$NODE_BIN")
-    if ! grep -q "$NODE_DIR" "$PM2_SERVICE"; then
-      sed -i "s|Environment=PATH=.*|Environment=PATH=$NODE_DIR:/usr/local/bin:/usr/bin:/bin|" "$PM2_SERVICE"
-      systemctl daemon-reload 2>/dev/null || true
-      log "systemd pm2-rudin.service обновлён: PATH → $NODE_DIR"
-    fi
-  fi
+# PM2 report contains separate Daemon and CLI sections. Reuse the tested parser
+# and fail closed on a real mismatch; never restart the shared PM2 daemon from an
+# application deploy.
+CURRENT_NODE_VER=$(node -p 'process.versions.node')
+if ! PM2_DAEMON_NODE="$(pm2 report 2>/dev/null | parse_pm2_daemon_node_version)"; then
+  err "Не удалось определить Node version PM2 daemon"
+  exit 1
 fi
+if [ "$PM2_DAEMON_NODE" != "$CURRENT_NODE_VER" ]; then
+  err "PM2 daemon Node v${PM2_DAEMON_NODE} ≠ текущая v${CURRENT_NODE_VER}; deploy остановлен"
+  exit 1
+fi
+log "PM2 daemon Node v${PM2_DAEMON_NODE} подтверждён"
 
 # Telegram notification
 notify() {
@@ -90,10 +84,13 @@ notify() {
 
 # Rollback
 ROLLBACK_SHA=""
+ROLLBACK_DB_BACKUP=""
 rollback() {
+  local rollback_failed=0
   if [ -n "$ROLLBACK_SHA" ]; then
     err "Rollback на ${ROLLBACK_SHA:0:8}..."
-    git reset --hard "$ROLLBACK_SHA"
+    pm2 stop $PM2_NAMES 2>/dev/null || rollback_failed=1
+    git reset --hard "$ROLLBACK_SHA" || rollback_failed=1
     # Rebuild после rollback (dist/ может содержать новую версию)
     log "Rebuild на rollback SHA..."
     npm rebuild better-sqlite3 2>&1 | tail -3 || true
@@ -105,15 +102,38 @@ rollback() {
     for svc in $ALL_SERVICE_SLUGS; do
       (cd "services/$svc" && npm run build 2>&1 | tail -3) || true
     done
-    if [ -f "api/.tmp/data.db.bak" ]; then
-      cp api/.tmp/data.db.bak api/.tmp/data.db
-      log "DB восстановлен из backup"
+    if [ -n "$ROLLBACK_DB_BACKUP" ]; then
+      if [ ! -f "$ROLLBACK_DB_BACKUP" ] || [ "$(sqlite3 "$ROLLBACK_DB_BACKUP" 'PRAGMA integrity_check;')" != "ok" ]; then
+        err "Invocation-scoped DB backup отсутствует или повреждён"
+        rollback_failed=1
+      else
+        rm -f api/.tmp/data.db-wal api/.tmp/data.db-shm
+        cp "$ROLLBACK_DB_BACKUP" api/.tmp/data.db.restore || rollback_failed=1
+        if [ "$rollback_failed" -eq 0 ]; then
+          mv -f api/.tmp/data.db.restore api/.tmp/data.db || rollback_failed=1
+        fi
+        if [ "$rollback_failed" -eq 0 ] && [ "$(sqlite3 api/.tmp/data.db 'PRAGMA integrity_check;')" = "ok" ]; then
+          log "DB восстановлен из invocation-scoped backup"
+        else
+          err "DB restore verification failed"
+          rollback_failed=1
+        fi
+      fi
     fi
-    pm2 restart $PM2_NAMES 2>/dev/null || true
+    pm2 startOrRestart ecosystem.config.js >/dev/null 2>&1 || rollback_failed=1
     notify "❌ AKLAB deploy FAILED — rollback к ${ROLLBACK_SHA:0:8}"
   fi
+  return "$rollback_failed"
 }
-trap rollback ERR
+
+on_deploy_error() {
+  local deploy_rc=$?
+  trap - ERR
+  if ! rollback; then
+    err "Rollback завершён не полностью; сохранены backup/evidence для ручного восстановления"
+  fi
+  exit "$deploy_rc"
+}
 
 # ВАЖНО: .env файл и PM2 daemon env — два разных источника секретов.
 # PM2 daemon env захватывается в момент `pm2 start`. Если .env изменён
@@ -162,22 +182,34 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 if [ -f "api/.tmp/data.db" ]; then
   if command -v sqlite3 &> /dev/null; then
-    sqlite3 api/.tmp/data.db ".backup api/.tmp/data.db.bak"
-    sqlite3 api/.tmp/data.db ".backup $BACKUP_DIR/data-${TIMESTAMP}.db"
-    log "Backup: api/.tmp/data.db.bak + $BACKUP_DIR/data-${TIMESTAMP}.db"
+    DB_BACKUP_CANDIDATE="$BACKUP_DIR/data-${TIMESTAMP}.db"
+    sqlite3 api/.tmp/data.db ".backup $DB_BACKUP_CANDIDATE"
+    if [ "$(sqlite3 "$DB_BACKUP_CANDIDATE" 'PRAGMA integrity_check;')" != "ok" ]; then
+      err "DB backup integrity check failed"
+      exit 1
+    fi
+    ROLLBACK_DB_BACKUP="$DB_BACKUP_CANDIDATE"
+    log "Backup: $ROLLBACK_DB_BACKUP"
   else
-    warn "sqlite3 не установлен — пропускаем backup (apt install sqlite3)"
-    cp api/.tmp/data.db api/.tmp/data.db.bak 2>/dev/null || true
-    cp api/.tmp/data.db "$BACKUP_DIR/data-${TIMESTAMP}.db" 2>/dev/null || true
+    err "sqlite3 не установлен — безопасный production backup невозможен"
+    exit 1
   fi
   # Хранить последние 7 бэкапов
   ls -t "$BACKUP_DIR"/data-*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 fi
 
 if [ -f "queue.db" ]; then
-  cp queue.db "$BACKUP_DIR/queue-${TIMESTAMP}.db" 2>/dev/null || true
+  sqlite3 queue.db ".backup $BACKUP_DIR/queue-${TIMESTAMP}.db"
+  if [ "$(sqlite3 "$BACKUP_DIR/queue-${TIMESTAMP}.db" 'PRAGMA integrity_check;')" != "ok" ]; then
+    err "Queue backup integrity check failed"
+    exit 1
+  fi
   log "Backup: queue.db → $BACKUP_DIR/queue-${TIMESTAMP}.db"
 fi
+
+# From this point deployment may mutate generated artifacts/runtime. The DB
+# rollback path is invocation-scoped and verified, so the ERR handler is safe.
+trap on_deploy_error ERR
 
 # === Step 4: Smart npm install ===
 NEED_INSTALL=false
@@ -358,6 +390,8 @@ if [ -n "$(git status --porcelain)" ]; then
   git status --short >&2
   exit 1
 fi
+
+trap - ERR
 
 # === Done ===
 log "Deploy завершён успешно!"
