@@ -2,6 +2,18 @@
 
 > Извлечено из docs/compact-doc.md. Нумерация сохранена.
 
+## Production deploy — rollback backup должен принадлежать текущему invocation
+
+Нельзя восстанавливать generic DB backup: файл может быть создан старым deploy и откатить актуальную production DB. До arm `ERR` handler создать unique WAL-safe backup текущего invocation, проверить `PRAGMA integrity_check`, сохранить его path в runtime variable и разрешать DB restore только при непустом verified path. Ошибка clean-tree/Git preflight до backup не должна трогать DB. ERR handler обязан завершаться исходным non-zero code даже после успешного rollback.
+
+Operational `.env`/DB backups нельзя сохранять внутри Git worktree: immutable preflight закономерно увидит untracked file и остановит deploy. Использовать отдельный backup root вне worktree с mode `600/700`.
+
+## Multi-user migration — legacy relation drift и SMTP ambiguity
+
+`DATA_RELATION_DRIFT` нельзя bypass-ить. Сначала агрегатно определить тип drift без вывода пользовательских данных. Legacy comments без valid property relation невозможно безопасно привязать к пользователю: сделать full DB backup, сохранить полные rows/link tables в отдельный quarantine SQLite mode `600`, удалить только доказанные orphan rows транзакционно и повторить audit.
+
+`LEGACY_SMTP_AMBIGUOUS` означает несколько recipients при singular `user_profiles.digest_email`. Не выбирать адрес вслепую и не терять исходное значение: сохранить backup, применить явно одобренный single recipient только на время migration, затем восстановить legacy `setting.smtp_to` byte-for-byte и проверить hash.
+
 ## Hotfix — digest freshness + SQLite timestamp (v1.1.72)
 
 `GET /api/properties/focus` использует raw SQLite query и возвращает `first_seen_at` как epoch milliseconds, хотя REST path даёт ISO. Digest должен принимать оба корректных представления; ISO-only проверка отбрасывает все свежие focus-объекты и пишет `No focus properties` при ненулевом `undervalued_count`. Не менять порог как workaround: добавить RED-тест с epoch timestamp, затем безопасно валидировать `positive safe integer → Date` и сохранить фильтры old/future.
@@ -114,12 +126,14 @@
     (tirobots@yandex.ru) вместо `Setting.smtp_to` (a@rudin.ru).
     Решение: использовать `db.query` как в seeder, или передавать
     smtpTo напрямую из БД.
-23. **PM2 daemon Node version mismatch** — PM2 daemon хранит окружение
-    от момента `pm2 start`. Если Node обновлён через nvm (напр. v20→v22),
-    daemon продолжает использовать старую. `pm2 update` перезапускает
-    daemon с текущим окружением. **Deploy-prod.sh** теперь проверяет
-    автоматически и обновляет systemd-сервис. Симптом: `better-sqlite3`
-    NODE_MODULE_VERSION mismatch при рестарте.
+23. **PM2 daemon Node version mismatch** — `pm2 report` содержит отдельные
+    секции Daemon и CLI и может напечатать две строки `node version`.
+    Использовать только section-aware `parse_pm2_daemon_node_version` из
+    `scripts/lib/deploy-git-preflight.sh`; `grep` без section boundary склеивает
+    версии и даёт ложный mismatch. Production deploy не должен автоматически
+    выполнять `pm2 update`: mismatch — fail-closed prerequisite для отдельного
+    согласованного maintenance action. Симптом реального mismatch:
+    `better-sqlite3 NODE_MODULE_VERSION mismatch` при рестарте.
 24. **API_TOKEN_SALT: .env ≠ PM2 daemon** — `access_key` в
     `strapi_api_tokens` = `HMAC-SHA512(plain_token, API_TOKEN_SALT)`.
     Если соль в `.env` отличается от PM2 daemon env — все сервисы

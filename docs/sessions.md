@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.80 — multi-user production rollout)
+**Сделано 9 августа 2026:**
+- ✅ Runtime High policy оставлена fail-closed по умолчанию, но владелец явно одобрил узкое risk acceptance только для residual `@strapi/upload 5.51.2 → sharp 0.34.5`. Upload остаётся runtime-reachable internal plugin; dependency override, downgrade, monkey patch и experimental Strapi не применялись.
+- ✅ Production развернут immutable по exact SHA `5b95528fd9774b00d740dfd5a28a97b1012b2d8b`, версия `1.1.80`. Persistent private photos перенесены copy-only в root вне Git worktree: 45 файлов, mode `700`, legacy originals сохранены.
+- ✅ Первый deploy invocation остановился на clean-tree preflight из-за repo-local `.env` backup. Старый rollback ошибочно восстановил generic stale DB backup; production был немедленно возвращён byte-for-byte на verified invocation backup. PR #61 сделал PM2 parser section-aware, запретил автоматический `pm2 update`, привязал DB rollback к backup текущего invocation и сохранил исходный non-zero exit.
+- ✅ Multi-user migration прошла audit → backup → apply → audit. Шесть legacy comments не имели существующего property и были сохранены в отдельный quarantine SQLite перед удалением из live-таблиц. `smtp_to` содержал три адреса; для migration временно выбран известный owner recipient, затем legacy Setting восстановлен byte-for-byte.
+- ✅ Созданы отдельные application admin и ordinary accounts. Legacy target account переведён в `authenticated` без пересоздания; profile fingerprint и три migrated states сохранены. Credentials не сохранены в Git/docs/логах; временные secret files удалены.
+- ✅ Final acceptance: Git clean, DB integrity `ok`, pipeline `idle`, queue `0`, current PM2 manifest `15/15 online`, legacy fedresurs `stopped`, API `204`, app `200`, photo-fetcher `200`, multi-user env/runtime `true`. Login/authz: admin `200/200`, обычный user на admin endpoint `403`.
+
 ## Session handoff (Task17 — multi-user dev rollout/rollback documentation)
 **Сделано 7 августа 2026:**
 - ✅ Создан проверяемый [dev runbook multi-user](multiuser.md): exact SHA gate, feature OFF, WAL-safe backup prerequisite, explicit absolute `--db/--backup`, audit → transactional migration → idempotent re-audit, private photo-root copy/counts/checksums с сохранением originals, admin/A/B/no-auth/private-media/manual-target/cron evidence и rollback order.
