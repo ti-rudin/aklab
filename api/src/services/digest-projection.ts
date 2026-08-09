@@ -25,6 +25,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 320;
+const MAX_DIGEST_RECIPIENTS = 10;
 const MAX_RUN_ID_LENGTH = 128;
 const PROFILE_SCOPE_SET = new Set(['all', 'single']);
 
@@ -59,7 +60,7 @@ export interface DigestProjectionDeliveryInput {
 
 export type DigestDeliveryResult =
   | { enabled: false; reason: 'inactive' | 'disabled' | 'missing_email' }
-  | { enabled: true; email: string };
+  | { enabled: true; emails: string[] };
 
 export class DigestProjectionError extends Error {
   readonly code: string;
@@ -288,15 +289,26 @@ async function loadThreshold(strapi: DigestProjectionStrapi): Promise<number> {
   return normalizeThreshold(row.threshold_percent);
 }
 
-function normalizeCurrentEmail(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
+function normalizeCurrentEmails(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
   if (typeof value !== 'string') throw new DigestProjectionMalformedError();
-  const email = value.trim();
-  if (email === '') return null;
-  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) {
+  const raw = value.trim();
+  if (raw === '') return [];
+
+  const recipients = raw.split(',').map(recipient => recipient.trim());
+  if (
+    recipients.length > MAX_DIGEST_RECIPIENTS
+    || recipients.some(recipient => recipient === '' || recipient.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(recipient))
+  ) {
     throw new DigestProjectionMalformedError();
   }
-  return email;
+
+  const unique = new Map<string, string>();
+  for (const recipient of recipients) {
+    const key = recipient.toLowerCase();
+    if (!unique.has(key)) unique.set(key, recipient);
+  }
+  return [...unique.values()];
 }
 
 async function loadCurrentDelivery(
@@ -328,9 +340,9 @@ async function loadCurrentDelivery(
   if (!isRecord(profile)) return { enabled: false, reason: 'disabled' };
   if (typeof profile.digest_enabled !== 'boolean') throw new DigestProjectionMalformedError();
   if (!profile.digest_enabled) return { enabled: false, reason: 'disabled' };
-  const email = normalizeCurrentEmail(profile.digest_email);
-  if (!email) return { enabled: false, reason: 'missing_email' };
-  return { enabled: true, email };
+  const emails = normalizeCurrentEmails(profile.digest_email);
+  if (emails.length === 0) return { enabled: false, reason: 'missing_email' };
+  return { enabled: true, emails };
 }
 
 export class DigestProjectionService {

@@ -70,6 +70,29 @@ export type ProfileInput = {
 const regionSet = new Set<string>(REGIONS)
 const propertyTypeSet = new Set<string>(PROPERTY_TYPES)
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MAX_DIGEST_RECIPIENTS = 10
+const MAX_DIGEST_EMAIL_LENGTH = 320
+
+function normalizeDigestRecipients(value: unknown): string[] {
+  if (typeof value !== 'string') throw new Error('Укажите корректный email')
+  const raw = value.trim()
+  if (raw === '') return []
+
+  const recipients = raw.split(',').map(recipient => recipient.trim())
+  if (
+    recipients.length > MAX_DIGEST_RECIPIENTS
+    || recipients.some(recipient => recipient === '' || recipient.length > MAX_DIGEST_EMAIL_LENGTH || !emailPattern.test(recipient))
+  ) {
+    throw new Error('Укажите корректные email через запятую')
+  }
+
+  const unique = new Map<string, string>()
+  for (const recipient of recipients) {
+    const key = recipient.toLowerCase()
+    if (!unique.has(key)) unique.set(key, recipient)
+  }
+  return [...unique.values()]
+}
 
 export function createEmptyProfileDraft(): ProfileDraft {
   return {
@@ -175,9 +198,15 @@ export function validateProfileDraft(draft: ProfileInput): string | null {
     return error instanceof Error ? error.message : 'Некорректные стоп-слова'
   }
 
-  const email = typeof draft.digest_email === 'string' ? draft.digest_email.trim() : ''
-  if (email && !emailPattern.test(email)) return 'Укажите корректный email'
-  if (draft.digest_enabled === true && !emailPattern.test(email)) return 'Для включённого дайджеста нужен корректный email'
+  let digestRecipients: string[]
+  try {
+    digestRecipients = normalizeDigestRecipients(draft.digest_email)
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Укажите корректный email'
+  }
+  if (draft.digest_enabled === true && digestRecipients.length === 0) {
+    return 'Для включённого дайджеста нужен корректный email'
+  }
   return null
 }
 
@@ -190,7 +219,7 @@ export function profilePayload(dto: ProfileInput): ProfileUpdatePayload {
     area_from: readNumeric(dto.area_from),
     area_to: readNumeric(dto.area_to),
     stop_words: normalizeStopWords(dto.stop_words || []),
-    digest_email: typeof dto.digest_email === 'string' ? dto.digest_email.trim() : '',
+    digest_email: normalizeDigestRecipients(dto.digest_email ?? '').join(', '),
     digest_enabled: dto.digest_enabled === true,
   }
   const error = validateProfileDraft(draft)

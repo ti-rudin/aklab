@@ -70,6 +70,10 @@ function delivery(
   return response({ data: state });
 }
 
+function recipientListDelivery(emails: string[]) {
+  return response({ data: { enabled: true, emails } });
+}
+
 function property(documentId: string, overrides: Record<string, unknown> = {}) {
   return {
     documentId,
@@ -224,6 +228,17 @@ describe('handleDigestJob immutable internal projection contract', () => {
     expect(mockSendMail.mock.calls[0][0].text).toContain('Обычное (< 50)');
     expect(mockSendMail.mock.calls[0][0].text).not.toContain('20-49');
     expect(mockedLogCron).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a private copy to every current digest recipient', async () => {
+    mockFetch
+      .mockResolvedValueOnce(recipientListDelivery(['first@example.com', 'second@example.com']))
+      .mockResolvedValueOnce(propertiesPage([property('property-1')]))
+      .mockResolvedValueOnce(recipientListDelivery(['first@example.com', 'second@example.com']));
+
+    await expect(handleDigestJob(makeJob())).resolves.toEqual({ sent: true, count: 1 });
+    expect(mockSendMail).toHaveBeenCalledTimes(2);
+    expect(mockSendMail.mock.calls.map(call => call[0].to)).toEqual(['first@example.com', 'second@example.com']);
   });
 
   it('uses only the two internal digest endpoints and never public focus or setting routes', async () => {

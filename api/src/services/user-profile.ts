@@ -233,24 +233,43 @@ function normalizeDecimal(value: unknown, malformed: boolean): number | null {
   return parsed;
 }
 
-function normalizeInputEmail(value: unknown): string | null {
+const DIGEST_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_DIGEST_RECIPIENTS = 10;
+const MAX_DIGEST_EMAIL_LENGTH = 320;
+
+function invalidDigestEmail(malformed: boolean): never {
+  if (malformed) throw new UserProfileMalformedError();
+  throw new UserProfileValidationError();
+}
+
+function normalizeDigestEmailList(value: unknown, malformed: boolean): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') throw new UserProfileValidationError();
-  const email = value.trim();
-  if (email === '' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new UserProfileValidationError();
+  if (typeof value !== 'string') invalidDigestEmail(malformed);
+  const raw = value.trim();
+  if (raw === '') invalidDigestEmail(malformed);
+
+  const recipients = raw.split(',').map(recipient => recipient.trim());
+  if (
+    recipients.length > MAX_DIGEST_RECIPIENTS
+    || recipients.some(recipient => recipient === '' || recipient.length > MAX_DIGEST_EMAIL_LENGTH || !DIGEST_EMAIL_PATTERN.test(recipient))
+  ) {
+    invalidDigestEmail(malformed);
   }
-  return email;
+
+  const unique = new Map<string, string>();
+  for (const recipient of recipients) {
+    const key = recipient.toLowerCase();
+    if (!unique.has(key)) unique.set(key, recipient);
+  }
+  return [...unique.values()].join(', ');
+}
+
+function normalizeInputEmail(value: unknown): string | null {
+  return normalizeDigestEmailList(value, false);
 }
 
 function normalizeStoredEmail(value: unknown): string | null {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') throw new UserProfileMalformedError();
-  const email = value.trim();
-  if (email === '' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new UserProfileMalformedError();
-  }
-  return email;
+  return normalizeDigestEmailList(value, true);
 }
 
 function normalizeBoolean(value: unknown, malformed: boolean): boolean {

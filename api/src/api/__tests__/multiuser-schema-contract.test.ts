@@ -114,7 +114,7 @@ describe('multi-user additive schema contract', () => {
       expect(profile.attributes[field]).toMatchObject({ type: 'decimal', min: 0 });
       expect(profile.attributes[field].required).not.toBe(true);
     }
-    expect(profile.attributes.digest_email).toMatchObject({ type: 'email' });
+    expect(profile.attributes.digest_email).toMatchObject({ type: 'text' });
     expect(profile.attributes.digest_email.required).not.toBe(true);
     expect(profile.attributes.digest_enabled).toMatchObject({ type: 'boolean', default: false, required: true });
     expect(profile.attributes.profile_version).toMatchObject({

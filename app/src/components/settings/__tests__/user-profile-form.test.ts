@@ -63,6 +63,17 @@ describe('user-profile-form contracts', () => {
     expect(() => normalizeStopWords(['a'.repeat(257)])).toThrow()
   })
 
+  it('serializes a comma-delimited digest recipient list in canonical form', () => {
+    expect(profilePayload({
+      profile_version: 1,
+      ...validDraft(),
+      digest_email: '  first@example.test, second@example.test, first@example.test ',
+    })).toMatchObject({
+      digest_email: 'first@example.test, second@example.test',
+      digest_enabled: true,
+    })
+  })
+
   it('rejects invalid enums, ranges and digest dependency', () => {
     expect(validateProfileDraft({ ...validDraft(), regions: [] })).toContain('регион')
     expect(validateProfileDraft({ ...validDraft(), property_types: ['hotel'] })).toContain('тип')
