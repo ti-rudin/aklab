@@ -2,6 +2,13 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.81 — CSV digest recipients и focus threshold)
+**Сделано 9 августа 2026:**
+- ✅ `digest_email` переведён с Strapi `email` на `text`; фронтенд и API принимают canonical CSV (trim, case-insensitive dedupe, максимум 10 адресов, до 320 символов на адрес). Digest projection использует `emails[]`, worker выполняет отдельный `sendMail()` для каждого получателя, не раскрывая адреса между ними.
+- ✅ Причина нефильтрующего «В фокусе»: обычный `buildPropertyQuery()` удалял endpoint-specific `threshold`. Добавлен отдельный `buildFocusPropertyQuery()` и regression test, подтверждающий параметр в `GET /properties/focus`.
+- ✅ Release `v1.1.81`, PR #63, exact production SHA `f65bc01d64144438fefc85bfb1e247aa3d57367d`. Проверки: root 1006/1006, app 254/254, builds app/API/digest; production worktree clean, API 204, app 200, 15 процессов online, pipeline idle, SQLite `user_profiles.digest_email` = `TEXT`.
+- ⚠️ Для четырёх API audit High владелец подтвердил узкое исключение: актуальный Strapi 5.51.2 содержит nested `@strapi/upload → sharp`; совместимого обновления нет, `npm audit fix` предлагает несовместимый downgrade. Не применялись override, force или monkey patch.
+
 ## Session handoff (v1.1.80 — multi-user production rollout)
 **Сделано 9 августа 2026:**
 - ✅ Runtime High policy оставлена fail-closed по умолчанию, но владелец явно одобрил узкое risk acceptance только для residual `@strapi/upload 5.51.2 → sharp 0.34.5`. Upload остаётся runtime-reachable internal plugin; dependency override, downgrade, monkey patch и experimental Strapi не применялись.
