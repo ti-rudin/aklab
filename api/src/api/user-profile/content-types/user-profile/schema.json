@@ -52,7 +52,7 @@
       "default": []
     },
     "digest_email": {
-      "type": "email"
+      "type": "text"
     },
     "digest_enabled": {
       "type": "boolean",

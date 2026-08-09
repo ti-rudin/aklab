@@ -20,16 +20,18 @@ const draft: ProfileDraft = {
 describe('ParsingRulesPanel', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('is a controlled profile editor and emits field changes', async () => {
+  it('accepts a comma-delimited recipient list without native single-email validation', async () => {
     const wrapper = mount(ParsingRulesPanel, { props: { modelValue: draft } })
 
     const email = wrapper.get('[data-testid="profile-digest-email"]')
-    await email.setValue('person@example.test')
+    expect(email.attributes('type')).toBe('text')
+    expect(email.attributes('inputmode')).toBe('email')
+    await email.setValue('person@example.test, second@example.test')
 
     const updates = wrapper.emitted('update:modelValue') || []
     expect(updates[updates.length - 1]?.[0]).toMatchObject({
       ...draft,
-      digest_email: 'person@example.test',
+      digest_email: 'person@example.test, second@example.test',
     })
   })
 

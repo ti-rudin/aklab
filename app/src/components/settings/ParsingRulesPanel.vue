@@ -130,10 +130,11 @@
         <div class="space-y-3">
           <input
             data-testid="profile-digest-email"
-            type="email"
+            type="text"
+            inputmode="email"
             :value="modelValue.digest_email"
             :disabled="disabled"
-            placeholder="email@example.com"
+            placeholder="email@example.com, another@example.com"
             class="w-full px-3 py-2 rounded-lg border text-sm"
             style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)"
             @input="setField('digest_email', ($event.target as HTMLInputElement).value)"

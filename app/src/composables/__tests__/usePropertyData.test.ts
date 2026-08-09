@@ -120,6 +120,19 @@ describe('usePropertyData', () => {
   })
 
   describe('fetchFocusProperties', () => {
+    it('forwards the focus threshold instead of dropping the slider value', async () => {
+      mockedApi.get.mockResolvedValueOnce({
+        data: { data: [], meta: { page: 1, pageSize: 5, total: 0, totalPages: 0 } },
+      })
+
+      const { fetchFocusProperties } = usePropertyData()
+      await fetchFocusProperties({ page: 1, pageSize: 5, sort: '-focus_score', threshold: 75 })
+
+      expect(mockedApi.get).toHaveBeenCalledWith('/properties/focus', {
+        params: { page: 1, pageSize: 5, sort: '-focus_score', threshold: 75 },
+      })
+    })
+
     it('uses the same flat meta contract and does not consume avgScore', async () => {
       const response = {
         data: [{ documentId: 'focus-1', title: 'Горячий объект' }],

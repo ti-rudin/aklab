@@ -133,7 +133,7 @@ describe('digest projection controller', () => {
     expect(JSON.stringify(malformedCtx.body)).not.toContain('DIGEST_PROJECTION');
   });
 
-  it('maps delivery skip/enabled results without exposing current email for skipped delivery', async () => {
+  it('maps delivery skip/enabled results without exposing recipients for skipped delivery', async () => {
     const fixture = makeStrapi();
     const actions = createDigestProjectionController(fixture.strapi);
     const ctx = makeCtx({ runId: 'run-1', userId: 7, snapshotHash: snapshot.hash });
@@ -141,7 +141,7 @@ describe('digest projection controller', () => {
     await actions.delivery(ctx);
 
     expect(ctx.status).toBe(200);
-    expect(ctx.body).toEqual({ data: { enabled: true, email: 'user@example.test' } });
+    expect(ctx.body).toEqual({ data: { enabled: true, emails: ['user@example.test'] } });
   });
 
   it('publishes exactly two service-token internal routes and no CRUD/public/JWT route', () => {

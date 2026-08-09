@@ -55,7 +55,11 @@ export interface PropertyQuery {
   pageSize?: number
 }
 
-type PropertyQueryInput = PropertyQuery | Record<string, unknown>
+export interface FocusPropertyQuery extends PropertyQuery {
+  threshold?: number
+}
+
+type PropertyQueryInput = PropertyQuery | FocusPropertyQuery | Record<string, unknown>
 
 const TEXT_QUERY_KEYS = ['city', 'property_type', 'status', 'search', 'sort'] as const
 
@@ -93,6 +97,16 @@ export function buildPropertyQuery(input: PropertyQueryInput = {}): PropertyQuer
   return query
 }
 
+/** Build the strict focus-only query without widening the regular catalog API. */
+export function buildFocusPropertyQuery(input: PropertyQueryInput = {}): FocusPropertyQuery {
+  const query: FocusPropertyQuery = buildPropertyQuery(input)
+  const threshold = (input as Record<string, unknown>).threshold
+  if (typeof threshold === 'number' && Number.isFinite(threshold) && threshold >= 0) {
+    query.threshold = threshold
+  }
+  return query
+}
+
 export function usePropertyData() {
   const properties = ref<Property[]>([])
   const focusProperties = ref<Property[]>([])
@@ -124,7 +138,7 @@ export function usePropertyData() {
   async function fetchFocusProperties(params: PropertyQueryInput) {
     focusLoading.value = true
     try {
-      const query = buildPropertyQuery(params)
+      const query = buildFocusPropertyQuery(params)
       const { data } = await api.get('/properties/focus', { params: query })
       focusProperties.value = (data.data || []) as Property[]
       focusTotal.value = data.meta?.total || 0

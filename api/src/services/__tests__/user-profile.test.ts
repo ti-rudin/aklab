@@ -132,6 +132,25 @@ describe('replaceUserProfile', () => {
     expect(JSON.stringify(strapi.profileQuery.update.mock.calls[0][0].data)).not.toContain('user_id');
   });
 
+  it('normalizes a comma-delimited digest recipient list before persisting it', async () => {
+    const strapi = makeStrapi();
+    const existing = profile();
+    strapi.profileQuery.findOne.mockResolvedValue(existing);
+    strapi.profileQuery.update.mockResolvedValue({ ...existing, profile_version: 4 });
+
+    await replaceUserProfile(strapi as any, 7, {
+      digest_email: ' first@example.test, second@example.test, first@example.test ',
+      digest_enabled: true,
+    }, 3);
+
+    expect(strapi.profileQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        digest_email: 'first@example.test, second@example.test',
+        digest_enabled: true,
+      }),
+    }));
+  });
+
   it('returns the current row for a normalized no-op without updating or incrementing', async () => {
     const strapi = makeStrapi();
     const existing = profile();

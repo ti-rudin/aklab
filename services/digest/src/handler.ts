@@ -15,7 +15,7 @@ export interface DigestRequest {
 type DigestResult = { sent: boolean; count: number; reason?: string };
 type DeliveryReason = 'inactive' | 'disabled' | 'missing_email';
 type DeliveryState =
-  | { enabled: true; email: string }
+  | { enabled: true; emails: string[] }
   | { enabled: false; reason: DeliveryReason };
 type Property = Record<string, unknown>;
 
@@ -41,6 +41,7 @@ const MAX_RUN_ID_LENGTH = 128;
 const MAX_CORRELATION_ID_LENGTH = 128;
 const MAX_DOCUMENT_ID_LENGTH = 256;
 const MAX_EMAIL_LENGTH = 320;
+const MAX_DIGEST_RECIPIENTS = 10;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UTC_ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -195,6 +196,18 @@ function normalizeEmail(value: unknown): string | null {
   return value;
 }
 
+function normalizeEmails(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_DIGEST_RECIPIENTS) return null;
+  const unique = new Map<string, string>();
+  for (const item of value) {
+    const email = normalizeEmail(item);
+    if (!email) return null;
+    const key = email.toLowerCase();
+    if (!unique.has(key)) unique.set(key, email);
+  }
+  return [...unique.values()];
+}
+
 function parseDeliveryResponse(body: unknown): DeliveryState {
   if (!isRecord(body) || !hasExactKeys(body, ['data']) || !isRecord(body.data)) {
     throw new SafeDigestError(DELIVERY_RESPONSE_ERROR);
@@ -208,9 +221,14 @@ function parseDeliveryResponse(body: unknown): DeliveryState {
     }
     return { enabled: false, reason: data.reason as DeliveryReason };
   }
+  if (data.enabled === true && hasExactKeys(data, ['enabled', 'emails'])) {
+    const emails = normalizeEmails(data.emails);
+    if (emails) return { enabled: true, emails };
+  }
+  // Accept the previous internal response shape during a rolling API/worker upgrade.
   if (data.enabled === true && hasExactKeys(data, ['enabled', 'email'])) {
     const email = normalizeEmail(data.email);
-    if (email) return { enabled: true, email };
+    if (email) return { enabled: true, emails: [email] };
   }
   throw new SafeDigestError(DELIVERY_RESPONSE_ERROR);
 }
@@ -532,13 +550,16 @@ export async function handleDigestJob(job: Job, workerContext?: WorkerContext): 
 
     throwIfCancellationRequested(workerContext);
     try {
-      await transporter.sendMail({
-        from: config.smtp.from,
-        to: currentDelivery.email,
-        subject: mail.subject,
-        text: mail.text,
-        html: mail.html,
-      } as any);
+      for (const email of currentDelivery.emails) {
+        throwIfCancellationRequested(workerContext);
+        await transporter.sendMail({
+          from: config.smtp.from,
+          to: email,
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
+        } as any);
+      }
     } catch {
       throw new SafeDigestError(SEND_ERROR);
     }

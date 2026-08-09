@@ -263,13 +263,17 @@ describe('digest projection service', () => {
     expect(fixture.raw).not.toHaveBeenCalled();
   });
 
-  it('re-reads current delivery controls on every call and returns no email when skipped', async () => {
+  it('re-reads current delivery controls and returns every normalized recipient', async () => {
     const fixture = makeStrapi();
+    fixture.profileQuery.findOne.mockResolvedValueOnce({
+      digest_enabled: true,
+      digest_email: ' first@example.test, second@example.test, first@example.test ',
+    });
     const service = createDigestProjectionService(fixture.strapi);
 
     await expect(service.delivery(deliveryInput(fixture.snapshot.hash))).resolves.toEqual({
       enabled: true,
-      email: 'recipient@example.test',
+      emails: ['first@example.test', 'second@example.test'],
     });
     fixture.profileQuery.findOne.mockResolvedValueOnce({ digest_enabled: false, digest_email: 'recipient@example.test' });
     await expect(service.delivery(deliveryInput(fixture.snapshot.hash))).resolves.toEqual({

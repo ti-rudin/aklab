@@ -12,7 +12,7 @@ Operational `.env`/DB backups нельзя сохранять внутри Git w
 
 `DATA_RELATION_DRIFT` нельзя bypass-ить. Сначала агрегатно определить тип drift без вывода пользовательских данных. Legacy comments без valid property relation невозможно безопасно привязать к пользователю: сделать full DB backup, сохранить полные rows/link tables в отдельный quarantine SQLite mode `600`, удалить только доказанные orphan rows транзакционно и повторить audit.
 
-`LEGACY_SMTP_AMBIGUOUS` означает несколько recipients при singular `user_profiles.digest_email`. Не выбирать адрес вслепую и не терять исходное значение: сохранить backup, применить явно одобренный single recipient только на время migration, затем восстановить legacy `setting.smtp_to` byte-for-byte и проверить hash.
+`user_profiles.digest_email` поддерживает один или несколько получателей через запятую. Поле должно быть Strapi `text`, а не `email`: browser и Strapi `email` отвергают корректный CSV ещё до серверной нормализации. На фронте и API триммить адреса, отклонять пустые/некорректные сегменты, ограничивать список 10 адресами и дедуплицировать без учёта регистра; хранить каноническую строку через `, `. Internal delivery projection передаёт массив, а digest worker отправляет отдельную копию каждому адресу, не раскрывая соседних recipients в `To`.
 
 ## Hotfix — digest freshness + SQLite timestamp (v1.1.72)
 
@@ -386,3 +386,5 @@ Operational `.env`/DB backups нельзя сохранять внутри Git w
     deploy принимает explicit `--rollback-ref` и хранит last-success SHA вне
     checkout только после core/service health gates. Health failure должен идти
     через `ERR` trap; прямой `exit 1` внутри gate обходит trap Bash.
+
+87. **Focus threshold — endpoint-specific query нельзя пропускать через обычный catalog sanitizer** — `buildPropertyQuery()` намеренно оставляет только общие ключи и удаляет `threshold`. Если `PropertyFocusTab` передаст слайдер через него, `GET /properties/focus` получит threshold по умолчанию `0` и покажет все объекты. Использовать `buildFocusPropertyQuery()`; regression test должен проверять, что `threshold` доходит до `/properties/focus`.
