@@ -7,7 +7,9 @@
 - Digest-only acceptance v1.1.83 дошёл до реальных production rows, но завершился `degraded`: job после 3 попыток получил `Digest projection response is invalid`.
 - Root cause: API возвращал общий `UserPropertyDto` с шестью UI-only полями (`contacts`, `latitude`, `longitude`, `manual_price_per_sqm`, `photos_downloaded`, `published_at_source`), а worker fail-closed принимает только точный digest allowlist.
 - Projection теперь явно маппит каждую запись в узкий DTO из 23 полей. Regression проверяет exact sorted key set на fixture, содержащей UI-only поля; worker contract tests остаются зелёными.
-- Release подготовлен как `v1.1.84`; после deploy повторить digest-only single-target acceptance и подтвердить terminal `sent` + SMTP log.
+- Release `v1.1.84`, PR #66, exact production SHA `c9ba09a85fdc8501b1b87eaafb6913c3514b1900` развёрнут штатным exact-SHA deploy.
+- Final digest-only run `84b7419b-85a5-407e-9976-e05a0894f096` завершился `succeeded`: job completed с первой попытки, `{sent:true,count:3}`, telemetry `scheduled=1/sent=1/skipped=0/failed=0`; digest log подтвердил `Digest sent`, SMTP отправка завершилась без ошибки.
+- Final acceptance: production Git clean на v1.1.84, pipeline idle/done, queue 0, 15/15 manifest PM2 online, API 204, app 200, DB/queue integrity `ok`. Invocation backups: `data-20260810_133356.db` 10260480 bytes SHA-256 `4b4094b440c5e71a5225fb8a00a4eac6300bdf3d2c9c72d134a87e8a1cba1055`; `queue-20260810_133356.db` 8282112 bytes SHA-256 `d481b07814e728c25bfc0990b41f9ab3494c144b9cc968ca9621c09d656ad638`.
 
 ## Session handoff (v1.1.83 — immutable digest window)
 **Corrective release 10 августа 2026:**
@@ -23,6 +25,7 @@
 - Локально добавлены минимальные service-token aliases `GET /internal/properties/exists` и `GET /internal/sources/:id/stats`; generic user/admin reads не открывались. Клиент проверяет строгий `{ data: { exists: boolean } }` и сохраняет fail-closed поведение для malformed/non-2xx.
 - Проверки: focused 77/77, полный root 1012/1012, builds `services/_shared` и API, `git diff --check` — успешно.
 - Выпуск подготовлен как `v1.1.82`; после deploy обязателен controlled pipeline acceptance с ненулевым create-path и отсутствием parser service-read `403`.
+- Production full run `5f4a8cdb-4258-4230-a6a0-e401f7c1cae7`: найдено 3957; profile-eligible 1643; pre-filter исключил 2129; 185 существующих подтверждены до source smart-stop; detail attempted/ok 67/67; post-detail skipped 63; записано в DB и атрибутировано single target profile 5 (4 `m-ets`, 1 `torgi-gov`); failed 0; 3 созданных объекта получили `focus_score >= 20`. Во всех 10 parser logs service-read `403` = 0.
 
 ## Session handoff (v1.1.81 — CSV digest recipients и focus threshold)
 **Сделано 9 августа 2026:**
