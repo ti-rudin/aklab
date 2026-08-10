@@ -2,6 +2,13 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.84 — exact digest projection DTO)
+**Corrective release 10 августа 2026:**
+- Digest-only acceptance v1.1.83 дошёл до реальных production rows, но завершился `degraded`: job после 3 попыток получил `Digest projection response is invalid`.
+- Root cause: API возвращал общий `UserPropertyDto` с шестью UI-only полями (`contacts`, `latitude`, `longitude`, `manual_price_per_sqm`, `photos_downloaded`, `published_at_source`), а worker fail-closed принимает только точный digest allowlist.
+- Projection теперь явно маппит каждую запись в узкий DTO из 23 полей. Regression проверяет exact sorted key set на fixture, содержащей UI-only поля; worker contract tests остаются зелёными.
+- Release подготовлен как `v1.1.84`; после deploy повторить digest-only single-target acceptance и подтвердить terminal `sent` + SMTP log.
+
 ## Session handoff (v1.1.83 — immutable digest window)
 **Corrective release 10 августа 2026:**
 - Production acceptance v1.1.82 подтвердил parser fix: manual run `5f4a8cdb-4258-4230-a6a0-e401f7c1cae7` завершился `succeeded`, создал 5 Property (4 `m-ets`, 1 `torgi-gov`), parser service-read `403` отсутствовали во всех 10 worker logs.
