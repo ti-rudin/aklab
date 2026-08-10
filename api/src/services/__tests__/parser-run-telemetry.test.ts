@@ -268,6 +268,22 @@ describe('parser run telemetry', () => {
     expect(Object.hasOwn(createdData, 'job_id')).toBe(false);
   });
 
+  it('persists one immutable digest window for a running parser run', async () => {
+    const windowEndAt = '2026-08-07T12:30:00.000Z';
+    const update = vi.fn().mockResolvedValue({ id: 3, status: 'running', digest_window_end_at: windowEndAt });
+    const findOne = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'running', digest_window_end_at: null });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({ findOne, update }) },
+    } as any);
+
+    await telemetry.setDigestWindowEndAt({ runId: 'run-1', windowEndAt });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 3, status: 'running', digest_window_end_at: null },
+      data: { digest_window_end_at: windowEndAt },
+    });
+  });
+
   it('persists valid digest counters through the Query Engine for a running parser run', async () => {
     const update = vi.fn().mockResolvedValue({ id: 3, status: 'running', digest_scheduled: 3 });
     const findOne = vi.fn().mockResolvedValue({ id: 3, run_id: 'run-1', status: 'running' });

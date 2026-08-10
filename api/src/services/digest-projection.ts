@@ -20,6 +20,7 @@ const PARSER_RUN_SELECT = [
   'filter_snapshot_hash',
   'filter_snapshot_schema_version',
   'profile_scope',
+  'digest_window_end_at',
 ] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -245,8 +246,18 @@ function snapshotContext(
   const matches = snapshot.profiles.filter(profile => profile.userId === userId);
   if (matches.length !== 1) throw new DigestProjectionNotFoundError();
 
-  const upperEpoch = Date.parse(snapshot.windowEndAt);
-  if (!Number.isFinite(upperEpoch)) throw new DigestProjectionMalformedError();
+  const snapshotEpoch = Date.parse(snapshot.windowEndAt);
+  const upperEpoch = typeof row.digest_window_end_at === 'string'
+    ? Date.parse(row.digest_window_end_at)
+    : Number.NaN;
+  if (
+    !Number.isFinite(snapshotEpoch)
+    || !Number.isFinite(upperEpoch)
+    || new Date(upperEpoch).toISOString() !== row.digest_window_end_at
+    || upperEpoch < snapshotEpoch
+  ) {
+    throw new DigestProjectionMalformedError();
+  }
   const upper = new Date(upperEpoch).toISOString();
   const lower = new Date(upperEpoch - DAY_MS).toISOString();
   return { snapshot, profile: matches[0], lower, upper };

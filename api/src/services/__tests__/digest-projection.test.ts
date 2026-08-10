@@ -22,6 +22,7 @@ const PROFILE: UserParseProfile = {
 };
 
 const WINDOW_END = '2026-08-07T12:00:00.000Z';
+const DIGEST_WINDOW_END = '2026-08-07T12:30:00.000Z';
 
 function makeSnapshot(profile = PROFILE) {
   return createUserFilterSnapshot({
@@ -42,6 +43,7 @@ function makeStrapi() {
     filter_snapshot_hash: snapshot.hash,
     filter_snapshot_schema_version: 1,
     profile_scope: 'single',
+    digest_window_end_at: DIGEST_WINDOW_END,
   }) };
   const settingQuery = { findOne: vi.fn().mockResolvedValue({ threshold_percent: 25 }) };
   const userQuery = { findOne: vi.fn().mockResolvedValue({ blocked: false, confirmed: true }) };
@@ -138,7 +140,7 @@ describe('digest projection service', () => {
         total: 1,
         totalPages: 1,
         threshold: 25,
-        windowEndAt: WINDOW_END,
+        windowEndAt: DIGEST_WINDOW_END,
       },
     });
 
@@ -151,6 +153,7 @@ describe('digest projection service', () => {
         'filter_snapshot_hash',
         'filter_snapshot_schema_version',
         'profile_scope',
+        'digest_window_end_at',
       ],
     });
     expect(fixture.settingQuery.findOne).toHaveBeenCalledWith({ select: ['threshold_percent'] });
@@ -163,17 +166,39 @@ describe('digest projection service', () => {
     expect(countCall[0]).not.toContain(WINDOW_END);
     expect(listCall[0]).not.toContain(WINDOW_END);
     expect(countCall[1].slice(-2)).toEqual([
-      Date.parse('2026-08-06T12:00:00.000Z'),
-      Date.parse(WINDOW_END),
+      Date.parse('2026-08-06T12:30:00.000Z'),
+      Date.parse(DIGEST_WINDOW_END),
     ]);
     expect(listCall[1].slice(-4)).toEqual([
-      Date.parse('2026-08-06T12:00:00.000Z'),
-      Date.parse(WINDOW_END),
+      Date.parse('2026-08-06T12:30:00.000Z'),
+      Date.parse(DIGEST_WINDOW_END),
       10,
       10,
     ]);
     expect(result.data[0]).toMatchObject({ documentId: 'property-7', status: 'new' });
     expect(JSON.stringify(result.data[0])).not.toContain('profile_id');
+  });
+
+  it('fails closed when the immutable digest window is absent or predates the run snapshot', async () => {
+    const fixture = makeStrapi();
+    const baseRow = {
+      run_id: 'run-1',
+      status: 'running',
+      filter_snapshot: fixture.snapshot,
+      filter_snapshot_hash: fixture.snapshot.hash,
+      filter_snapshot_schema_version: 1,
+      profile_scope: 'single',
+    };
+    fixture.parserRunQuery.findOne
+      .mockResolvedValueOnce({ ...baseRow, digest_window_end_at: null })
+      .mockResolvedValueOnce({ ...baseRow, digest_window_end_at: '2026-08-07T11:59:59.999Z' });
+    const service = createDigestProjectionService(fixture.strapi);
+
+    await expect(service.properties(propertyInput(fixture.snapshot.hash)))
+      .rejects.toBeInstanceOf(DigestProjectionMalformedError);
+    await expect(service.properties(propertyInput(fixture.snapshot.hash)))
+      .rejects.toBeInstanceOf(DigestProjectionMalformedError);
+    expect(fixture.raw).not.toHaveBeenCalled();
   });
 
   it('keeps the current profile out of projection, so edits do not change a run', async () => {
