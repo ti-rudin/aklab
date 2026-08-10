@@ -176,6 +176,31 @@ describe('digest projection service', () => {
       10,
     ]);
     expect(result.data[0]).toMatchObject({ documentId: 'property-7', status: 'new' });
+    expect(Object.keys(result.data[0]).sort()).toEqual([
+      'address',
+      'area_sqm',
+      'auction_type',
+      'city',
+      'createdAt',
+      'description',
+      'deviation_percent',
+      'documentId',
+      'external_id',
+      'first_seen_at',
+      'focus_score',
+      'is_undervalued',
+      'minimum_price',
+      'photo_urls',
+      'photos',
+      'price',
+      'price_per_sqm',
+      'property_type',
+      'source',
+      'status',
+      'tags',
+      'title',
+      'url',
+    ]);
     expect(JSON.stringify(result.data[0])).not.toContain('profile_id');
   });
 
