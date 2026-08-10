@@ -63,6 +63,60 @@ export type DigestDeliveryResult =
   | { enabled: false; reason: 'inactive' | 'disabled' | 'missing_email' }
   | { enabled: true; emails: string[] };
 
+type DigestProperty = Pick<UserPropertyListResult['data'][number],
+  | 'documentId'
+  | 'title'
+  | 'source'
+  | 'external_id'
+  | 'url'
+  | 'city'
+  | 'address'
+  | 'area_sqm'
+  | 'price'
+  | 'price_per_sqm'
+  | 'property_type'
+  | 'auction_type'
+  | 'description'
+  | 'is_undervalued'
+  | 'deviation_percent'
+  | 'focus_score'
+  | 'status'
+  | 'tags'
+  | 'photo_urls'
+  | 'photos'
+  | 'minimum_price'
+  | 'first_seen_at'
+  | 'createdAt'
+>;
+
+function projectDigestProperty(property: UserPropertyListResult['data'][number]): DigestProperty {
+  return {
+    documentId: property.documentId,
+    title: property.title,
+    source: property.source,
+    external_id: property.external_id,
+    url: property.url,
+    city: property.city,
+    address: property.address,
+    area_sqm: property.area_sqm,
+    price: property.price,
+    price_per_sqm: property.price_per_sqm,
+    property_type: property.property_type,
+    auction_type: property.auction_type,
+    description: property.description,
+    is_undervalued: property.is_undervalued,
+    deviation_percent: property.deviation_percent,
+    focus_score: property.focus_score,
+    status: property.status,
+    tags: property.tags,
+    photo_urls: property.photo_urls,
+    photos: property.photos,
+    minimum_price: property.minimum_price,
+    first_seen_at: property.first_seen_at,
+    createdAt: property.createdAt,
+  };
+}
+
 export class DigestProjectionError extends Error {
   readonly code: string;
 
@@ -359,7 +413,8 @@ async function loadCurrentDelivery(
 export class DigestProjectionService {
   constructor(private readonly strapi: DigestProjectionStrapi) {}
 
-  async properties(input: unknown): Promise<UserPropertyListResult & {
+  async properties(input: unknown): Promise<{
+    data: DigestProperty[];
     meta: UserPropertyListResult['meta'] & { threshold: number; windowEndAt: string };
   }> {
     const normalized = normalizePropertiesInput(input);
@@ -378,7 +433,7 @@ export class DigestProjectionService {
       firstSeenAtOrBefore: context.upper,
     });
     return {
-      data: result.data,
+      data: result.data.map(projectDigestProperty),
       meta: { ...result.meta, threshold, windowEndAt: context.upper },
     };
   }
