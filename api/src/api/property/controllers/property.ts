@@ -239,6 +239,24 @@ export default factories.createCoreController("api::property.property", ({ strap
     }
   },
 
+  /** GET /api/internal/properties/exists — parser-only identity lookup. */
+  async internalExists(ctx) {
+    const source = ctx.query?.source;
+    const externalId = ctx.query?.external_id;
+    if (typeof source !== 'string' || source === '' || source !== source.trim()
+      || typeof externalId !== 'string' || externalId === '' || externalId !== externalId.trim()) {
+      ctx.status = 400;
+      ctx.body = { error: 'source and external_id are required' };
+      return;
+    }
+
+    const property = await strapi.db.query('api::property.property').findOne({
+      where: { source, external_id: externalId },
+      select: ['id'],
+    });
+    ctx.body = { data: { exists: Boolean(property) } };
+  },
+
   /** GET /api/internal/properties/:id — service-only canonical read. */
   async internalFindOne(ctx) {
     if (!safeDocumentId(ctx.params?.id)) {

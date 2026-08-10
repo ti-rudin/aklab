@@ -3,7 +3,7 @@
  */
 import { factories } from '@strapi/strapi';
 
-const INTERNAL_SOURCE_STATS_FIELDS = new Set([
+const INTERNAL_SOURCE_STATS_SELECT = [
   'last_parse_status',
   'last_parse_error',
   'last_parsed_at',
@@ -12,7 +12,8 @@ const INTERNAL_SOURCE_STATS_FIELDS = new Set([
   'total_details_fetched',
   'total_details_needed',
   'parse_count',
-]);
+] as const;
+const INTERNAL_SOURCE_STATS_FIELDS = new Set<string>(INTERNAL_SOURCE_STATS_SELECT);
 
 function internalPayload(ctx: any): Record<string, unknown> | null {
   const data = ctx.request?.body?.data;
@@ -47,6 +48,21 @@ const HEALTH_PORT_BY_PARSER: Record<string, number> = {
 };
 
 export default factories.createCoreController('api::source.source', ({ strapi }) => ({
+  /** Service-only minimal read used to calculate parser counter updates. */
+  async internalFindStats(ctx) {
+    const source = await strapi.db.query('api::source.source').findOne({
+      where: { documentId: ctx.params.id },
+      select: [...INTERNAL_SOURCE_STATS_SELECT],
+    });
+    if (!source) {
+      ctx.status = 404;
+      ctx.body = { error: 'Source not found' };
+      return;
+    }
+
+    ctx.body = { data: source };
+  },
+
   /** Service-only parser statistics update with a strict field mask. */
   async internalUpdateStats(ctx) {
     const data = internalPayload(ctx);

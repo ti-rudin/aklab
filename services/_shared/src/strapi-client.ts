@@ -26,14 +26,19 @@ const HEADERS = {
  */
 export async function propertyExists(source: string, externalId: string): Promise<boolean> {
   try {
-    const url = `${BASE}/properties?filters[source][$eq]=${source}&filters[external_id][$eq]=${externalId}&pagination[limit]=1`;
+    const params = new URLSearchParams({ source, external_id: externalId });
+    const url = `${BASE}/internal/properties/exists?${params.toString()}`;
     const res = await fetch(url, { headers: HEADERS });
     if (!res.ok) {
       logger.warn(`propertyExists: API returned ${res.status}, fail-closed (skip)`);
       return true; // fail-closed: при ошибке API считаем что существует
     }
-    const data = (await res.json()) as StrapiResponse<any[]>;
-    return (data.data?.length ?? 0) > 0;
+    const data = (await res.json()) as StrapiResponse<{ exists?: unknown }>;
+    if (typeof data.data?.exists !== 'boolean') {
+      logger.warn('propertyExists: API returned malformed response, fail-closed (skip)');
+      return true;
+    }
+    return data.data.exists;
   } catch (err: any) {
     logger.warn(`propertyExists check failed: ${err.message}`);
     return true; // fail-closed: при ошибке считаем что существует (пропускаем, не дублируем)
@@ -286,7 +291,7 @@ export async function updateSourceStats(documentId: string, data: {
 
   if (data.parse_count || data.total_found || data.total_created || hasFetchDelta || hasNeededVal) {
     try {
-      const res = await fetch(`${BASE}/sources/${documentId}`, { headers: HEADERS });
+      const res = await fetch(`${BASE}/internal/sources/${encodeURIComponent(documentId)}/stats`, { headers: HEADERS });
       if (res.ok) {
         const json = (await res.json()) as StrapiResponse<any>;
         const current = json.data;

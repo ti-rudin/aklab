@@ -72,6 +72,7 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'setting', method: 'GET', path: '/setting', handler: 'setting.find', config: ADMIN_CONFIG },
   { resource: 'setting', method: 'PUT', path: '/setting', handler: 'setting.update', config: ADMIN_CONFIG },
 
+  { resource: 'source', method: 'GET', path: '/internal/sources/:id/stats', handler: 'api::source.source.internalFindStats', config: SERVICE_CONFIG },
   { resource: 'source', method: 'PUT', path: '/internal/sources/:id/stats', handler: 'api::source.source.internalUpdateStats', config: SERVICE_CONFIG },
   { resource: 'source', method: 'GET', path: '/sources/:id/health', handler: 'api::source.source.healthCheck', config: PUBLIC_HEALTH_CONFIG },
   { resource: 'source', method: 'GET', path: '/sources', handler: 'api::source.source.find', config: ADMIN_CONFIG },
@@ -120,6 +121,7 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
 ];
 
 const PROPERTY_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
+  { resource: 'property', method: 'GET', path: '/internal/properties/exists', handler: 'property.internalExists', config: SERVICE_CONFIG },
   { resource: 'property', method: 'GET', path: '/internal/properties/:id', handler: 'property.internalFindOne', config: SERVICE_CONFIG },
   { resource: 'property', method: 'PUT', path: '/internal/properties/:id', handler: 'property.internalUpdate', config: SERVICE_CONFIG },
   { resource: 'property', method: 'POST', path: '/properties/upsert', handler: 'property.upsert', config: SERVICE_CONFIG },
