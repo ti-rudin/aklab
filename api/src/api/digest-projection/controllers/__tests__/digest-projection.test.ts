@@ -36,6 +36,7 @@ function makeStrapi(overrides: {
     filter_snapshot_hash: snapshot.hash,
     filter_snapshot_schema_version: 1,
     profile_scope: 'single',
+    digest_window_end_at: '2026-08-07T12:00:00.000Z',
   } : overrides.run) };
   const settingQuery = { findOne: vi.fn().mockResolvedValue({ threshold_percent: overrides.threshold === undefined ? 25 : overrides.threshold }) };
   const raw = overrides.raw || vi.fn()

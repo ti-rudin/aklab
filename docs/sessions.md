@@ -2,6 +2,13 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.83 — immutable digest window)
+**Corrective release 10 августа 2026:**
+- Production acceptance v1.1.82 подтвердил parser fix: manual run `5f4a8cdb-4258-4230-a6a0-e401f7c1cae7` завершился `succeeded`, создал 5 Property (4 `m-ets`, 1 `torgi-gov`), parser service-read `403` отсутствовали во всех 10 worker logs.
+- Digest ошибочно вернул `empty`, хотя 3 новых Property имели `focus_score >= 20`. Root cause: `filter_snapshot.windowEndAt` фиксировался до parsing и использовался как верхняя граница digest, поэтому объекты того же run оказывались новее окна.
+- Добавлено отдельное first-write-wins поле `parser_run.digest_window_end_at`, которое фиксируется непосредственно перед digest fan-out. Projection валидирует canonical timestamp, его порядок относительно immutable snapshot и использует это значение для единого `(lower, upper]` окна всех страниц/retry.
+- Release подготовлен как `v1.1.83`; после deploy требуется digest-only single-target acceptance для уже созданных объектов и подтверждение фактической SMTP-доставки.
+
 ## Session handoff (v1.1.82 — parser service reads)
 **Диагностика и локальный фикс 10 августа 2026:**
 - Утренний production cron `34dc9d14-ef54-452a-9057-78bb329c75a9` завершился без системной ошибки, но все три digest job были пропущены: target-профиль — `empty`, два тестовых профиля — `disabled`. Свежих Property за 24 часа не было.
