@@ -462,6 +462,7 @@ export async function digest(ctx: PipelineContext): Promise<{ sent: boolean; err
   }
 
   const userIds = snapshotUserIds(filterSnapshot);
+  await telemetry.setDigestWindowEndAt({ runId, windowEndAt: new Date().toISOString() });
   await updateState(ctx.strapi, { stage: 'digesting' }, `Дайджест: запланировано ${userIds.length}`);
 
   const jobIds: number[] = [];

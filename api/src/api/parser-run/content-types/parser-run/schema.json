@@ -12,6 +12,7 @@
     "filter_snapshot": { "type": "json" },
     "filter_snapshot_hash": { "type": "string" },
     "filter_snapshot_schema_version": { "type": "integer" },
+    "digest_window_end_at": { "type": "datetime" },
     "digest_scheduled": { "type": "integer", "default": 0, "min": 0 },
     "digest_sent": { "type": "integer", "default": 0, "min": 0 },
     "digest_skipped": { "type": "integer", "default": 0, "min": 0 },

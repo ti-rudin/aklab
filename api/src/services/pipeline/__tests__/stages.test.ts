@@ -5,6 +5,7 @@ const {
   mockGetJob,
   mockEnsureSourceStage,
   mockAttachSourceStageJob,
+  mockSetDigestWindowEndAt,
   mockSetDigestCounters,
   mockUpdateState,
   mockScorePropertiesBatch,
@@ -13,6 +14,7 @@ const {
   mockGetJob: vi.fn(),
   mockEnsureSourceStage: vi.fn(),
   mockAttachSourceStageJob: vi.fn(),
+  mockSetDigestWindowEndAt: vi.fn(),
   mockSetDigestCounters: vi.fn(),
   mockUpdateState: vi.fn(),
   mockScorePropertiesBatch: vi.fn(),
@@ -25,6 +27,7 @@ vi.mock('../../parser-run-telemetry', () => ({
   createParserRunTelemetry: vi.fn(() => ({
     ensureSourceStage: mockEnsureSourceStage,
     attachSourceStageJob: mockAttachSourceStageJob,
+    setDigestWindowEndAt: mockSetDigestWindowEndAt,
     setDigestCounters: mockSetDigestCounters,
     reconcileSourceStageQueueFailure: vi.fn(),
   })),
@@ -73,6 +76,7 @@ beforeEach(() => {
   }));
   mockEnsureSourceStage.mockResolvedValue(undefined);
   mockAttachSourceStageJob.mockResolvedValue(undefined);
+  mockSetDigestWindowEndAt.mockResolvedValue(undefined);
   mockSetDigestCounters.mockResolvedValue(undefined);
   mockUpdateState.mockResolvedValue(undefined);
   mockScorePropertiesBatch.mockResolvedValue({ scored: 1, in_focus: 1, by_tag: {} });
@@ -158,6 +162,11 @@ describe('digest stage immutable multi-user fan-out', () => {
 
     await expect(digest(ctx)).resolves.toEqual({ sent: false, errors: [] });
 
+    expect(mockSetDigestWindowEndAt).toHaveBeenCalledWith({
+      runId: 'run-1',
+      windowEndAt: expect.any(String),
+    });
+    expect(mockSetDigestWindowEndAt.mock.invocationCallOrder[0]).toBeLessThan(mockAddToQueue.mock.invocationCallOrder[0]);
     expect(mockAddToQueue).toHaveBeenCalledWith(
       'digest-send',
       { runId: 'run-1', userId: 42, snapshotHash: snapshot.hash, correlationId: 'digest-run-1' },

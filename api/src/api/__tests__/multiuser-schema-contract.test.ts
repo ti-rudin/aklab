@@ -304,6 +304,7 @@ describe('multi-user additive schema contract', () => {
     expect(parserRun.attributes.filter_snapshot).toEqual({ type: 'json' });
     expect(parserRun.attributes.filter_snapshot_hash).toEqual({ type: 'string' });
     expect(parserRun.attributes.filter_snapshot_schema_version).toEqual({ type: 'integer' });
+    expect(parserRun.attributes.digest_window_end_at).toEqual({ type: 'datetime' });
 
     for (const field of ['digest_scheduled', 'digest_sent', 'digest_skipped', 'digest_failed']) {
       expect(parserRun.attributes[field]).toMatchObject({ type: 'integer', default: 0, min: 0 });

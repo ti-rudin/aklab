@@ -388,7 +388,7 @@ deploy-prod.sh + бамп версии).
 ## Strapi 5 — gotchas
 
 **Вынесено в отдельный файл:** см. [docs/gotchas.md](gotchas.md)
-(88 пронумерованных пунктов, стабильный reference)
+(89 пронумерованных пунктов, стабильный reference)
 
 ## Session handoff
 

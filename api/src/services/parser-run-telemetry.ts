@@ -261,6 +261,32 @@ export function createParserRunTelemetry(strapi: any) {
       });
     },
 
+    /** Persist one immutable digest window before fan-out. */
+    async setDigestWindowEndAt({ runId, windowEndAt }: { runId: string; windowEndAt: string }) {
+      const epoch = typeof windowEndAt === 'string' ? Date.parse(windowEndAt) : Number.NaN;
+      if (!Number.isFinite(epoch) || new Date(epoch).toISOString() !== windowEndAt) {
+        throw new Error('Invalid digest window end.');
+      }
+
+      const existing = await parserRuns().findOne({ where: { run_id: runId } });
+      if (!existing) throw new Error('Parser run does not exist.');
+      if (existing.status !== 'running') throw new Error('Parser run is not running.');
+      if (existing.digest_window_end_at != null) {
+        if (existing.digest_window_end_at === windowEndAt) return existing;
+        throw new Error('Conflicting digest window is already persisted.');
+      }
+
+      const updated = await parserRuns().update({
+        where: { id: existing.id, status: 'running', digest_window_end_at: null },
+        data: { digest_window_end_at: windowEndAt },
+      });
+      if (updated) return updated;
+
+      const winner = await parserRuns().findOne({ where: { run_id: runId } });
+      if (winner?.status === 'running' && winner.digest_window_end_at === windowEndAt) return winner;
+      throw new Error('Digest window changed before persistence.');
+    },
+
     /** Persist the exact digest fan-out outcome before parser-run terminalization. */
     async setDigestCounters(counters: DigestCounters) {
       assertDigestCounters(counters);
