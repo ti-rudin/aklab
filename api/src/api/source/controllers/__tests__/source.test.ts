@@ -114,7 +114,46 @@ describe('source internalUpdateStats', () => {
   });
 });
 
+describe('source internalFindStats', () => {
+  it('returns only parser statistics needed for counter updates', async () => {
+    const source = {
+      last_parse_status: 'success',
+      last_parse_error: null,
+      last_parsed_at: '2026-08-10T07:00:00.000Z',
+      total_found: 100,
+      total_created: 20,
+      total_details_fetched: 4,
+      total_details_needed: 7,
+      parse_count: 5,
+    };
+    const strapi = makeStrapi(source);
+    const actions = (sourceControllerFactory as any)({ strapi });
+    const ctx = makeCtx();
+
+    await actions.internalFindStats(ctx);
+
+    expect(strapi._query.findOne).toHaveBeenCalledWith({
+      where: { documentId: 'source-document-id' },
+      select: [
+        'last_parse_status', 'last_parse_error', 'last_parsed_at',
+        'total_found', 'total_created', 'total_details_fetched',
+        'total_details_needed', 'parse_count',
+      ],
+    });
+    expect(ctx.body).toEqual({ data: source });
+  });
+});
+
 describe('source internal route', () => {
+  it('uses the service-token policy for the dedicated source stats read alias', () => {
+    expect(sourceRoutes.routes).toContainEqual({
+      method: 'GET',
+      path: '/internal/sources/:id/stats',
+      handler: 'api::source.source.internalFindStats',
+      config: { auth: false, policies: ['global::service-token'] },
+    });
+  });
+
   it('uses the service-token policy for the dedicated source stats alias', () => {
     expect(sourceRoutes.routes).toContainEqual({
       method: 'PUT',

@@ -1,6 +1,12 @@
 export default {
   routes: [
     {
+      method: 'GET' as const,
+      path: '/internal/sources/:id/stats',
+      handler: 'api::source.source.internalFindStats',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
+    {
       method: 'PUT' as const,
       path: '/internal/sources/:id/stats',
       handler: 'api::source.source.internalUpdateStats',

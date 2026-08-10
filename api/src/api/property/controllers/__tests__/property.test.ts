@@ -204,6 +204,31 @@ describe('property controller', () => {
     });
   });
 
+  describe('internalExists', () => {
+    it('returns a minimal identity-existence DTO for parser service reads', async () => {
+      strapi._mockDbQuery.findOne.mockResolvedValue({ id: 42 });
+      const ctx = makeCtx({ query: { source: 'alfalot', external_id: 'lot-42' } });
+
+      await actions.internalExists(ctx);
+
+      expect(strapi._mockDbQuery.findOne).toHaveBeenCalledWith({
+        where: { source: 'alfalot', external_id: 'lot-42' },
+        select: ['id'],
+      });
+      expect(ctx.body).toEqual({ data: { exists: true } });
+    });
+
+    it('rejects malformed identity parameters before the database read', async () => {
+      const ctx = makeCtx({ query: { source: 'alfalot', external_id: '  ' } });
+
+      await actions.internalExists(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'source and external_id are required' });
+      expect(strapi._mockDbQuery.findOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('internalUpdate', () => {
     it('updates only analyzer/photo-owned fields by documentId', async () => {
       const fields = { is_undervalued: true, deviation_percent: 12.5, photos_downloaded: false };
@@ -540,6 +565,15 @@ describe('property controller', () => {
 });
 
 describe('property internal route', () => {
+  it('uses the service-token policy for the dedicated property identity read alias', () => {
+    expect(propertyRoutes.routes).toContainEqual({
+      method: 'GET',
+      path: '/internal/properties/exists',
+      handler: 'property.internalExists',
+      config: { auth: false, policies: ['global::service-token'] },
+    });
+  });
+
   it('uses the service-token policy for the dedicated property write alias', () => {
     expect(propertyRoutes.routes).toContainEqual({
       method: 'PUT',

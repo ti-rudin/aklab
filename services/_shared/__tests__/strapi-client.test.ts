@@ -66,7 +66,7 @@ describe('propertyExists()', () => {
 
   test('returns true when property is found', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: [{ id: 1 }] })
+      mockJsonResponse({ data: { exists: true } })
     );
 
     const result = await propertyExists('tender', 'ext-123');
@@ -74,13 +74,12 @@ describe('propertyExists()', () => {
     expect(result).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const url = fetchSpy.mock.calls[0][0] as string;
-    expect(url).toContain('source][$eq]=tender');
-    expect(url).toContain('external_id][$eq]=ext-123');
+    expect(url).toBe(`${BASE}/internal/properties/exists?source=tender&external_id=ext-123`);
   });
 
   test('returns false when no property is found', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockJsonResponse({ data: [] })
+      mockJsonResponse({ data: { exists: false } })
     );
 
     const result = await propertyExists('tender', 'nonexistent');
@@ -102,6 +101,15 @@ describe('propertyExists()', () => {
     const result = await propertyExists('tender', 'ext-1');
     expect(result).toBe(true); // fail-closed
   });
+
+  test('returns true (fail-closed) when the internal response is malformed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockJsonResponse({ data: [] })
+    );
+
+    const result = await propertyExists('tender', 'ext-1');
+    expect(result).toBe(true);
+  });
 });
 
 // ─── createProperty ─────────────────────────────────────────────────────────
@@ -114,7 +122,7 @@ describe('createProperty()', () => {
   test('creates a property via POST and returns data', async () => {
     const created = { id: 42, documentId: 'doc-42' };
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))  // propertyExists → not found
       .mockResolvedValueOnce(mockJsonResponse({ data: created }));  // POST → created
 
     const result = await createProperty({
@@ -142,7 +150,7 @@ describe('createProperty()', () => {
 
   test('treats an upsert conflict winner as an existing property, not a new create', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))
       .mockResolvedValueOnce(mockJsonResponse({ data: { id: 42 }, meta: { created: false } }));
 
     const result = await createProperty({
@@ -165,7 +173,7 @@ describe('createProperty()', () => {
 
   test('auto-calculates price_per_sqm when missing', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))  // propertyExists → not found
       .mockResolvedValueOnce(mockJsonResponse({ data: { id: 1 } }));  // POST → created
 
     await createProperty({
@@ -223,7 +231,7 @@ describe('createProperty()', () => {
 
   test('throws on non-OK response', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))  // propertyExists → not found
       .mockResolvedValueOnce(mockJsonResponse({ error: 'Validation error' }, 400));  // POST → 400
 
     await expect(
@@ -245,7 +253,7 @@ describe('createProperty()', () => {
 
   test('passes through marketplace properties without commercial filter', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(mockJsonResponse({ data: [] }))  // propertyExists → not found
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))  // propertyExists → not found
       .mockResolvedValueOnce(mockJsonResponse({ data: { id: 1 } }));  // POST → created
 
     const result = await createProperty({
@@ -268,7 +276,7 @@ describe('createProperty()', () => {
 
   test('skips duplicate property (already exists)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      mockJsonResponse({ data: [{ id: 99 }] })  // propertyExists → found
+      mockJsonResponse({ data: { exists: true } })  // propertyExists → found
     );
 
     const result = await createProperty({
@@ -336,7 +344,7 @@ describe('updateSourceStats()', () => {
 
     // Verify GET call
     const getUrl = fetchSpy.mock.calls[0][0] as string;
-    expect(getUrl).toBe(`${BASE}/sources/doc-abc`);
+    expect(getUrl).toBe(`${BASE}/internal/sources/doc-abc/stats`);
 
     // Verify PUT body has incremented values
     const putBody = JSON.parse(fetchSpy.mock.calls[1][1].body as string).data;

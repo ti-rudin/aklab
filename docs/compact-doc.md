@@ -33,7 +33,7 @@ analyzer, digest, photo-fetcher). На dev (192.168.11.151): аналогичн�
 
 Pipeline telemetry хранится отдельно от агрегированного `Source`: `parser_run` идентифицируется immutable `run_id`, `parser_run_source` — `identity_key = runId:sourceSlug:stage`. Строка этапа создаётся `queued` **до enqueue**, получает реальный numeric `job_id` после enqueue, worker переводит её `running`, затем посылает exact terminal counters через internal aliases с `global::service-token`.
 
-После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Runtime E2E подтверждён production runs 2026-07-17: terminal telemetry internal calls 200, workers корректно завершают source stages.
+После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Runtime E2E подтверждён production runs 2026-07-17: terminal telemetry internal calls 200, workers корректно завершают source stages. Parser service reads также обязаны использовать минимальные internal aliases; generic user/admin reads после multi-user cutover возвращают service token `403` и через fail-closed dedup могут дать ложный `created=0`.
 
 **SQLite boundary rules:**
 - `strapi.db.query().create()` не делает REST JSON transform: для property parser upsert сериализовать `tags` и `photo_urls`, иначе `better-sqlite3` даёт `500`.
@@ -388,7 +388,7 @@ deploy-prod.sh + бамп версии).
 ## Strapi 5 — gotchas
 
 **Вынесено в отдельный файл:** см. [docs/gotchas.md](gotchas.md)
-(83 пронумерованных пунктов, стабильный reference)
+(88 пронумерованных пунктов, стабильный reference)
 
 ## Session handoff
 

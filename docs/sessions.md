@@ -2,6 +2,14 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (parser service reads — pending release/deploy)
+**Диагностика и локальный фикс 10 августа 2026:**
+- Утренний production cron `34dc9d14-ef54-452a-9057-78bb329c75a9` завершился без системной ошибки, но все три digest job были пропущены: target-профиль — `empty`, два тестовых профиля — `disabled`. Свежих Property за 24 часа не было.
+- Root cause: после multi-user rollout `propertyExists()` и чтение текущих Source counters всё ещё использовали пользовательские `GET /properties` и `GET /sources/:id`. Service token получал `403`; fail-closed dedup считал кандидатов существующими. Run нашёл 3948 записей, но создал 0.
+- Локально добавлены минимальные service-token aliases `GET /internal/properties/exists` и `GET /internal/sources/:id/stats`; generic user/admin reads не открывались. Клиент проверяет строгий `{ data: { exists: boolean } }` и сохраняет fail-closed поведение для malformed/non-2xx.
+- Проверки: focused 77/77, полный root 1012/1012, builds `services/_shared` и API, `git diff --check` — успешно.
+- Production не изменялся. Для release/deploy нужна отдельная явная команда; после deploy обязателен controlled pipeline acceptance с ненулевым create-path и отсутствием parser service-read `403`.
+
 ## Session handoff (v1.1.81 — CSV digest recipients и focus threshold)
 **Сделано 9 августа 2026:**
 - ✅ `digest_email` переведён с Strapi `email` на `text`; фронтенд и API принимают canonical CSV (trim, case-insensitive dedupe, максимум 10 адресов, до 320 символов на адрес). Digest projection использует `emails[]`, worker выполняет отдельный `sendMail()` для каждого получателя, не раскрывая адреса между ними.

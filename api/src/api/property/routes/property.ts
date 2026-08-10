@@ -9,6 +9,12 @@ export default {
     // Custom routes (must come before core to avoid conflicts)
     {
       method: 'GET',
+      path: '/internal/properties/exists',
+      handler: 'property.internalExists',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
+    {
+      method: 'GET',
       path: '/internal/properties/:id',
       handler: 'property.internalFindOne',
       config: { auth: false, policies: ['global::service-token'] },
