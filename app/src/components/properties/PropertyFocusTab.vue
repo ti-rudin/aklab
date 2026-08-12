@@ -337,6 +337,13 @@ function updateLocalStatus(documentId: string, status: string) {
   if (item) item.status = status
 }
 
+function removeRejectedFromFocus(): void {
+  const before = focusItems.value.length
+  focusItems.value = focusItems.value.filter(item => item.status !== 'rejected')
+  const removed = before - focusItems.value.length
+  if (removed > 0) focusTotal.value = Math.max(0, focusTotal.value - removed)
+}
+
 async function bulkSetStatus(status: string) {
   const documentIds = Array.from(focusSelected)
   if (documentIds.length === 0) return
@@ -361,6 +368,7 @@ async function quickReject(item: Pick<Property, 'documentId'>) {
   try {
     await api.put(`/me/properties/${item.documentId}/status`, { data: { status: 'rejected' } })
     updateLocalStatus(item.documentId, 'rejected')
+    removeRejectedFromFocus()
     focusSelected.delete(item.documentId)
     toast.success('Объект отклонён')
   } catch (e: any) {
@@ -375,7 +383,7 @@ function bulkExportCSV() {
 }
 
 function openProperty(item: Pick<Property, 'documentId'>) {
-  router.push(`/properties/${item.documentId}`)
+  router.push({ path: `/properties/${item.documentId}`, query: { tab: 'focus' } })
 }
 
 defineExpose({ total: focusTotal })

@@ -111,6 +111,9 @@
     "price": {
       "type": "decimal"
     },
+    "auction_end_at": {
+      "type": "datetime"
+    },
     "price_per_sqm": {
       "type": "decimal"
     },

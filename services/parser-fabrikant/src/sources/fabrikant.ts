@@ -17,7 +17,7 @@
 
 import { classifyPropertyType } from '@aklab/service-shared';
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, parsePrice } from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
@@ -122,12 +122,7 @@ export class FabrikantParser implements SourceParser {
           seenIds.add(p.lot_id);
           newCount++;
 
-          let price: number | undefined;
-          if (p.price_text) {
-            const cleaned = p.price_text.replace(/[^\d,]/g, '').replace(',', '.');
-            const num = parseFloat(cleaned);
-            if (!isNaN(num) && num > 0) price = num;
-          }
+          const price = parsePrice(p.price_text);
 
           const address = extractAddress(p.title);
           const area = extractArea(p.title);
@@ -239,18 +234,19 @@ export class FabrikantParser implements SourceParser {
 
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
+        // Never search the whole page first: it also contains the seller's
+        // legal address. Restrict extraction to the lot/object section.
+        const propertySection = allText.match(
+          /(?:Наименование предмета торгов|Краткое описание объекта торгов|Месторасположение объекта торгов)\s*\n([\s\S]*?)(?=\n(?:Обременения|Категория объекта|Характеристики объекта|Начальная цена|Информация о продавце|Информация об организаторе)|$)/i,
+        )?.[1] || '';
         let address = '';
         const addrPatterns = [
           /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение(?:\s+имущества)?)[:\s]+([^\n]+?)(?:\n|$)/i,
-          /(?:адрес|расположен(?:н|ие)?)[:\s]+(.+?)(?:,\s*(?:общ|пл|к\/н|собств|$))/i,
+          /расположенн?\w*\s+(?:по\s+)?адресу[:\s]+(.+?)(?:,\s*(?:общ|пл|к\/н|собств|$))/i,
         ];
         for (const re of addrPatterns) {
-          const m = allText.match(re);
+          const m = propertySection.match(re);
           if (m && m[1] && m[1].trim().length > 5) { address = m[1].trim().slice(0, 300); break; }
-        }
-        if (!address) {
-          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
-          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
         }
 
 

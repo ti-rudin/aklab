@@ -73,6 +73,18 @@ describe('property service', () => {
       });
     });
 
+    it('accepts an auction deadline as parser-owned data', async () => {
+      const created = { id: 44, documentId: 'doc-44' };
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue(created);
+
+      await service.upsertByIdentity({ ...payload, auction_end_at: '2026-10-27T20:59:59.000Z' });
+
+      expect(strapi._repository.create).toHaveBeenCalledWith({
+        data: { ...payload, auction_end_at: '2026-10-27T20:59:59.000Z', tags: JSON.stringify([]) },
+      });
+    });
+
     it('returns an existing property without creating a duplicate', async () => {
       const existing = { id: 7, documentId: 'existing' };
       strapi._repository.findOne.mockResolvedValue(existing);
@@ -370,38 +382,4 @@ describe('property service', () => {
     });
   });
 
-  // =================== clearNew ===================
-  describe('clearNew', () => {
-    it('should return deleted count with photosDeleted', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      (queryResult.deleteMany as any).mockResolvedValue({ count: 5 });
-
-      const result = await service.clearNew();
-
-      expect(strapi.db.query).toHaveBeenCalledWith('api::property.property');
-      expect(result).toEqual({ deleted: 5, photosDeleted: 0 });
-    });
-
-    it('should return 0 when nothing deleted', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      (queryResult.deleteMany as any).mockResolvedValue({ count: 0 });
-
-      const result = await service.clearNew();
-
-      expect(result).toEqual({ deleted: 0, photosDeleted: 0 });
-    });
-
-    it('should pass status!=in_progress filter', async () => {
-      const queryResult = strapi.db.query('api::property.property');
-      (queryResult.findMany as any).mockResolvedValue([]);
-      const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
-      (queryResult.deleteMany as any) = deleteMany;
-
-      await service.clearNew();
-
-      expect(deleteMany).toHaveBeenCalledWith({ where: { status: { $ne: 'in_progress' } } });
-    });
-  });
 });

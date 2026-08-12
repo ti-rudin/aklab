@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-aggregator-bankrot.
@@ -13,14 +14,7 @@ import { describe, it, expect } from 'vitest';
  * - car brand filtering
  */
 
-// --- Replicated extraction functions from aggregator-bankrot.ts ---
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
+// --- Extraction helpers from aggregator-bankrot.ts ---
 
 function extractArea(text: string): number | undefined {
   // "Общая площадь: 274.4 м²" or "Общая площадь: 274,4 м²"

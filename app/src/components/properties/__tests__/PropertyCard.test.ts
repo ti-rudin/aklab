@@ -128,6 +128,11 @@ describe('PropertyCard', () => {
     expect(wrapper.text()).not.toContain('CSV')
   })
 
+  it('keeps the Focus origin on links opened from the Focus tab', () => {
+    const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem, variant: 'focus' } })
+    expect(wrapper.find('a').attributes('href')).toBe('/properties/doc1?tab=focus')
+  })
+
   it('renders as router-link with correct to prop', () => {
     const wrapper = mountWithRouter(PropertyCard, { props: { item: baseItem } })
     const link = wrapper.find('a')

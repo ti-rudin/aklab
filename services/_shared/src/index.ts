@@ -11,4 +11,6 @@ export { createParseHandler } from './parse-handler';
 export { randomDelay, USER_AGENTS, getRandomUA, retryGoto, createStealthContext } from './anti-ban';
 export { detectCity } from './city-detect';
 export { classifyPropertyType } from './property-classifier';
+export { extractAuctionEndAt, hasAuctionEnded, parseAuctionEndAt } from './auction-date';
+export { parsePrice } from './price';
 export type { ParsedProperty, SourceParser, ParseOptions, ParseResult } from './types';

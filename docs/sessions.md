@@ -119,7 +119,7 @@
 - ✅ **Playwright page/context leak** — v1.1.58 закрывал browser в finally, но каждый fetchDetails создавал page+context из browser без закрытия. На проде: 1545 pages+contexts → 198 zombie chrome → 7GB RAM → OOM. FIX: parse-handler создаёт `sharedContext` один раз для Phase 2, передаёт его парсерам. Каждый парсер: `page = await context.newPage()` → `finally { page.close() }`
 - ✅ **sharedContext pattern** — parse-handler: `sharedBrowser.launch()` → `sharedContext = browser.newPage().context()` (или `browser.newContext()`). Парсеры получают context вместо browser. Standalone fallback: парсер создаёт свой browser+context и закрывает оба
 - ✅ **6 парсеров обновлены** — alfalot, etprf, m-ets, fabrikant, roseltorg, aggregator-bankrot: fetchDetails принимает context, создаёт page, закрывает page в finally
-- ✅ **Cron simplification** — удалено 10 per-source parse crons (Source.schedule), analyze cron (08:00), digest:morning cron. Один `pipeline:daily` — проверяет каждый час, запускается в digest_time, mode='full'. `rescheduleSource` = no-op. Оставлен `cleanup:old` (03:00)
+- ✅ **Cron simplification** — удалено 10 per-source parse crons (Source.schedule), analyze cron (08:00), digest:morning cron. Один `pipeline:daily` — проверяет каждый час, запускается в digest_time, mode='full'. `rescheduleSource` = no-op. Очистка выполняется только для записей с явным истёкшим `auction_end_at`, а не по возрасту создания.
 - ✅ **583 тестов passing** — cron-registration.test.ts обновлён
 - **Итого:** pending deploy. v1.1.59 (page leak fix + cron simplification)
 

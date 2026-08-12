@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-m-ets.
@@ -8,14 +9,7 @@ import { describe, it, expect } from 'vitest';
  * Источник: services/parser-m-ets/src/sources/m-ets.ts
  */
 
-// --- Replicated extraction functions from m-ets.ts ---
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
+// --- Extraction helpers from m-ets.ts ---
 
 function extractArea(text: string): number | undefined {
   if (!text) return undefined;
@@ -41,6 +35,10 @@ describe('m-ets: parsePrice', () => {
 
   it('should parse plain number "500000"', () => {
     expect(parsePrice('500000')).toBe(500000);
+  });
+
+  it('parses the M-ETS price meta value without multiplying it by 100', () => {
+    expect(parsePrice('615150.00')).toBe(615150);
   });
 
   it('should parse price with comma decimal "1 234 567,89"', () => {

@@ -5,19 +5,12 @@
  * URL: https://www.roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.roseltorg.ru';
 const SEARCH_URL = `${BASE_URL}/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost?sale=all&okato[]=45000000000&status[]=5&status[]=0&status[]=1`;
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 10;
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);

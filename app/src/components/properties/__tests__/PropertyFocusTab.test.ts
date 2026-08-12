@@ -98,6 +98,17 @@ describe('PropertyFocusTab', () => {
     )
   })
 
+  it('removes a rejected object from the Focus tab immediately', async () => {
+    const wrapper = mountFocus([baseItem])
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text() === 'Отклонить')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Объект фокуса')
+    expect((wrapper.vm as any).total).toBe(0)
+  })
+
   it('sends selected statuses through sequential chunks of at most 100', async () => {
     const items = Array.from({ length: 101 }, (_, index) => ({
       ...baseItem,

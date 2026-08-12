@@ -73,7 +73,7 @@ Pipeline telemetry хранится отдельно от агрегирован
   Один файл `queue.db` (WAL), polling 200ms, stale recovery, retention.
   Singleton в `api/src/services/queueService.ts`.
 - **Cron-планировщик** — `node-cron` в `api/src/cron/index.ts` (timezone
-  Europe/Moscow). 2 cron: `pipeline:daily` (ежечасная проверка, запуск в digest_time) и `cleanup:old` (03:00).
+  Europe/Moscow). 2 cron: `pipeline:daily` (ежечасная проверка, запуск в `digest_time`) и `cleanup:expired-auctions` (03:15; удаляет только записи с явным прошедшим `auction_end_at`).
 - **Микросервисы парсеров** — каждый парсер = отдельный сервис в
   `services/parser-<slug>/` с shared модулями в `services/_shared/`
   (`@aklab/service-shared`). Health server + queue worker + парсер.
@@ -267,7 +267,7 @@ deploy-prod.sh + бамп версии).
   - `services/parser-roseltorg/` — Playwright SPA (roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost), порт 1354, **fetchDetails** (описание, контакты, фото). is_active=1.
   - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
 - **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
-- **Cron расписание**: ONE `pipeline:daily` — проверяет каждый час, запускается в `digest_time` из settings (mode='full': parseAll → analyze → digest). + `cleanup:old` в 03:00
+- **Cron расписание**: ONE `pipeline:daily` — проверяет каждый час, запускается в `digest_time` из settings (mode='full': parseAll → analyze → digest). Очистка выполняется только `cleanup:expired-auctions` в 03:15 по `auction_end_at`.
 - **Email-дайджест**: top-100 объектов из фокуса (по focus_score), smtp_to=a@rudin.ru, 09:00 МСК. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
 - **Telegram alerts**: УДАЛЕНЫ из плана
 - **Health badges** на `/settings` (таб Парсеры) — 🟢 Online / 🔴 Offline (polling каждые 30с)
@@ -333,7 +333,7 @@ deploy-prod.sh + бамп версии).
     MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
   - **api/src/services/queueService.ts** — singleton-обёртка
   - **api/src/services/parseRules.ts** — re-export из `@aklab/parse-rules` (единый buildParseRules)
-  - **api/src/cron/index.ts** — 2 cron-задачи: pipeline:daily + cleanup:old
+  - **api/src/cron/index.ts** — 2 cron-задачи: pipeline:daily + cleanup:expired-auctions
   - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions + seedTestUser + seedStrapiAdmin
   - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types, anti-ban, city-detect)
   - **services/parser-fabrikant/** — FabrikantParser (порт 1345, очередь `parse-fabrikant`)

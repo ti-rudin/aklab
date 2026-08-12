@@ -7,6 +7,7 @@ import { normalizeUserFilterSnapshot, snapshotMatchesCandidate } from '@aklab/pa
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
 import { detectCity } from './city-detect';
+import { extractAuctionEndAt } from './auction-date';
 import {
   cleanupScanArtifact,
   LEGACY_FILTER_SNAPSHOT_HASH,
@@ -391,6 +392,11 @@ export function createParseHandler(parser: SourceParser) {
                 continue;
               }
 
+              // Sources expose auction deadlines under different labels. Keep
+              // the raw description for users, but persist a canonical UTC
+              // expiry when an unambiguous deadline is available.
+              prop.auction_end_at ??= extractAuctionEndAt(`${prop.description || ''}\n${prop.title || ''}`);
+
               // Создание объекта в Strapi
               throwIfCancellationRequested(workerContext);
               const result = await createProperty({
@@ -403,6 +409,7 @@ export function createParseHandler(parser: SourceParser) {
                 area_sqm: prop.area_sqm,
                 price: prop.price,
                 minimum_price: prop.minimum_price,
+                auction_end_at: prop.auction_end_at,
                 price_per_sqm: prop.price_per_sqm,
                 property_type: prop.property_type,
                 auction_type: prop.auction_type,

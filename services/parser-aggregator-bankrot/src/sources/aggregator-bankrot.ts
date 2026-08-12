@@ -7,7 +7,7 @@
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
@@ -29,13 +29,6 @@ const TITLE_EXCLUDE_PATTERNS = [
   'палета', 'гель для стирки', 'бытовая химия', 'стиральн', // бытовые
   'авточасти', 'запчаст', 'шина', 'диск колесн', // автозапчасти
 ];
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
 
 function extractArea(text: string): number | undefined {
   // "Общая площадь: 274.4 м²" or "Общая площадь: 274,4 м²"
