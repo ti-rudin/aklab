@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-alfalot.
@@ -12,14 +13,7 @@ import { describe, it, expect } from 'vitest';
  * - card HTML extraction simulation
  */
 
-// --- Replicated extraction functions from alfalot.ts ---
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
+// --- Extraction helpers from alfalot.ts ---
 
 function extractAreaFromTitle(title: string): number | undefined {
   const match = title.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);

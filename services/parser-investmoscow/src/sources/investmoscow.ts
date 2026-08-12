@@ -8,7 +8,7 @@
  * компактного массива с обратными ссылками (Nuxt payload).
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, classifyPropertyType, parseAuctionEndAt } from '@aklab/service-shared';
 import { resolveInvestmoscowSourceUrl } from './source-url';
 
 const BASE_URL = 'https://investmoscow.ru';
@@ -138,6 +138,7 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
     price_per_sqm: pricePerSqm ?? (price && area ? Math.round(price / area) : undefined),
     property_type: classifyPropertyType(`${titleText} ${objectType}`),
     auction_type: 'marketplace',
+    auction_end_at: parseAuctionEndAt(String(tender.requestEndDate ?? tender.tenderDate ?? '')),
     published_at: tender.updateDate ? String(tender.updateDate).slice(0, 10) : undefined,
     description: description || undefined,
     latitude: coords?.[0],

@@ -4,7 +4,8 @@
  * Задачи:
  *   - pipeline:daily     — единый pipeline (парсинг + анализ + дайджест),
  *                          запускается в digest_time из настроек
- *   - cleanup:old        — 3:00 ежедневно, retention_months из Setting
+ *   - cleanup:expired-auctions — 3:15 ежедневно, только лоты с явной
+ *                                 прошедшей датой окончания торгов
  *
  * Один pipeline replaces per-source crons + analyze cron + digest cron.
  */
@@ -61,46 +62,25 @@ export function registerCrons(strapi: Core.Strapi): void {
 
   strapi.log.info('[cron] Registered: pipeline:daily (at digest_time from settings)');
 
-  // 2. cleanup:old — каждый день в 3:00 МСК
-  cron.schedule('0 3 * * *', async () => {
-    const corrId = `cron-cleanup-${Date.now()}`;
-    strapi.log.info(`[cron] cleanup:old triggered (${corrId})`);
+  // 2. Remove a listing only when its explicit application/trading deadline is
+  // past. A rejected listing remains stored while its auction is active, so
+  // parser identity deduplication keeps working.
+  cron.schedule('15 3 * * *', async () => {
+    const corrId = `cron-expired-auctions-${Date.now()}`;
     try {
-      const setting = await getSetting(strapi);
-      const retentionMonths: number = setting?.retention_months || 6;
-      const cutoff = new Date();
-      cutoff.setMonth(cutoff.getMonth() - retentionMonths);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-      const BATCH = 100;
-      let totalDeleted = 0;
-      let maxBatches = 50;
-
-      while (maxBatches > 0) {
-        const s = strapi as unknown as StrapiInstance;
-        const old = await s.db.query('api::property.property').findMany({
-          where: { createdAt: { $lt: cutoff } },
-          limit: BATCH,
-        });
-        if (!old || old.length === 0) break;
-
-        const ids = old.map((p: any) => p.id);
-        await s.db.query('api::property.property').deleteMany({
-          where: { id: { $in: ids } },
-        });
-        totalDeleted += ids.length;
-        maxBatches--;
+      const s = strapi as unknown as StrapiInstance;
+      const result = await s.db.query('api::property.property').deleteMany({
+        where: { auction_end_at: { $lt: new Date() } },
+      });
+      if (result.count > 0) {
+        strapi.log.info(`[cron] cleanup:expired-auctions deleted ${result.count} properties (${corrId})`);
       }
-
-      if (totalDeleted > 0) {
-        strapi.log.info(`[cron] cleanup:old deleted ${totalDeleted} properties older than ${cutoffStr}`);
-      }
-    } catch (err: any) {
-      strapi.log.error('[cron] cleanup:old failed');
+    } catch {
+      strapi.log.error('[cron] cleanup:expired-auctions failed');
     }
   }, { timezone: CRON_TIMEZONE });
 
-  strapi.log.info('[cron] Registered: cleanup:old (daily 03:00 MSK)');
+  strapi.log.info('[cron] Registered: cleanup:expired-auctions (daily 03:15 MSK)');
 }
 
 /**

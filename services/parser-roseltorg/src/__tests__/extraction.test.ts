@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-roseltorg.
@@ -8,14 +9,7 @@ import { describe, it, expect } from 'vitest';
  * Источник: services/parser-roseltorg/src/sources/roseltorg.ts
  */
 
-// --- Replicated extraction functions from roseltorg.ts ---
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
+// --- Extraction helpers from roseltorg.ts ---
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-fabrikant.
@@ -43,14 +44,6 @@ function extractArea(title: string): number | undefined {
   }
 
   return undefined;
-}
-
-// Price extraction logic from fabrikant.ts (inline in parse())
-function parsePrice(priceText: string): number | undefined {
-  if (!priceText) return undefined;
-  const cleaned = priceText.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
 }
 
 // --- Tests ---

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parsePrice } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-sberbank-ast.
@@ -8,14 +9,7 @@ import { describe, it, expect } from 'vitest';
  * Источник: services/parser-sberbank-ast/src/sources/sberbank-ast.ts
  */
 
-// --- Replicated extraction functions from sberbank-ast.ts ---
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
+// --- Extraction helpers from sberbank-ast.ts ---
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
@@ -58,8 +52,9 @@ describe('sberbank-ast: parsePrice', () => {
     expect(parsePrice('500000')).toBe(500000);
   });
 
-  it('should parse price with comma decimal "1 234 567,89 RUB"', () => {
-    expect(parsePrice('1 234 567,89 RUB')).toBe(1234567.89);
+  it('preserves Sberbank-AST XML dot-decimal amounts without scaling them', () => {
+    expect(parsePrice('10204.43')).toBe(10204.43);
+    expect(parsePrice('3796542.4')).toBe(3796542.4);
   });
 
   it('should return undefined for empty string', () => {

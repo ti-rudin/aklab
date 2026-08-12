@@ -3,7 +3,7 @@
  *
  * Тестирует:
  * 1. pipeline:daily регистрируется (каждый час, проверяет digest_time)
- * 2. cleanup:old регистрируется на 03:00
+ * 2. cleanup:expired-auctions регистрируется на 03:15
  * 3. rescheduleSource — no-op
  */
 
@@ -83,33 +83,22 @@ describe('Cron Registration', () => {
     );
   });
 
-  // ─── 2. cleanup cron регистрируется ─────────────────────────────
-  it('cleanup:old cron регистрируется на 03:00 ежедневно', async () => {
+  // ─── 2. Все cron jobs ───────────────────────────────────────────
+  it('регистрирует pipeline и cleanup только истёкших торгов', async () => {
     const mockStrapi = createMockStrapi();
     const { registerCrons } = await import('../../cron/index');
 
     registerCrons(mockStrapi as any);
 
-    expect(mockCronSchedule).toHaveBeenCalledWith(
-      '0 3 * * *',
-      expect.any(Function),
-      expect.objectContaining({ timezone: 'Europe/Moscow' })
-    );
-
-    expect(mockStrapi.log.info).toHaveBeenCalledWith(
-      '[cron] Registered: cleanup:old (daily 03:00 MSK)'
-    );
-  });
-
-  // ─── 3. Всего 2 cron jobs (pipeline + cleanup) ─────────────────
-  it('регистрирует ровно 2 cron jobs (pipeline + cleanup)', async () => {
-    const mockStrapi = createMockStrapi();
-    const { registerCrons } = await import('../../cron/index');
-
-    registerCrons(mockStrapi as any);
-
-    // Ровно 2 schedule вызова: pipeline:daily + cleanup:old
     expect(mockCronSchedule).toHaveBeenCalledTimes(2);
+    expect(mockCronSchedule).toHaveBeenCalledWith(
+      '15 3 * * *',
+      expect.any(Function),
+      expect.objectContaining({ timezone: 'Europe/Moscow' }),
+    );
+    expect(mockStrapi.log.info).toHaveBeenCalledWith(
+      '[cron] Registered: cleanup:expired-auctions (daily 03:15 MSK)',
+    );
   });
 
   it('запускает pipeline без target и request filters', async () => {

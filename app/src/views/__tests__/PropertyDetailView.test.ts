@@ -15,13 +15,16 @@ vi.mock('@/api/strapi', () => ({
 vi.mock('vue-router', async () => {
   const { ref } = await vi.importActual<typeof import('vue')>('vue')
   const routeId = ref('doc-1')
+  const routeQuery = ref<Record<string, string>>({})
   return {
     useRoute: () => ({
       params: {
         get id() { return routeId.value },
       },
+      get query() { return routeQuery.value },
     }),
     __routeId: routeId,
+    __routeQuery: routeQuery,
   }
 })
 
@@ -31,6 +34,7 @@ import PropertyDetailView from '../PropertyDetailView.vue'
 
 const mockedApi = vi.mocked(api)
 const routeId = (routerMock as unknown as { __routeId: { value: string } }).__routeId
+const routeQuery = (routerMock as unknown as { __routeQuery: { value: Record<string, string> } }).__routeQuery
 let wrapper: VueWrapper | undefined
 
 const property = {
@@ -84,7 +88,7 @@ async function mountReady() {
   wrapper = mount(PropertyDetailView, {
     global: {
       stubs: {
-        RouterLink: { template: '<a><slot /></a>' },
+        RouterLink: { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' },
       },
     },
   })
@@ -92,10 +96,22 @@ async function mountReady() {
   return wrapper
 }
 
-describe('PropertyDetailView scoped contract', () => {
+describe('PropertyDetailView', () => {
+  it('returns to the Focus tab when the detail route preserves its origin', async () => {
+    routeQuery.value = { tab: 'focus' }
+    const mounted = await mountReady()
+    expect(mounted.find('a').attributes('data-to')).toBe('{"path":"/properties","query":{"tab":"focus"}}')
+  })
+
+  it('returns to the all-objects list when no origin tab was supplied', async () => {
+    const mounted = await mountReady()
+    expect(mounted.find('a').attributes('data-to')).toBe('"/properties"')
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     routeId.value = 'doc-1'
+    routeQuery.value = {}
     wrapper = undefined
   })
 

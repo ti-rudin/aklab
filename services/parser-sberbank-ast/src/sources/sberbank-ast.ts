@@ -7,19 +7,12 @@
  * ~6600 лотов, ~332 страницы.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice, parseAuctionEndAt } from '@aklab/service-shared';
 
 const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
 const MAX_PAGES = 10;
 const ITEMS_PER_PAGE = 20;
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
@@ -293,6 +286,7 @@ export class SberbankAstParser implements SourceParser {
           address: address && address.length > 3 ? address : undefined,
           latitude: latitude && !isNaN(latitude) ? latitude : undefined,
           longitude: longitude && !isNaN(longitude) ? longitude : undefined,
+          auction_end_at: parseAuctionEndAt(requestEnd || auctionDate || ''),
         };
       });
 
@@ -302,6 +296,7 @@ export class SberbankAstParser implements SourceParser {
         address: details.address,
         latitude: details.latitude,
         longitude: details.longitude,
+        auction_end_at: details.auction_end_at,
       };
     } catch (err: any) {
       logger.warn(`[sberbank-ast] fetchDetails error for ${url}: ${err.message}`);

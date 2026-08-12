@@ -7,18 +7,11 @@
  */
 
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
 
 const BASE_URL = 'https://sale.etprf.ru';
 const SEARCH_URL = `${BASE_URL}/Notification`;
 const MAX_PAGES = 10;
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
@@ -236,9 +229,8 @@ export class EtprfParser implements SourceParser {
         // === Начальная цена продажи ===
         const priceText = getFieldValue('Начальная цена продажи');
         if (priceText) {
-          const cleaned = priceText.replace(/[^\d,]/g, '').replace(',', '.');
-          const num = parseFloat(cleaned);
-          if (!isNaN(num) && num > 0) {
+          const num = parsePrice(priceText);
+          if (num !== undefined) {
             result.price = num;
           }
         }

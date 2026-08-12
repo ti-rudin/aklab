@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <!-- Навигация -->
-    <router-link to="/properties" class="text-sm hover:underline mb-6 inline-block" style="color: var(--text-muted)">← К списку объектов</router-link>
+    <router-link :to="returnToList" class="text-sm hover:underline mb-6 inline-block" style="color: var(--text-muted)">← К списку объектов</router-link>
 
     <!-- Loading -->
     <div v-if="loading" class="max-w-4xl mx-auto px-4 py-8">
@@ -296,6 +296,9 @@ import { useToast } from '@/composables/useToast'
 import { usePropertyMedia } from '@/composables/usePropertyMedia'
 
 const route = useRoute()
+const returnToList = computed(() => route.query?.tab === 'focus'
+  ? { path: '/properties', query: { tab: 'focus' } }
+  : '/properties')
 const toast = useToast()
 const {
   thumbnails,

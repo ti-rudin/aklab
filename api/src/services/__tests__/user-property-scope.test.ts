@@ -66,6 +66,9 @@ describe('compileUserPropertyScope', () => {
     expect(compiled.whereSql).toContain('COALESCE(ups.status, ?) IN (?,?)');
     expect(compiled.whereSql).toContain('p.focus_score >= ?');
     expect(compiled.whereSql).toContain('p.document_id = ?');
+    // An explicit status request (new, viewed) deliberately replaces the
+    // default inbox rule that excludes rejected objects.
+    expect(compiled.whereSql).not.toContain('COALESCE(ups.status, ?) != ?');
     expect(compiled.orderBySql).toBe('p.focus_score DESC');
     expect(compiled.page).toBe(2);
     expect(compiled.pageSize).toBe(25);
@@ -166,6 +169,16 @@ describe('compileUserPropertyScope', () => {
     expect(compiled.whereSql).toContain('p.city IN (?)');
     expect(compiled.whereSql).toContain('p.property_type IN (?)');
     expect(compiled.bindings).toEqual(expect.arrayContaining(['moscow', 'office', 'mo', 'warehouse']));
+  });
+
+  it('hides rejected objects by default but exposes them through an explicit status filter', () => {
+    const defaultScope = compileUserPropertyScope(profile);
+    expect(defaultScope.whereSql).toContain('COALESCE(ups.status, ?) != ?');
+    expect(defaultScope.bindings).toEqual(expect.arrayContaining(['new', 'rejected']));
+
+    const rejectedScope = compileUserPropertyScope(profile, { status: ['rejected'] });
+    expect(rejectedScope.whereSql).toContain('COALESCE(ups.status, ?) IN (?)');
+    expect(rejectedScope.whereSql).not.toContain('COALESCE(ups.status, ?) != ?');
   });
 });
 

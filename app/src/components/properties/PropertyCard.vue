@@ -1,6 +1,6 @@
 <template>
   <router-link
-    :to="`/properties/${item.documentId}`"
+    :to="propertyLink"
     class="block rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg"
     style="background: var(--bg-elevated); border-color: var(--border-subtle)"
   >
@@ -70,13 +70,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Property } from '@/composables/usePropertyData'
 import { cityLabel, typeLabel, statusLabel, statusStyle, formatPriceShort } from '@/utils/formatters'
 import { tagStyle, tagLabel, deviationStyle, HIDDEN_TAGS } from '@/composables/useFocusTab'
 
 type PropertyItem = Property
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   item: PropertyItem
   variant?: 'default' | 'focus'
   selected?: boolean
@@ -84,6 +85,10 @@ withDefaults(defineProps<{
   variant: 'default',
   selected: false,
 })
+
+const propertyLink = computed(() => props.variant === 'focus'
+  ? { path: `/properties/${props.item.documentId}`, query: { tab: 'focus' } }
+  : `/properties/${props.item.documentId}`)
 
 defineEmits<{
   (e: 'open'): void

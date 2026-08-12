@@ -50,6 +50,7 @@ export interface UserPropertyDto {
   address: unknown;
   area_sqm: unknown;
   price: unknown;
+  auction_end_at: unknown;
   price_per_sqm: unknown;
   manual_price_per_sqm: unknown;
   property_type: unknown;
@@ -174,6 +175,7 @@ const SELECT_COLUMNS = [
   'p.address AS address',
   'p.area_sqm AS area_sqm',
   'p.price AS price',
+  'p.auction_end_at AS auction_end_at',
   'p.price_per_sqm AS price_per_sqm',
   'p.manual_price_per_sqm AS manual_price_per_sqm',
   'p.property_type AS property_type',
@@ -412,6 +414,13 @@ export function compileUserPropertyScope(
     ...normalizedProfile.propertyTypes,
   ];
 
+  // "rejected" is a personal workflow state. Keep it for source identity
+  // deduplication, but omit it from the normal inbox unless explicitly asked.
+  if (normalizedRequest.status.length === 0) {
+    where.push('COALESCE(ups.status, ?) != ?');
+    bindings.push(DEFAULT_STATUS, 'rejected');
+  }
+
   if (normalizedProfile.priceFrom !== null) {
     where.push('(p.price IS NULL OR p.price >= ?)');
     bindings.push(normalizedProfile.priceFrom);
@@ -536,6 +545,7 @@ function mapDto(row: Record<string, unknown>): UserPropertyDto {
     address: row.address,
     area_sqm: row.area_sqm,
     price: row.price,
+    auction_end_at: row.auction_end_at,
     price_per_sqm: row.price_per_sqm,
     manual_price_per_sqm: row.manual_price_per_sqm,
     property_type: row.property_type,

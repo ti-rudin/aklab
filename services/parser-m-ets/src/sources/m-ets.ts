@@ -7,7 +7,7 @@
  * Playwright, stealth context, anti-ban.
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType } from '@aklab/service-shared';
+import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, extractAuctionEndAt, parsePrice } from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
 
@@ -32,14 +32,6 @@ function searchApiUrl(page: number): string {
 // ─── Классификация типа недвижимости ────────────────────────────────────────
 
 // ─── Парсинг цены ──────────────────────────────────────────────────────────
-
-function parsePrice(text: string): number | undefined {
-  if (!text) return undefined;
-  // Убираем всё кроме цифр, пробелов и запятых
-  const cleaned = text.replace(/[^\d,]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num > 0 ? num : undefined;
-}
 
 // ─── Извлечение площади ────────────────────────────────────────────────────
 
@@ -390,6 +382,7 @@ export class MetsParser implements SourceParser {
           address: address || undefined,
           priceText: priceText || undefined,
           dates: dates.length ? dates : undefined,
+          auctionText: document.body.innerText || '',
           depositText: depositText || undefined,
         };
       });
@@ -408,6 +401,7 @@ export class MetsParser implements SourceParser {
         longitude: details.longitude,
         address: details.address,
         price: details.priceText ? parsePrice(details.priceText) : undefined,
+        auction_end_at: extractAuctionEndAt(details.auctionText),
       };
     } catch (err: any) {
       logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);

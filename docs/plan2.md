@@ -172,8 +172,8 @@ Property и Setting руками. `/api/properties` отдаёт 200.
     `analyze-property` для всех `status=new`
   - `digest:morning` (cron: `0 ${setting.digest_time.split(':')[0]} * * *`,
     читается динамически из Setting) — дёргает `digest-send`
-  - `cleanup:old` (cron: `0 3 * * *`) — удаляет Property старше
-    `setting.retention_months`
+  - `cleanup:expired-auctions` (cron: `15 3 * * *`) — удаляет только Property
+    с явным `auction_end_at`, уже прошедшим на момент запуска.
 - Anti-patterns: native fetch, throw, correlationId в payload
 
 **Checkpoint**: в логах `Cron registered: parse:bankruptcy (every hour)`

@@ -1,12 +1,10 @@
 /**
  * property service
  *
- * Кастомные методы: getFocusQuery, clearNew.
+ * Кастомные методы: getFocusQuery.
  * Чистая бизнес-логика без HTTP-зависимостей.
  */
 import { factories } from '@strapi/strapi';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import type { StrapiInstance } from '../../../types/strapi';
 
 interface FocusParams {
@@ -56,6 +54,7 @@ const PARSER_OWNED_FIELDS = new Set([
   'area_sqm',
   'price',
   'minimum_price',
+  'auction_end_at',
   'price_per_sqm',
   'property_type',
   'auction_type',
@@ -89,7 +88,7 @@ const PROPERTY_SCHEMA_ENUMS = {
 
 const REQUIRED_PARSER_STRING_FIELDS = ['source', 'external_id', 'title'] as const;
 const OPTIONAL_PARSER_STRING_FIELDS = [
-  'url', 'address', 'published_at_source', 'description', 'contacts', 'first_seen_at',
+  'url', 'address', 'auction_end_at', 'published_at_source', 'description', 'contacts', 'first_seen_at',
 ] as const;
 const OPTIONAL_PARSER_NUMBER_FIELDS = [
   'area_sqm', 'price', 'minimum_price', 'price_per_sqm', 'latitude', 'longitude',
@@ -318,37 +317,4 @@ export default factories.createCoreService(PROPERTY_UID, ({ strapi }) => ({
     };
   },
 
-  /**
-   * Удалить все объекты кроме статуса "in_progress" (В работе).
-   * Возвращает количество удалённых записей и папок с фото.
-   */
-  async clearNew(): Promise<{ deleted: number; photosDeleted: number }> {
-    const keepStatus = 'in_progress';
-
-    // 1. Находим объекты для удаления (все кроме "in_progress")
-    const toDelete = await strapi.db.query('api::property.property').findMany({
-      where: { status: { $ne: keepStatus } },
-      select: ['documentId'],
-    });
-
-    // 2. Удаляем папки с фото
-    const photosBase = path.join(process.cwd(), 'data', 'photos');
-    let photosDeleted = 0;
-    for (const prop of toDelete) {
-      const photoDir = path.join(photosBase, prop.documentId);
-      try {
-        await fs.rm(photoDir, { recursive: true, force: true });
-        photosDeleted++;
-      } catch {
-        // Папки могло не быть — это нормально
-      }
-    }
-
-    // 3. Удаляем записи из БД
-    const deleted = await strapi.db.query('api::property.property').deleteMany({
-      where: { status: { $ne: keepStatus } },
-    });
-
-    return { deleted: deleted.count, photosDeleted };
-  },
 }));

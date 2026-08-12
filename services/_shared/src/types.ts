@@ -11,6 +11,8 @@ export interface ParsedProperty {
   area_sqm?: number;
   price?: number;
   minimum_price?: number;
+  /** Deadline for applications/trading, normalized to UTC. */
+  auction_end_at?: string;
   price_per_sqm?: number;
   property_type: string; // office | warehouse | retail | production | free_purpose | other
   auction_type: string; // bankruptcy | privatization | marketplace
