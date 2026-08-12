@@ -74,6 +74,7 @@ Pipeline telemetry хранится отдельно от агрегирован
   Singleton в `api/src/services/queueService.ts`.
 - **Cron-планировщик** — `node-cron` в `api/src/cron/index.ts` (timezone
   Europe/Moscow). 2 cron: `pipeline:daily` (ежечасная проверка, запуск в `digest_time`) и `cleanup:expired-auctions` (03:15; удаляет только записи с явным прошедшим `auction_end_at`).
+- **Deadline parser (v1.1.85):** timezone-less даты торгов нормализуются как МСК; ISO с явным `Z`/offset сохраняется как исходное абсолютное UTC-время. `torgi-gov` берёт срок подачи заявок из `biddEndTime`; не подменять его датой начала аукциона.
 - **Микросервисы парсеров** — каждый парсер = отдельный сервис в
   `services/parser-<slug>/` с shared модулями в `services/_shared/`
   (`@aklab/service-shared`). Health server + queue worker + парсер.

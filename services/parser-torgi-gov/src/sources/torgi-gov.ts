@@ -8,7 +8,7 @@
  * Регион = 77 (Москва), 50 (МО).
  */
 
-import { classifyPropertyType } from '@aklab/service-shared';
+import { classifyPropertyType, parseAuctionEndAt } from '@aklab/service-shared';
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
@@ -25,6 +25,11 @@ export function buildTorgiLotUrl(lotId: string): string {
 
 export function extractTorgiLotId(url: string): string | undefined {
   return url.match(/\/lots\/lot\/(\d+_\d+)(?:[/?#]|$)/)?.[1];
+}
+
+/** `biddEndTime` is the explicit application deadline returned by the detail API. */
+export function extractTorgiAuctionEndAt(data: { biddEndTime?: unknown; [key: string]: unknown }): string | undefined {
+  return typeof data.biddEndTime === 'string' ? parseAuctionEndAt(data.biddEndTime) : undefined;
 }
 
 function extractAddress(item: any): string {
@@ -118,8 +123,9 @@ export class TorgiGovParser implements SourceParser {
 
       // Контакты: организатор торгов
       const contacts = data.depositRecipientName || undefined;
+      const auction_end_at = extractTorgiAuctionEndAt(data);
 
-      return { description, contacts, address, latitude, longitude };
+      return { description, contacts, address, latitude, longitude, auction_end_at };
     } catch (err: any) {
       logger.warn(`[torgi-gov] fetchDetails error for ${url}: ${err.message}`);
       return {};
