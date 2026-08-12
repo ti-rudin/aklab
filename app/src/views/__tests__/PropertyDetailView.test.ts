@@ -163,6 +163,27 @@ describe('PropertyDetailView', () => {
     expect(wrapper.text()).toContain('Объект не найден')
   })
 
+  it('opens the commercial CIAN map at latitude,longitude for the property point', async () => {
+    setupApi()
+    mockedApi.get.mockImplementation(async (url: string) => {
+      if (url === '/properties/doc-1') {
+        return { data: { data: { ...property, latitude: 55.757855, longitude: 37.805572 } } }
+      }
+      if (url === '/me/properties/doc-1/comments') return { data: { data: [] } }
+      if (url === '/me/properties/doc-1/events') return { data: { data: [], meta: {} } }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+
+    await flushPromises()
+
+    const cianLink = wrapper.findAll('a').find((link) => link.text().includes('Посмотреть соседей на ЦИАН'))
+    expect(cianLink?.attributes('href')).toContain('center=55.757855,37.805572')
+    expect(cianLink?.attributes('href')).not.toContain('center=37.805572,55.757855')
+  })
+
   it('does not render a clickable source link for a non-http scraped URL', async () => {
     setupApi()
     mockedApi.get.mockImplementation(async (url: string) => {
