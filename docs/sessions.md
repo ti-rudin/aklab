@@ -2,6 +2,15 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.86 — ЦИАН: порядок координат карты)
+**Релиз 12 августа 2026:**
+- ✅ Причина неправильной точки на карте ЦИАН: frontend строил `center=longitude,latitude`. Исправлено на `center=latitude,longitude`; для контрольного объекта это `55.757855,37.805572`.
+- ✅ Текст действия **«Посмотреть соседей на ЦИАН»** сохранён без переименования. Regression-тест проверяет прямой и обратный порядок координат.
+- ✅ Release `v1.1.86`: PR #70, merge commit `cc48d25e57e2ab8143c50c7b05e2dd014de88732`; production развёрнут только штатным `scripts/deploy-prod.sh --ref <SHA>`.
+- ✅ Проверки: root 68/68 files, 1032/1032 tests (с синтетическим test-only `STRAPI_API_TOKEN`); app 31/31 files, 259/259 tests; API/app production builds; domains API 204/app 200; changelog `v1.1.86`; DB и queue integrity `ok`; manifest PM2 15/15 online.
+- ✅ Git worktree cleanup: после `git worktree prune` локально и на production остался только активный основной checkout; stale metadata нет. Backup-каталоги, SQLite, `.env` и runtime не затрагивались.
+
+
 ## Session handoff (v1.1.84 — exact digest projection DTO)
 **Corrective release 10 августа 2026:**
 - Digest-only acceptance v1.1.83 дошёл до реальных production rows, но завершился `degraded`: job после 3 попыток получил `Digest projection response is invalid`.
