@@ -4,9 +4,14 @@
  */
 const RU_AUCTION_DATE_PATTERN = /^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/;
 const ISO_AUCTION_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?)?$/;
+const EXPLICIT_OFFSET_ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
 
 export function parseAuctionEndAt(value: string): string | undefined {
   const source = value.trim();
+  if (EXPLICIT_OFFSET_ISO_PATTERN.test(source)) {
+    const epoch = Date.parse(source);
+    return Number.isFinite(epoch) ? new Date(epoch).toISOString() : undefined;
+  }
   const ruMatch = source.match(RU_AUCTION_DATE_PATTERN);
   const isoMatch = source.match(ISO_AUCTION_DATE_PATTERN);
   if (!ruMatch && !isoMatch) return undefined;

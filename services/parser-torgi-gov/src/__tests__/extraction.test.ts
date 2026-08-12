@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTorgiLotUrl, extractTorgiLotId } from '../sources/torgi-gov';
+import { buildTorgiLotUrl, extractTorgiLotId, extractTorgiAuctionEndAt } from '../sources/torgi-gov';
 
 /**
  * Тесты extraction-логики parser-torgi-gov.
@@ -81,6 +81,19 @@ describe('torgi-gov: source URL', () => {
     expect(
       extractTorgiLotId('https://torgi.gov.ru/new/public/lots/lot/21000005000000031466_1'),
     ).toBe('21000005000000031466_1');
+  });
+});
+
+describe('torgi-gov: auction deadline', () => {
+  it('prefers the explicit UTC application deadline from the detail API', () => {
+    expect(extractTorgiAuctionEndAt({
+      biddEndTime: '2026-08-21T08:00:00Z',
+      auctionStartDate: '2026-08-24T08:00:00Z',
+    })).toBe('2026-08-21T08:00:00.000Z');
+  });
+
+  it('does not substitute auction start time when the application deadline is absent', () => {
+    expect(extractTorgiAuctionEndAt({ auctionStartDate: '2026-08-24T08:00:00Z' })).toBeUndefined();
   });
 });
 
