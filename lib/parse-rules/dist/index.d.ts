@@ -15,6 +15,8 @@ export declare function buildParseRules(setting: any): ParseRules;
 export declare const Region: {
     readonly moscow: "moscow";
     readonly mo: "mo";
+    readonly tver: "tver";
+    readonly tver_oblast: "tver_oblast";
     readonly other: "other";
 };
 export type Region = (typeof Region)[keyof typeof Region];

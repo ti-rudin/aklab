@@ -320,8 +320,22 @@ describe('pure user filter snapshot contract', () => {
     expect(matchesSnapshot({ ...valid, hash: 'f'.repeat(63) }, candidate, 'details')).toBe(false);
   });
 
+  it('keeps Tver city and Tver oblast as distinct canonical regions', () => {
+    const normalized = normalizeUserParseProfile(profile({
+      regions: [' TVER_OBLAST ', 'tver', 'TVER'],
+    }));
+    const tverProfile = profile({ regions: ['tver'] });
+    const tverOblastProfile = profile({ regions: ['tver_oblast'] });
+
+    expect(normalized.regions).toEqual(['tver', 'tver_oblast']);
+    expect(matchesProfile(tverProfile, { city: 'tver', property_type: 'office' }, 'details')).toBe(true);
+    expect(matchesProfile(tverProfile, { city: 'tver_oblast', property_type: 'office' }, 'details')).toBe(false);
+    expect(matchesProfile(tverOblastProfile, { city: 'tver_oblast', property_type: 'office' }, 'details')).toBe(true);
+    expect(matchesProfile(tverOblastProfile, { city: 'tver', property_type: 'office' }, 'details')).toBe(false);
+  });
+
   it('exports only the runtime enum values required by the parser contract', () => {
-    expect(Object.values(Region)).toEqual(['moscow', 'mo', 'other']);
+    expect(Object.values(Region)).toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other']);
     expect(Object.values(PropertyType)).toEqual([
       'office',
       'warehouse',

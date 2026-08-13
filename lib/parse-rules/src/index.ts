@@ -29,6 +29,8 @@ export function buildParseRules(setting: any): ParseRules {
 export const Region = {
   moscow: 'moscow',
   mo: 'mo',
+  tver: 'tver',
+  tver_oblast: 'tver_oblast',
   other: 'other',
 } as const;
 
