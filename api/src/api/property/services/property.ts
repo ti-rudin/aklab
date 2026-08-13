@@ -5,6 +5,7 @@
  * Чистая бизнес-логика без HTTP-зависимостей.
  */
 import { factories } from '@strapi/strapi';
+import { regionFromStructuredLocation } from '@aklab/parse-rules';
 import type { StrapiInstance } from '../../../types/strapi';
 
 interface FocusParams {
@@ -49,8 +50,6 @@ const PARSER_OWNED_FIELDS = new Set([
   'external_id',
   'url',
   'title',
-  'address',
-  'city',
   'area_sqm',
   'price',
   'minimum_price',
@@ -62,8 +61,8 @@ const PARSER_OWNED_FIELDS = new Set([
   'description',
   'contacts',
   'photo_urls',
-  'latitude',
-  'longitude',
+  'property_location',
+  'parties',
   // Existing parser workers supply this ingestion timestamp. It is parser
   // owned; all workflow/scoring timestamps remain outside the allowlist.
   'first_seen_at',
@@ -83,15 +82,33 @@ const PROPERTY_SCHEMA_ENUMS = {
     'apartment', 'land', 'other',
   ]),
   auction_type: new Set(['bankruptcy', 'privatization', 'marketplace']),
-  city: new Set(['moscow', 'mo', 'other']),
+  city: new Set(['moscow', 'mo', 'tver', 'tver_oblast', 'other']),
 };
+
+const LOCATION_STATUSES = new Set([
+  'confirmed_address', 'confirmed_region_only', 'missing',
+]);
+const STRUCTURED_SOURCE_KINDS = new Set(['dom_field', 'api_field', 'xml_field', 'ssr_field']);
+const PARTY_SOURCE_KINDS = new Set([...STRUCTURED_SOURCE_KINDS, 'bounded_text']);
+const PARTY_ROLES = new Set(['pledgee', 'secured_creditor', 'debtor', 'organizer', 'seller', 'customer']);
+const PARTY_ADDRESS_KINDS = new Set(['legal', 'postal', 'actual', 'unknown']);
+const PARTY_CONFIDENCE = new Set(['structured', 'explicit_text']);
+const PROPERTY_LOCATION_FIELDS = new Set([
+  'address', 'region', 'region_code', 'latitude', 'longitude',
+  'status', 'source_kind', 'source_path',
+]);
+const PROPERTY_PARTY_FIELDS = new Set([
+  'name', 'roles', 'inn', 'ogrn', 'kpp', 'addresses', 'phone', 'email',
+  'source_path', 'source_kind', 'confidence',
+]);
+const PARTY_ADDRESS_FIELDS = new Set(['kind', 'value']);
 
 const REQUIRED_PARSER_STRING_FIELDS = ['source', 'external_id', 'title'] as const;
 const OPTIONAL_PARSER_STRING_FIELDS = [
-  'url', 'address', 'auction_end_at', 'published_at_source', 'description', 'contacts', 'first_seen_at',
+  'url', 'auction_end_at', 'published_at_source', 'description', 'contacts', 'first_seen_at',
 ] as const;
 const OPTIONAL_PARSER_NUMBER_FIELDS = [
-  'area_sqm', 'price', 'minimum_price', 'price_per_sqm', 'latitude', 'longitude',
+  'area_sqm', 'price', 'minimum_price', 'price_per_sqm',
 ] as const;
 
 export class PropertyUpsertValidationError extends Error {
@@ -99,6 +116,116 @@ export class PropertyUpsertValidationError extends Error {
     super(message);
     this.name = 'PropertyUpsertValidationError';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value === value.trim();
+}
+
+function optionalString(record: Record<string, unknown>, field: string): boolean {
+  return record[field] === undefined || nonEmptyString(record[field]);
+}
+
+function validCoordinate(value: unknown, min: number, max: number): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function validatePropertyLocation(value: unknown): void {
+  if (!isRecord(value)
+    || Object.keys(value).some(field => !PROPERTY_LOCATION_FIELDS.has(field))
+    || !LOCATION_STATUSES.has(value.status as string)
+    || !STRUCTURED_SOURCE_KINDS.has(value.source_kind as string)
+    || !nonEmptyString(value.source_path)
+    || !optionalString(value, 'address')
+    || !optionalString(value, 'region')
+    || !optionalString(value, 'region_code')) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+  const hasLatitude = value.latitude !== undefined;
+  const hasLongitude = value.longitude !== undefined;
+  if (hasLatitude !== hasLongitude
+    || (hasLatitude && !validCoordinate(value.latitude, -90, 90))
+    || (hasLongitude && !validCoordinate(value.longitude, -180, 180))) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+  if (value.status === 'confirmed_address' && !nonEmptyString(value.address)) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+  if (value.status === 'confirmed_region_only' && nonEmptyString(value.address)) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+  if (value.status === 'confirmed_region_only'
+    && !nonEmptyString(value.region)
+    && !nonEmptyString(value.region_code)
+    && !hasLatitude) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+  if (value.status === 'missing'
+    && (value.address !== undefined || value.region !== undefined || value.region_code !== undefined || hasLatitude)) {
+    throw new PropertyUpsertValidationError('property_location is malformed');
+  }
+}
+
+function validateParties(value: unknown): void {
+  if (!Array.isArray(value)) throw new PropertyUpsertValidationError('parties is malformed');
+  for (const party of value) {
+    if (!isRecord(party)
+      || Object.keys(party).some(field => !PROPERTY_PARTY_FIELDS.has(field))
+      || !nonEmptyString(party.name)
+      || !Array.isArray(party.roles)
+      || party.roles.length === 0
+      || party.roles.some(role => typeof role !== 'string' || !PARTY_ROLES.has(role))
+      || !nonEmptyString(party.source_path)
+      || !PARTY_SOURCE_KINDS.has(party.source_kind as string)
+      || !PARTY_CONFIDENCE.has(party.confidence as string)
+      || !optionalString(party, 'inn')
+      || !optionalString(party, 'ogrn')
+      || !optionalString(party, 'kpp')
+      || !optionalString(party, 'phone')
+      || !optionalString(party, 'email')) {
+      throw new PropertyUpsertValidationError('parties is malformed');
+    }
+    if (party.addresses !== undefined
+      && (!Array.isArray(party.addresses) || party.addresses.some(address => (
+        !isRecord(address)
+        || Object.keys(address).some(field => !PARTY_ADDRESS_FIELDS.has(field))
+        || !PARTY_ADDRESS_KINDS.has(address.kind as string)
+        || !nonEmptyString(address.value)
+      )))) {
+      throw new PropertyUpsertValidationError('parties is malformed');
+    }
+  }
+}
+
+function projectTypedLegacyGeography(input: Record<string, unknown>): Record<string, unknown> {
+  const location = input.property_location as Record<string, unknown>;
+  const confirmed = location.status === 'confirmed_address'
+    || location.status === 'confirmed_region_only';
+  const address = location.status === 'confirmed_address' ? location.address as string : '';
+  const city = confirmed
+    ? regionFromStructuredLocation({
+      ...(typeof location.address === 'string' ? { address: location.address } : {}),
+      ...(typeof location.region === 'string' ? { region: location.region } : {}),
+      ...(typeof location.region_code === 'string' ? { region_code: location.region_code } : {}),
+    })
+    : 'other';
+
+  const projected: Record<string, unknown> = {
+    ...input,
+    address,
+    city,
+  };
+  delete projected.latitude;
+  delete projected.longitude;
+  if (confirmed && typeof location.latitude === 'number' && typeof location.longitude === 'number') {
+    projected.latitude = location.latitude;
+    projected.longitude = location.longitude;
+  }
+  return projected;
 }
 
 function validateParserUpsertData(data: unknown): Record<string, any> {
@@ -143,6 +270,11 @@ function validateParserUpsertData(data: unknown): Record<string, any> {
     && (!Array.isArray(input.photo_urls) || input.photo_urls.some((url) => typeof url !== 'string'))) {
     throw new PropertyUpsertValidationError('photo_urls must be an array of strings');
   }
+  if (input.property_location === undefined) {
+    throw new PropertyUpsertValidationError('property_location is required');
+  }
+  validatePropertyLocation(input.property_location);
+  if (input.parties !== undefined) validateParties(input.parties);
 
   for (const field of Object.keys(PROPERTY_SCHEMA_ENUMS) as Array<keyof typeof PROPERTY_SCHEMA_ENUMS>) {
     const value = input[field];
@@ -152,8 +284,12 @@ function validateParserUpsertData(data: unknown): Record<string, any> {
   }
 
   // Build a fresh object from the checked keys; never pass a client object
-  // through to Strapi's ORM.
-  return Object.fromEntries(Object.keys(input).map((field) => [field, input[field]]));
+  // through to Strapi's ORM. Typed property location is the only geography
+  // authority; party data cannot alter the persisted projection, and stale
+  // caller legacy geography fields are rejected above.
+  return projectTypedLegacyGeography(
+    Object.fromEntries(Object.keys(input).map((field) => [field, input[field]])),
+  );
 }
 
 function isIdentityUniqueViolation(error: unknown): boolean {
@@ -187,6 +323,10 @@ export default factories.createCoreService(PROPERTY_UID, ({ strapi }) => ({
       tags: JSON.stringify([]),
       ...(parserData.photo_urls !== undefined
         ? { photo_urls: JSON.stringify(parserData.photo_urls) }
+        : {}),
+      property_location: JSON.stringify(parserData.property_location),
+      ...(parserData.parties !== undefined
+        ? { parties: JSON.stringify(parserData.parties) }
         : {}),
     };
 

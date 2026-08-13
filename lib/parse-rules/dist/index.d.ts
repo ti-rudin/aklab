@@ -15,6 +15,8 @@ export declare function buildParseRules(setting: any): ParseRules;
 export declare const Region: {
     readonly moscow: "moscow";
     readonly mo: "mo";
+    readonly tver: "tver";
+    readonly tver_oblast: "tver_oblast";
     readonly other: "other";
 };
 export type Region = (typeof Region)[keyof typeof Region];
@@ -31,6 +33,13 @@ export declare const PropertyType: {
 export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
 export declare const REGION_VALUES: readonly Region[];
 export declare const PROPERTY_TYPE_VALUES: readonly PropertyType[];
+export interface StructuredLocationRegionInput {
+    address?: string;
+    region?: string;
+    region_code?: string;
+}
+/** Derive a canonical region exclusively from typed structured location fields. */
+export declare function regionFromStructuredLocation(location: StructuredLocationRegionInput): Region;
 export interface UserParseProfile {
     userId: number;
     profileId: number;

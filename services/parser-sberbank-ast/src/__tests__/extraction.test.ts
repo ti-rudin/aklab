@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/service-shared';
+import { extractPropertyLocationFromXml } from '../sources/sberbank-ast';
 
 /**
  * Тесты extraction-логики parser-sberbank-ast.
  *
- * Функции parsePrice, extractArea, extractAddress — приватные модулю.
+ * Функции parsePrice и extractArea — приватные модулю.
  * Для тестирования воспроизводим их логику как standalone-функции.
  * Источник: services/parser-sberbank-ast/src/sources/sberbank-ast.ts
  */
@@ -19,22 +20,6 @@ function extractArea(text: string): number | undefined {
     if (!isNaN(num) && num > 0) return num;
   }
   return undefined;
-}
-
-function extractAddress(title: string): string {
-  // Try "по адресу: ..." pattern
-  let match = title.match(/по\s+адресу[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
-
-  // Try "расположенн..." pattern
-  match = title.match(/расположенн\w*\s+(?:по\s+адресу[:\s]*)?([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
-
-  // Try "адрес:" pattern
-  match = title.match(/адрес[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
-
-  return '';
 }
 
 // --- Tests ---
@@ -100,48 +85,59 @@ describe('sberbank-ast: extractArea', () => {
   });
 });
 
-describe('sberbank-ast: extractAddress', () => {
-  it('should extract address from "по адресу: ..." pattern', () => {
-    const title = 'Нежилое помещение по адресу: г. Москва, ул. Ленина, д. 10';
-    const addr = extractAddress(title);
-    expect(addr).toContain('г. Москва');
-    expect(addr).toContain('ул. Ленина');
+describe('sberbank-ast: typed XML property location extraction', () => {
+  it('uses the XML property address and ignores organizer legal address in Moscow', () => {
+    const xml = `<detail>
+      <textAddress>Республика Башкортостан, г. Уфа, ул. Ленина, д. 10</textAddress>
+      <OrganizatorInfo_OrgAddressJur>г. Москва, ул. Вавилова, д. 19</OrganizatorInfo_OrgAddressJur>
+      <CustomerInfo_Address>г. Москва, ул. Тверская, д. 1</CustomerInfo_Address>
+      <Latitude>54.7351</Latitude><Longitude>55.9587</Longitude>
+    </detail>`;
+
+    const location = extractPropertyLocationFromXml(xml);
+
+    expect(location).toEqual({
+      address: 'Республика Башкортостан, г. Уфа, ул. Ленина, д. 10',
+      latitude: 54.7351,
+      longitude: 55.9587,
+      status: 'confirmed_address',
+      source_kind: 'xml_field',
+      source_path: 'textAddress',
+    });
+    expect(derivePropertyRegion(location)).toBe('other');
+    expect(projectLegacyAddress(location)).toBe(location.address);
   });
 
-  it('should extract address from "расположенному по адресу" pattern', () => {
-    const title = 'Помещение, расположенное по адресу: Московская обл., г. Подольск, ул. Советская';
-    const addr = extractAddress(title);
-    expect(addr).toContain('Московская обл.');
-    expect(addr).toContain('г. Подольск');
+  it('fails closed when property address/region fields are absent', () => {
+    const xml = `<detail>
+      <OrganizatorInfo_OrgAddressJur>г. Москва, ул. Вавилова, д. 19</OrganizatorInfo_OrgAddressJur>
+      <CustomerInfo_Address>г. Москва, ул. Тверская, д. 1</CustomerInfo_Address>
+      <BidComment>В описании упоминается Москва, но это не поле имущества.</BidComment>
+    </detail>`;
+
+    const location = extractPropertyLocationFromXml(xml);
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'xml_field',
+      source_path: 'textAddress|GeoDataAddress',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
   });
 
-  it('should NOT match "расположенному" without "по адресу" (\\w is ASCII-only)', () => {
-    // \w in JS doesn't match Cyrillic, so "расположенное" doesn't match "расположенн\w*"
-    // The pattern only works when "по адресу" follows (caught by first regex)
-    const title = 'Помещение, расположенное г. Москва, ул. Тверская';
-    const addr = extractAddress(title);
-    expect(addr).toBe('');
-  });
+  it('keeps a property-bound coordinate pair as confirmed region-only provenance', () => {
+    const xml = `<detail>
+      <Latitude>54.7351</Latitude><Longitude>55.9587</Longitude>
+      <OrganizatorInfo_OrgAddressJur>г. Москва, ул. Вавилова, д. 19</OrganizatorInfo_OrgAddressJur>
+    </detail>`;
 
-  it('should extract address from "адрес: ..." pattern', () => {
-    const title = 'Нежилое помещение адрес: г. Калуга, ул. Кирова, д. 5';
-    const addr = extractAddress(title);
-    expect(addr).toContain('г. Калуга');
-  });
-
-  it('should return empty string when no address pattern found', () => {
-    const title = 'Складское помещение';
-    expect(extractAddress(title)).toBe('');
-  });
-
-  it('should handle empty string', () => {
-    expect(extractAddress('')).toBe('');
-  });
-
-  it('should limit to 3 comma-separated segments', () => {
-    const title = 'По адресу: г. Москва, ул. Ленина, д. 10, кв. 5';
-    const addr = extractAddress(title);
-    expect(addr).toContain('г. Москва');
+    expect(extractPropertyLocationFromXml(xml)).toEqual({
+      latitude: 54.7351,
+      longitude: 55.9587,
+      status: 'confirmed_region_only',
+      source_kind: 'xml_field',
+      source_path: 'Latitude|Longitude',
+    });
   });
 });
 

@@ -302,6 +302,34 @@ export async function tryAcquireIdleState(strapi: StrapiInstance, nextState: Pip
   return true;
 }
 
+/** Atomically release only the lifecycle still owned by expectedRunId. */
+export async function tryReleaseOwnedState(
+  strapi: StrapiInstance,
+  expectedRunId: string,
+  nextState: PipelineState,
+): Promise<boolean> {
+  const setting = await strapi.db.query('api::setting.setting').findOne({});
+  if (!setting) return false;
+
+  const result = await strapi.db.connection.raw(
+    `UPDATE setting
+       SET pipeline_state = ?, updated_at = ?
+     WHERE id = ?
+       AND json_extract(pipeline_state, '$.run_id') = ?
+     RETURNING id`,
+    [JSON.stringify(nextState), nextState.updated_at, setting.id, expectedRunId],
+  );
+  const rows = Array.isArray(result?.rows)
+    ? result.rows
+    : Array.isArray(result)
+      ? result
+      : [];
+  if (rows.length !== 1) return false;
+
+  broadcastSSE('progress', sanitizePipelineState(nextState));
+  return true;
+}
+
 export async function resetState(strapi: StrapiInstance): Promise<void> {
   const setting = await strapi.db.query('api::setting.setting').findOne({});
   if (!setting) throw new Error('Pipeline setting row is missing.');

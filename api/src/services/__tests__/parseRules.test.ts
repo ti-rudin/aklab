@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { buildParseRules } from '../parseRules'
+import settingSchema from '../../api/setting/content-types/setting/schema.json'
 
 describe('buildParseRules', () => {
+  it('defaults new environments to all canonical regions', () => {
+    expect((settingSchema.attributes.monitored_regions as { default: string[] }).default)
+      .toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other'])
+  })
+
   it('returns empty rules when setting is null', () => {
     const rules = buildParseRules(null)
     expect(rules.stopWords).toBeUndefined()
@@ -86,7 +92,7 @@ describe('buildParseRules', () => {
       price_to: 10000000,
       area_from: 20,
       area_to: 5000,
-      monitored_regions: ['moscow', 'mo', 'other'],
+      monitored_regions: ['moscow', 'mo', 'tver', 'tver_oblast', 'other'],
     }
     const rules = buildParseRules(setting)
     expect(rules.stopWords).toEqual(['земельный участок'])
@@ -94,7 +100,7 @@ describe('buildParseRules', () => {
     expect(rules.priceTo).toBe(10000000)
     expect(rules.areaFrom).toBe(20)
     expect(rules.areaTo).toBe(5000)
-    expect(rules.cities).toEqual(['moscow', 'mo', 'other'])
+    expect(rules.cities).toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other'])
   })
 
   it('handles partial setting (only stop_words)', () => {

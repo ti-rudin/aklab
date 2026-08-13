@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  parsePrice,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import {
+  extractAggregatorPropertyLocationFields,
+  normalizeAggregatorPropertyLocation,
+} from '../sources/aggregator-bankrot';
 
 /**
  * Тесты extraction-логики parser-aggregator-bankrot.
@@ -10,7 +18,7 @@ import { parsePrice } from '@aklab/service-shared';
  * Тестируем:
  * - parsePrice (парсинг цены из текста)
  * - extractArea (площадь из title/excerpt)
- * - address extraction
+ * - typed property_location extraction from the current-property field only
  * - car brand filtering
  */
 
@@ -39,10 +47,6 @@ function extractArea(text: string): number | undefined {
     if (!isNaN(num) && num > 0) return num;
   }
   return undefined;
-}
-
-function extractAddressFromText(text: string): string {
-  return text.match(/(?:адрес|ул\.|ул\s|город|г\.|пос\.|дер\.)[^,]*/i)?.[0]?.trim() || '';
 }
 
 // Car brands filter from aggregator-bankrot.ts
@@ -128,25 +132,63 @@ describe('aggregator-bankrot: extractArea', () => {
   });
 });
 
-describe('aggregator-bankrot: extractAddressFromText', () => {
-  it('should extract address with "адрес"', () => {
-    const addr = extractAddressFromText('адрес: г. Москва, ул. Ленина');
-    expect(addr).toContain('адрес');
+describe('aggregator-bankrot: typed property location', () => {
+  function extractLocation(address?: string, label = 'Адрес местонахождения:') {
+    const rows = (address === undefined ? [] : [label]).map((rowLabel) => ({
+      textContent: `${rowLabel} ${address ?? ''}`,
+      querySelector(selector: string) {
+        if (selector === 'span.text-grey') return { textContent: rowLabel, querySelector: () => null };
+        if (selector === 'span.js-share-search') return { textContent: address, querySelector: () => null };
+        return null;
+      },
+    }));
+    return normalizeAggregatorPropertyLocation(
+      extractAggregatorPropertyLocationFields({
+        querySelectorAll: () => rows,
+      }),
+    );
+  }
+
+  it('uses the explicitly labelled current-property field and ignores title, description, and party geography', () => {
+    const location = extractLocation('Тверская область, г. Тверь, ул. Ленина, д. 10');
+
+    expect(location).toEqual({
+      address: 'Тверская область, г. Тверь, ул. Ленина, д. 10',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '#info .panel__wrapper p span.js-share-search',
+    });
+    expect(derivePropertyRegion(location)).toBe('tver');
+    expect(projectLegacyAddress(location)).toBe(location.address);
   });
 
-  it('should extract address with "ул." pattern', () => {
-    const addr = extractAddressFromText('Нежилое помещение ул. Тверская, д.10');
-    expect(addr).toContain('ул. Тверская');
+  it('returns missing when only title, excerpt, description, party text, or body text mentions a location', () => {
+    const location = extractLocation();
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: '#info',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
+    expect(location.latitude).toBeUndefined();
+    expect(location.longitude).toBeUndefined();
   });
 
-  it('should extract address with "г." pattern', () => {
-    const addr = extractAddressFromText('Помещение г. Москва, центр');
-    expect(addr).toContain('г. Москва');
+  it('does not treat mixed text in the info container as a property field', () => {
+    const location = extractLocation('г. Москва, ул. Арбат, д. 1', 'Организатор:');
+
+    expect(location.status).toBe('missing');
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
   });
 
-  it('should return empty string when no address pattern', () => {
-    expect(extractAddressFromText('')).toBe('');
-    expect(extractAddressFromText('нежилое помещение')).toBe('');
+  it('requires the semantic property address value to be non-empty', () => {
+    const location = extractLocation(' ');
+
+    expect(location.status).toBe('missing');
+    expect(projectLegacyAddress(location)).toBe('');
   });
 });
 

@@ -1,13 +1,64 @@
-/**
- * Интерфейс для парсеров источников.
- */
+export type PropertyLocationStatus =
+  | 'confirmed_address'
+  | 'confirmed_region_only'
+  | 'missing';
+
+export type StructuredSourceKind =
+  | 'dom_field'
+  | 'api_field'
+  | 'xml_field'
+  | 'ssr_field';
+
+export interface PropertyLocation {
+  address?: string;
+  region?: string;
+  region_code?: string;
+  latitude?: number;
+  longitude?: number;
+  status: PropertyLocationStatus;
+  source_kind: StructuredSourceKind;
+  source_path: string;
+}
+
+export type PropertyPartyRole =
+  | 'pledgee'
+  | 'secured_creditor'
+  | 'debtor'
+  | 'organizer'
+  | 'seller'
+  | 'customer';
+
+export interface PartyAddress {
+  kind: 'legal' | 'postal' | 'actual' | 'unknown';
+  value: string;
+}
+
+export interface PropertyParty {
+  roles: PropertyPartyRole[];
+  name: string;
+  inn?: string;
+  ogrn?: string;
+  kpp?: string;
+  addresses?: PartyAddress[];
+  phone?: string;
+  email?: string;
+  source_path: string;
+  source_kind: StructuredSourceKind | 'bounded_text';
+  confidence: 'structured' | 'explicit_text';
+}
+
+/** Интерфейс для парсеров источников. */
 
 export interface ParsedProperty {
   external_id: string;
   url: string;
   title: string;
   address: string;
-  city: string; // moscow | mo | other
+  city: string; // moscow | mo | tver | tver_oblast | other
+  /** Canonical structured property location. */
+  property_location: PropertyLocation;
+  /** Structured participants, kept separate from property geography. */
+  parties?: PropertyParty[];
   area_sqm?: number;
   price?: number;
   minimum_price?: number;

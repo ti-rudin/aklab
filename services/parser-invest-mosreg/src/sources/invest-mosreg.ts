@@ -9,8 +9,8 @@
  *   287 — Аренда
  *   1008 — Коммерческие объекты (ЦИАН)
  */
-import { classifyPropertyType } from '@aklab/service-shared';
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
+import { classifyPropertyType, derivePropertyRegion, normalizeStructuredLocation, projectLegacyAddress } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 import { resolveInvestMosregSourceUrl } from './source-url';
 
@@ -28,13 +28,20 @@ const HEADERS: Record<string, string> = {
 
 /* ─── Разбор полей объекта ─── */
 
+interface MapField {
+  id: number;
+  name: string;
+  value?: string;
+  type?: number;
+}
+
 interface MapPlace {
   id: string;
   uid: string;
   name: string;
   cadastralNumber?: string;
   center?: [number, number]; // [lat, lon]
-  fields: Array<{ id: number; name: string; value?: string; type?: number }>;
+  fields: MapField[];
 }
 
 function getField(place: MapPlace, fieldName: string): string {
@@ -42,6 +49,54 @@ function getField(place: MapPlace, fieldName: string): string {
     (x) => x.name?.toLowerCase().includes(fieldName.toLowerCase()),
   );
   return (f?.value ?? '').toString().trim();
+}
+
+function normalizeFieldName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
+}
+
+function findExactField(place: MapPlace, names: readonly string[]): MapField | undefined {
+  const allowedNames = new Set(names.map(normalizeFieldName));
+  return place.fields.find((field) => allowedNames.has(normalizeFieldName(field.name))
+    && Boolean(field.value?.trim()));
+}
+
+function extractStructuredCoordinates(place: MapPlace): Pick<PropertyLocation, 'latitude' | 'longitude'> {
+  const [latitude, longitude] = place.center ?? [];
+  return typeof latitude === 'number' && Number.isFinite(latitude)
+    && typeof longitude === 'number' && Number.isFinite(longitude)
+    ? { latitude, longitude }
+    : {};
+}
+
+function formatFieldPath(field: MapField): string {
+  return `place.fields[name="${field.name.trim().replace(/\s+/g, ' ')}"]`;
+}
+
+function extractPropertyLocation(place: MapPlace): PropertyLocation {
+  const addressField = findExactField(place, ['адрес', 'адресс']);
+  const regionField = findExactField(place, ['муниципальное образование']);
+  const coordinates = extractStructuredCoordinates(place);
+  const address = addressField?.value?.trim();
+  const region = regionField?.value?.trim();
+  const hasAddress = Boolean(address);
+  const hasRegion = Boolean(region);
+  const hasCoordinates = coordinates.latitude !== undefined && coordinates.longitude !== undefined;
+
+  return normalizeStructuredLocation({
+    ...(hasAddress ? { address } : {}),
+    ...(hasRegion ? { region } : {}),
+    ...(hasCoordinates ? coordinates : {}),
+    status: hasAddress ? 'confirmed_address' : hasRegion || hasCoordinates ? 'confirmed_region_only' : 'missing',
+    source_kind: 'api_field',
+    source_path: addressField
+      ? formatFieldPath(addressField)
+      : regionField
+        ? formatFieldPath(regionField)
+        : hasCoordinates
+          ? 'place.center'
+          : 'place.fields',
+  });
 }
 
 function extractArea(place: MapPlace): number | undefined {
@@ -82,8 +137,10 @@ function extractPrice(place: MapPlace): number | undefined {
   return undefined;
 }
 
-function toProperty(place: MapPlace, menuName: string): ParsedProperty {
-  const address = getField(place, 'адрес');
+export function toProperty(place: MapPlace, menuName: string): ParsedProperty {
+  const propertyLocation = extractPropertyLocation(place);
+  const address = projectLegacyAddress(propertyLocation);
+  const city = derivePropertyRegion(propertyLocation);
   const status = getField(place, 'статус');
   const objectName = getField(place, 'объект');
   const municipality = getField(place, 'муниципальное образование');
@@ -106,8 +163,9 @@ function toProperty(place: MapPlace, menuName: string): ParsedProperty {
     external_id: `invest-mosreg-${place.uid || place.id}`,
     url: resolveInvestMosregSourceUrl(place),
     title: place.name.slice(0, 300),
-    address: address || municipality || '',
-    city: 'mo',
+    address,
+    city,
+    property_location: propertyLocation,
     area_sqm: area,
     price,
     price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -115,8 +173,8 @@ function toProperty(place: MapPlace, menuName: string): ParsedProperty {
     auction_type: 'marketplace',
     description: description || undefined,
     contacts: contact || undefined,
-    latitude: place.center?.[0],
-    longitude: place.center?.[1],
+    latitude: propertyLocation.latitude,
+    longitude: propertyLocation.longitude,
   };
 }
 

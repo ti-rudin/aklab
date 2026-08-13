@@ -44,7 +44,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import UserProfileForm from '@/components/settings/UserProfileForm.vue'
 
-type TabId = 'personal' | 'profiles' | 'system' | 'pipeline' | 'rules' | 'sources' | 'references'
+type TabId = 'personal' | 'profiles' | 'system' | 'pipeline' | 'rules' | 'sources' | 'references' | 'maintenance'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -57,6 +57,7 @@ const adminComponents: Record<Exclude<TabId, 'personal'>, ReturnType<typeof defi
   rules: defineAsyncComponent(() => import('@/components/settings/RulesPanel.vue')),
   sources: defineAsyncComponent(() => import('@/components/settings/SourcesPanel.vue')),
   references: defineAsyncComponent(() => import('@/components/settings/MarketReferencesPanel.vue')),
+  maintenance: defineAsyncComponent(() => import('@/components/settings/CatalogMaintenancePanel.vue')),
 }
 
 const tabs = computed<Array<{ id: TabId; label: string }>>(() => {
@@ -70,6 +71,7 @@ const tabs = computed<Array<{ id: TabId; label: string }>>(() => {
     { id: 'rules', label: 'Правила' },
     { id: 'sources', label: 'Источники' },
     { id: 'references', label: 'Эталоны' },
+    { id: 'maintenance', label: 'Обслуживание' },
   ]
 })
 

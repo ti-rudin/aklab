@@ -12,9 +12,9 @@
           <label class="block text-sm mb-1" style="color: var(--text-muted)">Город *</label>
           <select v-model="form.city" class="w-full px-3 py-2 rounded-lg border text-sm" style="background: var(--bg-main); border-color: var(--border-subtle); color: var(--text-main)">
             <option value="" disabled>Выберите…</option>
-            <option value="moscow">Москва</option>
-            <option value="mo">МО</option>
-            <option value="other">Другой</option>
+            <option v-for="option in REGION_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </div>
         <div>
@@ -177,21 +177,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/api/strapi'
+import { REGION_OPTIONS } from '@/constants/regions'
+import { cityLabel, typeLabel } from '@/utils/formatters'
 
-const cityLabel = (city: string) => ({
-  moscow: 'Москва',
-  mo: 'МО',
-  other: 'Другой',
-})[city] || city
-
-const typeLabel = (type: string) => ({
-  office: 'Офис',
-  warehouse: 'Склад',
-  retail: 'Торговля',
-  production: 'Производство',
-  free_purpose: 'Свободного назначения',
-  other: 'Другое',
-})[type] || type
 
 interface MarketReference {
   id: number

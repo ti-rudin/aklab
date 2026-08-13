@@ -72,6 +72,22 @@ describe('user comment custom routes', () => {
 });
 
 describe('user comment controller boundary', () => {
+  it('blocks comment mutations during catalog maintenance before service access', async () => {
+    const previous = process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE;
+    process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE = 'enabled';
+    try {
+      const ctx = makeCtx({ request: { body: { data: { text: 'hello' } } } });
+
+      await actions().createMine(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(commentService.create).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE;
+      else process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE = previous;
+    }
+  });
   it('takes the actor only from an exact positive safe integer state user id', async () => {
     commentService.list.mockResolvedValue({ data: [] });
 

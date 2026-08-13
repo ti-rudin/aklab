@@ -1,6 +1,8 @@
+import { REGIONS, selectedRegions, type RegionSelection } from '@/constants/regions'
+
 export interface FocusFilters {
   threshold: number
-  cities: { moscow: boolean; mo: boolean; other: boolean }
+  cities: RegionSelection
   property_type: string[]
   status: string
 }
@@ -21,10 +23,7 @@ export function buildFocusParams(
   searchQuery?: string,
 ): Record<string, string | number> {
   const sortParam = `${sort.direction === 'desc' ? '-' : ''}${sort.field}`
-  const cityList: string[] = []
-  if (filters.cities.moscow) cityList.push('moscow')
-  if (filters.cities.mo) cityList.push('mo')
-  if (filters.cities.other) cityList.push('other')
+  const cityList = selectedRegions(filters.cities)
 
   const params: Record<string, string | number> = {
     threshold: filters.threshold,
@@ -35,7 +34,7 @@ export function buildFocusParams(
       : FOCUS_PAGE_SIZE_MAX,
   }
 
-  if (cityList.length > 0 && cityList.length < 3) params.city = cityList.join(',')
+  if (cityList.length > 0 && cityList.length < REGIONS.length) params.city = cityList.join(',')
   if (filters.property_type.length > 0) params.property_type = filters.property_type.join(',')
   if (filters.status.trim()) params.status = filters.status.trim()
   if (searchQuery?.trim()) params.search = searchQuery.trim()

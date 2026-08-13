@@ -8,8 +8,14 @@
  * Регион = 77 (Москва), 50 (МО).
  */
 
-import { classifyPropertyType, parseAuctionEndAt } from '@aklab/service-shared';
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  derivePropertyRegion,
+  normalizeStructuredLocation,
+  parseAuctionEndAt,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
 const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
@@ -17,7 +23,11 @@ const PUBLIC_LOT_URL = 'https://torgi.gov.ru/new/public/lots/lot';
 const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
 const ITEMS_PER_PAGE = 10;
 
-const MOSCOW_REGIONS = new Set(['77', '50']);
+const MONITORED_REGION_CODES = new Set(['77', '50', '69']);
+
+export function isMonitoredTorgiRegion(regionCode: string): boolean {
+  return MONITORED_REGION_CODES.has(regionCode);
+}
 
 export function buildTorgiLotUrl(lotId: string): string {
   return `${PUBLIC_LOT_URL}/${lotId}`;
@@ -32,12 +42,72 @@ export function extractTorgiAuctionEndAt(data: { biddEndTime?: unknown; [key: st
   return typeof data.biddEndTime === 'string' ? parseAuctionEndAt(data.biddEndTime) : undefined;
 }
 
-function extractAddress(item: any): string {
-  const desc = item.lotDescription || item.lotName || '';
-  const match = desc.match(/(?:по адресу|адрес|расположенн?\s+по)[:\s]+(.+?)(?:[,;]|$)/i);
-  if (match) return match[1].trim();
-  const subject = item.subjectName || '';
-  return subject || desc.substring(0, 100);
+function structuredText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function structuredCoordinate(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Extract property geography from the current lot's named API fields only.
+ *
+ * `lotDescription`, `lotName`, organizer fields and `subjectName` are never
+ * treated as a full address. `subjectRFCode`/`subjectName` are used only for
+ * confirmed region-only provenance when no lot address field is present.
+ */
+export function extractTorgiPropertyLocation(item: Record<string, unknown>): PropertyLocation {
+  const estateAddress = structuredText(item.estateAddress);
+  const lotAddress = structuredText(item.lotAddress);
+  const address = estateAddress ?? lotAddress;
+  const addressPath = estateAddress ? 'lot.estateAddress' : 'lot.lotAddress';
+  const regionCode = structuredText(item.subjectRFCode);
+  const region = structuredText(item.subjectName);
+  const point = item.point && typeof item.point === 'object'
+    ? item.point as Record<string, unknown>
+    : undefined;
+  const latitude = structuredCoordinate(point?.lat);
+  const longitude = structuredCoordinate(point?.lon);
+  const coordinates = latitude !== undefined && longitude !== undefined
+    ? { latitude, longitude }
+    : {};
+
+  if (address) {
+    return normalizeStructuredLocation({
+      address,
+      ...(region ? { region } : {}),
+      ...(regionCode ? { region_code: regionCode } : {}),
+      ...coordinates,
+      status: 'confirmed_address',
+      source_kind: 'api_field',
+      source_path: addressPath,
+    });
+  }
+
+  if (region || regionCode || Object.keys(coordinates).length > 0) {
+    return normalizeStructuredLocation({
+      ...(region ? { region } : {}),
+      ...(regionCode ? { region_code: regionCode } : {}),
+      ...coordinates,
+      status: 'confirmed_region_only',
+      source_kind: 'api_field',
+      source_path: regionCode ? 'lot.subjectRFCode' : region ? 'lot.subjectName' : 'lot.point',
+    });
+  }
+
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'api_field',
+    source_path: 'lot.estateAddress|lot.lotAddress',
+  });
 }
 
 export class TorgiGovParser implements SourceParser {
@@ -110,22 +180,22 @@ export class TorgiGovParser implements SourceParser {
       // Описание
       const description = data.lotDescription || data.lotName || undefined;
 
-      // Адрес
-      const address = data.estateAddress || data.lotAddress || undefined;
-
-      // Координаты
-      const latitude = data.point?.lat && !isNaN(Number(data.point.lat))
-        ? Number(data.point.lat)
-        : undefined;
-      const longitude = data.point?.lon && !isNaN(Number(data.point.lon))
-        ? Number(data.point.lon)
-        : undefined;
+      const property_location = extractTorgiPropertyLocation(data);
 
       // Контакты: организатор торгов
       const contacts = data.depositRecipientName || undefined;
       const auction_end_at = extractTorgiAuctionEndAt(data);
 
-      return { description, contacts, address, latitude, longitude, auction_end_at };
+      return {
+        description,
+        contacts,
+        property_location,
+        address: projectLegacyAddress(property_location),
+        city: derivePropertyRegion(property_location),
+        latitude: property_location.latitude,
+        longitude: property_location.longitude,
+        auction_end_at,
+      };
     } catch (err: any) {
       logger.warn(`[torgi-gov] fetchDetails error for ${url}: ${err.message}`);
       return {};
@@ -176,7 +246,7 @@ export class TorgiGovParser implements SourceParser {
 
       for (const item of items) {
         const regionCode = String(item.subjectRFCode || '');
-        if (!MOSCOW_REGIONS.has(regionCode)) continue;
+        if (!isMonitoredTorgiRegion(regionCode)) continue;
 
         const catCode = String(item.category?.code || '');
         if (catCode === '301' || catCode === '307') continue;
@@ -212,12 +282,14 @@ export class TorgiGovParser implements SourceParser {
         }
 
         const lotId = item.id || `${item.noticeNumber}_${item.lotNumber}`;
+        const propertyLocation = extractTorgiPropertyLocation(item);
         results.push({
           external_id: `torgi-gov-${lotId}`,
           url: buildTorgiLotUrl(lotId),
           title: lotName || description.substring(0, 200),
-          address: extractAddress(item),
-          city: regionCode === '77' ? 'moscow' : regionCode === '50' ? 'mo' : 'other',
+          address: projectLegacyAddress(propertyLocation),
+          city: derivePropertyRegion(propertyLocation),
+          property_location: propertyLocation,
           area_sqm: area,
           price: typeof price === 'number' ? price : undefined,
           price_per_sqm: price && area ? Math.round(price / area) : undefined,

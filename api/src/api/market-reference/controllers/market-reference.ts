@@ -2,8 +2,9 @@
  * market-reference controller
  */
 import { factories } from '@strapi/strapi';
+import { REGION_VALUES } from '@aklab/parse-rules';
 
-const CITIES = new Set(['moscow', 'mo', 'other']);
+const CITIES = new Set<string>(REGION_VALUES);
 const PROPERTY_TYPES = new Set(['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']);
 const QUERY_KEYS = new Set(['city', 'property_type']);
 

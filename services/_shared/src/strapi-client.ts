@@ -13,6 +13,13 @@ interface StrapiResponse<T> {
 
 import { ParseRules, buildParseRules } from '@aklab/parse-rules';
 export { ParseRules, buildParseRules };
+import type { PropertyLocation, PropertyParty } from './types';
+import {
+  dedupeParties,
+  derivePropertyRegion,
+  normalizeStructuredLocation,
+  projectLegacyAddress,
+} from './property-location';
 
 const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
@@ -177,11 +184,25 @@ export async function createProperty(props: {
   photo_urls?: string[];
   latitude?: number;
   longitude?: number;
+  property_location: PropertyLocation;
+  parties?: PropertyParty[];
   rules?: ParseRules;
 }): Promise<any> {
   // Извлекаем rules из props чтобы не утекал в POST payload
   // (деструктурируем ПОСЛЕ всех мутаций props — ниже перед POST)
   const { rules, ...restProps } = props as any;
+
+  // Normalize typed geography before filters. The denormalized projection is
+  // local-only; the API recomputes persisted legacy columns from this contract.
+  const location = normalizeStructuredLocation(restProps.property_location);
+  restProps.property_location = location;
+  restProps.address = projectLegacyAddress(location);
+  restProps.city = derivePropertyRegion(location);
+  restProps.latitude = location.latitude;
+  restProps.longitude = location.longitude;
+  if (restProps.parties !== undefined) {
+    restProps.parties = dedupeParties(restProps.parties);
+  }
 
   if (!isCommercialProperty(restProps)) {
     logger.warn(`Skipping non-commercial: "${restProps.title}" [${restProps.property_type}/${restProps.auction_type}] source=${restProps.source}`);
@@ -250,10 +271,15 @@ export async function createProperty(props: {
 
   // DB-backed identity upsert closes the check-then-create race: another parser
   // may win after propertyExists(), in which case the endpoint returns it safely.
+  const postData = { ...restProps, first_seen_at: new Date().toISOString() };
+  delete postData.address;
+  delete postData.city;
+  delete postData.latitude;
+  delete postData.longitude;
   const res = await fetch(`${BASE}/properties/upsert`, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ data: { ...restProps, first_seen_at: new Date().toISOString() } }),
+    body: JSON.stringify({ data: postData }),
   });
   if (!res.ok) {
     const body = await res.text();

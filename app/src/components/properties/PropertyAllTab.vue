@@ -88,6 +88,7 @@ import PropertyCard from '@/components/properties/PropertyCard.vue'
 import PropertyTable from '@/components/properties/PropertyTable.vue'
 import ViewToggle from '@/components/properties/ViewToggle.vue'
 import FilterChips from '@/components/properties/FilterChips.vue'
+import { REGION_OPTIONS } from '@/constants/regions'
 import { usePropertyData, type PropertyQuery } from '@/composables/usePropertyData'
 import { usePropertyFilters } from '@/composables/usePropertyFilters'
 
@@ -116,11 +117,7 @@ const typeOptions = [
   { value: 'other', label: 'Другое' },
 ]
 
-const cityOptions = [
-  { value: 'moscow', label: 'Москва' },
-  { value: 'mo', label: 'МО' },
-  { value: 'other', label: 'Другой' },
-]
+const cityOptions = [...REGION_OPTIONS]
 
 const sort = reactive({
   field: 'createdAt',

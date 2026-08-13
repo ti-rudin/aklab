@@ -6,13 +6,69 @@
  * 12 карточек на страницу, ~217 страниц.
  * Площадь из badges: title="Площадь: 112.00"
  */
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  createStealthContext,
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://ecosystem.alfalot.ru';
 const SEARCH_URL = `${BASE_URL}/showcase/list?categories=1`;
 const MAX_PAGES = 10;
 const MAX_AGE_HOURS = 24;
+
+export interface AlfalotPropertyLocationFields {
+  /** Separate current-lot region field rendered on the card. */
+  cardRegion?: string;
+  /** Separate property-bound address field rendered on the detail page. */
+  detailAddress?: string;
+}
+
+function cleanLocationField(value: string | undefined): string | undefined {
+  const trimmed = value?.replace(/\s+/g, ' ').trim();
+  return trimmed || undefined;
+}
+
+/**
+ * Extract geography only from Alfalot's semantically bounded lot fields.
+ * The card field is a region, never a full address; detail
+ * `.location-block > p.address` is the property-bound full address.
+ * Description/title/organizer text is excluded.
+ */
+export function extractAlfalotPropertyLocation(fields: AlfalotPropertyLocationFields): PropertyLocation {
+  const detailAddress = cleanLocationField(fields.detailAddress);
+  if (detailAddress) {
+    return normalizeStructuredLocation({
+      address: detailAddress,
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '.location-block > p.address',
+    });
+  }
+
+  const cardRegion = cleanLocationField(fields.cardRegion);
+  if (cardRegion) {
+    return normalizeStructuredLocation({
+      region: cardRegion,
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: '.card-info > p',
+    });
+  }
+
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: '.location-block > p.address',
+  });
+}
 
 export class AlfalotParser implements SourceParser {
   name = 'alfalot';
@@ -108,6 +164,7 @@ export class AlfalotParser implements SourceParser {
           }
           const price = parsePrice(card.price_text);
           const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
+          const propertyLocation = extractAlfalotPropertyLocation({ cardRegion: card.region });
 
           const parts = [card.title, card.object_type, card.lot_number].filter(Boolean);
           const extId = `alfalot-${card.lot_id}`;
@@ -117,8 +174,9 @@ export class AlfalotParser implements SourceParser {
             external_id: extId,
             url: fullLink,
             title: card.title,
-            address: card.region,
-            city: detectCity(card.region),
+            address: projectLegacyAddress(propertyLocation),
+            city: derivePropertyRegion(propertyLocation),
+            property_location: propertyLocation,
             area_sqm: area && area > 0 ? area : undefined,
             price,
             price_per_sqm: price && area && area > 0 ? Math.round(price / area) : undefined,
@@ -162,10 +220,9 @@ export class AlfalotParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки контента (SPA может не успеть заполнить DOM)
-      // Ждём .address или описание — если SPA не заполнил, fallback на таймаут
+      // Ждём отдельный property-bound блок «Местонахождение» или описание.
       try {
-        await page.waitForSelector('.address, .tab-content[data-page="lot-info"] h3', { timeout: 10000 });
+        await page.waitForSelector('.location-block > p.address, .tab-content[data-page="lot-info"] h3', { timeout: 10000 });
       } catch {
         await page.waitForTimeout(3000);
       }
@@ -207,14 +264,9 @@ export class AlfalotParser implements SourceParser {
         }
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес: элемент .address или из описания
-        const addressEl = document.querySelector('.address');
-        let address = addressEl?.textContent?.trim() || '';
-        if (!address || address.length < 5) {
-          // Парсим из описания (адрес/адресу/адреса + "по адресу" / "расположен по")
-          const addrMatch = description.match(/(?:адрес\w*|расположенн?\s+по)[:\s]+([^.;]+)/i);
-          if (addrMatch) address = addrMatch[1].trim();
-        }
+        // Адрес: отдельное property-bound поле блока «Местонахождение».
+        const addressEl = document.querySelector('.location-block > p.address');
+        const detailAddress = addressEl?.textContent?.trim() || '';
 
         // Аукцион: .start_price, .current_price, .bid_end_date, .auction_start_date
         const startPrice = document.querySelector('.start_price')?.textContent?.trim();
@@ -247,9 +299,7 @@ export class AlfalotParser implements SourceParser {
         return {
           description: description || undefined,
           contacts,
-          address: address && address.length > 3 ? address : undefined,
-          latitude: undefined, // координаты не доступны на alfalot
-          longitude: undefined,
+          detailAddress: detailAddress.length > 3 ? detailAddress : undefined,
           auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
         };
       });
@@ -257,9 +307,7 @@ export class AlfalotParser implements SourceParser {
       return {
         description: details.description,
         contacts: details.contacts,
-        address: details.address,
-        latitude: details.latitude,
-        longitude: details.longitude,
+        property_location: extractAlfalotPropertyLocation({ detailAddress: details.detailAddress }),
       };
     } catch (err: any) {
       logger.warn(`[alfalot] fetchDetails error for ${url}: ${err.message}`);

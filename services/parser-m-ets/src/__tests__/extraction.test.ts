@@ -1,5 +1,28 @@
-import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import { describe, it, expect, vi } from 'vitest';
+import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/service-shared';
+import { MetsParser, missingMetsPropertyLocation } from '../sources/m-ets';
+
+const playwrightHarness = vi.hoisted(() => {
+  const page = {
+    goto: vi.fn(async () => undefined),
+    waitForTimeout: vi.fn(async () => undefined),
+    evaluate: vi.fn(),
+  };
+  const context = {
+    newPage: vi.fn(async () => page),
+  };
+  const browser = {
+    newContext: vi.fn(async () => context),
+    close: vi.fn(async () => undefined),
+  };
+  return { page, context, browser };
+});
+
+vi.mock('playwright', () => ({
+  chromium: {
+    launch: vi.fn(async () => playwrightHarness.browser),
+  },
+}));
 
 /**
  * Тесты extraction-логики parser-m-ets.
@@ -130,56 +153,19 @@ describe('m-ets: combined price + area extraction', () => {
   });
 });
 
-describe('m-ets: address extraction (inline logic)', () => {
-  /**
-   * Address extraction logic from m-ets.ts:
-   * const addressMatch = description.match(
-   *   /(?:адрес(?:у)?:?\s*|расположенн[аыя]?\s+по\s+адресу:\s*|местонахождение:?\s*)([^\n]+)/i,
-   * );
-   */
-  function extractAddress(description: string, fallback: string): string {
-    const addressMatch = description.match(
-      /(?:адрес(?:у)?:?\s*|расположенн[аыя]?\s+по\s+адресу:\s*|местонахождение:?\s*)([^\n]+)/i,
-    );
-    return addressMatch ? addressMatch[1].trim() : fallback;
-  }
+describe('m-ets: fail-closed detail geography', () => {
+  it('does not certify mixed description, party address, or global map data', () => {
+    const location = missingMetsPropertyLocation('detail.property_location');
 
-  it('should extract address from "расположено по адресу: ..."', () => {
-    const desc = 'Нежилое помещение расположено по адресу: г. Москва, ул. Ленина, д. 10';
-    const addr = extractAddress(desc, 'fallback');
-    expect(addr).toContain('г. Москва');
-    expect(addr).toContain('ул. Ленина');
-  });
-
-  it('should extract address from "расположенная по адресу: ..."', () => {
-    const desc = 'Нежилое помещение расположенная по адресу: г. Санкт-Петербург, Невский пр-т';
-    const addr = extractAddress(desc, 'fallback');
-    expect(addr).toContain('Санкт-Петербург');
-  });
-
-  it('should extract address from "адрес: ..."', () => {
-    const desc = 'Лот. Адрес: г. Казань, ул. Баумана, д. 5';
-    const addr = extractAddress(desc, 'fallback');
-    expect(addr).toContain('г. Казань');
-  });
-
-  it('should extract address from "адресу: ..."', () => {
-    const desc = 'По адресу: г. Новосибирск, Красный пр-т, 100';
-    const addr = extractAddress(desc, 'fallback');
-    expect(addr).toContain('Новосибирск');
-  });
-
-  it('should extract address from "местонахождение: ..."', () => {
-    const desc = 'Местонахождение: г. Екатеринбург, ул. Малышева, 30';
-    const addr = extractAddress(desc, 'fallback');
-    expect(addr).toContain('Екатеринбург');
-  });
-
-  it('should use fallback when no address pattern found', () => {
-    // Must avoid "адрес", "расположенн", "местонахождение"
-    const desc = 'Просто описание объекта недвижимости';
-    const addr = extractAddress(desc, 'Регион не указан');
-    expect(addr).toBe('Регион не указан');
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'detail.property_location',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
+    expect(location.latitude).toBeUndefined();
+    expect(location.longitude).toBeUndefined();
   });
 });
 
@@ -230,5 +216,45 @@ describe('m-ets: external_id construction', () => {
 
   it('should fallback to title when href is empty', () => {
     expect(buildExternalId(undefined, '', 'Some Long Title Here')).toBe('m-ets-Some Long Title Here');
+  });
+});
+
+describe('m-ets: adversarial listing geography', () => {
+  it('fails closed when Bashkortostan property location is absent and a Moscow pledgee leaks through party text', async () => {
+    playwrightHarness.page.evaluate.mockReset();
+    playwrightHarness.page.evaluate
+      .mockResolvedValueOnce({
+        code: 200,
+        data: [{ lot_id: 9001, data: '<article class="card-so">ignored by mocked DOM evaluation</article>' }],
+        meta: { pages: 1, total: 1 },
+      })
+      .mockResolvedValueOnce([{
+        lot_id: 9001,
+        href: '/lots/9001',
+        title: 'Нежилое помещение, Республика Башкортостан',
+        regNumber: '9001',
+        region: 'Республика Башкортостан',
+        costText: '1 000 000 ₽',
+        costType: 'Начальная цена',
+        minPriceText: '',
+        currentPriceText: '1 000 000 ₽',
+        description: 'Залогодержатель: ПАО Сбербанк, г. Москва, ул. Вавилова, д. 19',
+        auctionType: 'Торги по банкротству',
+        endDate: '',
+      }]);
+
+    const [property] = await new MetsParser().parse(1);
+
+    expect(property.property_location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'listing.property_location',
+    });
+    expect(property.address).toBe('');
+    expect(property.city).toBe('other');
+    expect(projectLegacyAddress(property.property_location!)).toBe('');
+    expect(derivePropertyRegion(property.property_location!)).toBe('other');
+    expect(property.latitude).toBeUndefined();
+    expect(property.longitude).toBeUndefined();
   });
 });

@@ -47,7 +47,7 @@
     },
     "monitored_regions": {
       "type": "json",
-      "default": ["moscow", "mo"]
+      "default": ["moscow", "mo", "tver", "tver_oblast", "other"]
     },
     "parse_depth": {
       "type": "integer",

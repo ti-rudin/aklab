@@ -6,8 +6,14 @@ import type { ParseRules, UserFilterSnapshot } from '@aklab/parse-rules';
 import { normalizeUserFilterSnapshot, snapshotMatchesCandidate } from '@aklab/parse-rules';
 import { randomDelay } from './anti-ban';
 import { logger } from './logger';
-import { detectCity } from './city-detect';
 import { extractAuctionEndAt } from './auction-date';
+import {
+  dedupeParties,
+  derivePropertyRegion,
+  mergePropertyLocation,
+  normalizeStructuredLocation,
+  projectLegacyAddress,
+} from './property-location';
 import {
   cleanupScanArtifact,
   LEGACY_FILTER_SNAPSHOT_HASH,
@@ -80,6 +86,32 @@ function throwIfCancellationRequested(workerContext?: WorkerContext): void {
 
 function isCancellationError(error: any): boolean {
   return error instanceof PermanentError && error.message.includes('cancelled');
+}
+
+function isInvalidPropertyLocationError(error: unknown): boolean {
+  return error instanceof TypeError && error.message.startsWith('Invalid property location:');
+}
+
+/** Canonicalize the only trusted geography boundary. */
+function canonicalizeProperty(prop: any): void {
+  if (prop.property_location === undefined) {
+    throw new TypeError('Invalid property location: property_location is required');
+  }
+
+  const location = normalizeStructuredLocation(prop.property_location as any);
+  prop.property_location = location;
+  prop.address = projectLegacyAddress(location);
+  prop.city = derivePropertyRegion(location);
+  prop.latitude = location.latitude;
+  prop.longitude = location.longitude;
+
+  if (prop.parties !== undefined) {
+    prop.parties = dedupeParties(prop.parties);
+  }
+}
+
+function canonicalizeParsedProperties(properties: any[]): void {
+  for (const prop of properties) canonicalizeProperty(prop);
 }
 
 /**
@@ -155,6 +187,9 @@ export function createParseHandler(parser: SourceParser) {
         throwIfCancellationRequested(workerContext);
         const properties = await parser.parse(depth);
         throwIfCancellationRequested(workerContext);
+        // Validate and canonicalize before existence checks or artifact writes.
+        // A malformed typed contract must never reach property persistence.
+        canonicalizeParsedProperties(properties as any[]);
         total = properties.length;
         console.log(`[parse-handler:${req.source}] SCAN: parsed ${total} items (depth=${depth})`);
 
@@ -292,6 +327,10 @@ export function createParseHandler(parser: SourceParser) {
           throw new PermanentError(err instanceof Error ? err.message : 'Scan artifact manifest is invalid');
         }
         const newProperties = artifact.items as any[];
+        // Artifacts are a persistence boundary. Re-apply the typed contract
+        // before detail fetching and snapshot filtering so legacy artifacts
+        // cannot reintroduce arbitrary-text geography on retry.
+        canonicalizeParsedProperties(newProperties);
         total = artifact.counters.listed;
         existing = artifact.counters.existing;
         preFiltered = artifact.counters.preFiltered;
@@ -344,21 +383,27 @@ export function createParseHandler(parser: SourceParser) {
                   detailsOk++;
                   throwIfCancellationRequested(workerContext);
                   if (details && Object.keys(details).length > 0) {
-                    // Мерждим только определённые значения — undefined не перезаписывает Phase 1 данные
+                    if (details.property_location !== undefined) {
+                      const detailLocation = normalizeStructuredLocation(details.property_location as any);
+                      const location = mergePropertyLocation(prop.property_location, detailLocation);
+                      prop.property_location = location;
+                      prop.address = projectLegacyAddress(location);
+                      prop.city = derivePropertyRegion(location);
+                      prop.latitude = location.latitude;
+                      prop.longitude = location.longitude;
+                    }
+
+                    // Geography fields without a typed location are never
+                    // allowed to replace the canonical scan/detail location.
                     for (const [key, value] of Object.entries(details)) {
+                      if (key === 'property_location' || key === 'address' || key === 'city'
+                        || key === 'latitude' || key === 'longitude' || key === 'parties') continue;
                       if (value !== undefined && value !== null) {
                         (prop as any)[key] = value;
                       }
                     }
-                    // Пересчитываем город ТОЛЬКО если он ещё не определён (other).
-                    // Не перезаписываем правильно определённый город (torgi-gov regionCode, alfalot region).
-                    if (prop.city === 'other' && details.address) {
-                      prop.city = detectCity(details.address + ' ' + (prop.title || ''));
-                    }
-                    // Fallback: если город всё ещё "other", ищем во всём доступном тексте
-                    if (prop.city === 'other') {
-                      const searchText = [prop.title, prop.address].filter(Boolean).join(' ');
-                      prop.city = detectCity(searchText);
+                    if (details.parties !== undefined) {
+                      prop.parties = dedupeParties([...(prop.parties ?? []), ...details.parties]);
                     }
                     detailsFetched++;
                     console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
@@ -374,6 +419,7 @@ export function createParseHandler(parser: SourceParser) {
                   }
                 } catch (err: any) {
                   if (isCancellationError(err)) throw err;
+                  if (isInvalidPropertyLocationError(err)) throw err;
                   if (filterContext.usesSnapshot) throw err;
                   logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
                 }
@@ -418,6 +464,8 @@ export function createParseHandler(parser: SourceParser) {
                 contacts: prop.contacts,
                 latitude: prop.latitude,
                 longitude: prop.longitude,
+                property_location: prop.property_location,
+                ...(prop.parties !== undefined ? { parties: prop.parties } : {}),
                 rules: filterContext.usesSnapshot ? undefined : req.rules,
               });
               throwIfCancellationRequested(workerContext);
@@ -431,6 +479,7 @@ export function createParseHandler(parser: SourceParser) {
               }
             } catch (err: any) {
               if (isCancellationError(err)) throw err;
+              if (isInvalidPropertyLocationError(err)) throw err;
               if (filterContext.usesSnapshot) throw err;
               itemFailures++;
               logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });

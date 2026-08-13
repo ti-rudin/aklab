@@ -89,6 +89,14 @@ const defaultProps = [
     title: 'Склад',
     address: 'addr 1',
     city: 'moscow',
+    property_location: {
+      address: 'г. Москва, ул. Промышленная, 1',
+      region: 'Москва',
+      region_code: '77',
+      status: 'confirmed_address',
+      source_kind: 'api_field',
+      source_path: 'lot.estateAddress',
+    },
     area_sqm: 500,
     price: 10_000_000,
     price_per_sqm: 20_000,
@@ -101,6 +109,14 @@ const defaultProps = [
     title: 'Офис',
     address: 'addr 2',
     city: 'moscow',
+    property_location: {
+      address: 'г. Москва, ул. Центральная, 5',
+      region: 'Москва',
+      region_code: '77',
+      status: 'confirmed_address',
+      source_kind: 'api_field',
+      source_path: 'lot.estateAddress',
+    },
     area_sqm: 100,
     price: 5_000_000,
     price_per_sqm: 50_000,
@@ -412,8 +428,14 @@ describe('createParseHandler()', () => {
 
     const properties = [
       { ...defaultProps[1], external_id: 'or-moscow-office', city: 'moscow', property_type: 'office', price: 10_000_000 },
-      { ...defaultProps[0], external_id: 'or-mo-warehouse', city: 'mo', property_type: 'warehouse', price: 60_000_000 },
-      { ...defaultProps[0], external_id: 'or-crossed-fields', city: 'moscow', property_type: 'warehouse', price: 60_000_000 },
+      {
+        ...defaultProps[0], external_id: 'or-mo-warehouse', city: 'mo', property_type: 'warehouse', price: 60_000_000,
+        property_location: { ...defaultProps[0].property_location, region: 'Московская область', region_code: '50' },
+      },
+      {
+        ...defaultProps[0], external_id: 'or-crossed-fields', city: 'moscow', property_type: 'warehouse', price: 60_000_000,
+        property_location: { ...defaultProps[0].property_location, region: 'Москва', region_code: '77' },
+      },
     ];
     const parser: SourceParser = {
       name: 'or-parser',
@@ -587,5 +609,203 @@ describe('createParseHandler()', () => {
       filterSnapshot: snapshot,
     }))).rejects.toThrow('injected telemetry failure');
     expect(existsSync(getScanArtifactPath('telemetry-source', runId))).toBe(true);
+  });
+
+  test('uses only typed property geography and keeps a Moscow party out of a Bashkortostan property', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'typed-location-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'typed-location',
+        title: 'Москва в заголовке',
+        address: 'Москва из legacy address',
+        city: 'moscow',
+        latitude: 55.7,
+        longitude: 37.6,
+        property_location: {
+          region: 'Республика Башкортостан',
+          region_code: '02',
+          latitude: 54.7,
+          longitude: 55.9,
+          status: 'confirmed_region_only',
+          source_kind: 'api_field',
+          source_path: 'lot.region',
+        },
+        parties: [{
+          name: 'ПАО Сбербанк',
+          roles: ['pledgee'],
+          addresses: [{ kind: 'legal', value: 'г. Москва, ул. Тверская, 1' }],
+          source_path: 'lot.pledgee',
+          source_kind: 'bounded_text',
+          confidence: 'explicit_text',
+        }],
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        address: 'Москва из legacy detail address',
+        city: 'moscow',
+        latitude: 55.8,
+        longitude: 37.5,
+        description: 'Москва в произвольном описании',
+        parties: [{
+          name: 'ПАО Сбербанк',
+          roles: ['secured_creditor'],
+          addresses: [{ kind: 'postal', value: 'г. Москва, ул. Вавилова, 19' }],
+          source_path: 'detail.creditor',
+          source_kind: 'dom_field',
+          confidence: 'structured',
+        }],
+      }),
+    };
+
+    const handler = createParseHandler(parser);
+    await handler(makeJob({ source: 'typed-location-source', documentId: 'doc-typed' }));
+
+    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({
+      address: '',
+      city: 'other',
+      latitude: 54.7,
+      longitude: 55.9,
+      property_location: expect.objectContaining({
+        region: 'Республика Башкортостан',
+        status: 'confirmed_region_only',
+      }),
+      parties: [expect.objectContaining({
+        name: 'ПАО Сбербанк',
+        roles: ['pledgee', 'secured_creditor'],
+        addresses: [
+          { kind: 'legal', value: 'г. Москва, ул. Тверская, 1' },
+          { kind: 'postal', value: 'г. Москва, ул. Вавилова, 19' },
+        ],
+      })],
+    }));
+  });
+
+  test('post-detail snapshot filtering uses the derived typed city, not legacy detail text', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'typed-snapshot-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'typed-snapshot',
+        property_location: {
+          region: 'Республика Башкортостан',
+          status: 'confirmed_region_only',
+          source_kind: 'api_field',
+          source_path: 'lot.region',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        address: 'г. Москва, ул. Площадная, 1',
+        city: 'moscow',
+        description: 'Москва в шаблонном тексте',
+      }),
+    };
+    const snapshot = makeSnapshot([makeProfile({
+      regions: ['other'],
+      propertyTypes: ['warehouse'],
+    })]);
+    const handler = createParseHandler(parser);
+    const runId = `typed-snapshot-${Date.now()}`;
+
+    const scan = await handler(makeJob({
+      source: 'typed-snapshot-source',
+      correlationId: runId,
+      phase: 'scan',
+      filterSnapshot: snapshot,
+    }));
+    expect(scan).toMatchObject({ total: 1, filtered: 0, detailsNeeded: 1 });
+
+    await handler(makeJob({
+      source: 'typed-snapshot-source',
+      correlationId: runId,
+      phase: 'details',
+      filterSnapshot: snapshot,
+    }));
+
+    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({ city: 'other', address: '' }));
+  });
+
+  test('upgrades a region-only scan location only from a valid typed detail location', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'typed-merge-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'typed-merge',
+        property_location: {
+          region: 'Республика Башкортостан',
+          status: 'confirmed_region_only',
+          source_kind: 'api_field',
+          source_path: 'lot.region',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        property_location: {
+          address: 'г. Уфа, ул. Ленина, 1',
+          status: 'confirmed_address',
+          source_kind: 'dom_field',
+          source_path: '.lot-address',
+        },
+        address: 'Москва из legacy detail address',
+        city: 'moscow',
+      }),
+    };
+    const handler = createParseHandler(parser);
+    const runId = `typed-merge-${Date.now()}`;
+
+    await handler(makeJob({ source: 'typed-merge-source', correlationId: runId, phase: 'scan' }));
+    await handler(makeJob({ source: 'typed-merge-source', correlationId: runId, phase: 'details' }));
+
+    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({
+      address: 'г. Уфа, ул. Ленина, 1',
+      city: 'other',
+      property_location: expect.objectContaining({
+        address: 'г. Уфа, ул. Ленина, 1',
+        status: 'confirmed_address',
+      }),
+    }));
+  });
+
+  test('fails closed for an invalid typed location before persistence', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    const parser = makeParser([{
+      ...defaultProps[0],
+      external_id: 'invalid-typed-location',
+      property_location: {
+        status: 'confirmed_address',
+        source_kind: 'api_field',
+        source_path: 'lot.address',
+      },
+    }]);
+
+    await expect(createParseHandler(parser)(makeJob({
+      source: 'invalid-typed-location-source',
+      documentId: 'doc-invalid-location',
+    }))).rejects.toThrow('Invalid property location');
+
+    expect(propertyExists).not.toHaveBeenCalled();
+    expect(createProperty).not.toHaveBeenCalled();
+  });
+
+  test('rejects parser output without typed property location before side effects', async () => {
+    const parser = makeParser([{
+      ...defaultProps[0],
+      external_id: 'without-location',
+      title: 'Москва в title',
+      address: 'Москва из legacy address',
+      city: 'moscow',
+      property_location: undefined,
+    }]);
+
+    await expect(createParseHandler(parser)(makeJob({
+      source: 'without-location-source',
+    }))).rejects.toThrow('property_location is required');
+
+    expect(propertyExists).not.toHaveBeenCalled();
+    expect(createProperty).not.toHaveBeenCalled();
   });
 });

@@ -169,6 +169,7 @@
 </template>
 
 <script setup lang="ts">
+import { REGION_OPTIONS } from '@/constants/regions'
 import type { ProfileDraft, PropertyType, Region } from './user-profile-form'
 
 const props = withDefaults(defineProps<{
@@ -187,11 +188,7 @@ const emit = defineEmits<{
   submit: []
 }>()
 
-const regionOptions: Array<{ value: Region; label: string }> = [
-  { value: 'moscow', label: 'Москва' },
-  { value: 'mo', label: 'Московская область' },
-  { value: 'other', label: 'Другие регионы' },
-]
+const regionOptions: Array<{ value: Region; label: string }> = [...REGION_OPTIONS]
 
 const propertyTypeOptions: Array<{ value: PropertyType; label: string }> = [
   { value: 'office', label: 'Офис' },

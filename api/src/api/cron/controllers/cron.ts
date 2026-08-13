@@ -7,6 +7,7 @@ import { getPipelineService } from '../../../services/pipeline';
 import { scorePropertiesBatch } from '../../../services/focusEngine';
 import type { StrapiInstance } from '../../../types/strapi';
 import { randomUUID } from 'node:crypto';
+import { isCatalogCleanupMaintenanceModeEnabled } from '../../../services/property-catalog-cleanup';
 
 function getQueue() {
   return getQueueService();
@@ -15,6 +16,11 @@ function getQueue() {
 export default {
   async parseSource(ctx: any) {
     try {
+      if (isCatalogCleanupMaintenanceModeEnabled()) {
+        ctx.status = 409;
+        ctx.body = { error: 'Выполняется обслуживание каталога.' };
+        return;
+      }
       const s = strapi as unknown as StrapiInstance;
       const { slug } = ctx.params;
       const depth = ctx.request.body?.depth ?? 20;
@@ -172,6 +178,11 @@ export default {
    */
   async scoreProperties(ctx: any) {
     try {
+      if (isCatalogCleanupMaintenanceModeEnabled()) {
+        ctx.status = 409;
+        ctx.body = { error: 'Выполняется обслуживание каталога.' };
+        return;
+      }
       const s = strapi as unknown as StrapiInstance;
       const pipeline = getPipelineService(s);
       const pipelineState = await pipeline.getState();

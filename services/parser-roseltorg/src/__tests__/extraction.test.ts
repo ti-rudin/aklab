@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  parsePrice,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import { missingRoseltorgPropertyLocation } from '../sources/roseltorg';
 
 /**
  * Тесты extraction-логики parser-roseltorg.
  *
- * Функции parsePrice и extractArea — приватные модулю.
- * Для тестирования воспроизводим их логику как standalone-функции.
- * Источник: services/parser-roseltorg/src/sources/roseltorg.ts
+ * `parsePrice` is shared and `extractArea` is private to the parser.
+ * Geography tests exercise the real `RoseltorgParser.fetchDetails` path with a
+ * synthetic page, including adversarial title/body/party mentions.
  */
 
 // --- Extraction helpers from roseltorg.ts ---
@@ -125,46 +130,18 @@ describe('roseltorg: combined extraction', () => {
   });
 });
 
-describe('roseltorg: address extraction (inline logic)', () => {
-  /**
-   * Address extraction logic from roseltorg.ts:
-   * const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
-   */
-  function extractAddress(text: string): string {
-    const addrMatch = text.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
-    return addrMatch ? addrMatch[0].trim() : '';
-  }
+describe('roseltorg: fail-closed property geography', () => {
+  it('does not certify title, excerpt, body, or party geography without a verified source field', () => {
+    const location = missingRoseltorgPropertyLocation();
 
-  it('should extract address starting with "ул."', () => {
-    const text = 'Торги по продаже ул. Ленина, д. 10, помещение 5';
-    const addr = extractAddress(text);
-    expect(addr).toContain('ул. Ленина');
-    expect(addr).toContain('д. 10');
-  });
-
-  it('should extract address starting with "г."', () => {
-    const text = 'Лот: г. Москва, ул. Пушкина, д. 1';
-    const addr = extractAddress(text);
-    expect(addr).toContain('г. Москва');
-  });
-
-  it('should extract address starting with "пр." (проспект)', () => {
-    const text = 'Расположено пр. Мира, д. 42, стр. 1';
-    const addr = extractAddress(text);
-    expect(addr).toContain('пр. Мира');
-  });
-
-  it('should extract address with "адрес"', () => {
-    const text = 'Адрес: г. Санкт-Петербург, Невский пр-т, д. 100';
-    const addr = extractAddress(text);
-    // regex is case-insensitive, matches "Адрес" from start
-    expect(addr).toContain('Адрес');
-    expect(addr).toContain('Санкт-Петербург');
-  });
-
-  it('should return empty string when no address pattern found', () => {
-    // Must avoid words like "адрес", "ул.", "г.", "пр.", "просп", "шоссе"
-    const text = 'Просто описание объекта недвижимости';
-    expect(extractAddress(text)).toBe('');
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'unverified_source.property_location',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
+    expect(location.latitude).toBeUndefined();
+    expect(location.longitude).toBeUndefined();
   });
 });

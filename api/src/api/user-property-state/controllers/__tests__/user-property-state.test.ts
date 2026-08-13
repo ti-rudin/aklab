@@ -94,6 +94,23 @@ describe('user property state routes', () => {
 });
 
 describe('user property state controller', () => {
+  it('blocks object-state mutations during catalog maintenance before service access', async () => {
+    const previous = process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE;
+    process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE = 'enabled';
+    try {
+      const { actions, service } = actionsFor();
+      const ctx = makeCtx({ request: { body: { data: { status: 'viewed' } } } });
+
+      await actions.putState(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(service.put).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE;
+      else process.env.AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE = previous;
+    }
+  });
   it('derives actor and document only from the protected state/route and returns an explicit DTO', async () => {
     const { actions, service } = actionsFor();
     const ctx = makeCtx({

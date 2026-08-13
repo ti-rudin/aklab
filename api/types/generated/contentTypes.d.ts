@@ -26,6 +26,11 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         minLength: 1;
       }>;
+    adminPermissions: Schema.Attribute.Relation<
+      'oneToMany',
+      'admin::permission'
+    >;
+    adminUserOwner: Schema.Attribute.Relation<'manyToOne', 'admin::user'>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -39,6 +44,9 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
         minLength: 1;
       }>;
     expiresAt: Schema.Attribute.DateTime;
+    kind: Schema.Attribute.Enumeration<['content-api', 'admin']> &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'content-api'>;
     lastUsedAt: Schema.Attribute.DateTime;
     lifespan: Schema.Attribute.BigInteger;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -56,7 +64,6 @@ export interface AdminApiToken extends Struct.CollectionTypeSchema {
     >;
     publishedAt: Schema.Attribute.DateTime;
     type: Schema.Attribute.Enumeration<['read-only', 'full-access', 'custom']> &
-      Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<'read-only'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
@@ -134,6 +141,7 @@ export interface AdminPermission extends Struct.CollectionTypeSchema {
         minLength: 1;
       }>;
     actionParameters: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<{}>;
+    apiToken: Schema.Attribute.Relation<'manyToOne', 'admin::api-token'>;
     conditions: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
@@ -241,6 +249,7 @@ export interface AdminSession extends Struct.CollectionTypeSchema {
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'admin::session'> &
       Schema.Attribute.Private;
+    metadata: Schema.Attribute.JSON & Schema.Attribute.Private;
     origin: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Private;
@@ -385,6 +394,8 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
     };
   };
   attributes: {
+    apiTokens: Schema.Attribute.Relation<'oneToMany', 'admin::api-token'> &
+      Schema.Attribute.Private;
     blocked: Schema.Attribute.Boolean &
       Schema.Attribute.Private &
       Schema.Attribute.DefaultTo<false>;
@@ -421,6 +432,8 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
     publishedAt: Schema.Attribute.DateTime;
     registrationToken: Schema.Attribute.String & Schema.Attribute.Private;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
+    resetPasswordTokenExpiresAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Private;
     roles: Schema.Attribute.Relation<'manyToMany', 'admin::role'> &
       Schema.Attribute.Private;
     updatedAt: Schema.Attribute.DateTime;
@@ -512,7 +525,9 @@ export interface ApiMarketReferenceMarketReference
     draftAndPublish: false;
   };
   attributes: {
-    city: Schema.Attribute.Enumeration<['moscow', 'mo', 'other']> &
+    city: Schema.Attribute.Enumeration<
+      ['moscow', 'mo', 'tver', 'tver_oblast', 'other']
+    > &
       Schema.Attribute.Required;
     created_by: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
@@ -539,6 +554,228 @@ export interface ApiMarketReferenceMarketReference
   };
 }
 
+export interface ApiParserRunSourceParserRunSource
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'parser_run_sources';
+  info: {
+    displayName: 'Parser Run Source';
+    pluralName: 'parser-run-sources';
+    singularName: 'parser-run-source';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    created: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    details_attempted: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    details_ok: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    eligible: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    error_class: Schema.Attribute.Enumeration<
+      [
+        'transient',
+        'rate_limited',
+        'blocked',
+        'schema_changed',
+        'permanent',
+        'cancelled',
+      ]
+    >;
+    error_message: Schema.Attribute.Text;
+    existing: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    failed: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    finished_at: Schema.Attribute.DateTime;
+    heartbeat_at: Schema.Attribute.DateTime;
+    identity_key: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    job_id: Schema.Attribute.Integer;
+    listed: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::parser-run-source.parser-run-source'
+    > &
+      Schema.Attribute.Private;
+    parser_run: Schema.Attribute.Relation<
+      'manyToOne',
+      'api::parser-run.parser-run'
+    >;
+    pre_filtered: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    publishedAt: Schema.Attribute.DateTime;
+    skipped: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    source: Schema.Attribute.Relation<'manyToOne', 'api::source.source'>;
+    source_slug: Schema.Attribute.String & Schema.Attribute.Required;
+    stage: Schema.Attribute.Enumeration<['scan', 'details']> &
+      Schema.Attribute.Required;
+    started_at: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<
+      [
+        'queued',
+        'running',
+        'success',
+        'success_empty',
+        'degraded',
+        'blocked',
+        'schema_changed',
+        'failed',
+        'cancelled',
+      ]
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'queued'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiParserRunParserRun extends Struct.CollectionTypeSchema {
+  collectionName: 'parser_runs';
+  info: {
+    displayName: 'Parser Run';
+    pluralName: 'parser-runs';
+    singularName: 'parser-run';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    digest_failed: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    digest_scheduled: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    digest_sent: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    digest_skipped: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    digest_window_end_at: Schema.Attribute.DateTime;
+    error_summary: Schema.Attribute.Text;
+    filter_snapshot: Schema.Attribute.JSON;
+    filter_snapshot_hash: Schema.Attribute.String;
+    filter_snapshot_schema_version: Schema.Attribute.Integer;
+    finished_at: Schema.Attribute.DateTime;
+    heartbeat_at: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::parser-run.parser-run'
+    > &
+      Schema.Attribute.Private;
+    mode: Schema.Attribute.Enumeration<['full', 'parse', 'analyze', 'digest']> &
+      Schema.Attribute.Required;
+    profile_scope: Schema.Attribute.Enumeration<['all', 'single', 'none']>;
+    publishedAt: Schema.Attribute.DateTime;
+    run_id: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    started_at: Schema.Attribute.DateTime & Schema.Attribute.Required;
+    status: Schema.Attribute.Enumeration<
+      ['running', 'cancelling', 'succeeded', 'degraded', 'failed', 'cancelled']
+    > &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'running'>;
+    target_user_id: Schema.Attribute.Integer;
+    trigger: Schema.Attribute.Enumeration<['manual', 'cron']> &
+      Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiPropertyEventPropertyEvent
   extends Struct.CollectionTypeSchema {
   collectionName: 'property_events';
@@ -551,7 +788,6 @@ export interface ApiPropertyEventPropertyEvent
     draftAndPublish: false;
   };
   attributes: {
-    created_at: Schema.Attribute.DateTime;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -595,12 +831,15 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
   attributes: {
     address: Schema.Attribute.Text;
     area_sqm: Schema.Attribute.Decimal;
+    auction_end_at: Schema.Attribute.DateTime;
     auction_type: Schema.Attribute.Enumeration<
       ['bankruptcy', 'privatization', 'marketplace']
     > &
       Schema.Attribute.DefaultTo<'bankruptcy'>;
-    city: Schema.Attribute.Enumeration<['moscow', 'mo', 'other']> &
-      Schema.Attribute.DefaultTo<'moscow'>;
+    city: Schema.Attribute.Enumeration<
+      ['moscow', 'mo', 'tver', 'tver_oblast', 'other']
+    > &
+      Schema.Attribute.DefaultTo<'other'>;
     comments: Schema.Attribute.Relation<
       'oneToMany',
       'api::user-comment.user-comment'
@@ -617,14 +856,17 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
       Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<0>;
     is_undervalued: Schema.Attribute.Boolean;
+    latitude: Schema.Attribute.Decimal;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
       'api::property.property'
     > &
       Schema.Attribute.Private;
+    longitude: Schema.Attribute.Decimal;
     manual_price_per_sqm: Schema.Attribute.Decimal;
     minimum_price: Schema.Attribute.Decimal;
+    parties: Schema.Attribute.JSON;
     photo_urls: Schema.Attribute.JSON;
     photos: Schema.Attribute.JSON;
     photos_downloaded: Schema.Attribute.Boolean &
@@ -635,8 +877,18 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
       'oneToMany',
       'api::property-event.property-event'
     >;
+    property_location: Schema.Attribute.JSON & Schema.Attribute.Required;
     property_type: Schema.Attribute.Enumeration<
-      ['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']
+      [
+        'office',
+        'warehouse',
+        'retail',
+        'production',
+        'free_purpose',
+        'apartment',
+        'land',
+        'other',
+      ]
     > &
       Schema.Attribute.DefaultTo<'other'>;
     published_at_source: Schema.Attribute.DateTime;
@@ -668,6 +920,10 @@ export interface ApiPropertyProperty extends Struct.CollectionTypeSchema {
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     url: Schema.Attribute.String;
+    user_states: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::user-property-state.user-property-state'
+    >;
   };
 }
 
@@ -683,9 +939,12 @@ export interface ApiSettingSetting extends Struct.SingleTypeSchema {
   };
   attributes: {
     active_sources: Schema.Attribute.JSON;
+    area_from: Schema.Attribute.Decimal;
+    area_to: Schema.Attribute.Decimal;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    digest_enabled: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
     digest_time: Schema.Attribute.String & Schema.Attribute.DefaultTo<'09:00'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
@@ -694,10 +953,33 @@ export interface ApiSettingSetting extends Struct.SingleTypeSchema {
     > &
       Schema.Attribute.Private;
     monitored_regions: Schema.Attribute.JSON &
-      Schema.Attribute.DefaultTo<['moscow', 'mo']>;
+      Schema.Attribute.DefaultTo<
+        ['moscow', 'mo', 'tver', 'tver_oblast', 'other']
+      >;
+    parse_depth: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          max: 5000;
+          min: 1;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<20>;
+    pipeline_state: Schema.Attribute.JSON;
+    price_from: Schema.Attribute.Decimal;
+    price_to: Schema.Attribute.Decimal;
     publishedAt: Schema.Attribute.DateTime;
     retention_months: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<6>;
     smtp_to: Schema.Attribute.String;
+    stop_words: Schema.Attribute.JSON &
+      Schema.Attribute.DefaultTo<
+        [
+          '\u0437\u0435\u043C\u0435\u043B\u044C\u043D\u044B\u0439 \u0443\u0447\u0430\u0441\u0442\u043E\u043A',
+          '\u0437\u0435\u043C\u0435\u043B\u044C\u043D\u044B\u0435 \u0443\u0447\u0430\u0441\u0442\u043A\u0438',
+          '\u0437\u0443',
+          '\u0443\u0447\u0430\u0441\u0442\u043E\u043A',
+        ]
+      >;
     threshold_percent: Schema.Attribute.Decimal &
       Schema.Attribute.DefaultTo<20>;
     updatedAt: Schema.Attribute.DateTime;
@@ -803,6 +1085,22 @@ export interface ApiSourceSource extends Struct.CollectionTypeSchema {
         number
       > &
       Schema.Attribute.DefaultTo<0>;
+    total_details_fetched: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    total_details_needed: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
     total_found: Schema.Attribute.Integer &
       Schema.Attribute.SetMinMax<
         {
@@ -832,6 +1130,10 @@ export interface ApiUserCommentUserComment extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    author: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -847,6 +1149,142 @@ export interface ApiUserCommentUserComment extends Struct.CollectionTypeSchema {
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+  };
+}
+
+export interface ApiUserProfileUserProfile extends Struct.CollectionTypeSchema {
+  collectionName: 'user_profiles';
+  info: {
+    displayName: 'User Profile';
+    pluralName: 'user-profiles';
+    singularName: 'user-profile';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    area_from: Schema.Attribute.Decimal &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
+    area_to: Schema.Attribute.Decimal &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    digest_email: Schema.Attribute.Text;
+    digest_enabled: Schema.Attribute.Boolean &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::user-profile.user-profile'
+    > &
+      Schema.Attribute.Private;
+    price_from: Schema.Attribute.Decimal &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
+    price_to: Schema.Attribute.Decimal &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
+    profile_version: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 1;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<1>;
+    property_types: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    publishedAt: Schema.Attribute.DateTime;
+    regions: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    stop_words: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<
+      'oneToOne',
+      'plugin::users-permissions.user'
+    > &
+      Schema.Attribute.Required;
+    user_id: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 1;
+        },
+        number
+      >;
+  };
+}
+
+export interface ApiUserPropertyStateUserPropertyState
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'user_property_states';
+  info: {
+    displayName: 'User Property State';
+    pluralName: 'user-property-states';
+    singularName: 'user-property-state';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    identity_key: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::user-property-state.user-property-state'
+    > &
+      Schema.Attribute.Private;
+    property: Schema.Attribute.Relation<'manyToOne', 'api::property.property'> &
+      Schema.Attribute.Required;
+    property_document_id: Schema.Attribute.String & Schema.Attribute.Required;
+    publishedAt: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<
+      ['in_progress', 'viewed', 'rejected']
+    > &
+      Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    user: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    > &
+      Schema.Attribute.Required;
+    user_id: Schema.Attribute.Integer &
+      Schema.Attribute.Required &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 1;
+        },
+        number
+      >;
   };
 }
 
@@ -1351,7 +1789,7 @@ export interface PluginUsersPermissionsUser
 }
 
 declare module '@strapi/strapi' {
-  export module Public {
+  export namespace Public {
     export interface ContentTypeSchemas {
       'admin::api-token': AdminApiToken;
       'admin::api-token-permission': AdminApiTokenPermission;
@@ -1364,11 +1802,15 @@ declare module '@strapi/strapi' {
       'api::cron-log.cron-log': ApiCronLogCronLog;
       'api::focus-rule.focus-rule': ApiFocusRuleFocusRule;
       'api::market-reference.market-reference': ApiMarketReferenceMarketReference;
+      'api::parser-run-source.parser-run-source': ApiParserRunSourceParserRunSource;
+      'api::parser-run.parser-run': ApiParserRunParserRun;
       'api::property-event.property-event': ApiPropertyEventPropertyEvent;
       'api::property.property': ApiPropertyProperty;
       'api::setting.setting': ApiSettingSetting;
       'api::source.source': ApiSourceSource;
       'api::user-comment.user-comment': ApiUserCommentUserComment;
+      'api::user-profile.user-profile': ApiUserProfileUserProfile;
+      'api::user-property-state.user-property-state': ApiUserPropertyStateUserPropertyState;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
       'plugin::i18n.locale': PluginI18NLocale;

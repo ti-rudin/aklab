@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockCreateScopeRepository = vi.hoisted(() => vi.fn());
 const mockGetQueueService = vi.hoisted(() => vi.fn());
+const mockClearPropertyCatalog = vi.hoisted(() => vi.fn());
+const mockMaintenanceModeEnabled = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('../../../../services/user-property-scope', () => ({
   createUserPropertyScopeRepository: mockCreateScopeRepository,
@@ -14,6 +16,14 @@ vi.mock('../../../../services/user-property-scope', () => ({
 
 vi.mock('../../../../services/queueService', () => ({
   getQueueService: mockGetQueueService,
+}));
+
+vi.mock('../../../../services/property-catalog-cleanup', () => ({
+  clearPropertyCatalog: mockClearPropertyCatalog,
+  isCatalogCleanupMaintenanceModeEnabled: mockMaintenanceModeEnabled,
+  CatalogCleanupConfirmationError: class CatalogCleanupConfirmationError extends Error {},
+  CatalogCleanupBusyError: class CatalogCleanupBusyError extends Error {},
+  CatalogCleanupProtectedDataError: class CatalogCleanupProtectedDataError extends Error {},
 }));
 
 // --- Mock fs/promises ---
@@ -40,6 +50,11 @@ import * as fs from 'fs/promises';
 import propertyControllerFactory from '../property';
 import { PropertyUpsertValidationError } from '../../services/property';
 import propertyRoutes from '../../routes/property';
+import {
+  CatalogCleanupBusyError,
+  CatalogCleanupConfirmationError,
+  CatalogCleanupProtectedDataError,
+} from '../../../../services/property-catalog-cleanup';
 
 // Build a mock strapi instance (fresh per test)
 function makeStrapi() {
@@ -59,6 +74,11 @@ function makeStrapi() {
     stats: vi.fn().mockResolvedValue({ total: 0, inFocus: 0, hot: 0, undervalued: 0, newToday: 0, typeBreakdown: {} }),
   };
   return {
+    log: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
     db: {
       query: vi.fn().mockReturnValue(mockDbQuery),
       connection: {
@@ -103,6 +123,7 @@ describe('property controller', () => {
     process.env.PRIVATE_PHOTO_ROOT = photoRoot;
     delete process.env.PHOTOS_BASE_DIR;
     strapi = makeStrapi();
+    mockMaintenanceModeEnabled.mockReset().mockReturnValue(false);
     actions = (propertyControllerFactory as any)({ strapi });
     vi.clearAllMocks();
     mockCreateScopeRepository.mockReturnValue(strapi._scopeRepository);
@@ -115,14 +136,77 @@ describe('property controller', () => {
     else process.env.PHOTOS_BASE_DIR = previousPhotoAlias;
   });
 
-  describe('removed global cleanup action', () => {
-    it('does not expose clearNew from the controller', () => {
-      expect(actions.clearNew).toBeUndefined();
+  describe('admin property catalog cleanup', () => {
+    it('passes only the exact confirmation to the domain cleanup', async () => {
+      const result = {
+        deleted: { user_property_states: 1, user_comments: 2, property_events: 3, properties: 4 },
+        protected_before: { users: 5 },
+        protected_after: { users: 5 },
+        photos: { attempted: 4, deleted: 4, failed: 0 },
+      };
+      mockClearPropertyCatalog.mockResolvedValue(result);
+      const ctx = makeCtx({ request: { body: { confirmation: 'CLEAR_ALL_PROPERTIES', ignored: 'value' } } });
+
+      await actions.clearNew(ctx);
+
+      expect(mockClearPropertyCatalog).toHaveBeenCalledWith(strapi, {
+        confirmation: 'CLEAR_ALL_PROPERTIES',
+      });
+      expect(ctx.status).toBe(200);
+      expect(ctx.body).toEqual({ data: result });
+    });
+
+    it('maps confirmation errors to 400', async () => {
+      mockClearPropertyCatalog.mockRejectedValue(new CatalogCleanupConfirmationError());
+      const ctx = makeCtx({ request: { body: { confirmation: 'wrong' } } });
+
+      await actions.clearNew(ctx);
+
+      expect(ctx.status).toBe(400);
+      expect(ctx.body).toEqual({ error: 'Invalid catalog cleanup confirmation' });
+    });
+
+    it.each([
+      new CatalogCleanupBusyError(),
+      new CatalogCleanupProtectedDataError(),
+    ])('maps cleanup state conflicts to 409', async (error) => {
+      mockClearPropertyCatalog.mockRejectedValue(error);
+      const ctx = makeCtx({ request: { body: { confirmation: 'CLEAR_ALL_PROPERTIES' } } });
+
+      await actions.clearNew(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Property catalog cleanup is not safe to run' });
+    });
+
+    it('maps unknown cleanup failures to a safe 500 response without exposing internals', async () => {
+      mockClearPropertyCatalog.mockRejectedValue(new Error('/private/photos secret disk detail'));
+      const ctx = makeCtx({ request: { body: { confirmation: 'CLEAR_ALL_PROPERTIES' } } });
+
+      await actions.clearNew(ctx);
+
+      expect(ctx.status).toBe(500);
+      expect(ctx.body).toEqual({ error: 'Property catalog cleanup failed' });
+      expect(JSON.stringify(ctx.body)).not.toContain('/private/photos');
+      expect(strapi.log.error).toHaveBeenCalledWith('property_catalog_cleanup_failed', {
+        error_name: 'Error',
+      });
+      expect(JSON.stringify(strapi.log.error.mock.calls)).not.toContain('secret disk detail');
     });
   });
 
   // =================== upsert ===================
   describe('upsert', () => {
+    it('rejects parser writes during catalog maintenance before service access', async () => {
+      mockMaintenanceModeEnabled.mockReturnValue(true);
+      const ctx = makeCtx({ request: { body: { data: { source: 'm-ets', external_id: 'lot-1' } } } });
+
+      await actions.upsert(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(strapi._mockService.upsertByIdentity).not.toHaveBeenCalled();
+    });
     it('returns 201 for a newly created identity', async () => {
       const property = { id: 42, documentId: 'doc-42' };
       strapi._mockService.upsertByIdentity.mockResolvedValue({ property, created: true });
@@ -230,6 +314,16 @@ describe('property controller', () => {
   });
 
   describe('internalUpdate', () => {
+    it('rejects analyzer/photo writes during catalog maintenance before database access', async () => {
+      mockMaintenanceModeEnabled.mockReturnValue(true);
+      const ctx = makeCtx({ params: { id: 'doc123' }, request: { body: { data: { score: 42 } } } });
+
+      await actions.internalUpdate(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(strapi.db.query).not.toHaveBeenCalled();
+    });
     it('updates only analyzer/photo-owned fields by documentId', async () => {
       const fields = { is_undervalued: true, deviation_percent: 12.5, photos_downloaded: false };
       const updated = { documentId: 'property-doc', ...fields };
@@ -522,6 +616,22 @@ describe('property controller', () => {
       expect(ctx.body).toEqual({ error: 'Geocoding failed' });
     });
 
+    it('returns 409 before scope lookup or queue side effects during catalog maintenance', async () => {
+      mockMaintenanceModeEnabled.mockReturnValue(true);
+      const queue = { addToQueue: vi.fn() };
+      mockGetQueueService.mockReturnValue(queue);
+      const ctx = makeCtx({ state: { user: { id: 7 } }, params: { id: 'doc123' } });
+
+      await actions.fetchPhotos(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(strapi._scopeRepository.detail).not.toHaveBeenCalled();
+      expect(strapi.db.query).not.toHaveBeenCalled();
+      expect(mockGetQueueService).not.toHaveBeenCalled();
+      expect(queue.addToQueue).not.toHaveBeenCalled();
+    });
+
     it('returns 404 and performs no property read or queue work when fetch-photos scope denies access', async () => {
       strapi._scopeRepository.detail.mockResolvedValue(null);
       const queue = { addToQueue: vi.fn() };
@@ -583,9 +693,15 @@ describe('property internal route', () => {
     });
   });
 
-  it('does not expose the removed clearNew route', () => {
-    expect(propertyRoutes.routes).not.toContainEqual(expect.objectContaining({
-      method: 'POST', path: '/properties/clear-new', handler: 'property.clearNew',
-    }));
+  it('protects the restored clearNew route with authenticated admin policies', () => {
+    expect(propertyRoutes.routes).toContainEqual({
+      method: 'POST',
+      path: '/properties/clear-new',
+      handler: 'property.clearNew',
+      config: {
+        auth: false,
+        policies: ['global::authenticated-user', 'global::aklab-admin'],
+      },
+    });
   });
 });

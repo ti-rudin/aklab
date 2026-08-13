@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { emptyState, getState, sanitizePipelineState } from '../state';
+import { emptyState, getState, sanitizePipelineState, tryReleaseOwnedState } from '../state';
 
 describe('pipeline state snapshot privacy', () => {
   it('initializes digest outcome counters to zero in durable and sanitized state', () => {
@@ -121,5 +121,28 @@ describe('pipeline state snapshot privacy', () => {
     expect(state.stage).toBe('error');
     expect(state.run_id).toBeNull();
     expect(state.message).toContain('восстанов');
+  });
+
+  it('releases a lifecycle only when the durable run id is still owned by the caller', async () => {
+    const raw = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const strapi = {
+      db: {
+        query: vi.fn().mockReturnValue({ findOne: vi.fn().mockResolvedValue({ id: 1 }) }),
+        connection: { raw },
+      },
+    } as any;
+    const idle = { ...emptyState(), updated_at: '2026-08-13T00:00:00.000Z' };
+
+    await expect(tryReleaseOwnedState(strapi, 'catalog-cleanup:owned', idle)).resolves.toBe(true);
+    await expect(tryReleaseOwnedState(strapi, 'catalog-cleanup:stale', idle)).resolves.toBe(false);
+
+    expect(raw).toHaveBeenNthCalledWith(1, expect.stringContaining("json_extract(pipeline_state, '$.run_id') = ?"), [
+      JSON.stringify(idle),
+      idle.updated_at,
+      1,
+      'catalog-cleanup:owned',
+    ]);
   });
 });

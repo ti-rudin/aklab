@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { InvestMosregParser, toProperty } from '../sources/invest-mosreg';
 import { resolveInvestMosregSourceUrl } from '../sources/source-url';
 
 /**
@@ -20,26 +21,7 @@ interface MapPlace {
   fields: Array<{ id: number; name: string; value?: string; type?: number }>;
 }
 
-interface ParsedProperty {
-  external_id: string;
-  url: string;
-  title: string;
-  address: string;
-  city: string;
-  area_sqm?: number;
-  price?: number;
-  price_per_sqm?: number;
-  property_type: string;
-  auction_type: string;
-  description?: string;
-  contacts?: string;
-  latitude?: number;
-  longitude?: number;
-}
-
-// --- Replicated extraction functions from invest-mosreg.ts ---
-
-const BASE_URL = 'https://invest.mosreg.ru';
+// --- Replicated non-location extraction helpers from invest-mosreg.ts ---
 
 function getField(place: MapPlace, fieldName: string): string {
   const f = place.fields.find(
@@ -78,29 +60,6 @@ function extractPrice(place: MapPlace): number | undefined {
     }
   }
   return undefined;
-}
-
-function toProperty(place: MapPlace, menuName: string): ParsedProperty {
-  const address = getField(place, 'адрес');
-  const municipality = getField(place, 'муниципальное образование');
-  const useType = getField(place, 'ври') || getField(place, 'вид разрешенного');
-  const area = extractArea(place);
-  const price = extractPrice(place);
-
-  return {
-    external_id: `invest-mosreg-${place.uid || place.id}`,
-    url: `${BASE_URL}/investor/map`,
-    title: place.name.slice(0, 300),
-    address: address || municipality || '',
-    city: 'mo',
-    area_sqm: area,
-    price,
-    price_per_sqm: price && area ? Math.round(price / area) : undefined,
-    property_type: 'commercial',
-    auction_type: 'marketplace',
-    latitude: place.center?.[0],
-    longitude: place.center?.[1],
-  };
 }
 
 // --- Tests ---
@@ -284,8 +243,8 @@ describe('invest-mosreg: toProperty', () => {
     cadastralNumber: '50:20:0010200:35',
     center: [55.7558, 37.6173],
     fields: [
-      { id: 1, name: 'Адрес', value: 'Московская обл., г. Подольск, ул. Ленина' },
-      { id: 2, name: 'Муниципальное образование', value: 'Подольский район' },
+      { id: 1, name: 'Адрес', value: 'Московская область, г. Подольск, ул. Ленина' },
+      { id: 2, name: 'Муниципальное образование', value: 'Московская область' },
       { id: 3, name: 'Площадь', value: '1500' },
       { id: 4, name: 'Кадастровая стоимость', value: '7500000' },
       { id: 5, name: 'ВРИ', value: 'Коммерческое использование' },
@@ -299,7 +258,7 @@ describe('invest-mosreg: toProperty', () => {
     expect(prop.external_id).toBe('invest-mosreg-uid-42');
     expect(prop.url).toBe('https://invest.mosreg.ru/investor/map');
     expect(prop.title).toContain('Земельный участок');
-    expect(prop.address).toBe('Московская обл., г. Подольск, ул. Ленина');
+    expect(prop.address).toBe('Московская область, г. Подольск, ул. Ленина');
     expect(prop.city).toBe('mo');
     expect(prop.area_sqm).toBe(1500);
     expect(prop.price).toBe(7500000);
@@ -315,7 +274,7 @@ describe('invest-mosreg: toProperty', () => {
     expect(prop.external_id).toBe('invest-mosreg-99');
   });
 
-  it('should fall back to municipality when address is empty', () => {
+  it('does not project municipality as a legacy full address', () => {
     const place: MapPlace = {
       ...fullPlace,
       fields: [
@@ -323,7 +282,14 @@ describe('invest-mosreg: toProperty', () => {
       ],
     };
     const prop = toProperty(place, 'Покупка');
-    expect(prop.address).toBe('Серпуховский район');
+    expect(prop.address).toBe('');
+    expect(prop.city).toBe('other');
+    expect(prop.property_location).toMatchObject({
+      region: 'Серпуховский район',
+      status: 'confirmed_region_only',
+      source_kind: 'api_field',
+      source_path: 'place.fields[name="Муниципальное образование"]',
+    });
   });
 
   it('should handle place with no center coordinates', () => {
@@ -380,5 +346,86 @@ describe('invest-mosreg: source URL', () => {
         { id: 307, name: 'Ссылка на сайт', value: 'https://maksimikha.ru/' },
       ],
     })).toBe('https://maksimikha.ru/');
+  });
+});
+
+describe('invest-mosreg: typed property location', () => {
+  it('emits exact structured address, region-only, and missing cases without free-text fallbacks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'address',
+            uid: 'address',
+            name: 'Объект с адресом Москва в названии',
+            center: [55.4, 37.5],
+            fields: [
+              { id: 1, name: 'Адрес', value: 'Московская область, г. Подольск, ул. Ленина, 1' },
+              { id: 2, name: 'Адрес организатора', value: 'г. Москва, ул. Тверская, 1' },
+              { id: 3, name: 'ФИО', value: 'Организатор из Москвы' },
+            ],
+          },
+          {
+            id: 'region-only',
+            uid: 'region-only',
+            name: 'Объект без полного адреса',
+            fields: [
+              { id: 4, name: '  Муниципальное   образование  ', value: 'Московская область' },
+              { id: 5, name: 'Адрес организатора', value: 'г. Москва, ул. Арбат, 1' },
+              { id: 6, name: 'Описание', value: 'Свободный текст с упоминанием Москвы' },
+            ],
+          },
+          {
+            id: 'missing',
+            uid: 'missing',
+            name: 'Объект без местонахождения',
+            fields: [
+              { id: 7, name: 'Адрес организатора', value: 'г. Москва, ул. Новый Арбат, 1' },
+              { id: 8, name: 'Описание', value: 'Москва встречается только в свободном тексте' },
+            ],
+          },
+        ],
+      }),
+    }));
+
+    const properties = await new InvestMosregParser().parse(3);
+
+    expect(properties).toHaveLength(3);
+    expect(properties[0]).toMatchObject({
+      address: 'Московская область, г. Подольск, ул. Ленина, 1',
+      city: 'mo',
+      latitude: 55.4,
+      longitude: 37.5,
+      property_location: {
+        address: 'Московская область, г. Подольск, ул. Ленина, 1',
+        status: 'confirmed_address',
+        source_kind: 'api_field',
+        source_path: 'place.fields[name="Адрес"]',
+      },
+    });
+    expect(properties[1]).toMatchObject({
+      address: '',
+      city: 'mo',
+      property_location: {
+        region: 'Московская область',
+        status: 'confirmed_region_only',
+        source_kind: 'api_field',
+        source_path: 'place.fields[name="Муниципальное образование"]',
+      },
+    });
+    expect(properties[2]).toMatchObject({
+      address: '',
+      city: 'other',
+      property_location: {
+        status: 'missing',
+        source_kind: 'api_field',
+        source_path: 'place.fields',
+      },
+    });
+    expect(properties[1].property_location?.address).toBeUndefined();
+    expect(properties[2].property_location?.address).toBeUndefined();
+
+    vi.unstubAllGlobals();
   });
 });

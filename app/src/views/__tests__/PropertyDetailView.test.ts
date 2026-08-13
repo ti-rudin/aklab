@@ -115,6 +115,56 @@ describe('PropertyDetailView', () => {
     wrapper = undefined
   })
 
+  it('renders property location provenance separately from party addresses', async () => {
+    mockedApi.get.mockImplementation(async (url: string) => {
+      if (url === '/properties/doc-1') {
+        return {
+          data: {
+            data: {
+              ...property,
+              address: '',
+              city: 'other',
+              property_location: {
+                status: 'confirmed_region_only',
+                region: 'Республика Башкортостан',
+                source_kind: 'api_field',
+                source_path: 'lot.property_region',
+              },
+              parties: [{
+                name: 'ПАО Сбербанк',
+                roles: ['pledgee'],
+                identifiers: { inn: '7707083893' },
+                addresses: [{ kind: 'legal', value: 'г. Москва, ул. Вавилова, 19' }],
+                confidence: 'structured',
+                source_kind: 'api_field',
+                source_path: 'lot.pledgee',
+              }],
+            },
+          },
+        }
+      }
+      if (url === '/me/properties/doc-1/comments') return { data: { data: [] } }
+      if (url === '/me/properties/doc-1/events') return { data: { data: [], meta: {} } }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    mockedApi.post.mockResolvedValue({ data: { queued: false, reason: 'no_url' } })
+    wrapper = mount(PropertyDetailView, {
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    })
+
+    await flushPromises()
+
+    const location = wrapper.get('[data-testid="property-location"]')
+    const parties = wrapper.get('[data-testid="property-parties"]')
+    expect(location.text()).toContain('Республика Башкортостан')
+    expect(location.text()).toContain('lot.property_region')
+    expect(location.text()).not.toContain('Москва')
+    expect(parties.text()).toContain('ПАО Сбербанк')
+    expect(parties.text()).toContain('Залогодержатель')
+    expect(parties.text()).toContain('г. Москва, ул. Вавилова, 19')
+    expect(parties.text()).toContain('Юридический адрес стороны')
+  })
+
   afterEach(() => {
     wrapper?.unmount()
     vi.useRealTimers()

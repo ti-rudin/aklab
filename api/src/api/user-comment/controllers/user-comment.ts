@@ -3,6 +3,7 @@ import {
   createUserCommentService,
   type UserCommentService,
 } from '../../../services/user-comment';
+import { isCatalogCleanupMaintenanceModeEnabled } from '../../../services/property-catalog-cleanup';
 
 const MAX_DOCUMENT_ID_LENGTH = 128;
 const MAX_COMMENT_TEXT_LENGTH = 5000;
@@ -62,6 +63,13 @@ function setUnauthorized(ctx: any): void {
 function setInvalidInput(ctx: any): void {
   ctx.status = 400;
   ctx.body = { error: 'Invalid comment input' };
+}
+
+function maintenanceBlocked(ctx: any): boolean {
+  if (!isCatalogCleanupMaintenanceModeEnabled()) return false;
+  ctx.status = 409;
+  ctx.body = { error: 'Выполняется обслуживание каталога.' };
+  return true;
 }
 
 function setNotFound(ctx: any): void {
@@ -125,6 +133,7 @@ export default factories.createCoreController('api::user-comment.user-comment', 
   },
 
   async createMine(ctx) {
+    if (maintenanceBlocked(ctx)) return;
     const text = textBody(ctx);
     if (text === null) {
       setInvalidInput(ctx);
@@ -138,6 +147,7 @@ export default factories.createCoreController('api::user-comment.user-comment', 
   },
 
   async updateMine(ctx) {
+    if (maintenanceBlocked(ctx)) return;
     const text = textBody(ctx);
     if (text === null) {
       setInvalidInput(ctx);
@@ -152,6 +162,7 @@ export default factories.createCoreController('api::user-comment.user-comment', 
   },
 
   async deleteMine(ctx) {
+    if (maintenanceBlocked(ctx)) return;
     await execute(
       ctx,
       strapi,

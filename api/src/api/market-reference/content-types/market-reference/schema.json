@@ -13,7 +13,7 @@
   "attributes": {
     "city": {
       "type": "enumeration",
-      "enum": ["moscow", "mo", "other"],
+      "enum": ["moscow", "mo", "tver", "tver_oblast", "other"],
       "required": true
     },
     "property_type": {

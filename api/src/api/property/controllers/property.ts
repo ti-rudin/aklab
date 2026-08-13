@@ -18,6 +18,13 @@ import {
   type UserPropertyScopeRequest,
 } from '../../../services/user-property-scope';
 import { PropertyUpsertValidationError } from '../services/property';
+import {
+  CatalogCleanupBusyError,
+  CatalogCleanupConfirmationError,
+  CatalogCleanupProtectedDataError,
+  clearPropertyCatalog,
+  isCatalogCleanupMaintenanceModeEnabled,
+} from '../../../services/property-catalog-cleanup';
 
 const INTERNAL_PROPERTY_FIELDS = new Set([
   'is_undervalued',
@@ -178,7 +185,37 @@ async function runScoped(ctx: any, operation: () => Promise<void>): Promise<void
   }
 }
 
-export default factories.createCoreController("api::property.property", ({ strapi }) => ({
+export default factories.createCoreController('api::property.property', ({ strapi }) => ({
+  /** Admin-only, confirmation-gated full disposable object-catalog cleanup. */
+  async clearNew(ctx) {
+    try {
+      const result = await clearPropertyCatalog(strapi as any, {
+        confirmation: ctx.request.body?.confirmation,
+      });
+      ctx.status = 200;
+      ctx.body = { data: result };
+    } catch (error) {
+      if (error instanceof CatalogCleanupConfirmationError) {
+        ctx.status = 400;
+        ctx.body = { error: 'Invalid catalog cleanup confirmation' };
+        return;
+      }
+      if (
+        error instanceof CatalogCleanupBusyError
+        || error instanceof CatalogCleanupProtectedDataError
+      ) {
+        ctx.status = 409;
+        ctx.body = { error: 'Property catalog cleanup is not safe to run' };
+        return;
+      }
+      strapi.log.error('property_catalog_cleanup_failed', {
+        error_name: error instanceof Error ? error.name : 'UnknownError',
+      });
+      ctx.status = 500;
+      ctx.body = { error: 'Property catalog cleanup failed' };
+    }
+  },
+
   /**
    * GET /api/properties
    * Canonical profile-scoped list. Query Engine/core find is deliberately not used.
@@ -217,6 +254,11 @@ export default factories.createCoreController("api::property.property", ({ strap
    * instead of leaking a SQLite unique-constraint exception to a worker.
    */
   async upsert(ctx) {
+    if (isCatalogCleanupMaintenanceModeEnabled()) {
+      ctx.status = 409;
+      ctx.body = { error: 'Выполняется обслуживание каталога.' };
+      return;
+    }
     const data = ctx.request?.body?.data;
     if (!data || typeof data.source !== 'string' || !data.source.trim()
       || typeof data.external_id !== 'string' || !data.external_id.trim()) {
@@ -282,6 +324,11 @@ export default factories.createCoreController("api::property.property", ({ strap
    * Service-only updates for analyzer and photo-fetcher fields.
    */
   async internalUpdate(ctx) {
+    if (isCatalogCleanupMaintenanceModeEnabled()) {
+      ctx.status = 409;
+      ctx.body = { error: 'Выполняется обслуживание каталога.' };
+      return;
+    }
     const data = internalPayload(ctx, INTERNAL_PROPERTY_FIELDS);
     if (!data) {
       ctx.status = 400;
@@ -379,6 +426,11 @@ export default factories.createCoreController("api::property.property", ({ strap
 
   async fetchPhotos(ctx) {
     await runScoped(ctx, async () => {
+      if (isCatalogCleanupMaintenanceModeEnabled()) {
+        ctx.status = 409;
+        ctx.body = { error: 'Выполняется обслуживание каталога.' };
+        return;
+      }
       const repository = createUserPropertyScopeRepository(strapi);
       const userId = actorId(ctx);
       const id = ctx.params?.id;

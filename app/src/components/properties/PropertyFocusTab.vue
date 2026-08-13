@@ -53,17 +53,18 @@
       <div>
         <label class="block text-xs font-medium mb-2" style="color: var(--text-muted)">Город</label>
         <div class="flex flex-wrap gap-3">
-          <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" v-model="focusFilters.cities.moscow" class="rounded" style="accent-color: var(--accent)" />
-            <span class="text-sm" style="color: var(--text-main)">Москва</span>
-          </label>
-          <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" v-model="focusFilters.cities.mo" class="rounded" style="accent-color: var(--accent)" />
-            <span class="text-sm" style="color: var(--text-main)">МО</span>
-          </label>
-          <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" v-model="focusFilters.cities.other" class="rounded" style="accent-color: var(--accent)" />
-            <span class="text-sm" style="color: var(--text-main)">Другие</span>
+          <label
+            v-for="option in REGION_OPTIONS"
+            :key="option.value"
+            class="flex items-center gap-1.5 cursor-pointer"
+          >
+            <input
+              v-model="focusFilters.cities[option.value]"
+              type="checkbox"
+              class="rounded"
+              style="accent-color: var(--accent)"
+            />
+            <span class="text-sm" style="color: var(--text-main)">{{ option.label }}</span>
           </label>
         </div>
       </div>
@@ -182,6 +183,7 @@ import { useFocusTab } from '@/composables/useFocusTab'
 import { cityLabel, typeLabel } from '@/utils/formatters'
 import { useToast } from '@/composables/useToast'
 import { buildFocusParams, FOCUS_PAGE_SIZE_MAX } from '@/composables/useFocusParams'
+import { REGION_OPTIONS } from '@/constants/regions'
 
 const CSV_MAX_ROWS = 100_000
 const CSV_PAGE_SIZE = FOCUS_PAGE_SIZE_MAX

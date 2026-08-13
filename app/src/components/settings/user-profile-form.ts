@@ -1,5 +1,7 @@
-export const REGIONS = ['moscow', 'mo', 'other'] as const
-export type Region = (typeof REGIONS)[number]
+import { REGIONS, type Region } from '@/constants/regions'
+
+export { REGIONS }
+export type { Region }
 
 export const PROPERTY_TYPES = [
   'office',

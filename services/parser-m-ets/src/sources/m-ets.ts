@@ -6,8 +6,19 @@
  *
  * Playwright, stealth context, anti-ban.
  */
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, extractAuctionEndAt, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  createStealthContext,
+  derivePropertyRegion,
+  extractAuctionEndAt,
+  logger,
+  normalizeStructuredLocation,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://m-ets.ru';
 
@@ -27,6 +38,20 @@ const NEDVIZH_CATEGORIES = '34,35,36,37,38,39,40,41';
 /** API endpoint для поиска. */
 function searchApiUrl(page: number): string {
   return `${BASE_URL}/ajax/api/search?category=${NEDVIZH_CATEGORIES}&page=${page}`;
+}
+
+// M-ETS does not expose a source-faithful property location field in the
+// repository fixtures, and the live page is unavailable to this audit (403).
+// Until a bounded API/DOM contract is documented, geography must fail closed.
+const LISTING_PROPERTY_LOCATION_SOURCE_PATH = 'listing.property_location';
+const DETAIL_PROPERTY_LOCATION_SOURCE_PATH = 'detail.property_location';
+
+export function missingMetsPropertyLocation(sourcePath: string): PropertyLocation {
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: sourcePath,
+  });
 }
 
 // ─── Классификация типа недвижимости ────────────────────────────────────────
@@ -122,14 +147,6 @@ export class MetsParser implements SourceParser {
                 card.querySelector('[itemprop="name"]');
               const title = titleEl?.textContent?.trim() || '';
 
-              // Номер торгов
-              const regNumEl = card.querySelector('.comp-regnumber');
-              const regNumber = regNumEl?.textContent?.trim() || '';
-
-              // Регион (из карточки)
-              const regionEl = card.querySelector('.search-item-location span');
-              const region = regionEl?.textContent?.trim() || '';
-
               // Цена (из блока cost-block)
               const costEl = card.querySelector('.cost-info .cost span');
               const costText = costEl?.textContent?.trim() || '';
@@ -162,8 +179,6 @@ export class MetsParser implements SourceParser {
                 lot_id: item.lot_id,
                 href,
                 title,
-                regNumber,
-                region,
                 costText,
                 costType,
                 minPriceText,
@@ -179,7 +194,7 @@ export class MetsParser implements SourceParser {
           for (const card of cards) {
             if ((card as any).error) continue;
 
-            const { href, title, region, costText, description, regNumber } = card as any;
+            const { href, title, costText, description } = card as any;
             if (!title || title.length < 3) continue;
 
             const fullLink = href.startsWith('http')
@@ -199,14 +214,7 @@ export class MetsParser implements SourceParser {
             const fullText = title + ' ' + description;
             const area = extractArea(fullText);
 
-            // Адрес из описания
-            const addressMatch = description.match(
-              /(?:адрес(?:у)?:?\s*|расположенн[аыя]?\s+по\s+адресу:\s*|местонахождение:?\s*)([^\n]+)/i,
-            );
-            const address = addressMatch ? addressMatch[1].trim() : region;
-
-            // Город
-            const city = detectCity(title + ' ' + region + ' ' + description);
+            const propertyLocation = missingMetsPropertyLocation(LISTING_PROPERTY_LOCATION_SOURCE_PATH);
 
             // external_id: используем lot_id если есть, иначе из href
             const externalId = (card as any).lot_id
@@ -217,8 +225,9 @@ export class MetsParser implements SourceParser {
               external_id: externalId,
               url: fullLink,
               title: title.slice(0, 300),
-              address,
-              city,
+              address: projectLegacyAddress(propertyLocation),
+              city: derivePropertyRegion(propertyLocation),
+              property_location: propertyLocation,
               area_sqm: area,
               price,
               minimum_price: minimumPrice,
@@ -315,35 +324,6 @@ export class MetsParser implements SourceParser {
         if (email) contactParts.push(email);
         const contacts = contactParts.join(', ');
 
-        // ─── Адрес: regex из текста описания ───
-        let address = '';
-        const descHtml = descEl?.innerHTML || descEl?.textContent || '';
-        // Расширенный regex: "расположен по адресу:", "Адрес:", "местонахождение:"
-        const addrMatch = descHtml.match(/(?:расположенн\w*\s+(?:по\s+)?адресу[:\s]+|адрес[:\s]+|местонахождение[:\s]+)([^<;]+?)(?:<|;|$)/i);
-        if (addrMatch) {
-          address = addrMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 300);
-        }
-
-        // ─── Координаты: [data-initData] → JSON.parse → [lat, lon] ───
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        const initDataEl = document.querySelector('[data-initData]') as HTMLElement | null;
-        if (initDataEl) {
-          try {
-            const raw = initDataEl.getAttribute('data-initData') || initDataEl.dataset.initData || '';
-            const parsed = JSON.parse(raw);
-            // Ожидаем массив [lat, lon] или объект с lat/lon
-            if (Array.isArray(parsed) && parsed.length >= 2) {
-              latitude = parseFloat(String(parsed[0]));
-              longitude = parseFloat(String(parsed[1]));
-            } else if (parsed && typeof parsed === 'object') {
-              if (parsed.lat != null) latitude = parseFloat(String(parsed.lat));
-              if (parsed.lon != null) longitude = parseFloat(String(parsed.lon));
-              if (parsed.latitude != null) latitude = parseFloat(String(parsed.latitude));
-              if (parsed.longitude != null) longitude = parseFloat(String(parsed.longitude));
-            }
-          } catch { /* не удалось распарсить initData */ }
-        }
 
         // ─── Цена: meta[itemprop='price'] (primary) или .lot-cost-item.price .value (fallback) ───
         // meta[itemprop='price'] — цена текущего лота. .lot-cost-item.price .value — может быть первый лот на мульти-лот странице
@@ -377,9 +357,6 @@ export class MetsParser implements SourceParser {
         return {
           description: description || undefined,
           contacts: contacts || undefined,
-          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
-          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
-          address: address || undefined,
           priceText: priceText || undefined,
           dates: dates.length ? dates : undefined,
           auctionText: document.body.innerText || '',
@@ -394,12 +371,15 @@ export class MetsParser implements SourceParser {
         desc = desc ? `${desc}\n${depositNote}` : depositNote;
       }
 
+      const propertyLocation = missingMetsPropertyLocation(DETAIL_PROPERTY_LOCATION_SOURCE_PATH);
       return {
         description: desc,
         contacts: details.contacts,
-        latitude: details.latitude,
-        longitude: details.longitude,
-        address: details.address,
+        property_location: propertyLocation,
+        address: projectLegacyAddress(propertyLocation),
+        city: derivePropertyRegion(propertyLocation),
+        latitude: propertyLocation.latitude,
+        longitude: propertyLocation.longitude,
         price: details.priceText ? parsePrice(details.priceText) : undefined,
         auction_end_at: extractAuctionEndAt(details.auctionText),
       };

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildTorgiLotUrl, extractTorgiLotId, extractTorgiAuctionEndAt } from '../sources/torgi-gov';
+import {
+  buildTorgiLotUrl,
+  extractTorgiAuctionEndAt,
+  extractTorgiLotId,
+  extractTorgiPropertyLocation,
+  isMonitoredTorgiRegion,
+} from '../sources/torgi-gov';
+import { projectLegacyAddress, derivePropertyRegion } from '@aklab/service-shared';
 
 /**
  * Тесты extraction-логики parser-torgi-gov.
@@ -8,21 +15,11 @@ import { buildTorgiLotUrl, extractTorgiLotId, extractTorgiAuctionEndAt } from '.
  * API: JSON — torgi.gov.ru/new/api/public/lotcards/search
  *
  * Тестируем:
- * - extractAddress (воспроизведён из модуля)
+ * - structured property_location extraction (API fields only)
  * - price extraction (priceMin/priceMax/priceInfo)
  * - area extraction (characteristics с code "totalAreaRealty")
  * - region code → city mapping
  */
-
-// --- Replicated extraction functions from torgi-gov.ts ---
-
-function extractAddress(item: any): string {
-  const desc = item.lotDescription || item.lotName || '';
-  const match = desc.match(/(?:по адресу|адрес|расположенн?\s+по)[:\s]+(.+?)(?:[,;]|$)/i);
-  if (match) return match[1].trim();
-  const subject = item.subjectName || '';
-  return subject || desc.substring(0, 100);
-}
 
 function extractPrice(item: any): number | undefined {
   const price = item.priceMin || item.priceMax || item.priceInfo?.startPrice || item.priceInfo?.currentPrice;
@@ -60,10 +57,11 @@ const baseLotItem = {
   id: 'test-lot-001',
   noticeNumber: '20240001',
   lotNumber: 1,
-  lotName: 'Нежилое помещение, расположенное по адресу: г. Москва, ул. Тверская, д. 10',
-  lotDescription: 'Нежилое помещение, расположенное по адресу: г. Москва, ул. Тверская, д. 10, площадь 150 кв.м',
-  subjectRFCode: '77',
-  subjectName: 'г. Москва',
+  lotName: 'Нежилое помещение, организатор: Москва, ул. Большая',
+  lotDescription: 'Нежилое помещение в Твери; организатор зарегистрирован в Москве',
+  estateAddress: 'Тверская область, г. Тверь, ул. Ленина, д. 10',
+  subjectRFCode: '69',
+  subjectName: 'Тверская область',
   category: { code: '200', name: 'Недвижимость' },
   biddType: { name: 'Публичное предложение' },
   createDate: '2024-01-15T00:00:00Z',
@@ -84,6 +82,18 @@ describe('torgi-gov: source URL', () => {
   });
 });
 
+describe('torgi-gov: monitored region gate', () => {
+  it('admits Moscow, Moscow Oblast, and Tver Oblast region codes', () => {
+    expect(isMonitoredTorgiRegion('77')).toBe(true);
+    expect(isMonitoredTorgiRegion('50')).toBe(true);
+    expect(isMonitoredTorgiRegion('69')).toBe(true);
+  });
+
+  it('rejects an unrelated region code', () => {
+    expect(isMonitoredTorgiRegion('16')).toBe(false);
+  });
+});
+
 describe('torgi-gov: auction deadline', () => {
   it('prefers the explicit UTC application deadline from the detail API', () => {
     expect(extractTorgiAuctionEndAt({
@@ -97,46 +107,73 @@ describe('torgi-gov: auction deadline', () => {
   });
 });
 
-describe('torgi-gov: extractAddress', () => {
-  it('should extract address from lotDescription with "по адресу"', () => {
-    const item = {
-      lotDescription: 'Нежилое помещение, расположенное по адресу: г. Москва, ул. Тверская, д. 10',
-    };
-    const addr = extractAddress(item);
-    // Regex captures non-greedily to first comma: "г. Москва"
-    expect(addr).toContain('Москва');
+describe('torgi-gov: typed property location', () => {
+  it('extracts a full address only from the current lot structured field', () => {
+    const location = extractTorgiPropertyLocation({
+      estateAddress: 'Тверская область, г. Тверь, ул. Ленина, д. 10',
+      subjectRFCode: '69',
+      subjectName: 'Тверская область',
+      lotDescription: 'Организатор: г. Москва, ул. Тверская, д. 1',
+    });
+
+    expect(location).toEqual({
+      address: 'Тверская область, г. Тверь, ул. Ленина, д. 10',
+      region: 'Тверская область',
+      region_code: '69',
+      status: 'confirmed_address',
+      source_kind: 'api_field',
+      source_path: 'lot.estateAddress',
+    });
+    expect(projectLegacyAddress(location)).toBe(location.address);
+    expect(derivePropertyRegion(location)).toBe('tver');
   });
 
-  it('should extract address from lotDescription with "адрес"', () => {
-    const item = {
-      lotDescription: 'Помещение адрес: Московская обл., г. Подольск',
-    };
-    const addr = extractAddress(item);
-    expect(addr).toContain('Московская обл.');
-  });
-
-  it('should extract address from lotDescription with "расположенн по"', () => {
-    const item = {
-      lotDescription: 'Здание, расположенн по ул. Ленина, д. 5, г. Химки',
-    };
-    const addr = extractAddress(item);
-    expect(addr).toContain('ул. Ленина');
-  });
-
-  it('should fallback to subjectName when no address pattern', () => {
-    const item = {
-      lotName: 'Склад',
+  it('uses lotAddress as the verified structured fallback when estateAddress is absent', () => {
+    const location = extractTorgiPropertyLocation({
+      lotAddress: 'Московская область, г. Подольск, ул. Кирова, д. 2',
+      subjectRFCode: '50',
       subjectName: 'Московская область',
-    };
-    const addr = extractAddress(item);
-    expect(addr).toBe('Московская область');
+    });
+
+    expect(location.address).toBe('Московская область, г. Подольск, ул. Кирова, д. 2');
+    expect(location.source_path).toBe('lot.lotAddress');
+    expect(location.status).toBe('confirmed_address');
+    expect(derivePropertyRegion(location)).toBe('mo');
   });
 
-  it('should fallback to truncated description when nothing available', () => {
-    const longDesc = 'А'.repeat(200);
-    const item = { lotDescription: longDesc };
-    const addr = extractAddress(item);
-    expect(addr.length).toBeLessThanOrEqual(100);
+  it('returns confirmed_region_only when the lot has region data but no structured address', () => {
+    const location = extractTorgiPropertyLocation({
+      subjectRFCode: '69',
+      subjectName: 'Тверская область',
+      lotName: 'Нежилое помещение, Москва в тексте организатора',
+      lotDescription: 'Описание содержит Москва, но это не адрес имущества',
+    });
+
+    expect(location).toEqual({
+      region: 'Тверская область',
+      region_code: '69',
+      status: 'confirmed_region_only',
+      source_kind: 'api_field',
+      source_path: 'lot.subjectRFCode',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('tver_oblast');
+  });
+
+  it('returns missing instead of deriving geography from title, description, or organizer text', () => {
+    const location = extractTorgiPropertyLocation({
+      lotName: 'Склад в Москве',
+      lotDescription: 'Организатор: Москва, ул. Тверская, д. 1',
+      organizerAddress: 'Москва, ул. Тверская, д. 1',
+    });
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'api_field',
+      source_path: 'lot.estateAddress|lot.lotAddress',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
   });
 });
 
@@ -261,13 +298,15 @@ describe('torgi-gov: full item extraction simulation', () => {
 
     const price = extractPrice(item);
     const area = extractArea(item);
-    const address = extractAddress(item);
-    const city = mapRegionToCity(String(item.subjectRFCode));
+    const location = extractTorgiPropertyLocation(item);
+    const address = projectLegacyAddress(location);
+    const city = derivePropertyRegion(location);
 
     expect(price).toBe(5000000);
     expect(area).toBe(150.5);
-    expect(address).toContain('Москва');
-    expect(city).toBe('moscow');
+    expect(address).toContain('Тверь');
+    expect(city).toBe('tver');
+    expect(location.status).toBe('confirmed_address');
   });
 
   it('should handle item with no characteristics and no price', () => {
@@ -281,7 +320,10 @@ describe('torgi-gov: full item extraction simulation', () => {
 
     expect(extractPrice(item)).toBeUndefined();
     expect(extractArea(item)).toBeUndefined();
-    expect(extractAddress(item)).toBe('Республика Татарстан');
+    const location = extractTorgiPropertyLocation(item);
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(location.status).toBe('confirmed_region_only');
+    expect(location.source_path).toBe('lot.subjectRFCode');
     expect(mapRegionToCity('16')).toBe('other');
   });
 });

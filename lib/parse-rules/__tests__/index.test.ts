@@ -8,6 +8,7 @@ import {
   matchesProfile,
   matchesSnapshot,
   normalizeUserParseProfile,
+  regionFromStructuredLocation,
   type UserParseProfile,
   type UserFilterSnapshot,
   type UserFilterSnapshotInput,
@@ -320,8 +321,48 @@ describe('pure user filter snapshot contract', () => {
     expect(matchesSnapshot({ ...valid, hash: 'f'.repeat(63) }, candidate, 'details')).toBe(false);
   });
 
+  it('keeps Tver city and Tver oblast as distinct canonical regions', () => {
+    const normalized = normalizeUserParseProfile(profile({
+      regions: [' TVER_OBLAST ', 'tver', 'TVER'],
+    }));
+    const tverProfile = profile({ regions: ['tver'] });
+    const tverOblastProfile = profile({ regions: ['tver_oblast'] });
+
+    expect(normalized.regions).toEqual(['tver', 'tver_oblast']);
+    expect(matchesProfile(tverProfile, { city: 'tver', property_type: 'office' }, 'details')).toBe(true);
+    expect(matchesProfile(tverProfile, { city: 'tver_oblast', property_type: 'office' }, 'details')).toBe(false);
+    expect(matchesProfile(tverOblastProfile, { city: 'tver_oblast', property_type: 'office' }, 'details')).toBe(true);
+    expect(matchesProfile(tverOblastProfile, { city: 'tver', property_type: 'office' }, 'details')).toBe(false);
+  });
+
+  it('derives a canonical region only from typed structured location fields', () => {
+    expect(regionFromStructuredLocation({
+      address: 'Республика Башкортостан, Кармаскалинский район',
+      region: 'Республика Башкортостан',
+    })).toBe('other');
+    expect(regionFromStructuredLocation({ address: 'Тверская область, г. Тверь, ул. Советская, д. 1' }))
+      .toBe('tver');
+    expect(regionFromStructuredLocation({ region: 'Тверская область' })).toBe('tver_oblast');
+    expect(regionFromStructuredLocation({ region_code: '69' })).toBe('tver_oblast');
+    expect(regionFromStructuredLocation({ address: 'Московская область, г. Подольск' })).toBe('mo');
+    expect(regionFromStructuredLocation({ region: 'moscow' })).toBe('moscow');
+    expect(regionFromStructuredLocation({ region: 'mo' })).toBe('mo');
+    expect(regionFromStructuredLocation({ region: 'tver' })).toBe('tver');
+    expect(regionFromStructuredLocation({ region: 'tver_oblast' })).toBe('tver_oblast');
+    expect(regionFromStructuredLocation({ region: 'other' })).toBe('other');
+    expect(regionFromStructuredLocation({
+      region: 'Республика Башкортостан',
+      address: 'г. Москва, ул. Вавилова, 19',
+    })).toBe('other');
+    expect(regionFromStructuredLocation({
+      region: 'Тверская область',
+      address: 'г. Москва, ул. Вавилова, 19',
+    })).toBe('tver_oblast');
+    expect(regionFromStructuredLocation({})).toBe('other');
+  });
+
   it('exports only the runtime enum values required by the parser contract', () => {
-    expect(Object.values(Region)).toEqual(['moscow', 'mo', 'other']);
+    expect(Object.values(Region)).toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other']);
     expect(Object.values(PropertyType)).toEqual([
       'office',
       'warehouse',

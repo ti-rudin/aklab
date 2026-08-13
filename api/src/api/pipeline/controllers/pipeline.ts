@@ -9,6 +9,19 @@ function getPipeline() {
   return getPipelineService(strapi as unknown as StrapiInstance);
 }
 
+function isCatalogMaintenanceState(state: { run_id?: unknown }): boolean {
+  return typeof state?.run_id === 'string' && state.run_id.startsWith('catalog-cleanup:');
+}
+
+function maintenanceLocked(ctx: any): void {
+  ctx.status = 409;
+  ctx.body = {
+    ok: false,
+    code: 'PIPELINE_MAINTENANCE_LOCKED',
+    message: 'Выполняется обслуживание каталога.',
+  };
+}
+
 const MODES: PipelineMode[] = ['full', 'parse', 'analyze', 'digest'];
 const START_KEYS = new Set(['mode', 'depth', 'targetUserId']);
 
@@ -90,6 +103,11 @@ export default {
   async cancel(ctx: any) {
     try {
       const pipeline = getPipeline();
+      const before = await pipeline.getState();
+      if (isCatalogMaintenanceState(before)) {
+        maintenanceLocked(ctx);
+        return;
+      }
       await pipeline.cancel();
       const state = await pipeline.getState();
       ctx.body = { ok: true, run_id: state.run_id, state: sanitizePipelineState(state), message: 'Pipeline cancellation requested' };
@@ -103,6 +121,11 @@ export default {
   async reset(ctx: any) {
     try {
       const pipeline = getPipeline();
+      const before = await pipeline.getState();
+      if (isCatalogMaintenanceState(before)) {
+        maintenanceLocked(ctx);
+        return;
+      }
       await pipeline.forceReset();
       ctx.body = { ok: true, message: 'Pipeline state reset' };
     } catch (err: any) {

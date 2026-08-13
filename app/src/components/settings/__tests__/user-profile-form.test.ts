@@ -22,7 +22,7 @@ const validDraft = () => ({
 describe('user-profile-form contracts', () => {
   it('creates a ready draft with the supported regions and property types', () => {
     expect(createEmptyProfileDraft()).toEqual({
-      regions: ['moscow', 'mo', 'other'],
+      regions: ['moscow', 'mo', 'tver', 'tver_oblast', 'other'],
       property_types: [
         'office',
         'warehouse',
