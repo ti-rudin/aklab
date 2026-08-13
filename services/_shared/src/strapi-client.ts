@@ -13,6 +13,13 @@ interface StrapiResponse<T> {
 
 import { ParseRules, buildParseRules } from '@aklab/parse-rules';
 export { ParseRules, buildParseRules };
+import type { PropertyLocation, PropertyParty } from './types';
+import {
+  dedupeParties,
+  derivePropertyRegion,
+  normalizeStructuredLocation,
+  projectLegacyAddress,
+} from './property-location';
 
 const BASE = `${config.strapi.url}/api`;
 const HEADERS = {
@@ -177,11 +184,34 @@ export async function createProperty(props: {
   photo_urls?: string[];
   latitude?: number;
   longitude?: number;
+  property_location?: PropertyLocation;
+  parties?: PropertyParty[];
   rules?: ParseRules;
 }): Promise<any> {
   // Извлекаем rules из props чтобы не утекал в POST payload
   // (деструктурируем ПОСЛЕ всех мутаций props — ниже перед POST)
   const { rules, ...restProps } = props as any;
+
+  // Normalize and project geography before any filter, deduplication, or
+  // persistence side effect. Free-form legacy fields are never a source.
+  if (restProps.property_location !== undefined) {
+    const location = normalizeStructuredLocation(restProps.property_location);
+    restProps.property_location = location;
+    restProps.address = projectLegacyAddress(location);
+    restProps.city = derivePropertyRegion(location);
+    restProps.latitude = location.latitude;
+    restProps.longitude = location.longitude;
+  } else {
+    // Transitional compatibility: keep the candidate processable, but do not
+    // certify an arbitrary legacy address/city or fabricate provenance.
+    restProps.address = '';
+    restProps.city = 'other';
+    restProps.latitude = undefined;
+    restProps.longitude = undefined;
+  }
+  if (restProps.parties !== undefined) {
+    restProps.parties = dedupeParties(restProps.parties);
+  }
 
   if (!isCommercialProperty(restProps)) {
     logger.warn(`Skipping non-commercial: "${restProps.title}" [${restProps.property_type}/${restProps.auction_type}] source=${restProps.source}`);

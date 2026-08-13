@@ -148,6 +148,82 @@ describe('createProperty()', () => {
     expect(JSON.parse(opts.body).data.source).toBe('tender');
   });
 
+  test('persists typed property location and parties without deriving geography from a party address', async () => {
+    const created = { id: 43, documentId: 'doc-43' };
+    const propertyLocation = {
+      region: 'Республика Башкортостан',
+      region_code: '02',
+      latitude: 54.7,
+      longitude: 55.9,
+      status: 'confirmed_region_only' as const,
+      source_kind: 'api_field' as const,
+      source_path: 'lot.region',
+    };
+    const parties = [{
+      name: 'ПАО Сбербанк',
+      roles: ['pledgee' as const],
+      addresses: [{ kind: 'legal' as const, value: 'г. Москва, ул. Тверская, 1' }],
+      source_path: 'lot.pledgee',
+      source_kind: 'bounded_text' as const,
+      confidence: 'explicit_text' as const,
+    }];
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))
+      .mockResolvedValueOnce(mockJsonResponse({ data: created }));
+
+    const result = await createProperty({
+      source: 'tender',
+      external_id: 'typed-ext-1',
+      url: 'https://example.com/typed-1',
+      title: 'Москва в title',
+      address: 'Москва из legacy address',
+      city: 'moscow',
+      latitude: 55.7,
+      longitude: 37.6,
+      property_location: propertyLocation,
+      parties,
+      area_sqm: 500,
+      price: 10_000_000,
+      price_per_sqm: 20_000,
+      property_type: 'warehouse',
+      auction_type: 'bankruptcy',
+    });
+
+    expect(result).toEqual(created);
+    const body = JSON.parse((globalThis.fetch as any).mock.calls[1][1].body).data;
+    expect(body.property_location).toEqual(propertyLocation);
+    expect(body.parties).toEqual(parties);
+    expect(body.address).toBe('');
+    expect(body.city).toBe('other');
+    expect(body.latitude).toBe(54.7);
+    expect(body.longitude).toBe(55.9);
+  });
+
+  test('rejects an invalid typed location before any persistence request', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(createProperty({
+      source: 'tender',
+      external_id: 'invalid-typed-ext',
+      url: 'https://example.com/invalid-typed',
+      title: 'Склад',
+      address: 'legacy address',
+      city: 'moscow',
+      property_location: {
+        status: 'confirmed_address',
+        source_kind: 'api_field',
+        source_path: 'lot.address',
+      },
+      area_sqm: 10,
+      price: 1000,
+      price_per_sqm: 100,
+      property_type: 'warehouse',
+      auction_type: 'bankruptcy',
+    })).rejects.toThrow('Invalid property location');
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   test('treats an upsert conflict winner as an existing property, not a new create', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(mockJsonResponse({ data: { exists: false } }))
