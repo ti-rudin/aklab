@@ -6,8 +6,19 @@
  *
  * ~6600 лотов, ~332 страницы.
  */
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice, parseAuctionEndAt } from '@aklab/service-shared';
+import type { SourceParser, ParsedProperty, PropertyLocation } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  createStealthContext,
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parseAuctionEndAt,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://utp.sberbank-ast.ru';
 const SEARCH_URL = `${BASE_URL}/Property/List/BidListComReal`;
@@ -24,20 +35,76 @@ function extractArea(text: string): number | undefined {
   return undefined;
 }
 
-function extractAddress(title: string): string {
-  // Try "по адресу: ..." pattern
-  let match = title.match(/по\s+адресу[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
+const PROPERTY_LOCATION_SOURCE_PATH = 'textAddress|GeoDataAddress';
 
-  // Try "расположенн..." pattern
-  match = title.match(/расположенн\w*\s+(?:по\s+адресу[:\s]*)?([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
+function cleanXmlText(value: string): string | undefined {
+  const decoded = value
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .trim();
+  return decoded || undefined;
+}
 
-  // Try "адрес:" pattern
-  match = title.match(/адрес[:\s]+([^,]+(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-  return '';
+function readXmlTag(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${escapeRegExp(tag)}\\b[^>]*>([\\s\\S]*?)</${escapeRegExp(tag)}>`, 'i'));
+  return match ? cleanXmlText(match[1].replace(/<[^>]+>/g, ' ')) : undefined;
+}
+
+function readFirstXmlTag(xml: string, tags: readonly string[]): { value?: string; tag?: string } {
+  for (const tag of tags) {
+    const value = readXmlTag(xml, tag);
+    if (value) return { value, tag };
+  }
+  return {};
+}
+
+function readXmlCoordinate(xml: string, tags: readonly string[]): number | undefined {
+  const value = readFirstXmlTag(xml, tags).value;
+  if (!value) return undefined;
+  const number = Number(value.replace(',', '.'));
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function buildPropertyLocation(fields: {
+  address?: string;
+  addressPath?: string;
+  latitude?: number;
+  longitude?: number;
+}): PropertyLocation {
+  const address = fields.address?.trim() || undefined;
+  const latitude = fields.latitude;
+  const longitude = fields.longitude;
+  const hasCoordinatePair = latitude !== undefined && longitude !== undefined;
+
+  return normalizeStructuredLocation({
+    ...(address ? { address } : {}),
+    ...(hasCoordinatePair ? { latitude, longitude } : {}),
+    status: address ? 'confirmed_address' : hasCoordinatePair ? 'confirmed_region_only' : 'missing',
+    source_kind: 'xml_field',
+    source_path: address
+      ? fields.addressPath || PROPERTY_LOCATION_SOURCE_PATH
+      : hasCoordinatePair
+        ? 'Latitude|Longitude'
+        : PROPERTY_LOCATION_SOURCE_PATH,
+  });
+}
+
+/** Extract only property-bound XML fields; party and free-text fields are ignored. */
+export function extractPropertyLocationFromXml(xml: string): PropertyLocation {
+  const address = readFirstXmlTag(xml, ['textAddress', 'GeoDataAddress']);
+  return buildPropertyLocation({
+    address: address.value,
+    addressPath: address.tag,
+    latitude: readXmlCoordinate(xml, ['Latitude', 'latitude']),
+    longitude: readXmlCoordinate(xml, ['Longitude', 'longitude']),
+  });
 }
 
 export class SberbankAstParser implements SourceParser {
@@ -68,8 +135,12 @@ export class SberbankAstParser implements SourceParser {
           const results: Array<{
             purchase_id: string; title: string; price_text: string;
             status: string; detail_url: string; organizer: string;
-            address: string; amount: string;
-            lat?: number; lng?: number; branch?: string;
+            amount: string; property_location: {
+              address?: string; latitude?: number; longitude?: number;
+              status: 'confirmed_address' | 'confirmed_region_only' | 'missing';
+              source_kind: 'xml_field'; source_path: string;
+            };
+            branch?: string;
           }> = [];
 
           const xmlDataInput = document.getElementById('xmlData') as HTMLInputElement;
@@ -92,7 +163,13 @@ export class SberbankAstParser implements SourceParser {
             const purchaseState = row.querySelector('purchStateName')?.textContent?.trim() || '';
             const orgName = row.querySelector('OrgName')?.textContent?.trim() || '';
             const purchaseCode = row.querySelector('purchCode')?.textContent?.trim() || '';
-            const geoAddress = row.querySelector('GeoDataAddress')?.textContent?.trim() || '';
+            const propertyAddressFields = [
+              ['GeoDataAddress', row.querySelector('GeoDataAddress')?.textContent?.trim() || ''],
+              ['textAddress', row.querySelector('textAddress')?.textContent?.trim() || ''],
+            ] as const;
+            const propertyAddressField = propertyAddressFields.find(([, value]) => value.length > 0);
+            const geoAddress = propertyAddressField?.[1] || '';
+            const propertyAddressPath = propertyAddressField?.[0] || 'GeoDataAddress|textAddress';
             const detailHref = row.querySelector('bidHrefTerm')?.textContent?.trim() || '';
             const latStr = row.querySelector('Latitude')?.textContent?.trim();
             const lngStr = row.querySelector('Longitude')?.textContent?.trim();
@@ -102,6 +179,25 @@ export class SberbankAstParser implements SourceParser {
 
             const title = purchaseName || bidName;
             const detailUrl = detailHref || `${window.location.origin}/Property/NBT/PurchaseView/43/0/0/${purchaseId}`;
+            const hasCoordinates = latStr && lngStr && Number.isFinite(Number(latStr)) && Number.isFinite(Number(lngStr));
+            const coordinates = hasCoordinates
+              ? { latitude: Number(latStr), longitude: Number(lngStr) }
+              : {};
+            const propertyLocation = {
+              ...(geoAddress ? { address: geoAddress } : {}),
+              ...coordinates,
+              status: geoAddress
+                ? 'confirmed_address' as const
+                : hasCoordinates
+                  ? 'confirmed_region_only' as const
+                  : 'missing' as const,
+              source_kind: 'xml_field' as const,
+              source_path: geoAddress
+                ? propertyAddressPath
+                : hasCoordinates
+                  ? 'Latitude|Longitude'
+                  : 'GeoDataAddress|textAddress',
+            };
 
             results.push({
               purchase_id: purchaseId,
@@ -110,10 +206,8 @@ export class SberbankAstParser implements SourceParser {
               status: purchaseState,
               detail_url: detailUrl,
               organizer: orgName,
-              address: geoAddress,
               amount: currentAmount || amount,
-              lat: latStr ? parseFloat(latStr) : undefined,
-              lng: lngStr ? parseFloat(lngStr) : undefined,
+              property_location: propertyLocation,
               branch: branchName,
             });
           }
@@ -125,19 +219,20 @@ export class SberbankAstParser implements SourceParser {
 
         for (const lot of lots) {
           const price = parsePrice(lot.price_text);
-          const address = lot.address || extractAddress(lot.title);
+          const propertyLocation = normalizeStructuredLocation(lot.property_location);
           allProperties.push({
             external_id: `sberbank-ast-${lot.purchase_id || lot.title.slice(0, 50)}`,
             url: lot.detail_url.startsWith('http') ? lot.detail_url : `${BASE_URL}${lot.detail_url}`,
             title: lot.title,
-            address,
-            city: detectCity(address || lot.title),
+            address: projectLegacyAddress(propertyLocation),
+            city: derivePropertyRegion(propertyLocation),
+            property_location: propertyLocation,
             property_type: classifyPropertyType(`${lot.title} ${lot.branch || ''}`),
             auction_type: 'bankruptcy',
             price,
             area_sqm: extractArea(lot.title),
-            latitude: lot.lat,
-            longitude: lot.lng,
+            latitude: propertyLocation.latitude,
+            longitude: propertyLocation.longitude,
             description: lot.title.length > 20 ? lot.title : undefined,
             contacts: lot.organizer || undefined,
           });
@@ -247,22 +342,33 @@ export class SberbankAstParser implements SourceParser {
         if (orgContact) contactParts.push('Контактное лицо: ' + orgContact);
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес: OrgAddressJur или textAddress из XML
-        const orgAddress = getById('OrganizatorInfo_OrgAddressJur') || getXmlTag('orgaddressjur');
-        const textAddress = getXmlTag('textAddress');
-        let address = textAddress || orgAddress || undefined;
-        // Moscow fallback: если адрес не найден, ищем «Москва» в тексте страницы
-        if (!address) {
-          const allText = document.body.innerText || '';
-          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
-          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
-        }
-
-        // Координаты: из XML тегов Latitude/Longitude
+        // Каноническая география: только property-bound XML fields.
+        // Адреса организатора/customer и полный текст страницы намеренно не читаются.
+        const propertyAddressFields = [
+          ['textAddress', getXmlTag('textAddress')],
+          ['GeoDataAddress', getXmlTag('GeoDataAddress')],
+        ] as const;
+        const propertyAddressField = propertyAddressFields.find(([, value]) => value.length > 0);
+        // Координаты: только связанные XML-теги текущего имущества
         const latStr = getXmlTag('Latitude') || getXmlTag('latitude');
         const lonStr = getXmlTag('Longitude') || getXmlTag('longitude');
         const latitude = latStr ? parseFloat(latStr) : undefined;
         const longitude = lonStr ? parseFloat(lonStr) : undefined;
+        const hasCoordinates = latitude !== undefined && longitude !== undefined
+          && Number.isFinite(latitude) && Number.isFinite(longitude);
+        const propertyAddress = propertyAddressField?.[1] || undefined;
+        const propertyLocation = {
+          ...(propertyAddress ? { address: propertyAddress } : {}),
+          ...(hasCoordinates ? { latitude, longitude } : {}),
+          status: propertyAddress
+            ? 'confirmed_address' as const
+            : hasCoordinates
+              ? 'confirmed_region_only' as const
+              : 'missing' as const,
+          source_kind: 'xml_field' as const,
+          source_path: propertyAddressField?.[0]
+            || (hasCoordinates ? 'Latitude|Longitude' : 'textAddress|GeoDataAddress'),
+        };
 
         // Цена: BidPriceNotReq или BidMinPrice
         const priceStr = getById('Bids_BidPriceNotReq');
@@ -283,9 +389,7 @@ export class SberbankAstParser implements SourceParser {
         return {
           description: description || undefined,
           contacts,
-          address: address && address.length > 3 ? address : undefined,
-          latitude: latitude && !isNaN(latitude) ? latitude : undefined,
-          longitude: longitude && !isNaN(longitude) ? longitude : undefined,
+          property_location: propertyLocation,
           auction_end_at: parseAuctionEndAt(requestEnd || auctionDate || ''),
         };
       });
@@ -293,9 +397,7 @@ export class SberbankAstParser implements SourceParser {
       return {
         description: details.description,
         contacts: details.contacts,
-        address: details.address,
-        latitude: details.latitude,
-        longitude: details.longitude,
+        property_location: details.property_location,
         auction_end_at: details.auction_end_at,
       };
     } catch (err: any) {

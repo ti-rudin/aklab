@@ -16,8 +16,16 @@
  */
 
 import { classifyPropertyType } from '@aklab/service-shared';
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  logger,
+  normalizeStructuredLocation,
+  randomDelay,
+  createStealthContext,
+  retryGoto,
+  parsePrice,
+} from '@aklab/service-shared';
+import { load } from 'cheerio';
 
 const BASE_URL = 'https://www.fabrikant.ru';
 const SEARCH_URL = `${BASE_URL}/procedure/search/sales`;
@@ -43,6 +51,69 @@ const EXCLUDE_KEYWORDS = [
   'volkswagen', 'toyota', 'ford', 'bmw', 'mercedes',
   'оборудовани', 'станок', 'прибор', 'инвентар',
 ];
+
+const PROPERTY_LOCATION_CONTAINER = '.panel-group-element-lot_delivery_place';
+const PROPERTY_LOCATION_ADDRESS_FIELD = '.form-group-element-lot_delivery_place-address';
+const PROPERTY_LOCATION_REGION_FIELD = '.form-group-element-lot_delivery_place-region';
+const PROPERTY_LOCATION_OKATO_FIELD = '.form-group-element-lot_delivery_place-okato';
+const PROPERTY_LOCATION_ADDRESS = `${PROPERTY_LOCATION_CONTAINER} ${PROPERTY_LOCATION_ADDRESS_FIELD}`;
+const PROPERTY_LOCATION_REGION = `${PROPERTY_LOCATION_CONTAINER} ${PROPERTY_LOCATION_REGION_FIELD}`;
+const PROPERTY_LOCATION_OKATO = `${PROPERTY_LOCATION_CONTAINER} ${PROPERTY_LOCATION_OKATO_FIELD}`;
+
+type PropertyLocationFields = {
+  address?: string;
+  region?: string;
+  region_code?: string;
+};
+
+function cleanLocationField(value: string | undefined): string | undefined {
+  const trimmed = value?.replace(/\s+/g, ' ').trim();
+  return trimmed || undefined;
+}
+
+function propertyLocationFromFields(fields: PropertyLocationFields): PropertyLocation {
+  const address = cleanLocationField(fields.address);
+  const region = cleanLocationField(fields.region);
+  const regionCode = cleanLocationField(fields.region_code);
+
+  if (address) {
+    return normalizeStructuredLocation({
+      address,
+      ...(region ? { region } : {}),
+      ...(regionCode ? { region_code: regionCode } : {}),
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: PROPERTY_LOCATION_ADDRESS,
+    });
+  }
+
+  if (region || regionCode) {
+    return normalizeStructuredLocation({
+      ...(region ? { region } : {}),
+      ...(regionCode ? { region_code: regionCode } : {}),
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: region ? PROPERTY_LOCATION_REGION : PROPERTY_LOCATION_OKATO,
+    });
+  }
+
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: PROPERTY_LOCATION_CONTAINER,
+  });
+}
+
+/** Extract geography only from the semantically separate current-lot DOM fields. */
+export function extractPropertyLocationFromHtml(html: string): PropertyLocation {
+  const root = load(html);
+  const container = root(PROPERTY_LOCATION_CONTAINER).first();
+  return propertyLocationFromFields({
+    address: container.find(PROPERTY_LOCATION_ADDRESS_FIELD).first().text(),
+    region: container.find(PROPERTY_LOCATION_REGION_FIELD).first().text(),
+    region_code: container.find(PROPERTY_LOCATION_OKATO_FIELD).first().text(),
+  });
+}
 
 export class FabrikantParser implements SourceParser {
   name = 'fabrikant';
@@ -124,7 +195,6 @@ export class FabrikantParser implements SourceParser {
 
           const price = parsePrice(p.price_text);
 
-          const address = extractAddress(p.title);
           const area = extractArea(p.title);
           let publishedAt: string | undefined;
           if (p.date_text) {
@@ -136,8 +206,13 @@ export class FabrikantParser implements SourceParser {
             external_id: `fabrikant-${p.lot_id}`,
             url: p.link_href || SEARCH_URL,
             title: p.title,
-            address,
-            city: detectCity(address || p.title),
+            address: '',
+            city: 'other',
+            property_location: normalizeStructuredLocation({
+              status: 'missing',
+              source_kind: 'dom_field',
+              source_path: PROPERTY_LOCATION_CONTAINER,
+            }),
             area_sqm: area,
             price,
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -210,7 +285,12 @@ export class FabrikantParser implements SourceParser {
         await page.waitForTimeout(3000);
       }
 
-      const details = await page.evaluate(() => {
+      const details = await page.evaluate((selectors: {
+        container: string;
+        address: string;
+        region: string;
+        okato: string;
+      }) => {
         let description = '';
         const allText = document.body.innerText || '';
 
@@ -234,21 +314,12 @@ export class FabrikantParser implements SourceParser {
 
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Never search the whole page first: it also contains the seller's
-        // legal address. Restrict extraction to the lot/object section.
-        const propertySection = allText.match(
-          /(?:Наименование предмета торгов|Краткое описание объекта торгов|Месторасположение объекта торгов)\s*\n([\s\S]*?)(?=\n(?:Обременения|Категория объекта|Характеристики объекта|Начальная цена|Информация о продавце|Информация об организаторе)|$)/i,
-        )?.[1] || '';
-        let address = '';
-        const addrPatterns = [
-          /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение(?:\s+имущества)?)[:\s]+([^\n]+?)(?:\n|$)/i,
-          /расположенн?\w*\s+(?:по\s+)?адресу[:\s]+(.+?)(?:,\s*(?:общ|пл|к\/н|собств|$))/i,
-        ];
-        for (const re of addrPatterns) {
-          const m = propertySection.match(re);
-          if (m && m[1] && m[1].trim().length > 5) { address = m[1].trim().slice(0, 300); break; }
-        }
-
+        const locationContainer = document.querySelector(selectors.container);
+        const locationFields = {
+          address: locationContainer?.querySelector(selectors.address)?.textContent || undefined,
+          region: locationContainer?.querySelector(selectors.region)?.textContent || undefined,
+          region_code: locationContainer?.querySelector(selectors.okato)?.textContent || undefined,
+        };
 
         const photoUrls: string[] = [];
         const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"]');
@@ -257,10 +328,25 @@ export class FabrikantParser implements SourceParser {
           if (src && src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) photoUrls.push(src);
         }
 
-        return { description: description || undefined, contacts, address: address.length > 3 ? address : undefined, photo_urls: photoUrls.length > 0 ? photoUrls : undefined };
+        return {
+          description: description || undefined,
+          contacts,
+          locationFields,
+          photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        };
+      }, {
+        container: PROPERTY_LOCATION_CONTAINER,
+        address: PROPERTY_LOCATION_ADDRESS_FIELD,
+        region: PROPERTY_LOCATION_REGION_FIELD,
+        okato: PROPERTY_LOCATION_OKATO_FIELD,
       });
 
-      return { description: details.description, contacts: details.contacts, address: details.address, photo_urls: details.photo_urls };
+      return {
+        description: details.description,
+        contacts: details.contacts,
+        property_location: propertyLocationFromFields(details.locationFields),
+        photo_urls: details.photo_urls,
+      };
     } catch (err: any) {
       logger.warn(`[fabrikant] fetchDetails error for ${url}: ${err.message}`);
       return {};
@@ -269,14 +355,6 @@ export class FabrikantParser implements SourceParser {
       if (ownBrowser) try { await ownBrowser.close(); } catch {}
     }
   }
-}
-
-function extractAddress(title: string): string {
-  let match = title.match(/(?:по\s+адресу|адрес)[:\s]+(.+?)(?:,\s*(?:общ\.|пл\.|к\/н|собств\.|цена|$))/i);
-  if (match) return match[1].trim();
-  match = title.match(/(?:в|г\.)\s+((?:г\.?\s*)?(?:Москва|Московская\s+обл\.?)[^,]*(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
-  return title;
 }
 
 function extractArea(title: string): number | undefined {

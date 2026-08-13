@@ -1,25 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  parsePrice,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import { extractPropertyLocationFromHtml } from '../sources/fabrikant';
 
 /**
  * Тесты extraction-логики parser-fabrikant.
  *
- * Функции extractAddress и extractArea — приватные модулю.
- * Для тестирования воспроизводим их логику как standalone-функции.
+ * Функция extractPropertyLocationFromHtml экспортируется как чистый
+ * extraction seam, чтобы fixture тестировал тот же selector contract,
+ * который используется detail-page extraction.
  * Источник: services/parser-fabrikant/src/sources/fabrikant.ts
  */
 
-// --- Replicated extraction functions from fabrikant.ts ---
-
-function extractAddress(title: string): string {
-  let match = title.match(/(?:по\s+адресу|адрес)[:\s]+(.+?)(?:,\s*(?:общ\.|пл\.|к\/н|собств\.|цена|$))/i);
-  if (match) return match[1].trim();
-
-  match = title.match(/(?:в|г\.)\s+((?:г\.?\s*)?(?:Москва|Московская\s+обл\.?)[^,]*(?:,\s*[^,]+){0,3})/i);
-  if (match) return match[1].trim();
-
-  return title;
-}
+// --- Replicated non-location extraction functions from fabrikant.ts ---
 
 function extractArea(title: string): number | undefined {
   let match = title.match(/(\d[\d\s]*[,.]?\d*)\s*кв\.?\s*м/i);
@@ -48,36 +44,95 @@ function extractArea(title: string): number | undefined {
 
 // --- Tests ---
 
-describe('fabrikant: extractAddress', () => {
-  it('should extract address from "по адресу: ..." pattern', () => {
-    const title = 'Нежилое помещение по адресу: г. Москва, ул. Ленина, д. 10, общ. пл. 150 кв.м';
-    const addr = extractAddress(title);
-    expect(addr).toContain('г. Москва');
-    expect(addr).toContain('ул. Ленина');
+const PROPERTY_LOCATION_FIXTURE = `
+  <article>
+    <h1>Нежилое помещение, г. Москва, адрес должника: г. Москва, ул. Тверская, д. 1</h1>
+    <p>Описание: объект находится в Москве. Организатор: ООО «Площадка», Москва.</p>
+    <section class="seller">
+      <h2>Продавец</h2>
+      <p>Юридический адрес: г. Москва, ул. Арбат, д. 2</p>
+    </section>
+    <section class="panel-group-element-lot_delivery_place">
+      <div class="form-group-element-lot_delivery_place-address">
+        Республика Башкортостан, г. Уфа, ул. Ленина, д. 10
+      </div>
+      <div class="form-group-element-lot_delivery_place-region">Республика Башкортостан</div>
+      <div class="form-group-element-lot_delivery_place-okato">80401000000</div>
+    </section>
+  </article>
+`;
+
+describe('fabrikant: typed property location extraction', () => {
+  it('uses the current lot delivery-place fields and ignores title/free-text geography', () => {
+    const location = extractPropertyLocationFromHtml(PROPERTY_LOCATION_FIXTURE);
+
+    expect(location).toEqual({
+      address: 'Республика Башкортостан, г. Уфа, ул. Ленина, д. 10',
+      region: 'Республика Башкортостан',
+      region_code: '80401000000',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '.panel-group-element-lot_delivery_place .form-group-element-lot_delivery_place-address',
+    });
+    expect(derivePropertyRegion(location)).toBe('other');
+    expect(projectLegacyAddress(location)).toBe(location.address);
   });
 
-  it('should extract address from "адрес: ..." pattern', () => {
-    const title = 'Нежилое помещение адрес: Московская обл., г. Подольск, ул. Советская';
-    const addr = extractAddress(title);
-    expect(addr).toContain('Московская обл.');
+  it('fails closed when only title, body text, and seller address mention Moscow', () => {
+    const html = `
+      <article>
+        <h1>Склад, г. Москва, ул. Тверская, д. 1</h1>
+        <p>Местонахождение объекта: Москва. Организатор: Москва.</p>
+        <div class="seller">Юридический адрес: г. Москва, ул. Арбат, д. 2</div>
+      </article>
+    `;
+
+    const location = extractPropertyLocationFromHtml(html);
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: '.panel-group-element-lot_delivery_place',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
   });
 
-  it('should extract Moscow address with "г." prefix', () => {
-    const title = 'Помещение г. Москва, ул. Тверская, д. 1';
-    const addr = extractAddress(title);
-    expect(addr).toContain('Москва');
+  it('keeps a separate property region when the property address field is absent', () => {
+    const html = `
+      <section class="panel-group-element-lot_delivery_place">
+        <div class="form-group-element-lot_delivery_place-region">Республика Башкортостан</div>
+        <div class="form-group-element-lot_delivery_place-okato">80401000000</div>
+      </section>
+      <p>Организатор: г. Москва, ул. Арбат, д. 2</p>
+    `;
+
+    const location = extractPropertyLocationFromHtml(html);
+
+    expect(location).toEqual({
+      region: 'Республика Башкортостан',
+      region_code: '80401000000',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: '.panel-group-element-lot_delivery_place .form-group-element-lot_delivery_place-region',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
   });
 
-  it('should return full title when no address pattern found', () => {
-    const title = 'Складское помещение';
-    const addr = extractAddress(title);
-    expect(addr).toBe(title);
-  });
+  it('attributes region-only provenance to OKATO when it is the only structured field', () => {
+    const location = extractPropertyLocationFromHtml(`
+      <section class="panel-group-element-lot_delivery_place">
+        <div class="form-group-element-lot_delivery_place-okato">80401000000</div>
+      </section>
+    `);
 
-  it('should stop at "общ." boundary', () => {
-    const title = 'Нежилое по адресу: г. Москва, Ленинский пр-т, д.5, общ. пл. 200 кв.м';
-    const addr = extractAddress(title);
-    expect(addr).not.toContain('общ.');
+    expect(location).toEqual({
+      region_code: '80401000000',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: '.panel-group-element-lot_delivery_place .form-group-element-lot_delivery_place-okato',
+    });
   });
 });
 

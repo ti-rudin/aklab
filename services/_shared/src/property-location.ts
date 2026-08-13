@@ -113,7 +113,7 @@ export function derivePropertyRegion(location: PropertyLocation):
   if (code === '50' || code === '90' || code === '150' || code === '190' || code === '750' || code === '790') return 'mo';
   if (code === '77' || /(?:^|[\s,.;])москв(?:а|е|ой)(?=$|[\s,.;])/u.test(structured)) return 'moscow';
 
-  const explicitMo = /московск(?:ая|ой)\s+област|\bмо\b/u.test(region);
+  const explicitMo = /московск(?:ая|ой)\s+област|\bмо\b/u.test(structured);
   if (explicitMo) return 'mo';
 
   const tverOblast = /тверск(?:ая|ой)\s+област|\bтверская\b/u.test(structured) || code === '69';

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { resolveInvestmoscowSourceUrl } from '../sources/source-url';
+import { InvestmoscowParser } from '../sources/investmoscow';
 
 /**
  * Тесты extraction-логики parser-investmoscow.
@@ -42,7 +43,7 @@ function resolveNuxtRef(data: unknown[], idx: number, depth = 0): unknown {
   return val;
 }
 
-const TENDER_KEYS = ['startPrice', 'objectArea', 'address'];
+const TENDER_KEYS = ['startPrice', 'objectArea'];
 
 function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] {
   const match = html.match(/id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
@@ -98,7 +99,7 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
   const id = String(tender.id ?? '');
   const name = String(tender.name ?? '');
   const url = String(tender.url ?? '');
-  const address = String(tender.address ?? tender.shortAddress ?? tender.objectAddress ?? '');
+  const address = String(tender.address ?? '');
   const area = typeof tender.objectArea === 'number' ? tender.objectArea : undefined;
   const price = typeof tender.startPrice === 'number' ? tender.startPrice : undefined;
   const pricePerSqm = typeof tender.pricePerSquare === 'number' ? tender.pricePerSquare : undefined;
@@ -355,14 +356,14 @@ describe('investmoscow: toProperty', () => {
     expect(prop.url).toBe('https://example.com/tender');
   });
 
-  it('should fallback to shortAddress/objectAddress when address missing', () => {
+  it('should not fallback to shortAddress/objectAddress when structured address is missing', () => {
     const tender1 = { id: 1, shortAddress: 'short addr' };
     const prop1 = toProperty(tender1, 'cat');
-    expect(prop1.address).toContain('short addr');
+    expect(prop1.address).toBe('');
 
     const tender2 = { id: 2, objectAddress: 'obj addr' };
     const prop2 = toProperty(tender2, 'cat');
-    expect(prop2.address).toContain('obj addr');
+    expect(prop2.address).toBe('');
   });
 
   it('should include coordinates when present', () => {
@@ -449,5 +450,120 @@ describe('investmoscow: source URL', () => {
       id: 1,
       url: 'httpx://evil.test/path',
     })).toBe('https://investmoscow.ru/tenders');
+  });
+});
+
+describe('investmoscow: typed property location', () => {
+  async function parseOne(tender: Record<string, unknown>) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `<script id="__NUXT_DATA__">${JSON.stringify([tender])}</script>`,
+    }));
+    try {
+      const [property] = await new InvestmoscowParser().parse(1);
+      return property;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it('returns the exact SSR address as a typed location and projects legacy fields from it', async () => {
+    const address = 'г. Москва, ул. Тверская, д. 1';
+    const property = await parseOne({
+      id: 101,
+      name: 'Офис без географии в title',
+      startPrice: 100,
+      objectArea: 10,
+      address,
+      regionName: 'Москва',
+      regionCode: '77',
+      coords: [55.7558, 37.6173],
+    });
+
+    expect(property.property_location).toEqual({
+      address,
+      region: 'Москва',
+      region_code: '77',
+      latitude: 55.7558,
+      longitude: 37.6173,
+      status: 'confirmed_address',
+      source_kind: 'ssr_field',
+      source_path: 'tender.address',
+    });
+    expect(property.address).toBe(address);
+    expect(property.city).toBe('moscow');
+    expect(property.latitude).toBe(55.7558);
+    expect(property.longitude).toBe(37.6173);
+  });
+
+  it('keeps structured region and paired coordinates when the address field is empty', async () => {
+    const property = await parseOne({
+      id: 102,
+      name: 'Лот без адреса',
+      startPrice: 100,
+      objectArea: 10,
+      address: '',
+      regionName: 'Московская область',
+      regionCode: '50',
+      coords: [55.7, 37.9],
+    });
+
+    expect(property.property_location).toEqual({
+      region: 'Московская область',
+      region_code: '50',
+      latitude: 55.7,
+      longitude: 37.9,
+      status: 'confirmed_region_only',
+      source_kind: 'ssr_field',
+      source_path: 'tender.regionName',
+    });
+    expect(property.address).toBe('');
+    expect(property.city).toBe('mo');
+  });
+
+  it('does not derive location from title or free text when structured fields are absent', async () => {
+    const property = await parseOne({
+      id: 103,
+      name: 'Москва — офис',
+      startPrice: 100,
+      objectArea: 10,
+      address: '',
+      shortAddress: 'г. Москва, ул. Ложная, д. 1',
+      objectAddress: 'г. Москва, ул. Ложная, д. 2',
+      organizerAddress: 'г. Москва, ул. Площадная, д. 2',
+      organizer: { address: 'г. Москва, ул. Организатора, д. 3' },
+      description: 'Свободный текст: объект находится в Москве',
+    });
+
+    expect(property.property_location).toEqual({
+      status: 'missing',
+      source_kind: 'ssr_field',
+      source_path: 'tender.address',
+    });
+    expect(property.address).toBe('');
+    expect(property.city).toBe('other');
+    expect(property.latitude).toBeUndefined();
+    expect(property.longitude).toBeUndefined();
+  });
+
+  it('drops an incomplete structured coordinate pair instead of persisting half-provenance', async () => {
+    const property = await parseOne({
+      id: 104,
+      name: 'Лот с неполными координатами',
+      startPrice: 100,
+      objectArea: 10,
+      address: '',
+      regionName: 'Москва',
+      coords: [55.7],
+    });
+
+    expect(property.property_location).toEqual({
+      region: 'Москва',
+      status: 'confirmed_region_only',
+      source_kind: 'ssr_field',
+      source_path: 'tender.regionName',
+    });
+    expect(property.latitude).toBeUndefined();
+    expect(property.longitude).toBeUndefined();
   });
 });

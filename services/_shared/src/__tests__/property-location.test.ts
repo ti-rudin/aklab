@@ -74,6 +74,15 @@ describe('property location contract', () => {
     })).toBe('tver_oblast');
   });
 
+  it('derives Moscow Oblast from a confirmed structured address without a duplicate region field', () => {
+    expect(derivePropertyRegion({
+      address: 'Московская область, г. Подольск, ул. Ленина, 1',
+      status: 'confirmed_address',
+      source_kind: 'api_field',
+      source_path: 'place.fields[name="Адрес"]',
+    })).toBe('mo');
+  });
+
   it('upgrades a region-only scan with a confirmed detail address without losing scan geography', () => {
     const scan: PropertyLocation = {
       region: 'Республика Башкортостан',

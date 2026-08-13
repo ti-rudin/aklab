@@ -8,7 +8,15 @@
  * компактного массива с обратными ссылками (Nuxt payload).
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, classifyPropertyType, parseAuctionEndAt } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parseAuctionEndAt,
+  projectLegacyAddress,
+  randomDelay,
+  classifyPropertyType,
+} from '@aklab/service-shared';
 import { resolveInvestmoscowSourceUrl } from './source-url';
 
 const BASE_URL = 'https://investmoscow.ru';
@@ -82,9 +90,9 @@ function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] 
   if (!Array.isArray(data)) return [];
 
   const tenders: Record<string, unknown>[] = [];
-  const TENDER_KEYS = ['startPrice', 'objectArea', 'address'];
+  const TENDER_KEYS = ['startPrice', 'objectArea'];
 
-  // Сканируем весь массив и ищем объекты-тендеры (имеют ключи startPrice, objectArea, address)
+  // Сканируем весь массив и ищем объекты-тендеры (имеют ключи startPrice, objectArea).
   for (let i = 0; i < data.length; i++) {
     const item = data[i];
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
@@ -103,18 +111,78 @@ function extractTendersFromNuxtPayload(html: string): Record<string, unknown>[] 
   return tenders;
 }
 
+function structuredText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function structuredCode(value: unknown): string | undefined {
+  if (typeof value === 'string') return structuredText(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function structuredCoordinates(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const [latitude, longitude] = value;
+  if (
+    typeof latitude !== 'number'
+    || typeof longitude !== 'number'
+    || !Number.isFinite(latitude)
+    || !Number.isFinite(longitude)
+    || latitude < -90
+    || latitude > 90
+    || longitude < -180
+    || longitude > 180
+  ) {
+    return undefined;
+  }
+  return [latitude, longitude];
+}
+
+/** Build location only from fields belonging to the current resolved tender. */
+function toPropertyLocation(tender: Record<string, unknown>) {
+  const address = structuredText(tender.address);
+  const region = structuredText(tender.regionName);
+  const regionCode = structuredCode(tender.regionCode);
+  const coords = structuredCoordinates(tender.coords);
+  const status = address
+    ? 'confirmed_address'
+    : region || regionCode || coords
+      ? 'confirmed_region_only'
+      : 'missing';
+  const sourcePath = address
+    ? 'tender.address'
+    : region
+      ? 'tender.regionName'
+      : regionCode
+        ? 'tender.regionCode'
+        : coords
+          ? 'tender.coords'
+          : 'tender.address';
+
+  return normalizeStructuredLocation({
+    ...(address ? { address } : {}),
+    ...(region ? { region } : {}),
+    ...(regionCode ? { region_code: regionCode } : {}),
+    ...(coords ? { latitude: coords[0], longitude: coords[1] } : {}),
+    status,
+    source_kind: 'ssr_field',
+    source_path: sourcePath,
+  });
+}
+
 function toProperty(tender: Record<string, unknown>, categoryLabel: string): ParsedProperty {
   const id = String(tender.id ?? '');
   const name = String(tender.name ?? '');
-  const address = String(tender.address ?? tender.shortAddress ?? tender.objectAddress ?? '');
+  const propertyLocation = toPropertyLocation(tender);
   const area = typeof tender.objectArea === 'number' ? tender.objectArea : undefined;
   const price = typeof tender.startPrice === 'number' ? tender.startPrice : undefined;
   const pricePerSqm = typeof tender.pricePerSquare === 'number' ? tender.pricePerSquare : undefined;
   const region = String(tender.regionName ?? '');
   const district = String(tender.districtName ?? '');
   const objectType = String(tender.objectTypeName ?? '');
-  const coords = Array.isArray(tender.coords) && tender.coords.length >= 2
-    && typeof tender.coords[0] === 'number' ? tender.coords as number[] : undefined;
 
   const titleText = name || objectType;
   const description = [
@@ -131,8 +199,9 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
     external_id: `investmoscow-${id}`,
     url: resolveInvestmoscowSourceUrl(tender),
     title: titleText.slice(0, 300),
-    address: address ? `${region}${district ? ', ' + district : ''}, ${address}` : '',
-    city: 'moscow',
+    address: projectLegacyAddress(propertyLocation),
+    city: derivePropertyRegion(propertyLocation),
+    property_location: propertyLocation,
     area_sqm: area,
     price,
     price_per_sqm: pricePerSqm ?? (price && area ? Math.round(price / area) : undefined),
@@ -141,8 +210,8 @@ function toProperty(tender: Record<string, unknown>, categoryLabel: string): Par
     auction_end_at: parseAuctionEndAt(String(tender.requestEndDate ?? tender.tenderDate ?? '')),
     published_at: tender.updateDate ? String(tender.updateDate).slice(0, 10) : undefined,
     description: description || undefined,
-    latitude: coords?.[0],
-    longitude: coords?.[1],
+    latitude: propertyLocation.latitude,
+    longitude: propertyLocation.longitude,
     photo_urls: Array.isArray(tender.attachedPics)
       ? (tender.attachedPics as string[]).slice(0, 5)
       : undefined,
