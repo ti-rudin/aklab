@@ -62,19 +62,30 @@ const NON_MOSCOW_REGIONS = [
 
 /** Regex для точного определения «Москва» как отдельного слова (НЕ Москва-Кашира) */
 const MOSCOW_RE = /(^|[\s,.()])москва([\s,.()]|$)/i;
+const TVER_RE = /(^|[\s,.()])(?:г\.?\s*)?тверь([\s,.()]|$)/i;
+const TVER_OBLAST_RE = /тверск(?:ая|ой)\s+(?:область|обл\.?)/i;
 
 /**
  * Определяет город/регион по тексту объявления.
  *
  * @param text — произвольный текст (заголовок, адрес, описание)
- * @returns 'moscow' | 'mo' | 'other'
+ * @returns canonical legacy region code; new pipeline uses PropertyLocation instead
  */
-export function detectCity(text: string): 'moscow' | 'mo' | 'other' {
+export function detectCity(text: string): 'moscow' | 'mo' | 'tver' | 'tver_oblast' | 'other' {
   const lower = text.toLowerCase();
 
   // Московская область — по ключевым словам (проверяем первым, т.к. имеет приоритет)
   if (MO_KEYWORDS.some((kw) => lower.includes(kw))) {
     return 'mo';
+  }
+
+  // Transitional compatibility until every parser supplies PropertyLocation.
+  // Keep city and oblast distinct and never infer a full property address here.
+  if (TVER_OBLAST_RE.test(lower)) {
+    return TVER_RE.test(lower) ? 'tver' : 'tver_oblast';
+  }
+  if (TVER_RE.test(lower)) {
+    return 'tver';
   }
 
   // Если текст содержит маркер не-московского региона — сразу 'other',

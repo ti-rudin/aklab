@@ -77,6 +77,18 @@ describe('detectCity', () => {
     });
   });
 
+  // --- Tver / Tver oblast ---
+  describe('Tver region detection', () => {
+    it('distinguishes Tver city from Tver oblast', () => {
+      expect(detectCity('Тверская область, г. Тверь, ул. Советская, 1')).toBe('tver');
+      expect(detectCity('Тверская область, г. Ржев, ул. Ленина, 1')).toBe('tver_oblast');
+    });
+
+    it('detects Tver city without the oblast prefix', () => {
+      expect(detectCity('г. Тверь, набережная Афанасия Никитина')).toBe('tver');
+    });
+  });
+
   // --- Other ---
   describe('other cities', () => {
     it('should return "other" for empty string', () => {
