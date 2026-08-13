@@ -1,4 +1,10 @@
-import { normalizeUserParseProfile, type PropertyType, type Region, type UserParseProfile } from '@aklab/parse-rules';
+import {
+  REGION_VALUES,
+  normalizeUserParseProfile,
+  type PropertyType,
+  type Region,
+  type UserParseProfile,
+} from '@aklab/parse-rules';
 import { buildSingleUserSnapshot } from './user-profile';
 
 export type UserPropertyStatus = 'new' | 'in_progress' | 'viewed' | 'rejected';
@@ -142,7 +148,7 @@ const MAX_PAGE_SIZE = 100;
 const MAX_REQUEST_TEXT_LENGTH = 256;
 const MAX_FILTER_CARDINALITY = 128;
 
-const REGION_SET = new Set<Region>(['moscow', 'mo', 'other']);
+const REGION_SET = new Set<Region>(REGION_VALUES);
 const PROPERTY_TYPE_SET = new Set<PropertyType>([
   'office',
   'warehouse',

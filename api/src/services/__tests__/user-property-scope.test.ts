@@ -171,6 +171,19 @@ describe('compileUserPropertyScope', () => {
     expect(compiled.bindings).toEqual(expect.arrayContaining(['moscow', 'office', 'mo', 'warehouse']));
   });
 
+  it('keeps Tver city and Tver oblast as separate canonical profile and request bindings', () => {
+    const compiled = compileUserPropertyScope(
+      { ...profile, regions: ['tver', 'tver_oblast'] },
+      { city: ['tver_oblast'] },
+    );
+
+    expect(compiled.whereSql).toContain('p.city IN (?,?)');
+    expect(compiled.whereSql).toContain('p.city IN (?)');
+    expect(compiled.bindings).toEqual(expect.arrayContaining(['tver', 'tver_oblast']));
+    expect(compiled.bindings.filter(value => value === 'tver')).toHaveLength(1);
+    expect(compiled.bindings.filter(value => value === 'tver_oblast')).toHaveLength(2);
+  });
+
   it('hides rejected objects by default but exposes them through an explicit status filter', () => {
     const defaultScope = compileUserPropertyScope(profile);
     expect(defaultScope.whereSql).toContain('COALESCE(ups.status, ?) != ?');
