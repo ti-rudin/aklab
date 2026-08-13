@@ -355,6 +355,8 @@ describe('UserPropertyScopeRepository', () => {
       tags: '{bad json',
       photos: '{"private":true}',
       photo_urls: '["https://example.test/photo.jpg"]',
+      property_location: '{"status":"confirmed_region_only","region":"tver_oblast","source_kind":"api_field","source_path":"lot.region"}',
+      parties: '[{"name":"Организатор","roles":["organizer"],"addresses":[{"kind":"legal","value":"Москва"}],"source_path":"lot.organizer","source_kind":"api_field","confidence":"structured"}]',
       user_id: 999,
       comments: [{ id: 999 }],
       authors: [{ id: 999 }],
@@ -365,9 +367,41 @@ describe('UserPropertyScopeRepository', () => {
     const result = await repository.list(7, {});
     expect(result.data[0]).toMatchObject({ documentId: 'property-7', status: 'new', tags: [], photos: [] });
     expect(result.data[0]).toHaveProperty('photo_urls', ['https://example.test/photo.jpg']);
+    expect(result.data[0]).toHaveProperty('property_location', {
+      status: 'confirmed_region_only',
+      region: 'tver_oblast',
+      source_kind: 'api_field',
+      source_path: 'lot.region',
+    });
+    expect(result.data[0]).toHaveProperty('parties', [{
+      name: 'Организатор',
+      roles: ['organizer'],
+      addresses: [{ kind: 'legal', value: 'Москва' }],
+      source_path: 'lot.organizer',
+      source_kind: 'api_field',
+      confidence: 'structured',
+    }]);
     for (const privateKey of ['id', 'user_id', 'comments', 'authors', 'profile_id', 'status_global']) {
       expect(result.data[0]).not.toHaveProperty(privateKey);
     }
+  });
+
+  it('fails closed to nullable/empty DTO fields for malformed typed JSON storage', async () => {
+    const strapi = rawStrapi();
+    strapi.raw
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [{
+        document_id: 'property-7',
+        personal_status: null,
+        photos_downloaded: 0,
+        property_location: '[not-an-object]',
+        parties: '{not-an-array}',
+      }] });
+    const repository = createUserPropertyScopeRepository(strapi, vi.fn().mockResolvedValue(profile));
+
+    const result = await repository.list(7, {});
+    expect(result.data[0]).toHaveProperty('property_location', null);
+    expect(result.data[0]).toHaveProperty('parties', []);
   });
 
   it('fails closed when photos_downloaded is not the SQLite 0/1 representation', async () => {

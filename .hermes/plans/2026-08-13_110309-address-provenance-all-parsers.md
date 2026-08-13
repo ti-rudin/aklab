@@ -20,7 +20,7 @@
 3. **География только имущества:** `city`, геокодинг, пользовательский scope и региональные фильтры получают только `property_location`. `parties[*].addresses` не могут влиять на географию объекта.
 4. **Роли разделены:** залогодержатель/обеспеченный кредитор, должник, организатор, продавец и заказчик — самостоятельные роли. Банк не считается залогодержателем только потому, что это банк или организатор.
 5. **Противоречия не скрываются:** если отдельное поле говорит «Конкурсный кредитор: Нет», а описание говорит «предмет залога в пользу ПАО…», сохраняется explicit provenance второго утверждения; первое не перезаписывается и не превращается в географию.
-6. **Legacy `address`:** временно сохраняется для совместимости, но после перехода заполняется только как `property_location.address ?? null`. Обратное преобразование legacy `address → property_location` запрещено без повторной проверки источника.
+6. **Typed-only cutover:** каждый parser result обязан содержать `property_location`, включая явный `missing`. HTTP upsert не принимает legacy `address/city/coordinates`; API создаёт денормализованные DB-проекции только из validated typed location. Старые строки не мигрируются и удаляются при отдельном approved cleanup.
 7. **Никаких silent fallbacks:** селектор исчез или семантическое поле стало пустым — parser telemetry/лог отмечает `location_status=missing|schema_changed`; парсер не подставляет первое упоминание Москвы.
 
 ---
@@ -33,8 +33,7 @@
 export type PropertyLocationStatus =
   | 'confirmed_address'
   | 'confirmed_region_only'
-  | 'missing'
-  | 'legacy_unverified';
+  | 'missing';
 
 export type StructuredSourceKind =
   | 'dom_field'
@@ -88,7 +87,7 @@ export interface PropertyParty {
 ```ts
 property_location: PropertyLocation;
 parties?: PropertyParty[];
-/** Compatibility projection; never a source of truth. */
+/** Internal denormalized projection; never part of parser HTTP input. */
 address: string;
 ```
 
@@ -99,10 +98,10 @@ address: string;
 - `normalizeStructuredLocation(input): PropertyLocation` — trim/empty/coordinate validation без попыток искать адрес в тексте;
 - `projectLegacyAddress(location): string`;
 - `derivePropertyRegion(location): 'moscow' | 'mo' | 'tver' | 'tver_oblast' | 'other'`;
-- `mergePropertyLocation(scan, details)` — Phase 2 заменяет Phase 1 только если новая структура не `missing`; сведения сторон не принимаются аргументом;
+- `mergePropertyLocation(scan, details)` — `missing`/более слабый detail не стирает scan evidence, а равный/более сильный detail заменяет location record целиком; поля разных `source_path/source_kind` не смешиваются;
 - `dedupeParties(parties)` — внутри одного объекта по `INN`, затем `OGRN`, затем нормализованному имени; объединяет роли и не смешивает типы адресов.
 
-Запретить API вида `detectCity(text: string)` в parser pipeline. Для переходного периода переименовать текущий текстовый helper или закрыть его за adapter, но `parse-handler` должен принимать только `PropertyLocation`.
+`detectCity(text)` и любые текстовые geography adapters удаляются из parser pipeline; единственный вход — `PropertyLocation`.
 
 ---
 
@@ -165,7 +164,7 @@ npx vitest run services/_shared/src/__tests__/property-location.test.ts
 - detail возвращает party с московским legal address и property region Башкортостан → `city` остаётся `other`;
 - M-ETS-like fixture без structured full address не получает address из description;
 - Phase 2 structured address корректно заменяет `confirmed_region_only`;
-- payload в Strapi содержит `property_location`, `parties`, а legacy `address` равен только confirmed full address;
+- parser HTTP payload содержит `property_location` и `parties`, но не содержит legacy `address/city/coordinates`; API сам создаёт DB-проекции;
 - отсутствие property location не маскируется `title` fallback.
 
 ### Task 3: Расширить Strapi schema и service ingestion allowlist
@@ -175,12 +174,12 @@ npx vitest run services/_shared/src/__tests__/property-location.test.ts
 - Modify: `api/src/api/property/controllers/property.ts`
 - Modify: `api/src/api/property/services/property.ts`
 - Modify: тесты internal/service upsert рядом с соответствующими controller/service tests
-- Add a manual migration/backfill script under `scripts/` only after schema tests
+- Do not add a migration/backfill script: old object rows are disposable and removed by the separately approved cleanup
 
 **Schema fields:**
 
 ```json
-"property_location": { "type": "json" },
+"property_location": { "type": "json", "required": true },
 "parties": { "type": "json", "default": [] }
 ```
 
@@ -336,7 +335,7 @@ Update every hardcoded `moscow/mo/other` list found by repository search. Do not
    - INN/OGRN/KPP;
    - legal/postal/actual addresses with explicit labels;
    - never label a party address as object address.
-3. Legacy row with `legacy_unverified` must show warning and must not be used as primary location.
+3. Каталог после cutover состоит только из freshly reparsed typed rows; UI не содержит legacy/backfill режима.
 4. Both themes/mobile/ARIA: semantic headings, definition lists, no horizontal overflow.
 
 ### Task 9: Restore admin catalog cleanup and run a full reparse

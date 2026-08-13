@@ -52,6 +52,42 @@ export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
 export const REGION_VALUES: readonly Region[] = Object.values(Region);
 export const PROPERTY_TYPE_VALUES: readonly PropertyType[] = Object.values(PropertyType);
 
+export interface StructuredLocationRegionInput {
+  address?: string;
+  region?: string;
+  region_code?: string;
+}
+
+/** Derive a canonical region exclusively from typed structured location fields. */
+export function regionFromStructuredLocation(location: StructuredLocationRegionInput): Region {
+  const canonicalRegion = location.region?.trim().toLocaleLowerCase('ru-RU');
+  if (canonicalRegion && REGION_VALUES.includes(canonicalRegion as Region)) {
+    return canonicalRegion as Region;
+  }
+
+  const region = `${location.region ?? ''} ${location.region_code ?? ''}`.trim().toLocaleLowerCase('ru-RU');
+  const address = (location.address ?? '').toLocaleLowerCase('ru-RU');
+  const code = (location.region_code ?? '').trim();
+  const explicitRegion = region.length > 0;
+  const structured = explicitRegion ? region : address;
+
+  if (/башкортостан/u.test(structured) || code === '02') return Region.other;
+  if (['50', '90', '150', '190', '750', '790'].includes(code)) return Region.mo;
+  if (code === '77' || /(?:^|[\s,.;])москв(?:а|е|ой)(?=$|[\s,.;])/u.test(structured)) {
+    return Region.moscow;
+  }
+  if (/московск(?:ая|ой)\s+област|\bмо\b/u.test(structured)) return Region.mo;
+
+  const tverOblast = /тверск(?:ая|ой)\s+област|\bтверская\b/u.test(structured) || code === '69';
+  if (tverOblast) {
+    return /(?:^|[\s,.;])(?:г\.?\s*)?тверь(?=$|[\s,.;])/u.test(address)
+      ? Region.tver
+      : Region.tver_oblast;
+  }
+  if (/(?:^|[\s,.;])(?:г\.?\s*)?тверь(?=$|[\s,.;])/u.test(structured)) return Region.tver;
+  return Region.other;
+}
+
 const MAX_CANONICAL_ARRAY_ITEMS = 128;
 const MAX_CANONICAL_STRING_LENGTH = 256;
 

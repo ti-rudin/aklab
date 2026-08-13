@@ -1,3 +1,4 @@
+import { regionFromStructuredLocation } from '@aklab/parse-rules';
 import type {
   PartyAddress,
   PropertyLocation,
@@ -8,16 +9,14 @@ import type {
 
 const LOCATION_STRENGTH = {
   missing: 0,
-  legacy_unverified: 1,
-  confirmed_region_only: 2,
-  confirmed_address: 3,
+  confirmed_region_only: 1,
+  confirmed_address: 2,
 } as const;
 
 const LOCATION_STATUSES: readonly PropertyLocationStatus[] = [
   'confirmed_address',
   'confirmed_region_only',
   'missing',
-  'legacy_unverified',
 ];
 
 const SOURCE_KINDS: readonly StructuredSourceKind[] = [
@@ -70,6 +69,9 @@ export function normalizeStructuredLocation(input: StructuredLocationInput): Pro
   if (input.status === 'confirmed_address' && !address) {
     invalid('confirmed_address requires address');
   }
+  if (input.status === 'confirmed_region_only' && address) {
+    invalid('confirmed_region_only cannot contain address');
+  }
   if (input.status === 'confirmed_region_only' && !region && !regionCode && latitude === undefined) {
     invalid('confirmed_region_only requires region, region_code, or coordinates');
   }
@@ -104,50 +106,17 @@ export function derivePropertyRegion(location: PropertyLocation):
   | 'tver'
   | 'tver_oblast'
   | 'other' {
-  const region = `${location.region ?? ''} ${location.region_code ?? ''}`.toLocaleLowerCase('ru-RU');
-  const address = (location.address ?? '').toLocaleLowerCase('ru-RU');
-  const structured = `${region} ${address}`;
-  const code = (location.region_code ?? '').trim();
-
-  if (/башкортостан/u.test(structured) || code === '02') return 'other';
-  if (code === '50' || code === '90' || code === '150' || code === '190' || code === '750' || code === '790') return 'mo';
-  if (code === '77' || /(?:^|[\s,.;])москв(?:а|е|ой)(?=$|[\s,.;])/u.test(structured)) return 'moscow';
-
-  const explicitMo = /московск(?:ая|ой)\s+област|\bмо\b/u.test(structured);
-  if (explicitMo) return 'mo';
-
-  const tverOblast = /тверск(?:ая|ой)\s+област|\bтверская\b/u.test(structured) || code === '69';
-  if (tverOblast) {
-    return /(?:^|[\s,.;])(?:г\.?\s*)?тверь(?=$|[\s,.;])/u.test(address)
-      ? 'tver'
-      : 'tver_oblast';
-  }
-  if (/(?:^|[\s,.;])(?:г\.?\s*)?тверь(?=$|[\s,.;])/u.test(structured)) return 'tver';
-  return 'other';
+  return regionFromStructuredLocation(location);
 }
 
-/** Merge scan/details locations without allowing missing details to erase evidence. */
+/** Merge scan/details locations without mixing fields from different provenance. */
 export function mergePropertyLocation(
   scan: PropertyLocation,
   details: PropertyLocation,
 ): PropertyLocation {
   if (details.status === 'missing') return scan;
   if (LOCATION_STRENGTH[scan.status] > LOCATION_STRENGTH[details.status]) return scan;
-
-  return {
-    ...scan,
-    ...details,
-    ...(details.region === undefined && scan.region !== undefined ? { region: scan.region } : {}),
-    ...(details.region_code === undefined && scan.region_code !== undefined
-      ? { region_code: scan.region_code }
-      : {}),
-    ...(details.latitude === undefined && scan.latitude !== undefined
-      ? { latitude: scan.latitude }
-      : {}),
-    ...(details.longitude === undefined && scan.longitude !== undefined
-      ? { longitude: scan.longitude }
-      : {}),
-  };
+  return { ...details };
 }
 
 function identity(value: string): string {

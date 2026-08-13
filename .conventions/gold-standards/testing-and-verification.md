@@ -41,6 +41,8 @@
 
 После corrective patch старый GREEN устаревает — повторить relevant gate.
 
+Vitest/Jest include patterns должны охватывать все canonical test directories. Существование test-файла не является evidence, пока package script фактически не собрал и не выполнил его; сверять final file/test counts.
+
 ## 4. AKLAB команды
 
 ```bash

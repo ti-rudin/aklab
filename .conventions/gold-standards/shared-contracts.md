@@ -14,18 +14,21 @@ Consumer импортирует canonical values либо реализует у�
 
 ## 2. Property location
 
-География имущества представляется `property_location`, а legacy `address/city/latitude/longitude` — только projection для совместимости.
+География имущества представляется обязательным `property_location`.
+Parser/worker HTTP payload не содержит `address/city/latitude/longitude`: эти DB-колонки являются только server-derived денормализованной проекцией typed location.
 
 Инварианты:
 
 - `confirmed_address` требует непустой структурированный address;
-- `confirmed_region_only` требует region, region_code или пару координат;
+- `confirmed_region_only` требует region, region_code или пару координат и не содержит address;
 - `missing` не содержит location data;
 - координаты передаются только парой и проходят finite/range validation;
 - `source_kind` ограничен семантически структурированными источниками;
 - `source_path` непустой и указывает конкретное поле/селектор;
 - `derivePropertyRegion()` читает только typed location;
-- legacy address появляется только из `confirmed_address`.
+- денормализованный address появляется только из `confirmed_address`.
+- parser output без `property_location` отклоняется до artifact, identity lookup и persistence.
+- статус `legacy_unverified` отсутствует; hard cutover не поддерживает legacy payload compatibility.
 
 ## 3. Parties отдельно от имущества
 
@@ -39,10 +42,12 @@ Consumer импортирует canonical values либо реализует у�
 
 ## 4. Merge semantics
 
-Scan и details объединяются типизированно:
+Scan и details объединяются целыми provenance records:
 
-- `undefined/null` из details не стирает подтверждённое scan value;
 - `missing` details не ослабляет более сильное scan evidence;
+- более слабый detail record не понижает scan record;
+- detail record равной или большей силы заменяет scan record целиком;
+- поля разных `source_path/source_kind` нельзя смешивать в одном `PropertyLocation`;
 - полный адрес сильнее region-only;
 - parties объединяются отдельным helper;
 - после чтения scan artifact typed data заново валидируется — JSON artifact не является trusted input.
@@ -58,9 +63,11 @@ source parser
   → ParsedProperty
   → scan artifact validation
   → details merge
-  → legacy projections
+  → local derived projections for filtering
   → Strapi client
+  → typed-only HTTP payload
   → API parser-owned allowlist
+  → server-derived DB projections
   → SQLite serialization
   → scoped DTO mapping
 ```

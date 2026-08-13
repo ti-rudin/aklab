@@ -2,6 +2,7 @@
  * Composable for focus-tab UI state: supported filters, sorting, selection and pagination.
  */
 import { ref, reactive, computed, watch, type Ref } from 'vue'
+import { createRegionSelection, type RegionSelection } from '@/constants/regions'
 
 /** Tags hidden from UI — city is already shown separately */
 export const HIDDEN_TAGS = ['moscow_mo']
@@ -19,7 +20,7 @@ export interface FocusItemIdentity {
 
 export interface FocusFilterState {
   threshold: number
-  cities: { moscow: boolean; mo: boolean; other: boolean }
+  cities: RegionSelection
   property_type: string[]
   status: string
 }
@@ -80,7 +81,7 @@ export function useFocusTab<T extends FocusItemIdentity>(
 
   const focusFilters = reactive<FocusFilterState>({
     threshold: 20,
-    cities: { moscow: true, mo: true, other: true },
+    cities: createRegionSelection(),
     property_type: [],
     status: '',
   })
@@ -112,9 +113,7 @@ export function useFocusTab<T extends FocusItemIdentity>(
 
   function resetFocusFilters() {
     focusFilters.threshold = 20
-    focusFilters.cities.moscow = true
-    focusFilters.cities.mo = true
-    focusFilters.cities.other = true
+    Object.assign(focusFilters.cities, createRegionSelection())
     focusFilters.property_type = []
     focusFilters.status = ''
   }

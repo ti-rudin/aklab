@@ -74,6 +74,8 @@ export interface UserPropertyDto {
   tags: unknown[];
   photo_urls: string[];
   photos: unknown[];
+  property_location: Record<string, unknown> | null;
+  parties: unknown[];
   minimum_price: unknown;
   first_seen_at: unknown;
   createdAt: unknown;
@@ -199,6 +201,8 @@ const SELECT_COLUMNS = [
   'p.tags AS tags',
   'p.photo_urls AS photo_urls',
   'p.photos AS photos',
+  'p.property_location AS property_location',
+  'p.parties AS parties',
   'p.minimum_price AS minimum_price',
   'p.first_seen_at AS first_seen_at',
   'p.created_at AS created_at',
@@ -522,6 +526,18 @@ function safeJsonArray(value: unknown, stringsOnly = false): unknown[] {
   return parsed;
 }
 
+function safeJsonObject(value: unknown): Record<string, unknown> | null {
+  let parsed: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return isRecord(parsed) ? parsed : null;
+}
+
 function mapSqliteBoolean(value: unknown): boolean {
   // The explicit SELECT always supplies this column; absent legacy/mock rows fail closed to false.
   if (value === undefined || value === 0) return false;
@@ -569,6 +585,8 @@ function mapDto(row: Record<string, unknown>): UserPropertyDto {
     tags: safeJsonArray(row.tags, true),
     photo_urls: safeJsonArray(row.photo_urls, true) as string[],
     photos: safeJsonArray(row.photos),
+    property_location: safeJsonObject(row.property_location),
+    parties: safeJsonArray(row.parties),
     minimum_price: row.minimum_price,
     first_seen_at: row.first_seen_at,
     createdAt: row.created_at,

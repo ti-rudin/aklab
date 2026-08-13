@@ -9,7 +9,7 @@ export { startQueueWorker, stopQueueWorker, gracefulStopQueueWorker } from './qu
 export { propertyExists, createProperty, updateSourceStats, resetSourceDetailsCounters, logCron, fetchProperty, findActiveMarketReference, fetchSetting, updateProperty } from './strapi-client';
 export { createParseHandler } from './parse-handler';
 export { randomDelay, USER_AGENTS, getRandomUA, retryGoto, createStealthContext } from './anti-ban';
-export { detectCity } from './city-detect';
+
 export { classifyPropertyType } from './property-classifier';
 export { extractAuctionEndAt, hasAuctionEnded, parseAuctionEndAt } from './auction-date';
 export { parsePrice } from './price';

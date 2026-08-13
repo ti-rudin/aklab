@@ -2,9 +2,10 @@
  * Canonical formatters for property-related labels and styles.
  * Consolidated from PropertyListView, PropertyDetailView, MarketReferencesView.
  */
+import { REGION_COMPACT_LABELS, type Region } from '@/constants/regions'
 
 export const cityLabel = (v?: string): string =>
-  ({ moscow: 'Москва', mo: 'МО', other: 'Другой' })[v || ''] || v || ''
+  REGION_COMPACT_LABELS[v as Region] || v || ''
 
 export const typeLabel = (v?: string): string =>
   ({

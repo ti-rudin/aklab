@@ -3,12 +3,26 @@
  * curl_cffi Python subprocess — batch mode (один вызов, все данные).
  */
 import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, classifyPropertyType } from '@aklab/service-shared';
+import {
+  logger,
+  classifyPropertyType,
+  derivePropertyRegion,
+  normalizeStructuredLocation,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 
 const execFileAsync = promisify(execFile);
+
+function missingFedresursPropertyLocation(sourcePath: string) {
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'api_field',
+    source_path: sourcePath,
+  });
+}
 
 const COMMERCIAL_KEYWORDS = [
   'нежилое', 'нежилого', 'нежилые', 'нежилых',
@@ -93,9 +107,8 @@ export class FedresursParser implements SourceParser {
     // === Process pledged subjects ===
     for (const item of (data.pledged_subjects || [])) {
       const pledge = item.pledge || {};
-      const address = pledge.address || '';
       const description = pledge.description || '';
-      const fullText = `${address} ${description}`;
+      const fullText = `${pledge.address || ''} ${description}`;
 
       if (!isMoscow(fullText)) continue;
       if (!isCommercialRealEstate(fullText)) continue;
@@ -103,12 +116,14 @@ export class FedresursParser implements SourceParser {
       const area = extractArea(description);
       const price = typeof item.startPrice === 'number' ? item.startPrice : undefined;
 
+      const propertyLocation = missingFedresursPropertyLocation('pledged_subject.property_location');
       allProperties.push({
         external_id: `fedresurs-pledged-${item.guid || item.tradeNumber}`,
         url: `https://fedresurs.ru/TradeCard/${item.guid || item.startMessage?.guid}`,
         title: `Лот ${item.tradeNumber || ''}: ${description.slice(0, 100)}`.trim(),
-        address: address || undefined,
-        city: 'moscow',
+        address: projectLegacyAddress(propertyLocation),
+        city: derivePropertyRegion(propertyLocation),
+        property_location: propertyLocation,
         area_sqm: area,
         price,
         price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -130,15 +145,15 @@ export class FedresursParser implements SourceParser {
 
         const area = extractArea(tradeObject);
         const price = typeof lot.startPrice === 'number' ? lot.startPrice : undefined;
-        const addrMatch = tradeObject.match(/(?:адрес|расположен|находится)[:\s]*([^<\n]{5,100})/i);
-        const address = addrMatch ? addrMatch[1].trim() : '';
 
+        const propertyLocation = missingFedresursPropertyLocation('bidding.lot.property_location');
         allProperties.push({
           external_id: `fedresurs-lot-${lot.guid || `${bidding.guid}-${lot.number}`}`,
           url: `https://fedresurs.ru/TradeCard/${bidding.guid}`,
           title: `Торги ${bidding.number || ''}, лот ${lot.number || ''}: ${tradeObject.replace(/<[^>]+>/g, '').slice(0, 100)}`.trim(),
-          address: address || undefined,
-          city: 'moscow',
+          address: projectLegacyAddress(propertyLocation),
+          city: derivePropertyRegion(propertyLocation),
+          property_location: propertyLocation,
           area_sqm: area,
           price,
           price_per_sqm: price && area ? Math.round(price / area) : undefined,

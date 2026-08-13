@@ -15,7 +15,7 @@
 ## Стандарты
 
 - [`workflow-and-ownership.md`](workflow-and-ownership.md) — discovery, scope, concurrent worktree, side effects.
-- [`shared-contracts.md`](shared-contracts.md) — canonical types, normalization, merge и legacy projection.
+- [`shared-contracts.md`](shared-contracts.md) — canonical types, normalization, merge и typed-only geography boundary.
 - [`parser-extraction.md`](parser-extraction.md) — source-faithful extraction, property location и parties.
 - [`strapi-api.md`](strapi-api.md) — Strapi 5, Query Engine, allowlists, JSON/SQLite и scoped DTO.
 - [`testing-and-verification.md`](testing-and-verification.md) — TDD и доказательный verification ladder.

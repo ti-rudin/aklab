@@ -12,6 +12,14 @@
 
 Parser upsert принимает только явный `PARSER_OWNED_FIELDS` allowlist.
 
+Hard-cutover contract:
+
+- `property_location` обязателен;
+- parser/worker не отправляет `address`, `city`, `latitude`, `longitude`;
+- API отклоняет эти stale caller fields, а не молча перезаписывает;
+- DB geography columns вычисляются server-side только из validated `property_location`;
+- nested JSON использует exact key allowlists, неизвестные keys отклоняются до identity lookup.
+
 Запрещено:
 
 - передавать request `data` в ORM через безусловный spread;
@@ -27,7 +35,9 @@ Parser upsert принимает только явный `PARSER_OWNED_FIELDS` a
 - finite numbers;
 - URL/string/array shape;
 - nested `property_location` и `parties` invariants;
-- cross-field projection consistency, где это часть contract.
+- status/data consistency (`region-only` без address, `missing` без location data);
+- pair/range coordinates;
+- party fields не участвуют в DB geography projection.
 
 ## 3. JSON и SQLite
 
@@ -62,7 +72,7 @@ Multi-user reads используют один canonical positive scope.
 - SELECT перечисляет explicit columns.
 - Mapper возвращает allowlisted DTO.
 - Internal IDs, relations, ownership и global workflow не протекают.
-- JSON parsed строго: malformed provenance/parties fail closed; legacy absence может нормализоваться в documented `null`/`[]`.
+- JSON parsed строго: malformed provenance/parties fail closed; отсутствие required `property_location` — contract violation.
 - Detail вне scope возвращает indistinguishable not-found semantics.
 - Party data не участвует в city/profile scope predicate.
 

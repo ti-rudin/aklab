@@ -43,7 +43,7 @@ export async function seedSettings(strapi: StrapiInstance): Promise<void> {
         retention_months: 6,
         active_sources: ['fabrikant', 'torgi-gov', 'aggregator-bankrot', 'alfalot', 'etprf', 'sberbank-ast', 'invest-mosreg', 'investmoscow', 'roseltorg', 'm-ets'],
         smtp_to: process.env.SMTP_TO || 'a@rudin.ru',
-        monitored_regions: ['moscow', 'mo', 'other'],
+        monitored_regions: ['moscow', 'mo', 'tver', 'tver_oblast', 'other'],
         stop_words: [],
       },
     });

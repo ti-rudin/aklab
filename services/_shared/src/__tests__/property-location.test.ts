@@ -9,6 +9,24 @@ import {
 import type { PropertyLocation, PropertyParty } from '../types';
 
 describe('property location contract', () => {
+  it('rejects the removed legacy-unverified status', () => {
+    expect(() => normalizeStructuredLocation({
+      status: 'legacy_unverified',
+      source_kind: 'api_field',
+      source_path: 'legacy.address',
+    } as never)).toThrow('Invalid property location: status is required');
+  });
+
+  it('rejects a full address under the region-only status', () => {
+    expect(() => normalizeStructuredLocation({
+      status: 'confirmed_region_only',
+      address: 'г. Москва, ул. Тверская, 1',
+      region: 'Москва',
+      source_kind: 'api_field',
+      source_path: 'lot.region',
+    })).toThrow('confirmed_region_only cannot contain address');
+  });
+
   it('projects legacy address only from a confirmed property location', () => {
     const confirmed: PropertyLocation = {
       address: 'г. Тверь, ул. Советская, 1',
@@ -83,7 +101,7 @@ describe('property location contract', () => {
     })).toBe('mo');
   });
 
-  it('upgrades a region-only scan with a confirmed detail address without losing scan geography', () => {
+  it('upgrades a region-only scan without mixing fields from different provenance', () => {
     const scan: PropertyLocation = {
       region: 'Республика Башкортостан',
       latitude: 54.7,
@@ -99,15 +117,29 @@ describe('property location contract', () => {
       source_path: '.lot-address',
     };
 
-    expect(mergePropertyLocation(scan, details)).toEqual({
-      address: details.address,
-      region: scan.region,
-      latitude: scan.latitude,
-      longitude: scan.longitude,
+    expect(mergePropertyLocation(scan, details)).toEqual(details);
+  });
+
+  it('does not let an older scan region override a contradictory confirmed detail address', () => {
+    const merged = mergePropertyLocation({
+      region: 'Тверская область',
+      status: 'confirmed_region_only',
+      source_kind: 'api_field',
+      source_path: 'scan.region',
+    }, {
+      address: 'г. Москва, ул. Вавилова, 19',
       status: 'confirmed_address',
-      source_kind: details.source_kind,
-      source_path: details.source_path,
+      source_kind: 'dom_field',
+      source_path: 'detail.address',
     });
+
+    expect(merged).toEqual({
+      address: 'г. Москва, ул. Вавилова, 19',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: 'detail.address',
+    });
+    expect(derivePropertyRegion(merged)).toBe('moscow');
   });
 
   it('does not let a missing detail location erase a confirmed scan location', () => {

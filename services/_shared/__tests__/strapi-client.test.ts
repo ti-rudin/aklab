@@ -115,6 +115,12 @@ describe('propertyExists()', () => {
 // ─── createProperty ─────────────────────────────────────────────────────────
 
 describe('createProperty()', () => {
+  const missingLocation = {
+    status: 'missing' as const,
+    source_kind: 'api_field' as const,
+    source_path: 'test.property_location',
+  };
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -128,6 +134,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'tender',
       external_id: 'ext-1',
+      property_location: missingLocation,
       url: 'https://example.com/1',
       title: 'Склад на юге Москвы',
       address: 'ул. Промышленная, 1',
@@ -193,10 +200,11 @@ describe('createProperty()', () => {
     const body = JSON.parse((globalThis.fetch as any).mock.calls[1][1].body).data;
     expect(body.property_location).toEqual(propertyLocation);
     expect(body.parties).toEqual(parties);
-    expect(body.address).toBe('');
-    expect(body.city).toBe('other');
-    expect(body.latitude).toBe(54.7);
-    expect(body.longitude).toBe(55.9);
+    expect(body).not.toHaveProperty('address');
+    expect(body).not.toHaveProperty('city');
+    expect(body).not.toHaveProperty('latitude');
+    expect(body).not.toHaveProperty('longitude');
+    expect(body).not.toHaveProperty('rules');
   });
 
   test('rejects an invalid typed location before any persistence request', async () => {
@@ -232,6 +240,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'tender',
       external_id: 'ext-concurrent',
+      property_location: missingLocation,
       url: 'https://example.com/concurrent',
       title: 'Склад',
       address: 'addr',
@@ -255,6 +264,7 @@ describe('createProperty()', () => {
     await createProperty({
       source: 'tender',
       external_id: 'ext-2',
+      property_location: missingLocation,
       url: 'https://example.com/2',
       title: 'Офис в центре',
       address: 'ул. Центральная, 5',
@@ -275,6 +285,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'tender',
       external_id: 'ext-3',
+      property_location: missingLocation,
       url: 'https://example.com/3',
       title: 'Жилой дом с участком ИЖС',
       address: 'ул. Дачная, 1',
@@ -293,6 +304,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'tender',
       external_id: 'ext-4',
+      property_location: missingLocation,
       url: 'https://example.com/4',
       title: 'Склад без цены',
       address: 'ул. Складская, 2',
@@ -314,6 +326,7 @@ describe('createProperty()', () => {
       createProperty({
         source: 'tender',
         external_id: 'ext-5',
+      property_location: missingLocation,
         url: 'https://example.com/5',
         title: 'Склад',
         address: 'addr',
@@ -335,6 +348,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'market',
       external_id: 'ext-6',
+      property_location: missingLocation,
       url: 'https://example.com/6',
       title: 'Легковой автомобиль Toyota',
       address: 'addr',
@@ -358,6 +372,7 @@ describe('createProperty()', () => {
     const result = await createProperty({
       source: 'tender',
       external_id: 'ext-dup',
+      property_location: missingLocation,
       url: 'https://example.com/dup',
       title: 'Дубликат',
       address: 'addr',

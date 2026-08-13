@@ -184,7 +184,7 @@ export async function createProperty(props: {
   photo_urls?: string[];
   latitude?: number;
   longitude?: number;
-  property_location?: PropertyLocation;
+  property_location: PropertyLocation;
   parties?: PropertyParty[];
   rules?: ParseRules;
 }): Promise<any> {
@@ -192,23 +192,14 @@ export async function createProperty(props: {
   // (деструктурируем ПОСЛЕ всех мутаций props — ниже перед POST)
   const { rules, ...restProps } = props as any;
 
-  // Normalize and project geography before any filter, deduplication, or
-  // persistence side effect. Free-form legacy fields are never a source.
-  if (restProps.property_location !== undefined) {
-    const location = normalizeStructuredLocation(restProps.property_location);
-    restProps.property_location = location;
-    restProps.address = projectLegacyAddress(location);
-    restProps.city = derivePropertyRegion(location);
-    restProps.latitude = location.latitude;
-    restProps.longitude = location.longitude;
-  } else {
-    // Transitional compatibility: keep the candidate processable, but do not
-    // certify an arbitrary legacy address/city or fabricate provenance.
-    restProps.address = '';
-    restProps.city = 'other';
-    restProps.latitude = undefined;
-    restProps.longitude = undefined;
-  }
+  // Normalize typed geography before filters. The denormalized projection is
+  // local-only; the API recomputes persisted legacy columns from this contract.
+  const location = normalizeStructuredLocation(restProps.property_location);
+  restProps.property_location = location;
+  restProps.address = projectLegacyAddress(location);
+  restProps.city = derivePropertyRegion(location);
+  restProps.latitude = location.latitude;
+  restProps.longitude = location.longitude;
   if (restProps.parties !== undefined) {
     restProps.parties = dedupeParties(restProps.parties);
   }
@@ -280,10 +271,15 @@ export async function createProperty(props: {
 
   // DB-backed identity upsert closes the check-then-create race: another parser
   // may win after propertyExists(), in which case the endpoint returns it safely.
+  const postData = { ...restProps, first_seen_at: new Date().toISOString() };
+  delete postData.address;
+  delete postData.city;
+  delete postData.latitude;
+  delete postData.longitude;
   const res = await fetch(`${BASE}/properties/upsert`, {
     method: 'POST',
     headers: HEADERS,
-    body: JSON.stringify({ data: { ...restProps, first_seen_at: new Date().toISOString() } }),
+    body: JSON.stringify({ data: postData }),
   });
   if (!res.ok) {
     const body = await res.text();

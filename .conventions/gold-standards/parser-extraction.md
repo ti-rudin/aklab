@@ -19,7 +19,8 @@
 - адрес организатора, должника, продавца, заказчика, банка или залогодержателя;
 - hardcoded city без source contract, явно доказывающего фиксированный регион.
 
-Если подтверждённого поля нет: `missing`. Если есть только регион: `confirmed_region_only` с пустым legacy address.
+Если подтверждённого поля нет: явный typed `missing`. Если есть только регион: `confirmed_region_only` без address.
+Каждый parser result обязан содержать `property_location`; shared pipeline не синтезирует compatibility fallback.
 
 ## 2. Provenance
 
@@ -43,7 +44,7 @@ Party-данные извлекаются только из ограниченн
 ## 4. Scan и details
 
 - Listing location может быть `missing`, если detail page содержит точное поле.
-- Details не имеет права возвращать legacy address без typed `property_location`.
+- Details не имеет права возвращать address/city/coordinates вне typed `property_location`.
 - Исчезнувший selector — schema/degraded signal, не повод сканировать всю страницу.
 - Каждый Playwright page закрывается в `finally`; shared context создаётся pipeline и не закрывается parser-методом.
 - Никаких неограниченных retry; delays/backoff задаются с первого релиза parser integration.

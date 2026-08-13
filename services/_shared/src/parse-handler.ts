@@ -92,25 +92,18 @@ function isInvalidPropertyLocationError(error: unknown): boolean {
   return error instanceof TypeError && error.message.startsWith('Invalid property location:');
 }
 
-/**
- * Canonicalize the only trusted geography boundary. Legacy properties remain
- * processable during the compatibility wave, but their legacy address/city
- * and coordinates are deliberately discarded instead of being certified.
- */
+/** Canonicalize the only trusted geography boundary. */
 function canonicalizeProperty(prop: any): void {
-  if (prop.property_location !== undefined) {
-    const location = normalizeStructuredLocation(prop.property_location as any);
-    prop.property_location = location;
-    prop.address = projectLegacyAddress(location);
-    prop.city = derivePropertyRegion(location);
-    prop.latitude = location.latitude;
-    prop.longitude = location.longitude;
-  } else {
-    prop.address = '';
-    prop.city = 'other';
-    prop.latitude = undefined;
-    prop.longitude = undefined;
+  if (prop.property_location === undefined) {
+    throw new TypeError('Invalid property location: property_location is required');
   }
+
+  const location = normalizeStructuredLocation(prop.property_location as any);
+  prop.property_location = location;
+  prop.address = projectLegacyAddress(location);
+  prop.city = derivePropertyRegion(location);
+  prop.latitude = location.latitude;
+  prop.longitude = location.longitude;
 
   if (prop.parties !== undefined) {
     prop.parties = dedupeParties(prop.parties);
@@ -392,9 +385,7 @@ export function createParseHandler(parser: SourceParser) {
                   if (details && Object.keys(details).length > 0) {
                     if (details.property_location !== undefined) {
                       const detailLocation = normalizeStructuredLocation(details.property_location as any);
-                      const location = prop.property_location
-                        ? mergePropertyLocation(prop.property_location, detailLocation)
-                        : detailLocation;
+                      const location = mergePropertyLocation(prop.property_location, detailLocation);
                       prop.property_location = location;
                       prop.address = projectLegacyAddress(location);
                       prop.city = derivePropertyRegion(location);
@@ -473,7 +464,7 @@ export function createParseHandler(parser: SourceParser) {
                 contacts: prop.contacts,
                 latitude: prop.latitude,
                 longitude: prop.longitude,
-                ...(prop.property_location !== undefined ? { property_location: prop.property_location } : {}),
+                property_location: prop.property_location,
                 ...(prop.parties !== undefined ? { parties: prop.parties } : {}),
                 rules: filterContext.usesSnapshot ? undefined : req.rules,
               });

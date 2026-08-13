@@ -765,7 +765,6 @@ describe('createParseHandler()', () => {
       city: 'other',
       property_location: expect.objectContaining({
         address: 'г. Уфа, ул. Ленина, 1',
-        region: 'Республика Башкортостан',
         status: 'confirmed_address',
       }),
     }));
@@ -792,24 +791,21 @@ describe('createParseHandler()', () => {
     expect(createProperty).not.toHaveBeenCalled();
   });
 
-  test('does not certify legacy address or city when property_location is absent', async () => {
-    (propertyExists as any).mockResolvedValue(false);
-    (createProperty as any).mockResolvedValue({ id: 1 });
+  test('rejects parser output without typed property location before side effects', async () => {
     const parser = makeParser([{
       ...defaultProps[0],
-      external_id: 'legacy-without-location',
+      external_id: 'without-location',
       title: 'Москва в title',
       address: 'Москва из legacy address',
       city: 'moscow',
       property_location: undefined,
     }]);
 
-    await createParseHandler(parser)(makeJob({ source: 'legacy-without-location-source' }));
+    await expect(createParseHandler(parser)(makeJob({
+      source: 'without-location-source',
+    }))).rejects.toThrow('property_location is required');
 
-    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({
-      address: '',
-      city: 'other',
-    }));
-    expect((createProperty as any).mock.calls[0][0]).not.toHaveProperty('property_location');
+    expect(propertyExists).not.toHaveBeenCalled();
+    expect(createProperty).not.toHaveBeenCalled();
   });
 });

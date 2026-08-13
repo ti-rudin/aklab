@@ -96,14 +96,23 @@
     "address": {
       "type": "text"
     },
+    "property_location": {
+      "type": "json",
+      "required": true
+    },
+    "parties": {
+      "type": "json"
+    },
     "city": {
       "type": "enumeration",
       "enum": [
         "moscow",
         "mo",
+        "tver",
+        "tver_oblast",
         "other"
       ],
-      "default": "moscow"
+      "default": "other"
     },
     "area_sqm": {
       "type": "decimal"

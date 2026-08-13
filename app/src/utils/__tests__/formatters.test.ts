@@ -40,16 +40,14 @@ describe('tagLabel', () => {
 
 // ── cityLabel ────────────────────────────────────────────────────
 describe('cityLabel', () => {
-  it('moscow → "Москва"', () => {
-    expect(cityLabel('moscow')).toBe('Москва')
-  })
-
-  it('mo → "МО"', () => {
-    expect(cityLabel('mo')).toBe('МО')
-  })
-
-  it('other → "Другой"', () => {
-    expect(cityLabel('other')).toBe('Другой')
+  it.each([
+    ['moscow', 'Москва'],
+    ['mo', 'МО'],
+    ['tver', 'Тверь'],
+    ['tver_oblast', 'Тверская обл.'],
+    ['other', 'Другой'],
+  ])('%s → "%s"', (city, expected) => {
+    expect(cityLabel(city)).toBe(expected)
   })
 
   it('unknown city → возвращает как есть', () => {

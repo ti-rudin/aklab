@@ -79,7 +79,13 @@ describe('useFocusTab', () => {
 
     expect(focusFilters.threshold).toBe(20)
     expect(focusFilters.status).toBe('')
-    expect(focusFilters.cities).toEqual({ moscow: true, mo: true, other: true })
+    expect(focusFilters.cities).toEqual({
+      moscow: true,
+      mo: true,
+      tver: true,
+      tver_oblast: true,
+      other: true,
+    })
     expect(focusFilters.property_type).toEqual([])
     expect(mockedApi.get).not.toHaveBeenCalled()
   })

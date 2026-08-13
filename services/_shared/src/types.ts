@@ -1,8 +1,7 @@
 export type PropertyLocationStatus =
   | 'confirmed_address'
   | 'confirmed_region_only'
-  | 'missing'
-  | 'legacy_unverified';
+  | 'missing';
 
 export type StructuredSourceKind =
   | 'dom_field'
@@ -55,9 +54,9 @@ export interface ParsedProperty {
   url: string;
   title: string;
   address: string;
-  city: string; // moscow | mo | other
-  /** Canonical structured location; optional during the compatibility wave. */
-  property_location?: PropertyLocation;
+  city: string; // moscow | mo | tver | tver_oblast | other
+  /** Canonical structured property location. */
+  property_location: PropertyLocation;
   /** Structured participants, kept separate from property geography. */
   parties?: PropertyParty[];
   area_sqm?: number;

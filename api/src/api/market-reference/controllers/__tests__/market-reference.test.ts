@@ -7,6 +7,7 @@ vi.mock('@strapi/strapi', () => ({
 }));
 
 import marketReferenceControllerFactory from '../market-reference';
+import marketReferenceSchema from '../../content-types/market-reference/schema.json';
 
 function makeStrapi() {
   const query = { findMany: vi.fn() };
@@ -52,11 +53,16 @@ describe('market-reference internalFindActive', () => {
     const strapi = makeStrapi();
     strapi._query.findMany.mockResolvedValue([]);
     const actions = (marketReferenceControllerFactory as any)({ strapi });
-    const ctx = makeCtx({ city: 'mo', property_type: 'warehouse' });
+    const ctx = makeCtx({ city: 'tver_oblast', property_type: 'warehouse' });
 
     await actions.internalFindActive(ctx);
 
     expect(ctx.body).toEqual({ data: null });
+  });
+
+  it('keeps the persisted city enum aligned with all canonical regions', () => {
+    expect((marketReferenceSchema.attributes.city as { enum: string[] }).enum)
+      .toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other']);
   });
 
   it('rejects missing, unknown, and non-enum query values before DB access', async () => {

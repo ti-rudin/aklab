@@ -11,6 +11,7 @@ vi.mock('@strapi/strapi', () => ({
 
 // Import after mocks
 import propertyServiceFactory from '../property';
+import propertySchema from '../../content-types/property/schema.json';
 
 function makeStrapi() {
   const repository = {
@@ -41,7 +42,28 @@ describe('property service', () => {
   });
 
   describe('upsertByIdentity', () => {
-    const payload = { source: 'alfalot', external_id: 'lot-42', title: 'Склад' };
+    const missingLocation = {
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'listing.property_location',
+    };
+    const payload = {
+      source: 'alfalot',
+      external_id: 'lot-42',
+      title: 'Склад',
+      property_location: missingLocation,
+    };
+
+    it('rejects parser payload without typed property location before identity lookup', async () => {
+      await expect(service.upsertByIdentity({
+        source: 'alfalot',
+        external_id: 'lot-without-location',
+        title: 'Склад',
+      })).rejects.toThrow('property_location is required');
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
 
     it('creates a property when no identity winner exists', async () => {
       const created = { id: 42, documentId: 'doc-42' };
@@ -50,7 +72,13 @@ describe('property service', () => {
 
       await expect(service.upsertByIdentity(payload)).resolves.toEqual({ property: created, created: true });
       expect(strapi._repository.create).toHaveBeenCalledWith({
-        data: { ...payload, tags: JSON.stringify([]) },
+        data: {
+          ...payload,
+          address: '',
+          city: 'other',
+          property_location: JSON.stringify(missingLocation),
+          tags: JSON.stringify([]),
+        },
       });
     });
 
@@ -67,10 +95,187 @@ describe('property service', () => {
       expect(strapi._repository.create).toHaveBeenCalledWith({
         data: {
           ...payload,
+          address: '',
+          city: 'other',
           photo_urls: JSON.stringify(['https://example.test/photo.jpg']),
+          property_location: JSON.stringify(missingLocation),
           tags: JSON.stringify([]),
         },
       });
+    });
+
+    it('validates and serializes typed property geography and parties', async () => {
+      const created = { id: 45, documentId: 'doc-45' };
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue(created);
+      const propertyLocation = {
+        status: 'confirmed_address',
+        address: 'г. Тверь, ул. Советская, д. 1',
+        region: 'tver',
+        source_kind: 'api_field',
+        source_path: 'lot.address',
+        latitude: 56.8587,
+        longitude: 35.9176,
+      };
+      const parties = [{
+        name: 'Организатор торгов',
+        roles: ['organizer'],
+        inn: '1234567890',
+        addresses: [{ kind: 'legal', value: 'г. Москва, ул. Иная, д. 2' }],
+        source_path: 'lot.organizer',
+        source_kind: 'api_field',
+        confidence: 'structured',
+      }];
+
+      await service.upsertByIdentity({
+        ...payload,
+        property_location: propertyLocation,
+        parties,
+      });
+
+      expect(strapi._repository.create).toHaveBeenCalledWith({
+        data: {
+          ...payload,
+          city: 'tver',
+          address: propertyLocation.address,
+          property_location: JSON.stringify(propertyLocation),
+          parties: JSON.stringify(parties),
+          latitude: propertyLocation.latitude,
+          longitude: propertyLocation.longitude,
+          tags: JSON.stringify([]),
+        },
+      });
+    });
+
+    it('projects persisted geography from a typed-only property payload', async () => {
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue({ id: 46, documentId: 'doc-46' });
+      const propertyLocation = {
+        status: 'confirmed_region_only',
+        region: 'Республика Башкортостан',
+        region_code: '02',
+        source_kind: 'api_field',
+        source_path: 'lot.property.region',
+      };
+      const parties = [{
+        name: 'ПАО Сбербанк',
+        roles: ['pledgee'],
+        addresses: [{ kind: 'legal', value: 'г. Москва, ул. Вавилова, д. 19' }],
+        source_path: 'lot.pledgee',
+        source_kind: 'api_field',
+        confidence: 'structured',
+      }];
+
+      await service.upsertByIdentity({
+        ...payload,
+        property_location: propertyLocation,
+        parties,
+      });
+
+      expect(strapi._repository.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          city: 'other',
+          address: '',
+          property_location: JSON.stringify(propertyLocation),
+          parties: JSON.stringify(parties),
+        }),
+      });
+      const persisted = strapi._repository.create.mock.calls[0][0].data;
+      expect(persisted).not.toHaveProperty('latitude');
+      expect(persisted).not.toHaveProperty('longitude');
+    });
+
+    it.each(['address', 'city', 'latitude', 'longitude'])(
+      'rejects stale caller geography field %s before identity lookup',
+      async (field) => {
+        await expect(service.upsertByIdentity({
+          ...payload,
+          [field]: field === 'latitude' || field === 'longitude' ? 1 : 'stale',
+        })).rejects.toThrow(`Field "${field}" is not accepted by parser upsert`);
+
+        expect(strapi._repository.findOne).not.toHaveBeenCalled();
+        expect(strapi._repository.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['property_location', {
+        status: 'missing',
+        source_kind: 'api_field',
+        source_path: 'lot.location',
+        injected: 'not-contract-data',
+      }],
+      ['parties', [{
+        name: 'ПАО Сбербанк',
+        roles: ['pledgee'],
+        source_kind: 'api_field',
+        source_path: 'lot.pledgee',
+        confidence: 'structured',
+        injected: 'not-contract-data',
+      }]],
+      ['parties', [{
+        name: 'ПАО Сбербанк',
+        roles: ['pledgee'],
+        source_kind: 'api_field',
+        source_path: 'lot.pledgee',
+        confidence: 'structured',
+        addresses: [{
+          kind: 'legal',
+          value: 'г. Москва',
+          injected: 'not-contract-data',
+        }],
+      }]],
+    ])('rejects unknown nested fields in %s', async (field, value) => {
+      await expect(service.upsertByIdentity({
+        ...payload,
+        [field]: value,
+      })).rejects.toThrow(`${field} is malformed`);
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a full address under the region-only status before identity lookup', async () => {
+      await expect(service.upsertByIdentity({
+        ...payload,
+        property_location: {
+          status: 'confirmed_region_only',
+          address: 'г. Москва, ул. Тверская, 1',
+          region: 'Москва',
+          source_kind: 'api_field',
+          source_path: 'lot.region',
+        },
+      })).rejects.toThrow('property_location is malformed');
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
+    });
+
+    it('projects missing typed location to empty legacy geography', async () => {
+      strapi._repository.findOne.mockResolvedValue(null);
+      strapi._repository.create.mockResolvedValue({ id: 47, documentId: 'doc-47' });
+
+      await service.upsertByIdentity({
+        ...payload,
+        property_location: missingLocation,
+      });
+
+      const persisted = strapi._repository.create.mock.calls[0][0].data;
+      expect(persisted).toMatchObject({ city: 'other', address: '' });
+      expect(persisted).not.toHaveProperty('latitude');
+      expect(persisted).not.toHaveProperty('longitude');
+    });
+
+    it.each([
+      [{ status: 'confirmed_address', address: '', region: 'tver', source_kind: 'api_field', source_path: 'lot.address' }, 'property_location'],
+      [{ status: 'missing', address: '', region: 'other', source_kind: 'free_text', source_path: 'description' }, 'property_location'],
+      [[{ name: 'Банк', roles: ['pledgee'], addresses: [{ kind: 'property', value: 'Москва' }], source_path: 'lot.bank', source_kind: 'api_field', confidence: 'structured' }], 'parties'],
+    ])('rejects malformed typed parser field before identity lookup', async (value, field) => {
+      await expect(service.upsertByIdentity({ ...payload, [field]: value }))
+        .rejects.toThrow(`${field} is malformed`);
+
+      expect(strapi._repository.findOne).not.toHaveBeenCalled();
+      expect(strapi._repository.create).not.toHaveBeenCalled();
     });
 
     it('accepts an auction deadline as parser-owned data', async () => {
@@ -81,7 +286,14 @@ describe('property service', () => {
       await service.upsertByIdentity({ ...payload, auction_end_at: '2026-10-27T20:59:59.000Z' });
 
       expect(strapi._repository.create).toHaveBeenCalledWith({
-        data: { ...payload, auction_end_at: '2026-10-27T20:59:59.000Z', tags: JSON.stringify([]) },
+        data: {
+          ...payload,
+          address: '',
+          city: 'other',
+          property_location: JSON.stringify(missingLocation),
+          auction_end_at: '2026-10-27T20:59:59.000Z',
+          tags: JSON.stringify([]),
+        },
       });
     });
 
@@ -118,10 +330,9 @@ describe('property service', () => {
     });
 
     it.each([
-      ['source', 'untrusted-source'],
-      ['property_type', 'villa'],
+      ['source', 'unknown-source'],
+      ['property_type', 'castle'],
       ['auction_type', 'secret-sale'],
-      ['city', 'spb'],
     ])('rejects unsupported %s enum values', async (field, value) => {
       await expect(service.upsertByIdentity({ ...payload, [field]: value }))
         .rejects.toThrow(`${field} has an unsupported value`);
@@ -381,5 +592,18 @@ describe('property service', () => {
       });
     });
   });
+});
 
+describe('property schema typed geography contract', () => {
+  it('persists typed property geography and parties and exposes both Tver regions', () => {
+    const attributes = propertySchema.attributes as Record<string, any>;
+
+    expect(attributes.property_location).toEqual({ type: 'json', required: true });
+    expect(attributes.parties).toEqual({ type: 'json' });
+    expect(attributes.city.enum).toEqual(expect.arrayContaining([
+      'moscow', 'mo', 'tver', 'tver_oblast', 'other',
+    ]));
+    expect(attributes.city.default).toBe('other');
+    expect(attributes.source.enum).toContain('m-ets');
+  });
 });
