@@ -6,8 +6,18 @@
  * 27 карточек на страницу, ~48 страниц.
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  createStealthContext,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://xn----etbpba5admdlad.xn--p1ai';
 const SEARCH_URL = `${BASE_URL}/search?trades-section%5B0%5D=commercial&history_only=0`;
@@ -29,6 +39,65 @@ const TITLE_EXCLUDE_PATTERNS = [
   'палета', 'гель для стирки', 'бытовая химия', 'стиральн', // бытовые
   'авточасти', 'запчаст', 'шина', 'диск колесн', // автозапчасти
 ];
+
+const PROPERTY_LOCATION_CONTAINER = '#info';
+const PROPERTY_LOCATION_ADDRESS_ROWS = `${PROPERTY_LOCATION_CONTAINER} .panel__wrapper p`;
+const PROPERTY_LOCATION_ADDRESS_FIELD = `${PROPERTY_LOCATION_ADDRESS_ROWS} span.js-share-search`;
+
+interface PropertyLocationElement {
+  textContent?: string | null;
+  querySelector(selector: string): PropertyLocationElement | null;
+}
+
+interface PropertyLocationDocument {
+  querySelectorAll(selector: string): ArrayLike<PropertyLocationElement>;
+}
+
+export interface AggregatorPropertyLocationFields {
+  address?: string;
+}
+
+/** Read geography only from the exact, labelled current-property DOM field. */
+export function extractAggregatorPropertyLocationFields(
+  document?: PropertyLocationDocument,
+): AggregatorPropertyLocationFields {
+  const documentLike = document ?? globalThis.document as unknown as PropertyLocationDocument;
+  const rows = documentLike?.querySelectorAll('#info .panel__wrapper p') ?? [];
+  for (const row of Array.from(rows)) {
+    const label = (typeof row.querySelector('span.text-grey')?.textContent === 'string'
+      ? row.querySelector('span.text-grey')?.textContent?.replace(/\s+/g, ' ').trim()
+      : undefined)
+      ?.replace(/:$/, '')
+      .toLocaleLowerCase('ru-RU');
+    if (label !== 'адрес местонахождения') continue;
+
+    const rawAddress = row.querySelector('span.js-share-search')?.textContent;
+    const address = typeof rawAddress === 'string'
+      ? rawAddress.replace(/\s+/g, ' ').trim() || undefined
+      : undefined;
+    if (address) return { address };
+  }
+  return {};
+}
+
+export function normalizeAggregatorPropertyLocation(
+  fields: AggregatorPropertyLocationFields,
+): PropertyLocation {
+  if (fields.address) {
+    return normalizeStructuredLocation({
+      address: fields.address,
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: PROPERTY_LOCATION_ADDRESS_FIELD,
+    });
+  }
+
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: PROPERTY_LOCATION_CONTAINER,
+  });
+}
 
 function extractArea(text: string): number | undefined {
   // "Общая площадь: 274.4 м²" or "Общая площадь: 274,4 м²"
@@ -140,7 +209,7 @@ export class AggregatorBankrotParser implements SourceParser {
           // Приоритет: title (там "9484 кв.м"), потом excerpt (может быть площадь отдельного помещения)
           const area = extractArea(card.title) || extractArea(card.excerpt);
           const price = parsePrice(card.price_text);
-          const address = card.excerpt.match(/(?:адрес|ул\.|ул\s|город|г\.|пос\.|дер\.)[^,]*/i)?.[0]?.trim() || '';
+          const propertyLocation = normalizeAggregatorPropertyLocation({});
 
           const extId = `aggregator-bankrot-${card.lot_id}`;
           if (seenIds.has(extId)) continue;
@@ -150,8 +219,9 @@ export class AggregatorBankrotParser implements SourceParser {
             external_id: extId,
             url: card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`,
             title: card.title,
-            address,
-            city: detectCity(address || card.title || card.excerpt),
+            address: projectLegacyAddress(propertyLocation),
+            city: derivePropertyRegion(propertyLocation),
+            property_location: propertyLocation,
             area_sqm: area,
             price,
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -201,6 +271,7 @@ export class AggregatorBankrotParser implements SourceParser {
         await page.waitForTimeout(3000);
       }
 
+      const locationFields = await page.evaluate(extractAggregatorPropertyLocationFields);
       const details = await page.evaluate(() => {
         // Описание: #description .panel__wrapper p.js-share-search
         let description = '';
@@ -228,28 +299,6 @@ export class AggregatorBankrotParser implements SourceParser {
         }
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес: из #info панели или из описания
-        let address = '';
-        const infoPanel = document.querySelector('#info');
-        if (infoPanel) {
-          const paragraphs = infoPanel.querySelectorAll('.panel__wrapper p');
-          for (const p of Array.from(paragraphs)) {
-            const text = p.textContent || '';
-            const addrMatch = text.match(/адрес\s+(?:местонахождения)?:\s*(.+?)(?:\.|$)/i);
-            if (addrMatch) { address = addrMatch[1].trim(); break; }
-          }
-        }
-        if (!address && description) {
-          const addrMatch = description.match(/адрес\s+(?:местонахождения)?:\s*(.+?)(?:\.|$)/i);
-          if (addrMatch) address = addrMatch[1].trim();
-        }
-        // Fallback: ищем «Москва» во всём тексте страницы
-        if (!address) {
-          const allText = document.body.innerText || '';
-          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
-          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
-        }
-
         // Цена и даты: sidebar .lot-data__list
         const auctionParts: string[] = [];
         const bidEl = document.querySelector('.lot-card__bids');
@@ -271,6 +320,7 @@ export class AggregatorBankrotParser implements SourceParser {
         }
 
         // Задаток из #info
+        const infoPanel = document.querySelector('#info');
         if (infoPanel) {
           const paragraphs = infoPanel.querySelectorAll('.panel__wrapper p');
           for (const p of Array.from(paragraphs)) {
@@ -284,19 +334,19 @@ export class AggregatorBankrotParser implements SourceParser {
         return {
           description: description || undefined,
           contacts,
-          address: address && address.length > 3 ? address : undefined,
-          latitude: undefined, // координаты не доступны на aggregator-bankrot
-          longitude: undefined,
           auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
         };
       });
 
+      const property_location = normalizeAggregatorPropertyLocation(locationFields);
       return {
         description: details.description,
         contacts: details.contacts,
-        address: details.address,
-        latitude: details.latitude,
-        longitude: details.longitude,
+        property_location,
+        address: projectLegacyAddress(property_location),
+        city: derivePropertyRegion(property_location),
+        latitude: property_location.latitude,
+        longitude: property_location.longitude,
       };
     } catch (err: any) {
       logger.warn(`[aggregator-bankrot] fetchDetails error for ${url}: ${err.message}`);

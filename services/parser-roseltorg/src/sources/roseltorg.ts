@@ -4,13 +4,38 @@
  * Playwright, HTML scraping. Работает с сервера (Mac timeout).
  * URL: https://www.roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost
  */
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  createStealthContext,
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://www.roseltorg.ru';
 const SEARCH_URL = `${BASE_URL}/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost?sale=all&okato[]=45000000000&status[]=5&status[]=0&status[]=1`;
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 10;
+
+const UNVERIFIED_PROPERTY_LOCATION_SOURCE_PATH = 'unverified_source.property_location';
+
+/**
+ * Roseltorg is unavailable from the local audit environment and the repository
+ * has no source-faithful property-location fixture. Until a real API/DOM field
+ * is documented, geography must fail closed instead of guessing selectors.
+ */
+export function missingRoseltorgPropertyLocation(): PropertyLocation {
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: UNVERIFIED_PROPERTY_LOCATION_SOURCE_PATH,
+  });
+}
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
@@ -60,7 +85,12 @@ export class RoseltorgParser implements SourceParser {
         }
 
         const cards = await page.evaluate(() => {
-          const results: Array<{ title: string; link: string; price_text: string; excerpt: string }> = [];
+          const results: Array<{
+            title: string;
+            link: string;
+            price_text: string;
+            excerpt: string;
+          }> = [];
 
           // Росэлторг использует таблицу — ищем строки tbody
           const rows = document.querySelectorAll('table tbody tr');
@@ -139,8 +169,7 @@ export class RoseltorgParser implements SourceParser {
           const price = parsePrice(card.price_text);
           const fullLink = card.link.startsWith('http') ? card.link : `${BASE_URL}${card.link}`;
           const excerpt = card.excerpt || '';
-          const addrMatch = excerpt.match(/(?:адрес|ул\.|г\.|пр\.|просп|шоссе)[^,]*(?:,[^,]+){0,2}/i);
-          const address = addrMatch ? addrMatch[0].trim() : '';
+          const propertyLocation = missingRoseltorgPropertyLocation();
 
           const extId = `roseltorg-${card.link.split('/').pop() || card.title.slice(0, 30)}`;
           if (seenIds.has(extId)) continue;
@@ -150,8 +179,9 @@ export class RoseltorgParser implements SourceParser {
             external_id: extId,
             url: fullLink,
             title: card.title,
-            address,
-            city: detectCity(card.title + ' ' + excerpt),
+            address: projectLegacyAddress(propertyLocation),
+            city: derivePropertyRegion(propertyLocation),
+            property_location: propertyLocation,
             area_sqm: area,
             price,
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -223,25 +253,6 @@ export class RoseltorgParser implements SourceParser {
 
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес: ищем в тексте
-        let address = '';
-        const addrPatterns = [
-          /(?:адрес(?:\s+местонахождения|\s+расположения)?|по\s+адресу|местонахождение)[:\s]+([^\n]+?)(?:\n|$)/i,
-          /(?:адрес|расположенн?[:\s]+)(.+?)(?:,\s*(?:общ|пл|к\/н|собств|\n))/i,
-        ];
-        for (const re of addrPatterns) {
-          const m = allText.match(re);
-          if (m && m[1] && m[1].trim().length > 5) {
-            address = m[1].trim().slice(0, 300);
-            break;
-          }
-        }
-        // Fallback: ищем «Москва» в тексте
-        if (!address) {
-          const moscowMatch = allText.match(/((?:г\.?\s*)?Москва[^,\n]{0,30}(?:,\s*[^,\n]+){0,3})/i);
-          if (moscowMatch) address = moscowMatch[1].trim().slice(0, 300);
-        }
-
         // Фото
         const photoUrls: string[] = [];
         const contentImgs = document.querySelectorAll('img[src*="upload"], img[src*="lot"], img[src*="photo"], img[src*="image"], .gallery img, .slider img, [class*="carousel"] img');
@@ -255,15 +266,20 @@ export class RoseltorgParser implements SourceParser {
         return {
           description: description || undefined,
           contacts,
-          address: address.length > 3 ? address : undefined,
           photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
         };
       });
 
+      const propertyLocation = missingRoseltorgPropertyLocation();
+
       return {
         description: details.description,
         contacts: details.contacts,
-        address: details.address,
+        property_location: propertyLocation,
+        address: projectLegacyAddress(propertyLocation),
+        city: derivePropertyRegion(propertyLocation),
+        latitude: propertyLocation.latitude,
+        longitude: propertyLocation.longitude,
         photo_urls: details.photo_urls,
       };
     } catch (err: any) {

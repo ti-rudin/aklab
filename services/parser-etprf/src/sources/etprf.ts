@@ -6,17 +6,67 @@
  * fetchDetails: открывает /Notification/id/{id} — 4 таба с .details-table
  */
 
-import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
-import { logger, randomDelay, createStealthContext, retryGoto, detectCity, classifyPropertyType, parsePrice } from '@aklab/service-shared';
+import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import {
+  classifyPropertyType,
+  derivePropertyRegion,
+  logger,
+  normalizeStructuredLocation,
+  parsePrice,
+  projectLegacyAddress,
+  randomDelay,
+  createStealthContext,
+  retryGoto,
+} from '@aklab/service-shared';
 
 const BASE_URL = 'https://sale.etprf.ru';
 const SEARCH_URL = `${BASE_URL}/Notification`;
 const MAX_PAGES = 10;
+const PROPERTY_REGION_LABEL = 'Регион местонахождения имущества';
+const LISTING_LOCATION_SOURCE_PATH = 'listing.property_location';
+const DETAIL_LOCATION_SOURCE_PATH = `details.field.${PROPERTY_REGION_LABEL}`;
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
   if (!match) return undefined;
   return parseFloat(match[1].replace(/\s/g, '').replace(',', '.'));
+}
+
+function structuredText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+/** Listing subject/notification are not property-location fields. */
+export function extractEtprfListingLocation(_fields?: {
+  subject?: unknown;
+  notification?: unknown;
+}): PropertyLocation {
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: LISTING_LOCATION_SOURCE_PATH,
+  });
+}
+
+/** Extract geography only from ETPRF's explicit current-property region field. */
+export function extractEtprfPropertyLocation(fields: Record<string, unknown>): PropertyLocation {
+  const region = structuredText(fields.propertyRegion);
+  if (region) {
+    return normalizeStructuredLocation({
+      region,
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: DETAIL_LOCATION_SOURCE_PATH,
+    });
+  }
+
+  return normalizeStructuredLocation({
+    status: 'missing',
+    source_kind: 'dom_field',
+    source_path: DETAIL_LOCATION_SOURCE_PATH,
+  });
 }
 
 export class EtprfParser implements SourceParser {
@@ -102,16 +152,15 @@ export class EtprfParser implements SourceParser {
           const price = parsePrice(row.price_text);
           const area = extractArea(row.subject);
           const detailUrl = row.detail_url.startsWith('http') ? row.detail_url : `${BASE_URL}${row.detail_url}`;
-          const fullText = `${row.notification} ${row.subject}`;
-          const addrMatch = fullText.match(/(?:адрес|ул\.|г\.|пр\.)[^,]*(?:,[^,]+){0,2}/i);
-          const address = addrMatch ? addrMatch[0].trim() : '';
+          const propertyLocation = extractEtprfListingLocation(row);
 
           allProperties.push({
             external_id: `etprf-${row.lot_id}`,
             url: detailUrl,
             title: row.subject || row.notification,
-            address,
-            city: detectCity(row.subject),
+            address: projectLegacyAddress(propertyLocation),
+            city: derivePropertyRegion(propertyLocation),
+            property_location: propertyLocation,
             area_sqm: area,
             price,
             price_per_sqm: price && area ? Math.round(price / area) : undefined,
@@ -168,7 +217,7 @@ export class EtprfParser implements SourceParser {
         await page.waitForTimeout(3000);
       }
 
-      const details = await page.evaluate(() => {
+      const details = await page.evaluate((propertyRegionLabel: string) => {
         // Утилита: найти значение поля по labelText во ВСЕХ .details-table
         function getFieldValue(labelText: string): string | undefined {
           const rows = document.querySelectorAll('.details-table tr');
@@ -202,8 +251,8 @@ export class EtprfParser implements SourceParser {
           contacts?: string;
           latitude?: number;
           longitude?: number;
-          address?: string;
           price?: number;
+          propertyRegion?: string;
         } = {};
 
         // === Контакты: организатор + email + телефон ===
@@ -235,33 +284,19 @@ export class EtprfParser implements SourceParser {
           }
         }
 
-        // === Адрес: ищем в описании имущества, НЕ на всей странице ===
-        // На странице есть "Почтовый адрес" организатора — это НЕ адрес объекта.
-        // Реальный адрес в поле "Сведения об имуществе" / "Краткие сведения".
-        const descForAddr = result.description || '';
-        // Паттерн 1: "Адрес: ..." из описания
-        const addrMatch = descForAddr.match(/(?:Адрес|адрес):\s*([^;]+)/i);
-        if (addrMatch && addrMatch[1] && addrMatch[1].trim().length > 5) {
-          result.address = addrMatch[1].trim().slice(0, 300);
-        }
-        // Паттерн 2: "по адресу: ..." из краткого описания
-        if (!result.address && briefDesc) {
-          const addrMatch2 = briefDesc.match(/по\s+адресу:\s*([^.]+)/i);
-          if (addrMatch2 && addrMatch2[1] && addrMatch2[1].trim().length > 5) {
-            result.address = addrMatch2[1].trim().slice(0, 300);
-          }
-        }
-        // Fallback: "Регион местонахождения имущества" из таблицы
-        if (!result.address) {
-          const region = getFieldValue('Регион местонахождения имущества');
-          if (region) result.address = region;
-        }
+        // Geography comes only from the explicit current-property field.
+        // Description, "Почтовый адрес", and organizer fields are not location.
+        result.propertyRegion = getFieldValue(propertyRegionLabel);
 
         // Координаты: на etprf.ru НЕТ координат в карточках
         result.latitude = undefined;
         result.longitude = undefined;
 
         return result;
+      }, PROPERTY_REGION_LABEL);
+
+      const propertyLocation = extractEtprfPropertyLocation({
+        propertyRegion: details.propertyRegion,
       });
 
       return {
@@ -269,7 +304,9 @@ export class EtprfParser implements SourceParser {
         contacts: details.contacts,
         latitude: details.latitude,
         longitude: details.longitude,
-        address: details.address,
+        property_location: propertyLocation,
+        address: projectLegacyAddress(propertyLocation),
+        city: derivePropertyRegion(propertyLocation),
         price: details.price,
       };
     } catch (err: any) {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  parsePrice,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import { extractAlfalotPropertyLocation } from '../sources/alfalot';
 
 /**
  * Тесты extraction-логики parser-alfalot.
@@ -41,6 +46,50 @@ function extractArea(title: string, badgeArea: string): number | undefined {
 }
 
 // --- Tests ---
+
+describe('alfalot: typed property location extraction', () => {
+  it('keeps the separate card region field region-only', () => {
+    const location = extractAlfalotPropertyLocation({
+      cardRegion: 'Московская область',
+    });
+
+    expect(location).toEqual({
+      region: 'Московская область',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: '.card-info > p',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('mo');
+  });
+
+  it('uses the separate detail property address field as a confirmed address', () => {
+    const location = extractAlfalotPropertyLocation({
+      detailAddress: 'Российская Федерация, г. Москва, ул. Машкова, д. 10',
+    });
+
+    expect(location).toEqual({
+      address: 'Российская Федерация, г. Москва, ул. Машкова, д. 10',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '.location-block > p.address',
+    });
+    expect(projectLegacyAddress(location)).toBe(location.address);
+    expect(derivePropertyRegion(location)).toBe('moscow');
+  });
+
+  it('fails closed when only description, title, and organizer geography are available', () => {
+    const location = extractAlfalotPropertyLocation({});
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: '.location-block > p.address',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
+  });
+});
 
 describe('alfalot: parsePrice', () => {
   it('should parse "1 500 000 ₽"', () => {

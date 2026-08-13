@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice } from '@aklab/service-shared';
+import {
+  derivePropertyRegion,
+  parsePrice,
+  projectLegacyAddress,
+} from '@aklab/service-shared';
+import {
+  extractEtprfListingLocation,
+  extractEtprfPropertyLocation,
+} from '../sources/etprf';
 
 /**
  * Тесты extraction-логики parser-etprf.
@@ -93,6 +101,56 @@ describe('etprf: extractArea', () => {
 
   it('should not match area of 0', () => {
     expect(extractArea('0 кв.м')).toBeUndefined();
+  });
+});
+
+describe('etprf: typed property location', () => {
+  it('returns missing for listing data even when subject and notification contain synthetic city tokens', () => {
+    const location = extractEtprfListingLocation({
+      subject: 'Нежилое помещение, synthetic-city-token',
+      notification: 'Уведомление: synthetic-city-token',
+    });
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'listing.property_location',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
+  });
+
+  it('uses only the explicit property region field as confirmed_region_only', () => {
+    const location = extractEtprfPropertyLocation({
+      propertyRegion: 'synthetic-region-token',
+      description: 'Описание имущества: synthetic-city-token',
+      postalAddress: 'Почтовый адрес организатора: synthetic-party-city-token',
+      organizer: 'Организатор торгов: synthetic-party-city-token',
+    });
+
+    expect(location).toEqual({
+      region: 'synthetic-region-token',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: 'details.field.Регион местонахождения имущества',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+  });
+
+  it('returns missing when the explicit property region field is absent', () => {
+    const location = extractEtprfPropertyLocation({
+      description: 'Адрес: synthetic-description-city-token',
+      postalAddress: 'synthetic-party-city-token',
+      organizer: 'synthetic-party-city-token',
+    });
+
+    expect(location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: 'details.field.Регион местонахождения имущества',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+    expect(derivePropertyRegion(location)).toBe('other');
   });
 });
 
