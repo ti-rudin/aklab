@@ -19,6 +19,7 @@ export interface StrapiInstance {
     query: (uid: string) => {
       findMany: (params?: any) => Promise<any[]>;
       findOne: (params?: any) => Promise<any>;
+      count: (params?: any) => Promise<number>;
       create: (params?: any) => Promise<any>;
       update: (params?: any) => Promise<any>;
       delete: (params?: any) => Promise<any>;

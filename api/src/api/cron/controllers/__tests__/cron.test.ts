@@ -20,6 +20,12 @@ const mockPipeline = {
   resetState: vi.fn(),
 };
 
+const mockMaintenanceModeEnabled = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock('../../../../services/property-catalog-cleanup', () => ({
+  isCatalogCleanupMaintenanceModeEnabled: mockMaintenanceModeEnabled,
+}));
+
 vi.mock('../../../../services/pipeline', () => ({
   getPipelineService: () => mockPipeline,
 }));
@@ -72,6 +78,7 @@ function makeCtx(overrides: Record<string, any> = {}): any {
 describe('cron controller', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockMaintenanceModeEnabled.mockReturnValue(false);
     // Re-set persistent mock returns after resetAllMocks
     mockStrapi.db.query.mockReturnValue({
       findOne: vi.fn(),
@@ -87,6 +94,18 @@ describe('cron controller', () => {
 
   // =================== parseSource ===================
   describe('parseSource', () => {
+    it('rejects manual parse before source lookup or queue side effects during catalog maintenance', async () => {
+      mockMaintenanceModeEnabled.mockReturnValue(true);
+      const ctx = makeCtx({ params: { slug: 'tender' } });
+
+      await cronController.parseSource(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Выполняется обслуживание каталога.' });
+      expect(mockStrapi.entityService.findMany).not.toHaveBeenCalled();
+      expect(mockQueue.addToQueue).not.toHaveBeenCalled();
+    });
+
     it('should enqueue a parse job for an active source', async () => {
       const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
       mockStrapi.entityService.findMany.mockResolvedValue([source]);

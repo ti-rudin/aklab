@@ -7,6 +7,7 @@ import {
   UserPropertyStateValidationError,
   type UserPropertyStateStatus,
 } from '../../../services/user-property-state';
+import { isCatalogCleanupMaintenanceModeEnabled } from '../../../services/property-catalog-cleanup';
 
 const MAX_DOCUMENT_ID_LENGTH = 256;
 const MAX_BATCH_ITEMS = 100;
@@ -115,11 +116,19 @@ function serviceError(ctx: any, error: unknown): void {
   ctx.body = { error: 'Internal server error' };
 }
 
+function maintenanceBlocked(ctx: any): boolean {
+  if (!isCatalogCleanupMaintenanceModeEnabled()) return false;
+  ctx.status = 409;
+  ctx.body = { error: 'Выполняется обслуживание каталога.' };
+  return true;
+}
+
 export default factories.createCoreController('api::user-property-state.user-property-state' as any, ({ strapi }) => {
   const service = createUserPropertyStateService(strapi as any);
 
   return {
     async putStatuses(ctx) {
+      if (maintenanceBlocked(ctx)) return;
       const userId = actorId(ctx);
       if (userId === null) {
         unauthorized(ctx);
@@ -158,6 +167,7 @@ export default factories.createCoreController('api::user-property-state.user-pro
     },
 
     async putState(ctx) {
+      if (maintenanceBlocked(ctx)) return;
       const userId = actorId(ctx);
       const propertyDocumentId = documentId(ctx);
       if (userId === null) {
@@ -182,6 +192,7 @@ export default factories.createCoreController('api::user-property-state.user-pro
     },
 
     async deleteState(ctx) {
+      if (maintenanceBlocked(ctx)) return;
       const userId = actorId(ctx);
       const propertyDocumentId = documentId(ctx);
       if (userId === null) {

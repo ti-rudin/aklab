@@ -84,6 +84,80 @@
         <span v-else-if="geocoding" class="text-sm" style="color: var(--text-muted)">⏳ Определяем координаты…</span>
       </div>
 
+      <!-- ==================== PROVENANCE ГЕОГРАФИИ ==================== -->
+      <div
+        v-if="property.property_location"
+        data-testid="property-location"
+        class="rounded-xl p-6 border"
+        style="background: var(--bg-elevated); border-color: var(--border-subtle)"
+      >
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">Местоположение объекта</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <span class="block text-xs" style="color: var(--text-muted)">Статус подтверждения</span>
+            <span style="color: var(--text-main)">{{ locationStatusLabel(property.property_location.status) }}</span>
+          </div>
+          <div>
+            <span class="block text-xs" style="color: var(--text-muted)">Источник</span>
+            <span style="color: var(--text-main)">{{ sourceKindLabel(property.property_location.source_kind) }}</span>
+          </div>
+          <div v-if="property.property_location.address">
+            <span class="block text-xs" style="color: var(--text-muted)">Адрес объекта</span>
+            <span style="color: var(--text-main)">{{ property.property_location.address }}</span>
+          </div>
+          <div v-if="property.property_location.region">
+            <span class="block text-xs" style="color: var(--text-muted)">Регион объекта</span>
+            <span style="color: var(--text-main)">{{ property.property_location.region }}</span>
+          </div>
+          <div v-if="property.property_location.region_code">
+            <span class="block text-xs" style="color: var(--text-muted)">Код региона</span>
+            <span class="font-mono" style="color: var(--text-main)">{{ property.property_location.region_code }}</span>
+          </div>
+          <div v-if="property.property_location.latitude != null && property.property_location.longitude != null">
+            <span class="block text-xs" style="color: var(--text-muted)">Координаты объекта</span>
+            <span class="font-mono" style="color: var(--text-main)">
+              {{ property.property_location.latitude }}, {{ property.property_location.longitude }}
+            </span>
+          </div>
+        </div>
+        <p class="mt-4 text-xs break-all" style="color: var(--text-muted)">
+          Provenance: {{ property.property_location.source_path }}
+        </p>
+      </div>
+
+      <!-- ==================== СТОРОНЫ (НЕ ГЕОГРАФИЯ ОБЪЕКТА) ==================== -->
+      <div
+        v-if="property.parties?.length"
+        data-testid="property-parties"
+        class="rounded-xl p-6 border"
+        style="background: var(--bg-elevated); border-color: var(--border-subtle)"
+      >
+        <h2 class="text-lg font-semibold mb-1" style="color: var(--text-main)">Стороны и участники</h2>
+        <p class="text-xs mb-4" style="color: var(--text-muted)">
+          Адреса сторон не используются как местоположение объекта.
+        </p>
+        <div class="space-y-4">
+          <article v-for="(party, index) in property.parties" :key="`${party.source_path}-${index}`" class="border-t pt-4 first:border-t-0 first:pt-0" style="border-color: var(--border-subtle)">
+            <h3 class="font-medium" style="color: var(--text-main)">{{ party.name || 'Сторона без названия' }}</h3>
+            <p class="text-xs mt-1" style="color: var(--text-muted)">
+              {{ party.roles.map(partyRoleLabel).join(', ') }} · {{ sourceKindLabel(party.source_kind) }} · {{ party.source_path }}
+            </p>
+            <dl v-if="Object.keys(party.identifiers || {}).length" class="mt-2 text-sm space-y-1">
+              <div v-for="(value, key) in party.identifiers" :key="key" class="flex gap-2">
+                <dt class="uppercase" style="color: var(--text-muted)">{{ key }}:</dt>
+                <dd style="color: var(--text-main)">{{ value }}</dd>
+              </div>
+            </dl>
+            <div v-if="party.addresses?.length" class="mt-3 space-y-2">
+              <div v-for="(address, addressIndex) in party.addresses" :key="`${address.kind}-${addressIndex}`">
+                <span class="block text-xs" style="color: var(--text-muted)">{{ partyAddressLabel(address.kind) }}</span>
+                <span class="text-sm" style="color: var(--text-main)">{{ address.value }}</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
       <!-- ==================== ФОТОГАЛЕРЕЯ (private blob media) ==================== -->
       <div class="rounded-xl p-6 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <h2 class="text-lg font-semibold mb-4" style="color: var(--text-main)">📸 Фотографии</h2>
@@ -340,6 +414,34 @@ interface Property {
   photos_downloaded?: boolean
   latitude?: number | null
   longitude?: number | null
+  property_location?: PropertyLocation | null
+  parties?: PropertyParty[]
+}
+
+interface PropertyLocation {
+  address?: string
+  region?: string
+  region_code?: string
+  latitude?: number
+  longitude?: number
+  status: 'confirmed_address' | 'confirmed_region_only' | 'missing'
+  source_kind: 'api_field' | 'dom_field' | 'xml_field' | 'ssr_field'
+  source_path: string
+}
+
+interface PartyAddress {
+  kind: 'legal' | 'postal' | 'actual' | 'registration' | 'unknown'
+  value: string
+}
+
+interface PropertyParty {
+  name?: string
+  roles: Array<'owner' | 'debtor' | 'pledgee' | 'organizer' | 'seller' | 'customer' | 'operator' | 'other'>
+  identifiers?: Record<string, string>
+  addresses?: PartyAddress[]
+  confidence: 'structured' | 'explicit_text'
+  source_kind: PropertyLocation['source_kind']
+  source_path: string
 }
 
 interface Comment {
@@ -380,6 +482,34 @@ const statuses = [
 const auctionLabel = (v: string) => ({
   bankruptcy: 'Банкротство', privatization: 'Приватизация', marketplace: 'Торговая площадка'
 })[v] || v
+const locationStatusLabel = (value: PropertyLocation['status']) => ({
+  confirmed_address: 'Подтверждённый адрес',
+  confirmed_region_only: 'Подтверждён только регион',
+  missing: 'Структурированное местоположение не найдено',
+})[value]
+const sourceKindLabel = (value: PropertyLocation['source_kind']) => ({
+  api_field: 'Поле API',
+  dom_field: 'Поле страницы',
+  xml_field: 'Поле XML',
+  ssr_field: 'Поле SSR',
+})[value]
+const partyRoleLabel = (value: PropertyParty['roles'][number]) => ({
+  owner: 'Собственник',
+  debtor: 'Должник',
+  pledgee: 'Залогодержатель',
+  organizer: 'Организатор',
+  seller: 'Продавец',
+  customer: 'Заказчик',
+  operator: 'Оператор',
+  other: 'Другая роль',
+})[value]
+const partyAddressLabel = (value: PartyAddress['kind']) => ({
+  legal: 'Юридический адрес стороны',
+  postal: 'Почтовый адрес стороны',
+  actual: 'Фактический адрес стороны',
+  registration: 'Адрес регистрации стороны',
+  unknown: 'Адрес стороны',
+})[value]
 const formatDate = (d: string | null) => d ? new Date(d).toLocaleString('ru-RU') : '—'
 
 // Private blob gallery lifecycle

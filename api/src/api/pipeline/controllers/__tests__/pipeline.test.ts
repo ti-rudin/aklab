@@ -107,4 +107,26 @@ describe('pipeline controller manual start contract', () => {
       });
     }
   });
+
+  it.each(['cancel', 'reset'] as const)('refuses to %s a catalog cleanup maintenance lifecycle', async action => {
+    mockPipeline.getState.mockResolvedValue({
+      status: 'cancelling',
+      stage: 'idle',
+      run_id: 'catalog-cleanup:owned',
+      job_ids: [],
+      errors: [],
+    });
+    const ctx = makeCtx(undefined);
+
+    await pipelineController[action](ctx);
+
+    expect(ctx.status).toBe(409);
+    expect(ctx.body).toEqual({
+      ok: false,
+      code: 'PIPELINE_MAINTENANCE_LOCKED',
+      message: 'Выполняется обслуживание каталога.',
+    });
+    expect(mockPipeline.cancel).not.toHaveBeenCalled();
+    expect(mockPipeline.forceReset).not.toHaveBeenCalled();
+  });
 });

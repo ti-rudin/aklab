@@ -31,6 +31,15 @@ export default {
       handler: 'property.upsert',
       config: { auth: false, policies: ['global::service-token'] },
     },
+    {
+      method: 'POST',
+      path: '/properties/clear-new',
+      handler: 'property.clearNew',
+      config: {
+        auth: false,
+        policies: ['global::authenticated-user', 'global::aklab-admin'],
+      },
+    },
 
     {
       method: 'GET',

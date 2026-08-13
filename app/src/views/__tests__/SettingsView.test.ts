@@ -69,7 +69,7 @@ describe('SettingsView', () => {
     expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/admin/'))
   })
 
-  it('shows all six admin-only tabs and mounts pipeline only after selection', async () => {
+  it('shows all seven admin-only tabs and mounts destructive maintenance only after selection', async () => {
     admin = true
     const wrapper = mount(SettingsView)
     await flushPromises()
@@ -80,12 +80,19 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Источники')
     expect(wrapper.text()).toContain('Эталоны')
     expect(wrapper.text()).toContain('Пайплайн')
+    expect(wrapper.text()).toContain('Обслуживание')
     expect(wrapper.find('[data-testid="admin-pipeline"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="admin-maintenance"]').exists()).toBe(false)
 
     await wrapper.findAll('button').find(button => button.text().includes('Пайплайн'))!.trigger('click')
     await vi.dynamicImportSettled()
     await flushPromises()
     expect(wrapper.find('[data-testid="admin-pipeline"]').exists()).toBe(true)
+
+    await wrapper.findAll('button').find(button => button.text().includes('Обслуживание'))!.trigger('click')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="admin-maintenance"]').exists()).toBe(true)
   })
 
   it('fails safe to personal profile when a non-admin forces an admin tab', async () => {

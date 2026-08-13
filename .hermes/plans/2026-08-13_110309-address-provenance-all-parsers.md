@@ -359,12 +359,12 @@ Restore the previously removed `POST /properties/clear-new` maintenance flow ins
 2. Preserve the historical route name for compatibility, but require an explicit request body for the destructive scope. A full cutover must not silently reuse the old default «delete everything except `in_progress`» behavior.
 3. Full reset deletes the entire disposable object catalog and derived object rows: properties, user-property states, user comments, property events, and their Strapi relation-link rows discovered/handled by the current schema.
 4. Preserve users, roles, user profiles, settings, sources, parser configuration and editorial/configuration data.
-5. Refuse while pipeline/parser/analyzer jobs are active; production cutover stops writers first.
+5. Refuse unless `AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE=enabled` after external writer processes are stopped. Atomically acquire an owned durable lifecycle lease, reject competing start/cancel/reset/direct enqueue paths, validate queue stats fail-closed, repeat queue preflight inside the transaction before the first delete, and hold the lease through post-commit media cleanup.
 6. Database deletion is transactional and foreign-key safe. The old behavior «delete photo directories first, then DB rows» must not return.
-7. Resolve media only through the private photo-storage contract. Remove/quarantine object media after the DB commit; report only directories that actually existed.
+7. Resolve media only through the private photo-storage contract. Remove object directories after the DB commit; an absent directory is not counted as deleted, and paths are never returned/logged.
 8. Return a bounded count-only report. Do not return row payloads, PII, filesystem paths, tokens or secrets.
 9. Add tests for non-admin rejection at route-policy level, missing/wrong confirmation, full object-domain cleanup, protected-table preservation, rollback on DB error, orphan-event prevention, and truthful media counts.
-10. Deploy the exact accepted SHA, invoke cleanup only after separate production cutover approval, then run all active parsers from clean state and rebuild analysis/digest projections.
+10. Deploy the exact accepted SHA; after separate production cutover approval stop external writers, enable maintenance mode, invoke cleanup, disable maintenance mode, then run all active parsers from clean state and rebuild analysis/digest projections.
 11. Emit a source-by-source acceptance report: found, created, confirmed address, region-only, missing, filtered, parties by role and schema-change failures.
 
 ### Task 10: Cross-parser contract suite

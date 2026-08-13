@@ -125,6 +125,7 @@ const PROPERTY_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'property', method: 'GET', path: '/internal/properties/:id', handler: 'property.internalFindOne', config: SERVICE_CONFIG },
   { resource: 'property', method: 'PUT', path: '/internal/properties/:id', handler: 'property.internalUpdate', config: SERVICE_CONFIG },
   { resource: 'property', method: 'POST', path: '/properties/upsert', handler: 'property.upsert', config: SERVICE_CONFIG },
+  { resource: 'property', method: 'POST', path: '/properties/clear-new', handler: 'property.clearNew', config: ADMIN_CONFIG },
   { resource: 'property', method: 'GET', path: '/photos/:documentId/:filename', handler: 'property.servePhoto', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties/focus', handler: 'property.getFocus', config: USER_CONFIG },
   { resource: 'property', method: 'GET', path: '/properties/:id/geocode', handler: 'property.geocode', config: USER_CONFIG },

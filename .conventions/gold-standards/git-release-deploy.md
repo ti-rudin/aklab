@@ -86,15 +86,31 @@ Preflight:
 
 - использовать существующий утверждённый admin maintenance contract, а не создавать второй competing reset tool;
 - admin-only и fresh-role policy;
-- explicit confirmation/dry-run/summary;
+- exact confirmation, runtime preflight и count-only summary;
+- server maintenance gate, enabled only after writer processes are stopped;
+- owned durable lifecycle lease held through DB and post-commit media cleanup;
 - object-domain allowlist;
-- transaction и relation discovery через SQLite PRAGMA;
-- users/profiles/settings/sources защищены;
+- pipeline `idle` и очереди без `pending/active`; preflight повторяется внутри transaction до первого delete;
+- transaction и child→parent relation cleanup;
+- users/profiles/settings/sources/focus rules/market references защищены;
 - pre/post counts и integrity check;
+- object photo directories удаляются только после DB commit; отсутствующие directories не считаются удалёнными;
 - запуск только после deploy нового parser contract и отдельного approval;
 - затем full reparse и acceptance по каждому source.
 
 Исторический `clear-new` нельзя возвращать в старой неатомарной форме с удалением файлов до DB commit и orphan relations.
+
+Production cutover order:
+
+1. остановить внешние parser/analyzer/photo writer-процессы;
+2. включить `AKLAB_CATALOG_CLEANUP_MAINTENANCE_MODE=enabled` только на время cutover; без него endpoint возвращает `409`;
+3. проверить durable lifecycle и queue stats;
+4. вызвать admin-only action с exact confirmation;
+5. сохранить audit counts и проверить protected counts;
+6. выключить maintenance mode и вернуть API в обычный режим;
+7. отдельно запустить полный reparse только после явного approval.
+
+На текущем dev-like этапе без клиентского трафика API restart во время короткого cleanup исключается операционной процедурой. Аварийный restart считается принимаемым LOW risk: cleanup проверяется и при необходимости повторяется вручную; отдельный автоматический restart-recovery не требуется.
 
 ## 7. Stop/rollback semantics
 

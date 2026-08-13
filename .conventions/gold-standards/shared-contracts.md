@@ -39,6 +39,7 @@ Parser/worker HTTP payload не содержит `address/city/latitude/longitud
 - Адреса party имеют отдельный `kind`: legal/postal/actual/unknown.
 - Dedup: INN → OGRN → нормализованное имя.
 - Merge объединяет роли и адреса, но не переносит их в geography.
+- UI показывает property location/provenance и party addresses в разных семантических секциях; party address никогда не подписывается как адрес объекта.
 
 ## 4. Merge semantics
 
