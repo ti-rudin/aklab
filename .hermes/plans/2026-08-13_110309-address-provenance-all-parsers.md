@@ -339,30 +339,32 @@ Update every hardcoded `moscow/mo/other` list found by repository search. Do not
 3. Legacy row with `legacy_unverified` must show warning and must not be used as primary location.
 4. Both themes/mobile/ARIA: semantic headings, definition lists, no horizontal overflow.
 
-### Task 9: Historical data audit and safe backfill
+### Task 9: Clean object reset and full reparse
 
-**No automatic bootstrap migration.** Create an explicit idempotent script with `audit` and `apply` modes.
+Historical address backfill is intentionally removed from scope. The project has no client traffic yet, and the production object catalog may be cleared during an explicitly approved cutover.
 
-**Audit output per source:**
+Create a narrow, explicit reset command with `audit` and `apply` modes. It must operate only on the disposable object domain and its derived records; it must not delete users, profiles, settings, sources, parser configuration, or other editorial/configuration data.
 
-- total rows;
-- confirmed full address;
-- confirmed region-only;
-- missing;
-- legacy unverified;
-- rows whose old `city` conflicts with newly fetched structured region;
-- party count by role;
-- URL fetch failures/schema changes.
+**Audit output before reset:**
+
+- row counts for properties and every dependent/derived table selected for cleanup;
+- counts of user-property states, comments, events, digest projections, queue jobs and media references affected by the reset;
+- exact table allowlist and foreign-key order;
+- database integrity result and backup path/checksum for apply mode;
+- no row payloads, PII, tokens or secrets.
 
 **Apply rules:**
 
-1. Backup SQLite and verify integrity before writes.
-2. Re-fetch public source for unsafe parsers; never regex-backfill from stored description.
-3. If structured evidence is unavailable, set `property_location.status='legacy_unverified'`; do not certify old address.
-4. Recompute `city` only from new location.
-5. Preserve user states/comments/property identity.
-6. Emit manifest of changed `document_id`, old/new city, location status and reason — without secrets.
-7. Run first on dev after explicit command; production only in a separately approved maintenance/deploy step.
+1. Default to audit-only; `apply` requires an explicit absolute database path and confirmation flag.
+2. Create and verify a fresh SQLite backup before writes.
+3. Stop writers for the short maintenance window and drain/cancel parser/analyzer jobs for the old catalog.
+4. Delete only the reviewed object-domain allowlist in a transaction and in foreign-key-safe order; rollback on any error.
+5. Preserve users, user profiles, settings, sources and parser configuration.
+6. Remove or quarantine orphaned object media only after the database transaction succeeds and the manifest is written.
+7. Verify SQLite integrity, zero expected object-domain rows, and unchanged protected-table counts.
+8. Deploy the exact accepted SHA, then run all active parsers from clean state and rebuild derived analysis/digest projections.
+9. Emit a source-by-source acceptance report: found, created, confirmed address, region-only, missing, filtered, parties by role and schema-change failures.
+10. Run first on dev; production reset/cutover remains a separately approved command.
 
 ### Task 10: Cross-parser contract suite
 
@@ -433,8 +435,9 @@ Production deploy remains a later explicit command and must use immutable `scrip
 - [ ] M-ETS `226787-1` does not become Moscow; PАО Сбербанк appears separately as pledgee with legal/postal details and explicit-text provenance.
 - [ ] Empty/absent DOM address yields region-only/missing, never guessed address.
 - [ ] Tver city and Tver Oblast work end-to-end in parser, DB, API scope, settings, labels and tests.
-- [ ] Historical rows are re-fetched or marked legacy-unverified; no regex-only certification.
-- [ ] Production remains unchanged until separately approved deploy.
+- [ ] Clean reset command audits and removes only the approved object-domain rows; protected configuration/user counts remain unchanged.
+- [ ] Full clean reparse rebuilds the catalog exclusively with the new semantic location contract.
+- [ ] Production remains unchanged until separately approved reset/cutover and deploy.
 
 ---
 
@@ -443,7 +446,7 @@ Production deploy remains a later explicit command and must use immutable `scrip
 1. **Recall temporarily decreases:** fail-closed behavior will classify some national-source rows as `other` or region-only. This is preferable to false Moscow/МО inclusion.
 2. **Some sources do not publish a separate full address:** M-ETS/ETPRF/Aggregator samples prove that «отдельный DOM address» is not universal. The system must represent honest absence instead of fabricating certainty.
 3. **Roseltorg remains blocked by Qrator:** selector contract cannot be accepted from guesses; infrastructure changes require separate approval.
-4. **Legacy UI compatibility:** add schema/API/UI support before clearing or de-emphasizing old addresses.
+4. **Clean cutover compatibility:** add schema/API/UI support before reset; old object rows are disposable and will not be migrated field-by-field.
 5. **Party role ambiguity:** organizer/customer/bank names do not prove pledgee status. Explicit role text is mandatory.
 6. **Contradictory source fields:** retain provenance and do not silently choose a participant field for geography.
 
