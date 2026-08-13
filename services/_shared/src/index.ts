@@ -13,4 +13,22 @@ export { detectCity } from './city-detect';
 export { classifyPropertyType } from './property-classifier';
 export { extractAuctionEndAt, hasAuctionEnded, parseAuctionEndAt } from './auction-date';
 export { parsePrice } from './price';
-export type { ParsedProperty, SourceParser, ParseOptions, ParseResult } from './types';
+export {
+  dedupeParties,
+  derivePropertyRegion,
+  mergePropertyLocation,
+  normalizeStructuredLocation,
+  projectLegacyAddress,
+} from './property-location';
+export type {
+  ParsedProperty,
+  PartyAddress,
+  PropertyLocation,
+  PropertyLocationStatus,
+  PropertyParty,
+  PropertyPartyRole,
+  SourceParser,
+  ParseOptions,
+  ParseResult,
+  StructuredSourceKind,
+} from './types';
