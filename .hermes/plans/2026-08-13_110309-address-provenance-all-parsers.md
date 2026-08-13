@@ -339,32 +339,34 @@ Update every hardcoded `moscow/mo/other` list found by repository search. Do not
 3. Legacy row with `legacy_unverified` must show warning and must not be used as primary location.
 4. Both themes/mobile/ARIA: semantic headings, definition lists, no horizontal overflow.
 
-### Task 9: Clean object reset and full reparse
+### Task 9: Restore admin catalog cleanup and run a full reparse
 
 Historical address backfill is intentionally removed from scope. The project has no client traffic yet, and the production object catalog may be cleared during an explicitly approved cutover.
 
-Create a narrow, explicit reset command with `audit` and `apply` modes. It must operate only on the disposable object domain and its derived records; it must not delete users, profiles, settings, sources, parser configuration, or other editorial/configuration data.
+Restore the previously removed `POST /properties/clear-new` maintenance flow instead of creating a second reset CLI. The route was lost during the scoped multi-user UI/API rebuild and is intentionally being returned as an **AKLAB-admin-only** action.
 
-**Audit output before reset:**
+**Files:**
 
-- row counts for properties and every dependent/derived table selected for cleanup;
-- counts of user-property states, comments, events, digest projections, queue jobs and media references affected by the reset;
-- exact table allowlist and foreign-key order;
-- database integrity result and backup path/checksum for apply mode;
-- no row payloads, PII, tokens or secrets.
+- Modify: `api/src/api/property/routes/property.ts`
+- Modify: `api/src/api/property/controllers/property.ts`
+- Modify or create a focused cleanup service under `api/src/services/`
+- Modify: `api/src/api/property/controllers/__tests__/property.test.ts`
+- Add focused service tests for object-domain cleanup
+- Restore an admin-only confirmation UI in Settings/Pipeline (do not expose it in the ordinary user catalog)
 
-**Apply rules:**
+**Contract:**
 
-1. Default to audit-only; `apply` requires an explicit absolute database path and confirmation flag.
-2. Create and verify a fresh SQLite backup before writes.
-3. Stop writers for the short maintenance window and drain/cancel parser/analyzer jobs for the old catalog.
-4. Delete only the reviewed object-domain allowlist in a transaction and in foreign-key-safe order; rollback on any error.
-5. Preserve users, user profiles, settings, sources and parser configuration.
-6. Remove or quarantine orphaned object media only after the database transaction succeeds and the manifest is written.
-7. Verify SQLite integrity, zero expected object-domain rows, and unchanged protected-table counts.
-8. Deploy the exact accepted SHA, then run all active parsers from clean state and rebuild derived analysis/digest projections.
-9. Emit a source-by-source acceptance report: found, created, confirmed address, region-only, missing, filtered, parties by role and schema-change failures.
-10. Run first on dev; production reset/cutover remains a separately approved command.
+1. Route uses `auth: false` plus both `global::authenticated-user` and `global::aklab-admin`; the admin policy re-reads the current role from the DB.
+2. Preserve the historical route name for compatibility, but require an explicit request body for the destructive scope. A full cutover must not silently reuse the old default «delete everything except `in_progress`» behavior.
+3. Full reset deletes the entire disposable object catalog and derived object rows: properties, user-property states, user comments, property events, and their Strapi relation-link rows discovered/handled by the current schema.
+4. Preserve users, roles, user profiles, settings, sources, parser configuration and editorial/configuration data.
+5. Refuse while pipeline/parser/analyzer jobs are active; production cutover stops writers first.
+6. Database deletion is transactional and foreign-key safe. The old behavior «delete photo directories first, then DB rows» must not return.
+7. Resolve media only through the private photo-storage contract. Remove/quarantine object media after the DB commit; report only directories that actually existed.
+8. Return a bounded count-only report. Do not return row payloads, PII, filesystem paths, tokens or secrets.
+9. Add tests for non-admin rejection at route-policy level, missing/wrong confirmation, full object-domain cleanup, protected-table preservation, rollback on DB error, orphan-event prevention, and truthful media counts.
+10. Deploy the exact accepted SHA, invoke cleanup only after separate production cutover approval, then run all active parsers from clean state and rebuild analysis/digest projections.
+11. Emit a source-by-source acceptance report: found, created, confirmed address, region-only, missing, filtered, parties by role and schema-change failures.
 
 ### Task 10: Cross-parser contract suite
 
@@ -435,9 +437,9 @@ Production deploy remains a later explicit command and must use immutable `scrip
 - [ ] M-ETS `226787-1` does not become Moscow; PАО Сбербанк appears separately as pledgee with legal/postal details and explicit-text provenance.
 - [ ] Empty/absent DOM address yields region-only/missing, never guessed address.
 - [ ] Tver city and Tver Oblast work end-to-end in parser, DB, API scope, settings, labels and tests.
-- [ ] Clean reset command audits and removes only the approved object-domain rows; protected configuration/user counts remain unchanged.
+- [ ] Restored admin catalog-cleanup action removes only the approved object domain; protected configuration/user counts remain unchanged.
 - [ ] Full clean reparse rebuilds the catalog exclusively with the new semantic location contract.
-- [ ] Production remains unchanged until separately approved reset/cutover and deploy.
+- [ ] Production remains unchanged until separately approved admin cleanup/cutover and deploy.
 
 ---
 
