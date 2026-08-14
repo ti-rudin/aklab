@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/service-shared';
 import { createSberbankAstParserDiagnostics, extractPropertyLocationFromXml } from '../sources/sberbank-ast';
 
@@ -313,5 +315,15 @@ describe('sberbank-ast: parser diagnostics', () => {
       location_label_id: 'property.location.address',
     });
     expect(JSON.stringify(diagnostic)).not.toContain('sensitive');
+  });
+
+  it('keeps imported auction-date parsing outside the browser evaluate closure', () => {
+    const source = readFileSync(resolve(__dirname, '../sources/sberbank-ast.ts'), 'utf8');
+    const start = source.indexOf('const details = await page.evaluate(() => {');
+    const end = source.indexOf('\n      });', start);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(source.slice(start, end)).not.toContain('parseAuctionEndAt(');
   });
 });

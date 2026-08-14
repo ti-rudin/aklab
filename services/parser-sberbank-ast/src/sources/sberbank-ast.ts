@@ -414,7 +414,7 @@ export class SberbankAstParser implements SourceParser {
           contacts,
           property_location: propertyLocation,
           property_block_found: Boolean(xmlDoc),
-          auction_end_at: parseAuctionEndAt(requestEnd || auctionDate || ''),
+          auction_end_at_raw: requestEnd || auctionDate || '',
         };
       });
 
@@ -426,7 +426,7 @@ export class SberbankAstParser implements SourceParser {
           details.property_location,
           details.property_block_found,
         ),
-        auction_end_at: details.auction_end_at,
+        auction_end_at: parseAuctionEndAt(details.auction_end_at_raw),
       };
     } catch (err: any) {
       logger.warn(`[sberbank-ast] fetchDetails failed (${safeParserErrorCode(err)})`);
