@@ -416,6 +416,17 @@ describe('retry on failure', () => {
 // ─── cancelJob() ────────────────────────────────────────────────────────────
 
 describe('cancelJob()', () => {
+  test('requestCancellation terminally marks a pending job as cancelled', () => {
+    const job = queue.add('q', {});
+
+    expect(queue.requestCancellation(job.id)).toBe(true);
+    expect(queue.getJob(job.id)).toEqual(expect.objectContaining({
+      status: 'failed',
+      error: 'cancelled',
+      cancellation_requested_at: expect.any(Number),
+    }));
+  });
+
   test('cancels a pending job', () => {
     const job = queue.add('q', {});
     const result = queue.cancelJob(job.id);
@@ -424,6 +435,7 @@ describe('cancelJob()', () => {
     const fetched = queue.getJob(job.id)!;
     expect(fetched.status).toBe('failed');
     expect(fetched.error).toBe('cancelled');
+    expect(fetched.cancellation_requested_at).toEqual(expect.any(Number));
   });
 
   test('does not cancel an active job', () => {
@@ -469,6 +481,26 @@ describe('cancelJob()', () => {
       await Promise.resolve();
       vi.useRealTimers();
     }
+  });
+});
+
+// ─── clearQueue() ───────────────────────────────────────────────────────────
+
+describe('clearQueue()', () => {
+  test('marks pending jobs with an authoritative cancellation timestamp', () => {
+    const cleared = queue.add('q', {});
+    const untouched = queue.add('other', {});
+
+    expect(queue.clearQueue('q')).toBe(1);
+    expect(queue.getJob(cleared.id)).toEqual(expect.objectContaining({
+      status: 'failed',
+      error: 'queue cleared',
+      cancellation_requested_at: expect.any(Number),
+    }));
+    expect(queue.getJob(untouched.id)).toEqual(expect.objectContaining({
+      status: 'pending',
+      cancellation_requested_at: null,
+    }));
   });
 });
 

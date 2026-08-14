@@ -146,6 +146,41 @@ describe('parse stage canonical snapshot propagation', () => {
     expect(JSON.stringify(mockUpdateState.mock.calls)).not.toContain('raw adapter response');
   });
 
+  it('records source health for a reconciled failed details job', async () => {
+    const ctx = makeCtx();
+    mockGetJob.mockImplementation((id: number) => id === 100
+      ? { id, status: 'completed', result: { total: 2, detailsNeeded: 2 } }
+      : { id, status: 'failed', error: 'parser.transient', cancellation_requested_at: null });
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: ['parser.transient'] });
+    expect(mockReconcileSourceStageQueueFailure).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSlug: 'source-one',
+      stage: 'details',
+      cancelled: false,
+      errorMessage: 'parser.transient',
+    }));
+    expect(mockRecordParserRunSourceHealth).toHaveBeenCalledWith(
+      ctx.strapi,
+      { runId: 'run-1', source: expect.objectContaining({ slug: 'source-one' }) },
+    );
+  });
+
+  it('does not record source health for a cancelled details job', async () => {
+    const ctx = makeCtx();
+    mockGetJob.mockImplementation((id: number) => id === 100
+      ? { id, status: 'completed', result: { total: 2, detailsNeeded: 2 } }
+      : { id, status: 'failed', error: 'parser.transient', cancellation_requested_at: 123 });
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: ['parser.cancelled'] });
+    expect(mockReconcileSourceStageQueueFailure).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSlug: 'source-one',
+      stage: 'details',
+      cancelled: true,
+      errorMessage: 'parser.cancelled',
+    }));
+    expect(mockRecordParserRunSourceHealth).not.toHaveBeenCalled();
+  });
+
   it('derives cancellation from queue state rather than message text', async () => {
     const ctx = makeCtx();
     mockGetJob.mockImplementation((id: number) => ({

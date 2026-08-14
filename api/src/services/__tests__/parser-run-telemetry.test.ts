@@ -233,12 +233,37 @@ describe('parser run telemetry', () => {
 
     await telemetry.reconcileSourceStageQueueFailure({
       runId: 'run-1', sourceSlug: 'fabrikant', stage: 'scan', jobId: 41,
-      cancelled: true, errorMessage: 'Cancellation requested',
+      cancelled: true, errorMessage: 'parser.transient',
     });
 
     expect(update).toHaveBeenCalledWith({
       where: { id: 7 },
       data: expect.objectContaining({ status: 'cancelled', error_message: 'parser.cancelled', finished_at: expect.any(String) }),
+    });
+  });
+
+  it('preserves a safe transient queue error class during terminal reconciliation', async () => {
+    const update = vi.fn().mockResolvedValue({ id: 7, status: 'failed' });
+    const telemetry = createParserRunTelemetry({
+      db: { query: vi.fn().mockReturnValue({
+        findOne: vi.fn().mockResolvedValue({ id: 7, identity_key: 'run-1:etprf:details', job_id: 41, status: 'running' }),
+        update,
+      }) },
+    } as any);
+
+    await telemetry.reconcileSourceStageQueueFailure({
+      runId: 'run-1', sourceSlug: 'etprf', stage: 'details', jobId: 41,
+      cancelled: false, errorMessage: 'parser.transient',
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: expect.objectContaining({
+        status: 'failed',
+        error_class: 'transient',
+        error_message: 'parser.transient',
+        finished_at: expect.any(String),
+      }),
     });
   });
 

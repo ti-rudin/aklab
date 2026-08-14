@@ -144,7 +144,7 @@ export function createParseHandler(parser: SourceParser) {
     const unresolvedDiagnostics: Array<{ external_id: string; source_path: string; status: 'missing' }> = [];
     let telemetrySent = false;
     const finishTelemetry = async (
-      status: 'success' | 'success_empty' | 'failed' | 'cancelled',
+      status: 'success' | 'success_empty' | 'degraded' | 'failed' | 'cancelled',
       errorMessage?: string,
       errorClass?: ParserErrorClass,
     ) => {
@@ -410,13 +410,16 @@ export function createParseHandler(parser: SourceParser) {
             throwIfCancellationRequested(workerContext);
             try {
               let detailFailed = false;
+              let fetchingDetails = false;
               // Загрузка детальной страницы (если парсер поддерживает)
               if (parser.fetchDetails) {
                 try {
                   await throwIfSourceQuarantined(req.documentId);
                   throwIfCancellationRequested(workerContext);
                   detailsAttempted++;
+                  fetchingDetails = true;
                   const details = await parser.fetchDetails(prop.url, sharedContext);
+                  fetchingDetails = false;
                   detailsOk++;
                   throwIfCancellationRequested(workerContext);
                   if (details && Object.keys(details).length > 0) {
@@ -474,7 +477,13 @@ export function createParseHandler(parser: SourceParser) {
                   if (err instanceof ParserSourceError) throw err;
                   if (isCancellationError(err)) throw err;
                   if (isInvalidPropertyLocationError(err)) throw err;
-                  if (filterContext.usesSnapshot) throw err;
+                  const isItemFetchFailure = fetchingDetails;
+                  fetchingDetails = false;
+                  // A plain adapter exception for one detail page is bounded to
+                  // that item. Everything after fetchDetails() remains fail-closed
+                  // for snapshot jobs so schema, telemetry and persistence errors
+                  // cannot be disguised as source degradation.
+                  if (filterContext.usesSnapshot && !isItemFetchFailure) throw err;
                   detailFailed = true;
                   itemFailures++;
                   logger.warn('fetchDetails failed', {
@@ -570,6 +579,18 @@ export function createParseHandler(parser: SourceParser) {
               logger.warn(`Failed: ${prop.external_id}: ${safeParserErrorCode(err)}`, { correlationId: corrId });
             }
           }
+
+          // Item-level degradation must not hide a source-wide outage or a
+          // broken detail adapter. With zero successful detail responses the
+          // stage remains retryable and the immutable artifact is preserved.
+          if (
+            filterContext.usesSnapshot
+            && detailsAttempted > 0
+            && detailsOk === 0
+            && itemFailures === detailsAttempted
+          ) {
+            throw new ParserSourceError('transient');
+          }
         } finally {
           // ВАЖНО: закрываем browser в finally — гарантия освобождения памяти
           // even if a detail request or cancellation path throws.
@@ -645,7 +666,11 @@ export function createParseHandler(parser: SourceParser) {
     if (phase !== 'scan' && unresolvedDiagnostics.length > 0) {
       writeLocationUnresolvedManifest(req.source, corrId, unresolvedDiagnostics);
     }
-    await finishTelemetry(total === 0 ? 'success_empty' : 'success');
+    await finishTelemetry(
+      total === 0 ? 'success_empty' : itemFailures > 0 ? 'degraded' : 'success',
+      itemFailures > 0 ? 'parser.transient' : undefined,
+      itemFailures > 0 ? 'transient' : undefined,
+    );
     if (phase !== 'scan') {
       // The only destructive artifact operation is immediately before a
       // successful return, after details and both terminal telemetry paths.

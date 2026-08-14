@@ -793,6 +793,94 @@ describe('createParseHandler()', () => {
     expect(existsSync(getScanArtifactPath('retry-source', runId))).toBe(false);
   });
 
+  test('degrades snapshot details for one untyped fetch failure and continues the remaining artifact', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser = makeParser(defaultProps);
+    parser.fetchDetails = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary item detail outage'))
+      .mockResolvedValueOnce({ description: 'verified detail payload' });
+    const snapshot = makeSnapshot([makeProfile({ propertyTypes: ['office', 'warehouse'] })]);
+    const handler = createParseHandler(parser);
+    const runId = `degraded-${Date.now()}`;
+
+    await handler(makeJob({ source: 'degraded-source', correlationId: runId, phase: 'scan', filterSnapshot: snapshot }));
+    const result = await handler(makeJob({
+      source: 'degraded-source',
+      documentId: 'doc-degraded',
+      correlationId: runId,
+      phase: 'details',
+      telemetryIdentityKey: 'run-degraded:degraded-source:details',
+      filterSnapshot: snapshot,
+    }));
+
+    expect(result).toEqual({
+      created: 1,
+      filtered: 0,
+      total: 2,
+      detailsFetched: 1,
+      detailsNeeded: 2,
+      locationUnresolved: 0,
+    });
+    expect(parser.fetchDetails).toHaveBeenCalledTimes(2);
+    expect(createProperty).toHaveBeenCalledTimes(1);
+    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({ external_id: 'ext-2' }));
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-degraded:degraded-source:details',
+      expect.objectContaining({
+        status: 'degraded',
+        error_class: 'transient',
+        error_message: 'parser.transient',
+        counters: expect.objectContaining({
+          details_attempted: 2,
+          details_ok: 1,
+          created: 1,
+          skipped: 1,
+          failed: 1,
+        }),
+      }),
+    );
+    expect(existsSync(getScanArtifactPath('degraded-source', runId))).toBe(false);
+  });
+
+  test('fails and retains the snapshot artifact when every detail request fails', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    const parser = makeParser(defaultProps);
+    parser.fetchDetails = vi.fn().mockRejectedValue(new Error('source-wide detail outage'));
+    const snapshot = makeSnapshot([makeProfile({ propertyTypes: ['office', 'warehouse'] })]);
+    const handler = createParseHandler(parser);
+    const runId = `all-details-failed-${Date.now()}`;
+
+    await handler(makeJob({ source: 'all-details-failed-source', correlationId: runId, phase: 'scan', filterSnapshot: snapshot }));
+    await expect(handler(makeJob({
+      source: 'all-details-failed-source',
+      documentId: 'doc-all-details-failed',
+      correlationId: runId,
+      phase: 'details',
+      telemetryIdentityKey: 'run-failed:all-details-failed-source:details',
+      filterSnapshot: snapshot,
+    }))).rejects.toThrow('parser.transient');
+
+    expect(parser.fetchDetails).toHaveBeenCalledTimes(2);
+    expect(createProperty).not.toHaveBeenCalled();
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-failed:all-details-failed-source:details',
+      expect.objectContaining({
+        status: 'failed',
+        error_class: 'transient',
+        error_message: 'parser.transient',
+        counters: expect.objectContaining({
+          details_attempted: 2,
+          details_ok: 0,
+          created: 0,
+          skipped: 2,
+          failed: 2,
+        }),
+      }),
+    );
+    expect(existsSync(getScanArtifactPath('all-details-failed-source', runId))).toBe(true);
+  });
+
   test('preserves the artifact when terminal source telemetry fails', async () => {
     (propertyExists as any).mockResolvedValue(false);
     (createProperty as any).mockResolvedValue({ id: 1 });

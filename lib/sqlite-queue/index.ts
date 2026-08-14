@@ -144,7 +144,8 @@ export class SqliteQueue {
     `);
     this.stmtCancelPending = this.db.prepare(`
       UPDATE jobs
-      SET status = 'failed', error = 'cancelled', completed_at = ?
+      SET status = 'failed', error = 'cancelled', completed_at = ?,
+          cancellation_requested_at = COALESCE(cancellation_requested_at, ?)
       WHERE id = ? AND status = 'pending'
     `);
     this.stmtRequestActiveCancellation = this.db.prepare(`
@@ -350,7 +351,7 @@ export class SqliteQueue {
    */
   requestCancellation(id: number): boolean {
     const now = Date.now();
-    if (this.stmtCancelPending.run(now, id).changes > 0) return true;
+    if (this.stmtCancelPending.run(now, now, id).changes > 0) return true;
     return this.stmtRequestActiveCancellation.run(now, id).changes > 0;
   }
 
@@ -445,7 +446,8 @@ export class SqliteQueue {
 
   /** Отменить pending job (для отмены delayed/scheduled задач). */
   cancelJob(id: number): boolean {
-    return this.stmtCancelPending.run(Date.now(), id).changes > 0;
+    const now = Date.now();
+    return this.stmtCancelPending.run(now, now, id).changes > 0;
   }
 
   /**
@@ -456,8 +458,8 @@ export class SqliteQueue {
     const now = Date.now();
     const clear = this.db.transaction(() => {
       const pending = this.db.prepare(
-        "UPDATE jobs SET status = 'failed', error = 'queue cleared', completed_at = ? WHERE queue = ? AND status = 'pending'"
-      ).run(now, queue).changes;
+        "UPDATE jobs SET status = 'failed', error = 'queue cleared', completed_at = ?, cancellation_requested_at = COALESCE(cancellation_requested_at, ?) WHERE queue = ? AND status = 'pending'"
+      ).run(now, now, queue).changes;
       const active = this.db.prepare(
         "UPDATE jobs SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?) WHERE queue = ? AND status = 'active'"
       ).run(now, queue).changes;
