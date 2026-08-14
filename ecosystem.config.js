@@ -73,7 +73,7 @@ const parserApps = services.parsers.map(p => ({
   script: 'node',
   args: 'dist/index.js',
   interpreter: 'none',
-  max_memory_restart: '512M',
+  max_memory_restart: p.max_memory_restart || '512M',
   exp_backoff_restart_delay: 100,
   env: {
     NODE_ENV: 'production',
