@@ -25,8 +25,53 @@ const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
 const PUBLIC_LOT_URL = 'https://torgi.gov.ru/new/public/lots/lot';
 const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
 const ITEMS_PER_PAGE = 10;
+const REQUEST_MAX_ATTEMPTS = 3;
+const REQUEST_BASE_DELAY_MS = 1_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 const MONITORED_REGION_CODES = new Set(['77', '50', '69']);
+
+type FetchImplementation = (url: string, init?: RequestInit) => Promise<Response>;
+type Sleep = (ms: number) => Promise<void>;
+
+const sleepDefault: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientHttpStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+export async function fetchTorgiResponseWithRetry(
+  url: string,
+  fetchImpl: FetchImplementation = fetch,
+  sleep: Sleep = sleepDefault,
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= REQUEST_MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetchImpl(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!isTransientHttpStatus(response.status) || attempt === REQUEST_MAX_ATTEMPTS) {
+        return response;
+      }
+      logger.warn(`[torgi-gov] transient HTTP ${response.status}; retry ${attempt}/${REQUEST_MAX_ATTEMPTS}`);
+      await response.body?.cancel().catch(() => {});
+    } catch (error) {
+      lastError = error;
+      if (attempt === REQUEST_MAX_ATTEMPTS) throw error;
+      logger.warn(`[torgi-gov] transient request failure (${safeParserErrorCode(error)}); retry ${attempt}/${REQUEST_MAX_ATTEMPTS}`);
+    }
+
+    await sleep(REQUEST_BASE_DELAY_MS * attempt);
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Torgi request failed');
+}
 
 export function isMonitoredTorgiRegion(regionCode: string): boolean {
   return MONITORED_REGION_CODES.has(regionCode);
@@ -196,12 +241,7 @@ export class TorgiGovParser implements SourceParser {
 
       logger.info(`[torgi-gov] fetchDetails via JSON API: ${apiUrl}`);
 
-      const response = await fetch(apiUrl, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
+      const response = await fetchTorgiResponseWithRetry(apiUrl);
 
       if (!response.ok) {
         throw parserHttpError(response.status);
@@ -258,12 +298,7 @@ export class TorgiGovParser implements SourceParser {
         await randomDelay(2000, 5000);
       }
 
-      const response = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
+      const response = await fetchTorgiResponseWithRetry(url);
 
       if (!response.ok) {
         throw parserHttpError(response.status);

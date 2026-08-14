@@ -5,6 +5,7 @@ import {
   extractTorgiAuctionEndAt,
   extractTorgiLotId,
   extractTorgiPropertyLocation,
+  fetchTorgiResponseWithRetry,
   isMonitoredTorgiRegion,
   TorgiGovParser,
 } from '../sources/torgi-gov';
@@ -65,6 +66,43 @@ describe('torgi-gov: detail failure contract', () => {
     } finally {
       fetchMock.mockRestore();
     }
+  });
+});
+
+describe('torgi-gov: request retry contract', () => {
+  it('retries a transient 503 response and returns the successful response', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response('busy', { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"content":[]}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const response = await fetchTorgiResponseWithRetry(
+      'https://torgi.gov.ru/new/api/public/lotcards/search?page=0',
+      fetchImpl,
+      sleep,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry an explicit HTTP block', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const response = await fetchTorgiResponseWithRetry(
+      'https://torgi.gov.ru/new/api/public/lotcards/search?page=0',
+      fetchImpl,
+      sleep,
+    );
+
+    expect(response.status).toBe(403);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 });
 
