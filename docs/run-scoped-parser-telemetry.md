@@ -20,7 +20,7 @@
 3. Сразу после `addToQueue` pipeline сохраняет **точный numeric** `job_id`.
 4. Worker, после claim задачи, переводит только принадлежащую ей строку в `running`.
 5. Worker отправляет один полный terminal snapshot counters.
-6. После `waitForJobs()` pipeline сверяет terminal SQLite Queue. Если queue зафиксировала failure/cancellation после worker callback, очередь является источником истины и telemetry приводится к `failed`/`cancelled`.
+6. После `waitForJobs()` pipeline сверяет terminal SQLite Queue. Если queue зафиксировала failure/cancellation после worker callback, очередь является источником истины и telemetry приводится к `failed`/`cancelled`; reconciliation сохраняет точный allowlisted `parser.<class>` из queue, а не подменяет любой failure классом `permanent`. Queue cancellation всегда нормализуется как `parser.cancelled`, даже если stale worker error содержал другой allowlisted class.
 7. После завершения pipeline `parser-run` получает `succeeded`, `degraded`, `failed` или `cancelled`.
 
 ## Protected worker aliases
@@ -67,6 +67,14 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 
 `detail_supported=false` — явный listing-only contract. Такая успешная details-строка может иметь `details_attempted=0` без detail fingerprint и классифицироваться как `healthy`; capability не выводится из counters. Для `detail_supported=true` сохраняются строгие detail counter/fingerprint drift checks. Enum `error_class` одинаков в worker client, controller, API service type и schema.
 
+## Item-level detail failures
+
+- Обычное исключение непосредственно из `parser.fetchDetails()` ограничивается одной карточкой: `failed` и `skipped` увеличиваются, обработка immutable artifact продолжается, terminal source status становится `degraded` с `parser.transient`.
+- `ParserSourceError`, cancellation/lease loss, invalid typed location, diagnostics/merge/progress/persistence errors после возврата `fetchDetails()` остаются source-level fail-closed failures.
+- Если все выполненные detail requests источника завершились ошибкой (`details_ok=0`), stage не может стать `degraded`: он завершается `failed`, остаётся retryable, а scan artifact сохраняется.
+- Terminal `completed` и `failed` details rows проходят source-health classification/alert path после queue reconciliation; cancellation row намеренно исключается.
+- Partial degraded success очищает artifact только после terminal telemetry и source stats; failed stage artifact не удаляет.
+
 ## Invariants
 
 - `run_id` и `identity_key` не изменяются;
@@ -76,6 +84,7 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 - для `detail_supported=true`: `location_unresolved <= location_missing`, а сумма location statuses не превышает `details_ok`; для listing-only detail extraction counters нулевые, но `location_unresolved` может фиксировать fail-closed persistence skip;
 - fingerprint не содержит raw HTML, CSS classes, адреса или party data;
 - `error_message` проходит strict controller allowlist и хранит только controlled `parser.<class>` code; worker rethrows a fresh typed safe error, pipeline state never copies raw `job.error`, and queue cancellation is derived from `cancellation_requested_at` rather than message text;
+- queue-terminal reconciliation выводит `error_class` только из уже allowlisted `parser.<class>`; неизвестный/raw текст безопасно нормализуется в `parser.transient`;
 - normal terminal строка не может быть перезаписана другим terminal payload; post-terminal annotation `health_status` допускается только для source-health CAS winner и вычисляется из уже сохранённого exact snapshot;
 - исключение — reconciliation с terminal состоянием SQLite Queue при cancellation race.
 

@@ -404,14 +404,17 @@ export function createParserRunTelemetry(strapi: any) {
       const key = identityKey(runId, sourceSlug, stage);
       const existing = await sourceStages().findOne({ where: { identity_key: key } });
       assertOwned(existing, jobId, key);
-      const errorClass: ApiParserErrorClass = cancelled ? 'cancelled' : 'permanent';
+      const safeError = cancelled
+        ? 'parser.cancelled'
+        : safeParserTelemetryError(errorMessage);
+      const errorClass = safeError.slice('parser.'.length) as ApiParserErrorClass;
       return sourceStages().update({
         where: { id: existing.id },
         data: {
           status: cancelled ? 'cancelled' : 'failed',
           finished_at: new Date().toISOString(),
           error_class: errorClass,
-          error_message: safeParserTelemetryError(errorMessage, errorClass),
+          error_message: safeError,
         },
       });
     },

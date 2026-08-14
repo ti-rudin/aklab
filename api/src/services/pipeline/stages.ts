@@ -383,7 +383,8 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
   const created = sumResult(detailWait.jobs, 'created');
   const fetched = sumResult(detailWait.jobs, 'detailsFetched');
   for (const { slug, id } of detailJobs) {
-    if (qs.getJob(id)?.status !== 'completed') continue;
+    const terminalJob = qs.getJob(id);
+    if (!terminalJob || !terminal(terminalJob) || terminalJob.cancellation_requested_at) continue;
     const source = sources.find((candidate: any) => candidate.slug === slug);
     if (!source) continue;
     try {
