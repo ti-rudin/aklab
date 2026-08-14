@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   buildTorgiLotUrl,
+  createTorgiParserDiagnostics,
   extractTorgiAuctionEndAt,
   extractTorgiLotId,
   extractTorgiPropertyLocation,
   isMonitoredTorgiRegion,
+  TorgiGovParser,
 } from '../sources/torgi-gov';
 import { projectLegacyAddress, derivePropertyRegion } from '@aklab/service-shared';
 
@@ -44,6 +46,27 @@ function extractArea(item: any): number | undefined {
   }
   return undefined;
 }
+
+describe('torgi-gov: detail failure contract', () => {
+  it('rejects an unsuccessful detail response instead of returning stale scan data', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 503 } as Response);
+    try {
+      await expect(new TorgiGovParser().fetchDetails(buildTorgiLotUrl('21000005000000031466_1')))
+        .rejects.toThrow('parser.transient');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('rejects a blocked list response instead of reporting a successful empty scan', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 403 } as Response);
+    try {
+      await expect(new TorgiGovParser().parse(1)).rejects.toThrow('parser.http_block');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+});
 
 function mapRegionToCity(regionCode: string): 'moscow' | 'mo' | 'other' {
   if (regionCode === '77') return 'moscow';
@@ -325,5 +348,19 @@ describe('torgi-gov: full item extraction simulation', () => {
     expect(location.status).toBe('confirmed_region_only');
     expect(location.source_path).toBe('lot.subjectRFCode');
     expect(mapRegionToCity('16')).toBe('other');
+  });
+});
+
+describe('torgi-gov: parser diagnostics', () => {
+  it('fingerprints allowlisted payload keys without values', () => {
+    const item = { estateAddress: 'sensitive raw address', lotDescription: 'sensitive text' };
+    const location = extractTorgiPropertyLocation(item);
+    const diagnostic = createTorgiParserDiagnostics(item, location);
+    expect(diagnostic).toMatchObject({
+      property_block_found: true,
+      location_label_id: 'property.location.address',
+    });
+    expect(diagnostic.semantic_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(diagnostic)).not.toContain('sensitive');
   });
 });

@@ -6,11 +6,14 @@
  * fetchDetails: открывает /Notification/id/{id} — 4 таба с .details-table
  */
 
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parsePrice,
   projectLegacyAddress,
@@ -24,7 +27,41 @@ const SEARCH_URL = `${BASE_URL}/Notification`;
 const MAX_PAGES = 10;
 const PROPERTY_REGION_LABEL = 'Регион местонахождения имущества';
 const LISTING_LOCATION_SOURCE_PATH = 'listing.property_location';
-const DETAIL_LOCATION_SOURCE_PATH = `details.field.${PROPERTY_REGION_LABEL}`;
+const DETAIL_PROPERTY_DESCRIPTION_SOURCE_PATH = 'details.field.Сведения об имуществе.address';
+const DETAIL_PROPERTY_REGION_SOURCE_PATH = `details.field.${PROPERTY_REGION_LABEL}`;
+
+export interface EtprfPropertyLocationFields {
+  [key: string]: unknown;
+  propertyBlockFound?: boolean;
+  propertyDescription?: string;
+  propertyRegion?: string;
+}
+
+/** Browser-safe exact-label extraction from property rows only. */
+export function extractEtprfPropertyLocationFields(documentLike?: Document): EtprfPropertyLocationFields {
+  const doc = documentLike ?? document;
+  let propertyBlockFound = false;
+  const fields = new Map<string, string>();
+  for (const row of Array.from(doc.querySelectorAll('.details-table tr'))) {
+    const label = (row.querySelector('.td-label')?.textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/:$/, '')
+      .trim();
+    const value = row.querySelector('.td-value')?.textContent?.replace(/\s+/g, ' ').trim();
+    if (label === 'Сведения об имуществе'
+      || label === 'Краткие сведения об имуществе'
+      || label === 'Регион местонахождения имущества') propertyBlockFound = true;
+    if (label && value) fields.set(label, value);
+  }
+  const propertyDescription = fields.get('Сведения об имуществе')
+    ?? fields.get('Краткие сведения об имуществе');
+  const propertyRegion = fields.get('Регион местонахождения имущества');
+  return {
+    propertyBlockFound,
+    ...(propertyDescription ? { propertyDescription: propertyDescription.slice(0, 2000) } : {}),
+    ...(propertyRegion ? { propertyRegion } : {}),
+  };
+}
 
 function extractArea(text: string): number | undefined {
   const match = text.match(/(\d[\d\s]*[,.]?\d*)\s*(?:кв\.?\s*м|м²|м2)/i);
@@ -50,22 +87,33 @@ export function extractEtprfListingLocation(_fields?: {
   });
 }
 
-/** Extract geography only from ETPRF's explicit current-property region field. */
-export function extractEtprfPropertyLocation(fields: Record<string, unknown>): PropertyLocation {
+/** Extract geography only from ETPRF's bounded current-property fields. */
+export function extractEtprfPropertyLocation(fields: EtprfPropertyLocationFields): PropertyLocation {
+  const propertyDescription = structuredText(fields.propertyDescription);
   const region = structuredText(fields.propertyRegion);
+  const address = extractAddressFromBoundedPropertyText(propertyDescription);
+  if (address) {
+    return normalizeStructuredLocation({
+      address,
+      ...(region ? { region } : {}),
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: DETAIL_PROPERTY_DESCRIPTION_SOURCE_PATH,
+    });
+  }
   if (region) {
     return normalizeStructuredLocation({
       region,
       status: 'confirmed_region_only',
       source_kind: 'dom_field',
-      source_path: DETAIL_LOCATION_SOURCE_PATH,
+      source_path: DETAIL_PROPERTY_REGION_SOURCE_PATH,
     });
   }
 
   return normalizeStructuredLocation({
     status: 'missing',
     source_kind: 'dom_field',
-    source_path: DETAIL_LOCATION_SOURCE_PATH,
+    source_path: DETAIL_PROPERTY_REGION_SOURCE_PATH,
   });
 }
 
@@ -184,14 +232,14 @@ export class EtprfParser implements SourceParser {
       logger.info(`[etprf] Total: ${allProperties.length} properties`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[etprf] Parse error: ${err.message}`);
+      logger.error(`[etprf] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -210,14 +258,15 @@ export class EtprfParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки таблиц (details-table — актуальный селектор)
-      try {
-        await page.waitForSelector('.details-table', { timeout: 15000 });
-      } catch {
-        await page.waitForTimeout(3000);
-      }
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('.details-table tr')).some((row) => {
+        const label = (row.querySelector('.td-label')?.textContent || '').replace(/:\s*$/u, '').trim();
+        const value = (row.querySelector('.td-value')?.textContent || '').trim();
+        return ['Сведения об имуществе', 'Краткие сведения об имуществе', 'Регион местонахождения имущества']
+          .includes(label) && value.length > 0;
+      }), undefined, { timeout: 15000 });
 
-      const details = await page.evaluate((propertyRegionLabel: string) => {
+      const locationFields = await page.evaluate(extractEtprfPropertyLocationFields);
+      const details = await page.evaluate(() => {
         // Утилита: найти значение поля по labelText во ВСЕХ .details-table
         function getFieldValue(labelText: string): string | undefined {
           const rows = document.querySelectorAll('.details-table tr');
@@ -251,8 +300,7 @@ export class EtprfParser implements SourceParser {
           contacts?: string;
           latitude?: number;
           longitude?: number;
-          price?: number;
-          propertyRegion?: string;
+          priceText?: string;
         } = {};
 
         // === Контакты: организатор + email + телефон ===
@@ -275,28 +323,37 @@ export class EtprfParser implements SourceParser {
           result.description = desc.slice(0, 2000);
         }
 
-        // === Начальная цена продажи ===
-        const priceText = getFieldValue('Начальная цена продажи');
-        if (priceText) {
-          const num = parsePrice(priceText);
-          if (num !== undefined) {
-            result.price = num;
-          }
-        }
+        // === Начальная цена продажи: browser context returns text only ===
+        result.priceText = getFieldValue('Начальная цена продажи');
 
-        // Geography comes only from the explicit current-property field.
-        // Description, "Почтовый адрес", and organizer fields are not location.
-        result.propertyRegion = getFieldValue(propertyRegionLabel);
 
         // Координаты: на etprf.ru НЕТ координат в карточках
         result.latitude = undefined;
         result.longitude = undefined;
 
         return result;
-      }, PROPERTY_REGION_LABEL);
+      });
 
       const propertyLocation = extractEtprfPropertyLocation({
-        propertyRegion: details.propertyRegion,
+        propertyDescription: locationFields.propertyDescription,
+        propertyRegion: locationFields.propertyRegion,
+      });
+      const locationLabelId = propertyLocation.status === 'confirmed_address'
+        ? 'property.location.address'
+        : propertyLocation.status === 'confirmed_region_only'
+          ? 'property.location.region'
+          : undefined;
+      const parserDiagnostics = createParserExtractionDiagnostics({
+        adapterVersion: 'etprf.v1',
+        propertyBlockFound: locationFields.propertyBlockFound === true,
+        ...(locationLabelId ? { locationLabelId } : {}),
+        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        semanticSignals: [
+          ...(locationFields.propertyBlockFound ? ['property.block'] : []),
+          ...(locationFields.propertyDescription ? ['property.description'] : []),
+          ...(locationFields.propertyRegion ? ['property.location.region'] : []),
+          ...(propertyLocation.status === 'confirmed_address' ? ['property.location.address'] : []),
+        ],
       });
 
       return {
@@ -305,13 +362,14 @@ export class EtprfParser implements SourceParser {
         latitude: details.latitude,
         longitude: details.longitude,
         property_location: propertyLocation,
+        parser_diagnostics: parserDiagnostics,
         address: projectLegacyAddress(propertyLocation),
         city: derivePropertyRegion(propertyLocation),
-        price: details.price,
+        price: details.priceText ? parsePrice(details.priceText) : undefined,
       };
     } catch (err: any) {
-      logger.warn(`[etprf] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[etprf] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       if (page) try { await page.close(); } catch {}
       if (ownBrowser) try { await ownBrowser.close(); } catch {}

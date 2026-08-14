@@ -6,12 +6,15 @@
  * 12 карточек на страницу, ~217 страниц.
  * Площадь из badges: title="Площадь: 112.00"
  */
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   createStealthContext,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parsePrice,
   projectLegacyAddress,
@@ -25,10 +28,39 @@ const MAX_PAGES = 10;
 const MAX_AGE_HOURS = 24;
 
 export interface AlfalotPropertyLocationFields {
+  propertyBlockFound?: boolean;
   /** Separate current-lot region field rendered on the card. */
   cardRegion?: string;
   /** Separate property-bound address field rendered on the detail page. */
   detailAddress?: string;
+  /** Bounded current-lot `Описание` field; organizer lives in another tab. */
+  propertyDescription?: string;
+}
+
+/** Browser-safe extraction from hydrated property-domain containers only. */
+export function extractAlfalotPropertyLocationFields(documentLike?: Document): AlfalotPropertyLocationFields {
+  const doc = documentLike ?? document;
+  const propertyBlockFound = Boolean(doc.querySelector('.location-block, .tab-content[data-page="lot-info"]'));
+  const detailAddress = doc.querySelector('.location-block > p.address')?.textContent
+    ?.replace(/\s+/g, ' ')
+    .trim() || undefined;
+  let propertyDescription: string | undefined;
+  const lotInfo = doc.querySelector('.tab-content[data-page="lot-info"]');
+  if (lotInfo) {
+    for (const heading of Array.from(lotInfo.querySelectorAll('h3'))) {
+      const label = (heading.textContent ?? '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('ru-RU');
+      if (label !== 'описание') continue;
+      const next = heading.nextElementSibling;
+      const value = next?.tagName === 'P' ? next.textContent?.replace(/\s+/g, ' ').trim() : undefined;
+      if (value && value.length > 20) propertyDescription = value.slice(0, 2000);
+      break;
+    }
+  }
+  return {
+    propertyBlockFound,
+    ...(detailAddress && detailAddress.length > 3 ? { detailAddress } : {}),
+    ...(propertyDescription ? { propertyDescription } : {}),
+  };
 }
 
 function cleanLocationField(value: string | undefined): string | undefined {
@@ -50,6 +82,16 @@ export function extractAlfalotPropertyLocation(fields: AlfalotPropertyLocationFi
       status: 'confirmed_address',
       source_kind: 'dom_field',
       source_path: '.location-block > p.address',
+    });
+  }
+
+  const descriptionAddress = extractAddressFromBoundedPropertyText(fields.propertyDescription);
+  if (descriptionAddress) {
+    return normalizeStructuredLocation({
+      address: descriptionAddress,
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '.tab-content[data-page="lot-info"].field.Описание.address',
     });
   }
 
@@ -192,14 +234,14 @@ export class AlfalotParser implements SourceParser {
       logger.info(`[alfalot] Total: ${allProperties.length} properties`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[alfalot] Parse error: ${err.message}`);
+      logger.error(`[alfalot] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -220,26 +262,16 @@ export class AlfalotParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём отдельный property-bound блок «Местонахождение» или описание.
-      try {
-        await page.waitForSelector('.location-block > p.address, .tab-content[data-page="lot-info"] h3', { timeout: 10000 });
-      } catch {
-        await page.waitForTimeout(3000);
-      }
-      // Дополнительная пауза для SPA hydration
-      await page.waitForTimeout(1000);
+      await page.waitForFunction(() => {
+        const address = (document.querySelector('.location-block > p.address')?.textContent || '').trim();
+        const description = Array.from(document.querySelectorAll('.tab-content[data-page="lot-info"] h3'))
+          .find((heading) => (heading.textContent || '').trim().toLocaleLowerCase('ru-RU') === 'описание')
+          ?.nextElementSibling?.textContent?.trim() || '';
+        return address.length > 0 || description.length > 0;
+      }, undefined, { timeout: 10000 });
 
+      const locationFields = await page.evaluate(extractAlfalotPropertyLocationFields);
       const details = await page.evaluate(() => {
-        // Описание: <p> после <h3>Описание</h3> в табе lot-info
-        const descH3 = document.querySelector('.tab-content[data-page="lot-info"] h3');
-        let description = '';
-        if (descH3) {
-          const nextP = descH3.nextElementSibling;
-          if (nextP && nextP.tagName === 'P' && nextP.textContent && nextP.textContent.trim().length > 20) {
-            description = nextP.textContent.trim().slice(0, 2000);
-          }
-        }
-
         // Контакты: таб organizer-info → ul li с label-value паттерном
         const contactParts: string[] = [];
         const organizerTab = document.querySelector('.tab-content[data-page="organizer-info"]');
@@ -264,9 +296,6 @@ export class AlfalotParser implements SourceParser {
         }
         const contacts = contactParts.length > 0 ? contactParts.join(', ') : undefined;
 
-        // Адрес: отдельное property-bound поле блока «Местонахождение».
-        const addressEl = document.querySelector('.location-block > p.address');
-        const detailAddress = addressEl?.textContent?.trim() || '';
 
         // Аукцион: .start_price, .current_price, .bid_end_date, .auction_start_date
         const startPrice = document.querySelector('.start_price')?.textContent?.trim();
@@ -297,21 +326,40 @@ export class AlfalotParser implements SourceParser {
         }
 
         return {
-          description: description || undefined,
           contacts,
-          detailAddress: detailAddress.length > 3 ? detailAddress : undefined,
           auctionDetails: auctionParts.length > 0 ? auctionParts.join(' | ') : undefined,
         };
       });
 
+      const propertyLocation = extractAlfalotPropertyLocation({
+        detailAddress: locationFields.detailAddress,
+        propertyDescription: locationFields.propertyDescription,
+      });
+      const locationLabelId = propertyLocation.status === 'confirmed_address'
+        ? 'property.location.address'
+        : propertyLocation.status === 'confirmed_region_only'
+          ? 'property.location.region'
+          : undefined;
+      const parserDiagnostics = createParserExtractionDiagnostics({
+        adapterVersion: 'alfalot.v1',
+        propertyBlockFound: locationFields.propertyBlockFound === true,
+        ...(locationLabelId ? { locationLabelId } : {}),
+        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        semanticSignals: [
+          ...(locationFields.propertyBlockFound ? ['property.block'] : []),
+          ...(locationFields.propertyDescription ? ['property.description'] : []),
+          ...(locationFields.detailAddress ? ['property.location.address'] : []),
+        ],
+      });
       return {
-        description: details.description,
+        description: locationFields.propertyDescription,
         contacts: details.contacts,
-        property_location: extractAlfalotPropertyLocation({ detailAddress: details.detailAddress }),
+        property_location: propertyLocation,
+        parser_diagnostics: parserDiagnostics,
       };
     } catch (err: any) {
-      logger.warn(`[alfalot] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[alfalot] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       // ВАЖНО: закрываем page после каждого вызова — иначе zombie процессы
       if (page) try { await page.close(); } catch {}

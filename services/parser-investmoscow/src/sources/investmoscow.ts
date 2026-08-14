@@ -11,6 +11,7 @@ import type { SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   derivePropertyRegion,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parseAuctionEndAt,
   projectLegacyAddress,
@@ -256,7 +257,7 @@ export class InvestmoscowParser implements SourceParser {
 
         await randomDelay(500, 1500);
       } catch (err: any) {
-        logger.error(`[investmoscow] Ошибка категории ${cat.key}: ${err.message}`);
+        logger.error(`[investmoscow] Ошибка категории ${cat.key}: ${safeParserErrorCode(err)}`);
       }
     }
 

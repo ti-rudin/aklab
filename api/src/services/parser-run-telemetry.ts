@@ -1,4 +1,5 @@
 import { canonicalJson, type UserFilterSnapshot } from '@aklab/parse-rules';
+import { safeParserTelemetryError, type ApiParserErrorClass } from './parser-error-safety';
 
 type ParserStage = 'scan' | 'details';
 export type ParserRunProfileScope = 'all' | 'single' | 'none';
@@ -23,6 +24,13 @@ export type StageCounters = {
   created: number;
   skipped: number;
   failed: number;
+  property_block_found: number;
+  location_label_found: number;
+  location_confirmed_address: number;
+  location_confirmed_region_only: number;
+  location_missing: number;
+  location_unresolved: number;
+  schema_mismatch: number;
 };
 
 export type DigestCounters = {
@@ -48,8 +56,11 @@ type FinishSourceStage = SourceStageJobRef & {
   jobId: number;
   status: Exclude<SourceStageStatus, 'queued' | 'running'>;
   counters: StageCounters;
-  errorClass?: 'transient' | 'rate_limited' | 'blocked' | 'schema_changed' | 'permanent' | 'cancelled';
+  errorClass?: 'transient' | 'rate_limited' | 'blocked' | 'anti_bot' | 'http_block' | 'schema_changed' | 'permanent' | 'cancelled';
+  detailSupported?: boolean;
   errorMessage?: string;
+  diagnosticsSchemaVersion?: 1;
+  semanticFingerprint?: string;
 };
 
 const SOURCE_STAGE_UID = 'api::parser-run-source.parser-run-source';
@@ -68,6 +79,13 @@ const ZERO_COUNTERS: StageCounters = {
   created: 0,
   skipped: 0,
   failed: 0,
+  property_block_found: 0,
+  location_label_found: 0,
+  location_confirmed_address: 0,
+  location_confirmed_region_only: 0,
+  location_missing: 0,
+  location_unresolved: 0,
+  schema_mismatch: 0,
 };
 
 export class ParserRunSnapshotConflictError extends Error {
@@ -386,18 +404,19 @@ export function createParserRunTelemetry(strapi: any) {
       const key = identityKey(runId, sourceSlug, stage);
       const existing = await sourceStages().findOne({ where: { identity_key: key } });
       assertOwned(existing, jobId, key);
+      const errorClass: ApiParserErrorClass = cancelled ? 'cancelled' : 'permanent';
       return sourceStages().update({
         where: { id: existing.id },
         data: {
           status: cancelled ? 'cancelled' : 'failed',
           finished_at: new Date().toISOString(),
-          ...(cancelled ? { error_class: 'cancelled' } : { error_class: 'permanent' }),
-          ...(errorMessage ? { error_message: errorMessage.slice(0, 1_000) } : {}),
+          error_class: errorClass,
+          error_message: safeParserTelemetryError(errorMessage, errorClass),
         },
       });
     },
 
-    async finishSourceStage({ runId, sourceSlug, stage, jobId, status, counters, errorClass, errorMessage }: FinishSourceStage) {
+    async finishSourceStage({ runId, sourceSlug, stage, jobId, status, counters, errorClass, errorMessage, detailSupported, diagnosticsSchemaVersion, semanticFingerprint }: FinishSourceStage) {
       const key = identityKey(runId, sourceSlug, stage);
       const existing = await sourceStages().findOne({ where: { identity_key: key } });
       assertOwned(existing, jobId, key);
@@ -407,10 +426,17 @@ export function createParserRunTelemetry(strapi: any) {
         where: { id: existing.id },
         data: {
           status,
+          ...(detailSupported !== undefined ? { detail_supported: detailSupported } : {}),
           ...counters,
+          ...(diagnosticsSchemaVersion ? {
+            diagnostics_schema_version: diagnosticsSchemaVersion,
+            semantic_fingerprint: semanticFingerprint,
+          } : {}),
           finished_at: new Date().toISOString(),
           ...(errorClass ? { error_class: errorClass } : {}),
-          ...(errorMessage ? { error_message: errorMessage } : {}),
+          ...(errorMessage ? {
+            error_message: safeParserTelemetryError(errorMessage, errorClass as ApiParserErrorClass | undefined),
+          } : {}),
         },
       });
     },

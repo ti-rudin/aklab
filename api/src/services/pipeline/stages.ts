@@ -7,6 +7,9 @@ import type { Job } from '@aklab/sqlite-queue';
 import type { StrapiInstance } from '../../types/strapi';
 import { getQueueService } from '../queueService';
 import { createParserRunTelemetry } from '../parser-run-telemetry';
+import { isSafeParserTelemetryError } from '../parser-error-safety';
+import { recordParserRunSourceHealth } from '../parser-source-health';
+import { isNormalParserSourceAllowed } from '../parser-source-quarantine';
 import { scorePropertiesBatch } from '../focusEngine';
 import type { UserFilterSnapshot } from '../user-profile';
 import { updateState } from './state';
@@ -50,6 +53,15 @@ function terminal(job: Job | null): boolean {
   return job?.status === 'completed' || job?.status === 'failed';
 }
 
+function isCancellationTerminal(job: Job): boolean {
+  return job.cancellation_requested_at !== null && job.cancellation_requested_at !== undefined;
+}
+
+function safeTerminalParserError(job: Job): string {
+  if (isCancellationTerminal(job)) return 'parser.cancelled';
+  return isSafeParserTelemetryError(job.error) ? job.error : 'parser.transient';
+}
+
 /**
  * Await only jobs recorded for this run. Cancellation intentionally does not
  * short-circuit this loop: active workers must acknowledge cancellation and
@@ -81,7 +93,7 @@ async function waitForJobs(
     if (missing.length) {
       return {
         jobs,
-        errors: missing.map(id => `${label}: job ${id} не найдена в очереди`),
+        errors: missing.map(() => 'pipeline.queue_missing'),
         timedOut: false,
       };
     }
@@ -90,10 +102,10 @@ async function waitForJobs(
       return {
         jobs,
         errors: [
-          ...(timedOut ? [`${label}: deadline превышен; cancellation подтверждена terminal states задач`] : []),
+          ...(timedOut ? ['pipeline.deadline'] : []),
           ...jobs
             .filter(job => job.status === 'failed')
-            .map(job => `${label}: job ${job.id} завершилась с ошибкой: ${job.error || 'unknown error'}`),
+            .map(safeTerminalParserError),
         ],
         timedOut,
       };
@@ -201,14 +213,15 @@ async function reconcileQueueFailures(
     if (job.status !== 'failed') continue;
     const sourceSlug = slugByJobId.get(job.id);
     if (!sourceSlug) continue;
-    const errorMessage = job.error || 'Queue job failed after worker completion';
+    const cancelled = isCancellationTerminal(job);
+    const errorMessage = safeTerminalParserError(job);
     try {
       await telemetry.reconcileSourceStageQueueFailure({
         runId,
         sourceSlug,
         stage,
         jobId: job.id,
-        cancelled: /cancel(?:led|ed|lation)/i.test(errorMessage),
+        cancelled,
         errorMessage,
       });
     } catch (error: any) {
@@ -230,10 +243,11 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
     return { created: 0, errors };
   }
 
-  const sources = await ctx.strapi.entityService.findMany('api::source.source', {
+  const sourceCandidates = await ctx.strapi.entityService.findMany('api::source.source', {
     filters: { is_active: true },
     limit: 100,
   });
+  const sources = (sourceCandidates ?? []).filter(isNormalParserSourceAllowed);
   if (!sources?.length) {
     await updateState(ctx.strapi, { stage: 'parsing_done', sources_total: 0, sources_done: 0 }, 'Нет активных источников');
     return { created: 0, errors };
@@ -319,6 +333,14 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
   for (const slug of completedScanSlugs) {
     if (ctx.isCancelled()) break;
     const src = sources.find((source: any) => source.slug === slug) as any;
+    const refreshed = await ctx.strapi.entityService.findMany('api::source.source', {
+      filters: { slug },
+      limit: 1,
+    });
+    if (!isNormalParserSourceAllowed(refreshed?.[0])) {
+      ctx.strapi.log.warn(`[pipeline] Details skipped for quarantined source ${slug}`);
+      continue;
+    }
     await telemetry.ensureSourceStage({
       runId,
       sourceSlug: slug,
@@ -360,6 +382,17 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
 
   const created = sumResult(detailWait.jobs, 'created');
   const fetched = sumResult(detailWait.jobs, 'detailsFetched');
+  for (const { slug, id } of detailJobs) {
+    if (qs.getJob(id)?.status !== 'completed') continue;
+    const source = sources.find((candidate: any) => candidate.slug === slug);
+    if (!source) continue;
+    try {
+      await recordParserRunSourceHealth(ctx.strapi, { runId, source });
+    } catch {
+      errors.push('pipeline.health_summary_failed');
+      ctx.strapi.log.error('[pipeline] Parser source health summary failed');
+    }
+  }
   if (!ctx.isCancelled()) {
     await updateState(ctx.strapi, {
       stage: 'parsing_done',

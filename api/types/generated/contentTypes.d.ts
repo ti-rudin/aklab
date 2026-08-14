@@ -577,6 +577,8 @@ export interface ApiParserRunSourceParserRunSource
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    detail_supported: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
     details_attempted: Schema.Attribute.Integer &
       Schema.Attribute.SetMinMax<
         {
@@ -593,6 +595,14 @@ export interface ApiParserRunSourceParserRunSource
         number
       > &
       Schema.Attribute.DefaultTo<0>;
+    diagnostics_schema_version: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          max: 1;
+          min: 1;
+        },
+        number
+      >;
     eligible: Schema.Attribute.Integer &
       Schema.Attribute.SetMinMax<
         {
@@ -606,6 +616,8 @@ export interface ApiParserRunSourceParserRunSource
         'transient',
         'rate_limited',
         'blocked',
+        'anti_bot',
+        'http_block',
         'schema_changed',
         'permanent',
         'cancelled',
@@ -629,6 +641,9 @@ export interface ApiParserRunSourceParserRunSource
       > &
       Schema.Attribute.DefaultTo<0>;
     finished_at: Schema.Attribute.DateTime;
+    health_status: Schema.Attribute.Enumeration<
+      ['healthy', 'degraded', 'schema_changed', 'blocked']
+    >;
     heartbeat_at: Schema.Attribute.DateTime;
     identity_key: Schema.Attribute.String &
       Schema.Attribute.Required &
@@ -648,6 +663,46 @@ export interface ApiParserRunSourceParserRunSource
       'api::parser-run-source.parser-run-source'
     > &
       Schema.Attribute.Private;
+    location_confirmed_address: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    location_confirmed_region_only: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    location_label_found: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    location_missing: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    location_unresolved: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
     parser_run: Schema.Attribute.Relation<
       'manyToOne',
       'api::parser-run.parser-run'
@@ -660,7 +715,27 @@ export interface ApiParserRunSourceParserRunSource
         number
       > &
       Schema.Attribute.DefaultTo<0>;
+    property_block_found: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
     publishedAt: Schema.Attribute.DateTime;
+    schema_mismatch: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    semantic_fingerprint: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 64;
+      }>;
     skipped: Schema.Attribute.Integer &
       Schema.Attribute.SetMinMax<
         {
@@ -1017,12 +1092,24 @@ export interface ApiSourceSource extends Struct.CollectionTypeSchema {
         number
       >;
     is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    last_health_alert_at: Schema.Attribute.DateTime;
+    last_health_alert_key: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 64;
+      }>;
+    last_health_checked_at: Schema.Attribute.DateTime;
+    last_health_reason: Schema.Attribute.Text;
+    last_health_recovered_at: Schema.Attribute.DateTime;
     last_parse_error: Schema.Attribute.Text;
     last_parse_status: Schema.Attribute.Enumeration<
       ['success', 'error', 'running', 'never']
     > &
       Schema.Attribute.DefaultTo<'never'>;
     last_parsed_at: Schema.Attribute.DateTime;
+    last_schema_fingerprint: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 128;
+      }>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -1060,6 +1147,18 @@ export interface ApiSourceSource extends Struct.CollectionTypeSchema {
       ]
     > &
       Schema.Attribute.Required;
+    parser_health_degraded_streak: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      > &
+      Schema.Attribute.DefaultTo<0>;
+    parser_health_status: Schema.Attribute.Enumeration<
+      ['healthy', 'degraded', 'schema_changed', 'blocked']
+    > &
+      Schema.Attribute.DefaultTo<'healthy'>;
     publishedAt: Schema.Attribute.DateTime;
     region: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{

@@ -1,5 +1,6 @@
-import { createParseHandler } from '@aklab/service-shared';
+import { createParseHandler, createParserQueueHandler } from '@aklab/service-shared';
 import { AlfalotParser } from './sources/alfalot';
 
 const parser = new AlfalotParser();
-export const handleParseJob = createParseHandler(parser);
+const parseHandler = createParseHandler(parser);
+export const handleParseJob = createParserQueueHandler(parser, parseHandler);

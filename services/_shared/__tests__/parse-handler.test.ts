@@ -3,7 +3,7 @@
  * Mocks strapi-client and logger; tests the orchestration logic.
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -41,6 +41,7 @@ vi.mock('../src/strapi-client', () => ({
   resetSourceDetailsCounters: vi.fn().mockResolvedValue(undefined),
   finishParserRunSourceStage: vi.fn().mockResolvedValue(undefined),
   markParserRunSourceStageRunning: vi.fn().mockResolvedValue(undefined),
+  isSourceNormalWorkAllowed: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../src/anti-ban', () => ({
@@ -48,12 +49,14 @@ vi.mock('../src/anti-ban', () => ({
 }));
 
 import { createParseHandler } from '../src/parse-handler';
-import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, finishParserRunSourceStage, markParserRunSourceStageRunning } from '../src/strapi-client';
+import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters, finishParserRunSourceStage, markParserRunSourceStageRunning, isSourceNormalWorkAllowed } from '../src/strapi-client';
 import { randomDelay } from '../src/anti-ban';
 import type { Job } from '@aklab/sqlite-queue';
 import type { SourceParser } from '../src/types';
 import { createUserFilterSnapshot, type UserFilterSnapshot } from '@aklab/parse-rules';
-import { getScanArtifactPath } from '../src/scan-artifact';
+import { getLocationUnresolvedManifestPath, getScanArtifactPath } from '../src/scan-artifact';
+import { createParserExtractionDiagnostics } from '../src/parser-diagnostics';
+import { ParserSourceError } from '../src/parser-error';
 
 // Helpers
 function makeJob(data: any, correlationId?: string): Job {
@@ -156,6 +159,7 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
 describe('createParseHandler()', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(isSourceNormalWorkAllowed).mockResolvedValue(true);
   });
 
   test('returns a function', () => {
@@ -173,7 +177,7 @@ describe('createParseHandler()', () => {
     const job = makeJob({ source: 'tender', documentId: 'doc-src-1' });
     const result = await handler(job);
 
-    expect(result).toEqual({ created: 2, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0 });
+    expect(result).toEqual({ created: 2, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 });
     expect(parser.parse).toHaveBeenCalledTimes(1);
     expect(propertyExists).toHaveBeenCalledTimes(2);
     expect(createProperty).toHaveBeenCalledTimes(2);
@@ -194,6 +198,7 @@ describe('createParseHandler()', () => {
     expect(finishParserRunSourceStage).toHaveBeenCalledWith('run-1:tender:scan', {
       job_id: 1,
       status: 'success',
+      detail_supported: false,
       counters: {
         listed: 2,
         eligible: 2,
@@ -204,8 +209,71 @@ describe('createParseHandler()', () => {
         created: 2,
         skipped: 0,
         failed: 0,
+        property_block_found: 0,
+        location_label_found: 0,
+        location_confirmed_address: 0,
+        location_confirmed_region_only: 0,
+        location_missing: 0,
+        location_unresolved: 0,
+        schema_mismatch: 0,
       },
     });
+  });
+
+  test('aggregates bounded extraction diagnostics into details telemetry without Property leakage', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'diagnostic-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'diagnostic-property',
+        property_location: {
+          status: 'missing', source_kind: 'dom_field', source_path: 'listing.property_location',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        property_location: {
+          region: 'Ярославская область', status: 'confirmed_region_only',
+          source_kind: 'dom_field', source_path: 'details.field.region',
+        },
+        parser_diagnostics: createParserExtractionDiagnostics({
+          adapterVersion: 'test-adapter.v1',
+          propertyBlockFound: true,
+          locationLabelId: 'property.location.region',
+          semanticSignals: ['property.block', 'property.location.region'],
+        }),
+      }),
+    };
+    const snapshot = makeSnapshot([makeProfile({ profileId: 711, regions: ['other'], propertyTypes: ['warehouse'] })]);
+    const runId = `diagnostics-${Date.now()}`;
+    const handler = createParseHandler(parser);
+
+    await handler(makeJob({
+      source: 'diagnostic-source', correlationId: runId, phase: 'scan',
+      telemetryIdentityKey: 'run-diagnostic:diagnostic-source:scan', filterSnapshot: snapshot,
+    }));
+    await handler(makeJob({
+      source: 'diagnostic-source', correlationId: runId, phase: 'details',
+      telemetryIdentityKey: 'run-diagnostic:diagnostic-source:details', filterSnapshot: snapshot,
+    }));
+
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-diagnostic:diagnostic-source:details',
+      expect.objectContaining({
+        diagnostics_schema_version: 1,
+        semantic_fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+        counters: expect.objectContaining({
+          details_attempted: 1, details_ok: 1, property_block_found: 1,
+          location_label_found: 1, location_confirmed_address: 0,
+          location_confirmed_region_only: 1, location_missing: 0,
+          location_unresolved: 0, schema_mismatch: 0,
+        }),
+      }),
+    );
+    expect(createProperty).toHaveBeenCalledWith(
+      expect.not.objectContaining({ parser_diagnostics: expect.anything() }),
+    );
   });
 
   test('skips already existing properties', async () => {
@@ -216,7 +284,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 2, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 });
     expect(createProperty).not.toHaveBeenCalled();
   });
 
@@ -229,7 +297,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 1, filtered: 1, total: 2, detailsFetched: 0, detailsNeeded: 0 });
+    expect(result).toEqual({ created: 1, filtered: 1, total: 2, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 });
   });
 
   test('logs error and re-throws when parser.parse() fails', async () => {
@@ -242,7 +310,7 @@ describe('createParseHandler()', () => {
 
     await expect(
       handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }))
-    ).rejects.toThrow('Parse engine crashed');
+    ).rejects.toThrow('parser.transient');
   });
 
   test('updates source stats with error status when parse fails', async () => {
@@ -259,8 +327,143 @@ describe('createParseHandler()', () => {
 
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
       last_parse_status: 'error',
-      last_parse_error: 'timeout',
+      last_parse_error: 'parser.transient',
     }));
+  });
+
+  test('persists an explicit blocking class but never raw adapter error text', async () => {
+    const error = new ParserSourceError('anti_bot');
+    (error as any).message = 'secret token and credential-bearing URL';
+    const parser: SourceParser = {
+      name: 'blocked-parser',
+      parse: vi.fn().mockRejectedValue(error),
+    };
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'tender',
+      documentId: 'doc-src-1',
+      telemetryIdentityKey: 'run-1:tender:scan',
+      filterSnapshot: makeSnapshot([makeProfile()]),
+    }))).rejects.toMatchObject({
+      message: 'parser.anti_bot',
+      parser_error_class: 'anti_bot',
+      permanent: true,
+    });
+
+    expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
+      last_parse_error: 'parser.anti_bot',
+    }));
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-1:tender:scan',
+      expect.objectContaining({
+        status: 'failed',
+        error_class: 'anti_bot',
+        error_message: 'parser.anti_bot',
+      }),
+    );
+    expect(JSON.stringify((updateSourceStats as any).mock.calls)).not.toContain('secret token');
+    expect(JSON.stringify((finishParserRunSourceStage as any).mock.calls)).not.toContain('secret token');
+  });
+
+  test('rechecks live source quarantine in the worker before parser side effects', async () => {
+    vi.mocked(isSourceNormalWorkAllowed).mockResolvedValue(false);
+    const parser = makeParser(defaultProps);
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'tender',
+      documentId: 'doc-src-1',
+      telemetryIdentityKey: 'run-1:tender:scan',
+      filterSnapshot: makeSnapshot([makeProfile()]),
+    }))).rejects.toThrow('parser.blocked');
+
+    expect(isSourceNormalWorkAllowed).toHaveBeenCalledWith('doc-src-1');
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(resetSourceDetailsCounters).not.toHaveBeenCalled();
+    expect(finishParserRunSourceStage).toHaveBeenCalledWith(
+      'run-1:tender:scan',
+      expect.objectContaining({
+        status: 'failed',
+        error_class: 'blocked',
+        error_message: 'parser.blocked',
+      }),
+    );
+  });
+
+  test('rechecks live source quarantine after counter reset immediately before scan adapter work', async () => {
+    vi.mocked(isSourceNormalWorkAllowed)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const parser = makeParser(defaultProps);
+    const handler = createParseHandler(parser);
+
+    await expect(handler(makeJob({
+      source: 'tender',
+      documentId: 'doc-src-1',
+      telemetryIdentityKey: 'run-1:tender:scan',
+      filterSnapshot: makeSnapshot([makeProfile()]),
+    }))).rejects.toThrow('parser.blocked');
+
+    expect(resetSourceDetailsCounters).toHaveBeenCalledWith('doc-src-1');
+    expect(isSourceNormalWorkAllowed).toHaveBeenCalledTimes(2);
+    expect(parser.parse).not.toHaveBeenCalled();
+  });
+
+  test('rechecks live source quarantine again before detail adapter work', async () => {
+    const correlationId = `detail-quarantine-${Date.now()}`;
+    const parser = makeParser([defaultProps[0]]);
+    parser.fetchDetails = vi.fn().mockResolvedValue({});
+    const handler = createParseHandler(parser);
+    vi.mocked(propertyExists).mockResolvedValue(false);
+
+    await handler(makeJob({
+      source: 'tender', documentId: 'doc-src-1', correlationId, phase: 'scan',
+    }));
+
+    vi.mocked(isSourceNormalWorkAllowed).mockReset()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    try {
+      await expect(handler(makeJob({
+        source: 'tender', documentId: 'doc-src-1', correlationId, phase: 'details',
+      }))).rejects.toThrow('parser.blocked');
+
+      expect(parser.fetchDetails).not.toHaveBeenCalled();
+      expect(createProperty).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(isSourceNormalWorkAllowed).mockReset().mockResolvedValue(true);
+    }
+  });
+
+  test('does not swallow a persistence-time quarantine race in a legacy no-snapshot job', async () => {
+    vi.mocked(propertyExists).mockResolvedValue(false);
+    vi.mocked(createProperty).mockResolvedValue({ id: 1 } as any);
+    vi.mocked(isSourceNormalWorkAllowed)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const handler = createParseHandler(makeParser([defaultProps[0]]));
+
+    await expect(handler(makeJob({
+      source: 'manual-source',
+      documentId: 'doc-manual-source',
+      correlationId: `manual-quarantine-${Date.now()}`,
+    }))).rejects.toMatchObject({
+      message: 'parser.blocked',
+      parser_error_class: 'blocked',
+      permanent: true,
+    });
+
+    expect(createProperty).not.toHaveBeenCalled();
+    expect(updateSourceStats).toHaveBeenCalledWith(
+      'doc-manual-source',
+      expect.objectContaining({
+        last_parse_status: 'error',
+        last_parse_error: 'parser.blocked',
+      }),
+    );
   });
 
   test('does not crash when individual property creation fails (catches per-item)', async () => {
@@ -305,7 +508,7 @@ describe('createParseHandler()', () => {
 
     expect(logCron).toHaveBeenCalledTimes(1);
     expect(logCron).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'boom',
+      error: 'parser.transient',
     }));
   });
 
@@ -318,7 +521,7 @@ describe('createParseHandler()', () => {
       documentId: 'doc-src-1',
       correlationId: `missing-artifact-${Date.now()}`,
       phase: 'details',
-    }))).rejects.toThrow('Scan artifact is missing');
+    }))).rejects.toThrow('parser.permanent');
   });
 
   test('rejects a legacy array artifact instead of silently processing it', async () => {
@@ -330,7 +533,7 @@ describe('createParseHandler()', () => {
 
     const handler = createParseHandler(makeParser([]));
     await expect(handler(makeJob({ source, documentId: 'doc-src-1', correlationId, phase: 'details' })))
-      .rejects.toThrow('Scan artifact manifest is invalid');
+      .rejects.toThrow('parser.permanent');
   });
 
   test('calls updateSourceStats with success data on success', async () => {
@@ -385,7 +588,7 @@ describe('createParseHandler()', () => {
 
     const result = await handler(makeJob({ source: 'tender', documentId: 'doc-src-1' }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 });
     expect(propertyExists).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();
     expect(updateSourceStats).toHaveBeenCalledWith('doc-src-1', expect.objectContaining({
@@ -416,7 +619,7 @@ describe('createParseHandler()', () => {
     await expect(handler(makeJob({
       source: 'pipeline-snapshot-required',
       telemetryIdentityKey: 'run-required:pipeline-snapshot-required:scan',
-    }))).rejects.toThrow('Parse job filter snapshot is required');
+    }))).rejects.toThrow('parser.permanent');
 
     expect(parser.parse).not.toHaveBeenCalled();
     expect(propertyExists).not.toHaveBeenCalled();
@@ -511,7 +714,7 @@ describe('createParseHandler()', () => {
 
     await handler(makeJob({ source: 'mismatch-source', correlationId: runId, phase: 'scan', filterSnapshot: first }));
     await expect(handler(makeJob({ source: 'mismatch-source', correlationId: runId, phase: 'details', filterSnapshot: second })))
-      .rejects.toThrow('Scan artifact metadata is invalid');
+      .rejects.toThrow('parser.permanent');
 
     expect(parser.fetchDetails).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();
@@ -529,7 +732,7 @@ describe('createParseHandler()', () => {
       documentId: 'doc-invalid-snapshot',
       telemetryIdentityKey: 'run-invalid:invalid-snapshot-source:scan',
       filterSnapshot: invalidSnapshot,
-    }))).rejects.toThrow('Parse job filter snapshot hash mismatch');
+    }))).rejects.toThrow('parser.permanent');
 
     expect(markParserRunSourceStageRunning).not.toHaveBeenCalled();
     expect(parser.parse).not.toHaveBeenCalled();
@@ -552,7 +755,7 @@ describe('createParseHandler()', () => {
       filterSnapshot: snapshot,
     }));
 
-    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 });
+    expect(result).toEqual({ created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 });
     expect(parser.parse).not.toHaveBeenCalled();
     expect(propertyExists).not.toHaveBeenCalled();
     expect(preFilterProperty).not.toHaveBeenCalled();
@@ -577,7 +780,7 @@ describe('createParseHandler()', () => {
       phase: 'details',
       telemetryIdentityKey: 'run-retry:retry-source:details',
       filterSnapshot: snapshot,
-    }))).rejects.toThrow('injected create failure');
+    }))).rejects.toThrow('parser.transient');
     expect(existsSync(getScanArtifactPath('retry-source', runId))).toBe(true);
 
     await handler(makeJob({
@@ -770,6 +973,156 @@ describe('createParseHandler()', () => {
     }));
   });
 
+  test('does not persist a real-estate candidate whose successful details leave location missing', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'missing-detail-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'missing-after-detail',
+        address: 'legacy Moscow must be cleared',
+        city: 'moscow',
+        property_location: {
+          status: 'missing',
+          source_kind: 'dom_field',
+          source_path: 'listing.property_location',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        description: 'bounded property details without a location',
+        property_location: {
+          status: 'missing',
+          source_kind: 'dom_field',
+          source_path: 'details.field.location',
+        },
+      }),
+    };
+
+    const runId = `missing-after-detail-${Date.now()}`;
+    const result = await createParseHandler(parser)(makeJob({
+      source: 'missing-after-detail-source',
+      correlationId: runId,
+    }));
+
+    expect(result).toMatchObject({ created: 0, locationUnresolved: 1 });
+    expect(createProperty).not.toHaveBeenCalled();
+    const manifestPath = getLocationUnresolvedManifestPath('missing-after-detail-source', runId);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    expect(manifest.items).toEqual([{
+      external_id: 'missing-after-detail',
+      source_path: 'details.field.location',
+      status: 'missing',
+    }]);
+    expect(JSON.stringify(manifest)).not.toMatch(/legacy Moscow|bounded property details|address|party/i);
+    unlinkSync(manifestPath);
+  });
+
+  test.each([
+    [
+      'confirmed_region_only',
+      {
+        region: 'Ярославская область',
+        status: 'confirmed_region_only',
+        source_kind: 'dom_field',
+        source_path: 'details.field.region',
+      },
+    ],
+    [
+      'confirmed_address',
+      {
+        address: 'Ярославская область, г. Ярославль, ул. Свободы, д. 1',
+        status: 'confirmed_address',
+        source_kind: 'dom_field',
+        source_path: 'details.field.address',
+      },
+    ],
+  ])('persists a candidate whose successful details produce %s', async (_status, detailLocation) => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'confirmed-detail-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: `confirmed-${_status}`,
+        property_location: {
+          status: 'missing',
+          source_kind: 'dom_field',
+          source_path: 'listing.property_location',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({ property_location: detailLocation }),
+    };
+
+    const result = await createParseHandler(parser)(makeJob({
+      source: `confirmed-${_status}-source`,
+      correlationId: `confirmed-${_status}-${Date.now()}`,
+    }));
+
+    expect(result).toMatchObject({ created: 1, locationUnresolved: 0 });
+    expect(createProperty).toHaveBeenCalledWith(expect.objectContaining({
+      property_location: expect.objectContaining({ status: _status }),
+    }));
+  });
+
+  test('does not let a party address rescue an unresolved property location', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'party-only-detail-parser',
+      parse: vi.fn().mockResolvedValue([{
+        ...defaultProps[0],
+        external_id: 'party-only-location',
+        property_location: {
+          status: 'missing',
+          source_kind: 'dom_field',
+          source_path: 'listing.property_location',
+        },
+      }]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        property_location: {
+          status: 'missing',
+          source_kind: 'dom_field',
+          source_path: 'details.field.location',
+        },
+        parties: [{
+          name: 'Тестовый банк',
+          roles: ['pledgee'],
+          addresses: [{ kind: 'postal', value: 'г. Москва, ул. Вавилова, д. 19' }],
+          source_path: 'details.party.pledgee',
+          source_kind: 'dom_field',
+          confidence: 'structured',
+        }],
+      }),
+    };
+
+    const result = await createParseHandler(parser)(makeJob({
+      source: 'party-only-location-source',
+      correlationId: `party-only-location-${Date.now()}`,
+    }));
+
+    expect(result).toMatchObject({ created: 0, locationUnresolved: 1 });
+    expect(createProperty).not.toHaveBeenCalled();
+  });
+
+  test('treats a rejected detail request as an item failure rather than unresolved or persistence', async () => {
+    (propertyExists as any).mockResolvedValue(false);
+    (createProperty as any).mockResolvedValue({ id: 1 });
+    const parser: SourceParser = {
+      name: 'failed-detail-parser',
+      parse: vi.fn().mockResolvedValue([{ ...defaultProps[0], external_id: 'failed-detail' }]),
+      fetchDetails: vi.fn().mockRejectedValue(new Error('detail timeout')),
+    };
+
+    const result = await createParseHandler(parser)(makeJob({
+      source: 'failed-detail-source',
+      correlationId: `failed-detail-${Date.now()}`,
+    }));
+
+    expect(result).toMatchObject({ created: 0, locationUnresolved: 0 });
+    expect(createProperty).not.toHaveBeenCalled();
+  });
+
   test('fails closed for an invalid typed location before persistence', async () => {
     (propertyExists as any).mockResolvedValue(false);
     const parser = makeParser([{
@@ -785,7 +1138,7 @@ describe('createParseHandler()', () => {
     await expect(createParseHandler(parser)(makeJob({
       source: 'invalid-typed-location-source',
       documentId: 'doc-invalid-location',
-    }))).rejects.toThrow('Invalid property location');
+    }))).rejects.toThrow('parser.permanent');
 
     expect(propertyExists).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();
@@ -803,7 +1156,7 @@ describe('createParseHandler()', () => {
 
     await expect(createParseHandler(parser)(makeJob({
       source: 'without-location-source',
-    }))).rejects.toThrow('property_location is required');
+    }))).rejects.toThrow('parser.permanent');
 
     expect(propertyExists).not.toHaveBeenCalled();
     expect(createProperty).not.toHaveBeenCalled();

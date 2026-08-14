@@ -6,12 +6,14 @@
  *
  * ~6600 лотов, ~332 страницы.
  */
-import type { SourceParser, ParsedProperty, PropertyLocation } from '@aklab/service-shared';
+import type { ParserDetailResult, SourceParser, ParsedProperty, PropertyLocation } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   createStealthContext,
   derivePropertyRegion,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parseAuctionEndAt,
   parsePrice,
@@ -36,6 +38,27 @@ function extractArea(text: string): number | undefined {
 }
 
 const PROPERTY_LOCATION_SOURCE_PATH = 'textAddress|GeoDataAddress';
+
+export function createSberbankAstParserDiagnostics(
+  propertyLocation: PropertyLocation,
+  propertyBlockFound: boolean,
+) {
+  const locationLabelId = propertyLocation.status === 'confirmed_address'
+    ? 'property.location.address'
+    : propertyLocation.status === 'confirmed_region_only'
+      ? 'property.location.coordinates'
+      : undefined;
+  return createParserExtractionDiagnostics({
+    adapterVersion: 'sberbank-ast.v1',
+    propertyBlockFound,
+    ...(locationLabelId ? { locationLabelId } : {}),
+    ...(!locationLabelId && propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+    semanticSignals: [
+      ...(propertyBlockFound ? ['property.xml'] : []),
+      ...(locationLabelId ? [locationLabelId] : []),
+    ],
+  });
+}
 
 function cleanXmlText(value: string): string | undefined {
   const decoded = value
@@ -268,14 +291,14 @@ export class SberbankAstParser implements SourceParser {
       logger.info(`[sberbank-ast] Total: ${allProperties.length} properties`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[sberbank-ast] Parse error: ${err.message}`);
+      logger.error(`[sberbank-ast] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string): Promise<ParserDetailResult> {
     const { chromium } = await import('playwright');
     const browser = await chromium.launch({
       headless: true,
@@ -390,6 +413,7 @@ export class SberbankAstParser implements SourceParser {
           description: description || undefined,
           contacts,
           property_location: propertyLocation,
+          property_block_found: Boolean(xmlDoc),
           auction_end_at: parseAuctionEndAt(requestEnd || auctionDate || ''),
         };
       });
@@ -398,11 +422,15 @@ export class SberbankAstParser implements SourceParser {
         description: details.description,
         contacts: details.contacts,
         property_location: details.property_location,
+        parser_diagnostics: createSberbankAstParserDiagnostics(
+          details.property_location,
+          details.property_block_found,
+        ),
         auction_end_at: details.auction_end_at,
       };
     } catch (err: any) {
-      logger.warn(`[sberbank-ast] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[sberbank-ast] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       await browser.close();
     }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/service-shared';
-import { extractPropertyLocationFromXml } from '../sources/sberbank-ast';
+import { createSberbankAstParserDiagnostics, extractPropertyLocationFromXml } from '../sources/sberbank-ast';
 
 /**
  * Тесты extraction-логики parser-sberbank-ast.
@@ -301,5 +301,17 @@ describe('sberbank-ast: XML lot extraction simulation', () => {
     const lots = extractFromXml(xml);
     expect(lots[0].lat).toBeUndefined();
     expect(lots[0].lng).toBeUndefined();
+  });
+});
+
+describe('sberbank-ast: parser diagnostics', () => {
+  it('uses only semantic XML/address IDs', () => {
+    const location = extractPropertyLocationFromXml('<textAddress>sensitive raw address</textAddress>');
+    const diagnostic = createSberbankAstParserDiagnostics(location, true);
+    expect(diagnostic).toMatchObject({
+      property_block_found: true,
+      location_label_id: 'property.location.address',
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain('sensitive');
   });
 });

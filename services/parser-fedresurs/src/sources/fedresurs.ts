@@ -9,6 +9,7 @@ import {
   derivePropertyRegion,
   normalizeStructuredLocation,
   projectLegacyAddress,
+  safeParserErrorCode,
 } from '@aklab/service-shared';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -78,7 +79,7 @@ async function fetchAll(maxBiddings?: number): Promise<any> {
     maxBuffer: 50 * 1024 * 1024, // 50MB
   });
   if (stderr) {
-    logger.debug(`[fedresurs] python stderr: ${stderr.slice(0, 300)}`);
+    logger.debug('[fedresurs] Python client emitted stderr');
   }
   return JSON.parse(stdout);
 }
@@ -94,14 +95,12 @@ export class FedresursParser implements SourceParser {
     try {
       data = await fetchAll(depth);
     } catch (err: any) {
-      logger.error(`[fedresurs] Python client failed: ${err.message}`);
-      return [];
+      logger.error(`[fedresurs] Python client failed: ${safeParserErrorCode(err)}`);
+      throw err;
     }
 
     if (data.errors?.length) {
-      for (const err of data.errors) {
-        logger.warn(`[fedresurs] API error: ${err}`);
-      }
+      logger.warn(`[fedresurs] API returned controlled error count=${data.errors.length}`);
     }
 
     // === Process pledged subjects ===
@@ -176,7 +175,4 @@ export class FedresursParser implements SourceParser {
     return unique;
   }
 
-  async fetchDetails(_url: string): Promise<Partial<ParsedProperty>> {
-    return {};
-  }
 }

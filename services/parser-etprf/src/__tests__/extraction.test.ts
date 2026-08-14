@@ -1,13 +1,32 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 import {
   derivePropertyRegion,
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
 import {
+  EtprfParser,
+  extractEtprfPropertyLocationFields,
   extractEtprfListingLocation,
   extractEtprfPropertyLocation,
 } from '../sources/etprf';
+
+function fixture(name: string): Document {
+  return new JSDOM(readFileSync(join(__dirname, 'fixtures', name), 'utf8')).window.document;
+}
+
+describe('etprf: detail failure contract', () => {
+  it('rethrows an unhydrated property block and closes the page', async () => {
+    const failure = new Error('property block timeout');
+    const page = { goto: vi.fn(), waitForFunction: vi.fn().mockRejectedValue(failure), close: vi.fn() };
+    await expect(new EtprfParser().fetchDetails('https://example.test/lot', { newPage: async () => page } as any))
+      .rejects.toBe(failure);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+});
 
 /**
  * Тесты extraction-логики parser-etprf.
@@ -105,6 +124,24 @@ describe('etprf: extractArea', () => {
 });
 
 describe('etprf: typed property location', () => {
+  it('extracts bounded property fields from representative details-table HTML', () => {
+    const fields = extractEtprfPropertyLocationFields(fixture('property-location.html'));
+    const location = extractEtprfPropertyLocation(fields);
+
+    expect(fields.propertyRegion).toBe('Ярославская область');
+    expect(fields.propertyDescription).toContain('СНТ "Тюльпан"');
+    expect(JSON.stringify(fields)).not.toContain('Казань');
+    expect(location.status).toBe('confirmed_address');
+    expect(location.address).toContain('Ярославская область');
+  });
+
+  it('ignores organizer postal address when property fields are absent', () => {
+    const fields = extractEtprfPropertyLocationFields(fixture('organizer-postal-address.html'));
+
+    expect(fields).toEqual({ propertyBlockFound: false });
+    expect(extractEtprfPropertyLocation(fields).status).toBe('missing');
+  });
+
   it('returns missing for listing data even when subject and notification contain synthetic city tokens', () => {
     const location = extractEtprfListingLocation({
       subject: 'Нежилое помещение, synthetic-city-token',
@@ -135,6 +172,23 @@ describe('etprf: typed property location', () => {
       source_path: 'details.field.Регион местонахождения имущества',
     });
     expect(projectLegacyAddress(location)).toBe('');
+  });
+
+  it('extracts a full address from the bounded current-property field before region fallback', () => {
+    const location = extractEtprfPropertyLocation({
+      propertyDescription: 'Земельный участок. Адрес: Ярославская область, Некрасовский р-н, СНТ "Тюльпан", уч. 93. Кадастровый номер 76:09:022401:115.',
+      propertyRegion: 'Ярославская область',
+      postalAddress: '420111, Республика Татарстан, г. Казань, ул. Пушкина, д. 13/52',
+      organizer: 'АКБ Энергобанк',
+    });
+
+    expect(location).toEqual({
+      address: 'Ярославская область, Некрасовский р-н, СНТ "Тюльпан", уч. 93',
+      region: 'Ярославская область',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: 'details.field.Сведения об имуществе.address',
+    });
   });
 
   it('returns missing when the explicit property region field is absent', () => {

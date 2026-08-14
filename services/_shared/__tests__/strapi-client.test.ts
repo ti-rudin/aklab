@@ -43,6 +43,7 @@ import {
   updateProperty,
   markParserRunSourceStageRunning,
   finishParserRunSourceStage,
+  isSourceNormalWorkAllowed,
 } from '../src/strapi-client';
 
 const BASE = 'http://localhost:1338/api';
@@ -56,6 +57,37 @@ function mockJsonResponse(data: any, status = 200): Response {
     text: () => Promise.resolve(JSON.stringify(data)),
   } as Response;
 }
+
+describe('isSourceNormalWorkAllowed()', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test.each(['healthy', 'degraded'])('allows active supported status %s', async (status) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockJsonResponse({
+      data: { is_active: true, parser_health_status: status },
+    }));
+    await expect(isSourceNormalWorkAllowed('source/doc id')).resolves.toBe(true);
+    expect(fetch).toHaveBeenCalledWith(
+      `${BASE}/internal/sources/source%2Fdoc%20id/stats`,
+      expect.any(Object),
+    );
+  });
+
+  test.each([null, undefined, 'schema_changed', 'blocked', 'unknown_state'])('rejects hard, missing, or unknown status %s', async (status) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockJsonResponse({
+      data: { is_active: true, parser_health_status: status },
+    }));
+    await expect(isSourceNormalWorkAllowed('source-id')).resolves.toBe(false);
+  });
+
+  test('fails closed on unavailable or malformed state', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(mockJsonResponse({}, 503));
+    await expect(isSourceNormalWorkAllowed('source-id')).resolves.toBe(false);
+    vi.mocked(fetch).mockResolvedValueOnce(mockJsonResponse({ data: { is_active: 'yes' } }));
+    await expect(isSourceNormalWorkAllowed('source-id')).resolves.toBe(false);
+  });
+});
 
 // ─── propertyExists ─────────────────────────────────────────────────────────
 

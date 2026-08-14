@@ -12,6 +12,7 @@ import type { UserFilterSnapshot } from '../user-profile';
 // ── Types ──
 
 export type PipelineStage =
+  | 'canary'
   | 'idle'
   | 'parsing_scan'
   | 'parsing_scan_done'

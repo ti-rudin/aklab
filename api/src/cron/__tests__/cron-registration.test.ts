@@ -14,11 +14,13 @@ const {
   mockCronSchedule,
   mockRun,
   mockDigest,
+  mockCanaryRun,
 } = vi.hoisted(() => {
   return {
     mockCronSchedule: vi.fn().mockReturnValue({ stop: vi.fn() }),
     mockRun: vi.fn().mockResolvedValue({ created: 5, errors: [] }),
     mockDigest: vi.fn().mockResolvedValue({ sent: true, errors: [] }),
+    mockCanaryRun: vi.fn().mockResolvedValue({ skipped: false, results: [] }),
   };
 });
 
@@ -35,6 +37,10 @@ vi.mock('../../services/pipeline', () => ({
     analyze: vi.fn(),
     digest: mockDigest,
   }),
+}));
+
+vi.mock('../../services/parser-canary', () => ({
+  createParserCanaryService: vi.fn().mockReturnValue({ run: mockCanaryRun }),
 }));
 
 // ─── Mock strapi ──────────────────────────────────────────────────
@@ -90,7 +96,7 @@ describe('Cron Registration', () => {
 
     registerCrons(mockStrapi as any);
 
-    expect(mockCronSchedule).toHaveBeenCalledTimes(2);
+    expect(mockCronSchedule).toHaveBeenCalledTimes(3);
     expect(mockCronSchedule).toHaveBeenCalledWith(
       '15 3 * * *',
       expect.any(Function),
@@ -99,6 +105,23 @@ describe('Cron Registration', () => {
     expect(mockStrapi.log.info).toHaveBeenCalledWith(
       '[cron] Registered: cleanup:expired-auctions (daily 03:15 MSK)',
     );
+  });
+
+  it('runs one orchestrated canary three hours before digest_time', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T03:00:00.000Z'));
+    try {
+      const mockStrapi = createMockStrapi();
+      const { registerCrons } = await import('../../cron/index');
+      registerCrons(mockStrapi as any);
+
+      const canaryCallback = mockCronSchedule.mock.calls[1][1];
+      await canaryCallback();
+
+      expect(mockCanaryRun).toHaveBeenCalledWith({ trigger: 'cron', windowKey: '2026-08-14' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('запускает pipeline без target и request filters', async () => {

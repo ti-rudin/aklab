@@ -1,10 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 import {
   derivePropertyRegion,
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
-import { extractAlfalotPropertyLocation } from '../sources/alfalot';
+import {
+  AlfalotParser,
+  extractAlfalotPropertyLocationFields,
+  extractAlfalotPropertyLocation,
+} from '../sources/alfalot';
+
+function fixture(name: string): Document {
+  return new JSDOM(readFileSync(join(__dirname, 'fixtures', name), 'utf8')).window.document;
+}
+
+describe('alfalot: detail failure contract', () => {
+  it('rethrows an unhydrated property block and closes the page', async () => {
+    const failure = new Error('property block timeout');
+    const page = { goto: vi.fn(), waitForFunction: vi.fn().mockRejectedValue(failure), close: vi.fn() };
+    await expect(new AlfalotParser().fetchDetails('https://example.test/lot', { newPage: async () => page } as any))
+      .rejects.toBe(failure);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+});
 
 /**
  * Тесты extraction-логики parser-alfalot.
@@ -48,6 +69,23 @@ function extractArea(title: string, badgeArea: string): number | undefined {
 // --- Tests ---
 
 describe('alfalot: typed property location extraction', () => {
+  it('reads only hydrated property fields from a representative fixture', () => {
+    const fields = extractAlfalotPropertyLocationFields(fixture('property-location.html'));
+    const location = extractAlfalotPropertyLocation(fields);
+
+    expect(fields.detailAddress).toContain('ул. Машкова');
+    expect(fields.propertyDescription).toContain('г. Прохладный');
+    expect(JSON.stringify(fields)).not.toContain('Казань');
+    expect(location.address).toContain('ул. Машкова');
+  });
+
+  it('ignores organizer address when hydrated property fields contain no address', () => {
+    const fields = extractAlfalotPropertyLocationFields(fixture('organizer-address-adversarial.html'));
+
+    expect(JSON.stringify(fields)).not.toContain('Вавилова');
+    expect(extractAlfalotPropertyLocation(fields).status).toBe('missing');
+  });
+
   it('keeps the separate card region field region-only', () => {
     const location = extractAlfalotPropertyLocation({
       cardRegion: 'Московская область',
@@ -76,6 +114,19 @@ describe('alfalot: typed property location extraction', () => {
     });
     expect(projectLegacyAddress(location)).toBe(location.address);
     expect(derivePropertyRegion(location)).toBe('moscow');
+  });
+
+  it('uses an explicit address in the bounded lot Description when the location block is empty', () => {
+    const location = extractAlfalotPropertyLocation({
+      propertyDescription: 'Нежилое здание, кадастровый номер 07:10:0000000:25500. Адрес: КБР, г. Прохладный, ул. Степана Разина, д. 1. Ознакомиться с имуществом можно по телефону.',
+    });
+
+    expect(location).toEqual({
+      address: 'КБР, г. Прохладный, ул. Степана Разина, д. 1',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '.tab-content[data-page="lot-info"].field.Описание.address',
+    });
   });
 
   it('fails closed when only description, title, and organizer geography are available', () => {

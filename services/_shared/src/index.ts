@@ -16,10 +16,14 @@ export { parsePrice } from './price';
 export {
   dedupeParties,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   mergePropertyLocation,
   normalizeStructuredLocation,
   projectLegacyAddress,
 } from './property-location';
+export * from './parser-diagnostics';
+export * from './parser-error';
+export * from './parser-probe';
 export type {
   ParsedProperty,
   PartyAddress,
@@ -30,5 +34,6 @@ export type {
   SourceParser,
   ParseOptions,
   ParseResult,
+  ParserDetailResult,
   StructuredSourceKind,
 } from './types';

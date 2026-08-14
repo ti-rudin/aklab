@@ -36,6 +36,15 @@ jobs:
           cd lib/sqlite-queue && npm run build
           cd ../../services/_shared && npm run build
 
+      - name: Parser contract tests (offline fixtures only)
+        run: npm run test:parser-contracts
+
+      - name: Full root unit tests
+        env:
+          STRAPI_API_TOKEN: test-only-placeholder-token
+          NODE_ENV: test
+        run: npm test
+
       - name: Build API (type check)
         run: cd api && npm run build
 

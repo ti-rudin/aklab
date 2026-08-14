@@ -9,6 +9,8 @@ const {
   mockSetDigestCounters,
   mockUpdateState,
   mockScorePropertiesBatch,
+  mockRecordParserRunSourceHealth,
+  mockReconcileSourceStageQueueFailure,
 } = vi.hoisted(() => ({
   mockAddToQueue: vi.fn(),
   mockGetJob: vi.fn(),
@@ -18,6 +20,8 @@ const {
   mockSetDigestCounters: vi.fn(),
   mockUpdateState: vi.fn(),
   mockScorePropertiesBatch: vi.fn(),
+  mockRecordParserRunSourceHealth: vi.fn(),
+  mockReconcileSourceStageQueueFailure: vi.fn(),
 }));
 
 vi.mock('../../queueService', () => ({
@@ -29,11 +33,12 @@ vi.mock('../../parser-run-telemetry', () => ({
     attachSourceStageJob: mockAttachSourceStageJob,
     setDigestWindowEndAt: mockSetDigestWindowEndAt,
     setDigestCounters: mockSetDigestCounters,
-    reconcileSourceStageQueueFailure: vi.fn(),
+    reconcileSourceStageQueueFailure: mockReconcileSourceStageQueueFailure,
   })),
 }));
 vi.mock('../state', () => ({ updateState: mockUpdateState }));
 vi.mock('../../focusEngine', () => ({ scorePropertiesBatch: mockScorePropertiesBatch }));
+vi.mock('../../parser-source-health', () => ({ recordParserRunSourceHealth: mockRecordParserRunSourceHealth }));
 
 import { analyze, digest, parseAll } from '../stages';
 
@@ -50,7 +55,7 @@ function makeCtx() {
   const strapi = {
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     entityService: {
-      findMany: vi.fn().mockResolvedValue([{ id: 1, documentId: 'source-1', slug: 'source-one' }]),
+      findMany: vi.fn().mockResolvedValue([{ id: 1, documentId: 'source-1', slug: 'source-one', is_active: true, parser_health_status: 'healthy' }]),
     },
   } as any;
   return {
@@ -80,9 +85,33 @@ beforeEach(() => {
   mockSetDigestCounters.mockResolvedValue(undefined);
   mockUpdateState.mockResolvedValue(undefined);
   mockScorePropertiesBatch.mockResolvedValue({ scored: 1, in_focus: 1, by_tag: {} });
+  mockRecordParserRunSourceHealth.mockResolvedValue({ status: 'healthy' });
 });
 
 describe('parse stage canonical snapshot propagation', () => {
+  it.each([null, undefined, 'schema_changed', 'blocked'])('does not enqueue normal work for a %s source', async (parser_health_status) => {
+    const ctx = makeCtx();
+    ctx.strapi.entityService.findMany.mockResolvedValue([
+      { id: 1, documentId: 'source-1', slug: 'source-one', is_active: true, parser_health_status },
+    ]);
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: [] });
+    expect(mockAddToQueue).not.toHaveBeenCalled();
+  });
+
+  it('rechecks quarantine before details enqueue', async () => {
+    const ctx = makeCtx();
+    ctx.strapi.entityService.findMany
+      .mockResolvedValueOnce([{ id: 1, documentId: 'source-1', slug: 'source-one', is_active: true, parser_health_status: 'healthy' }])
+      .mockResolvedValueOnce([{ id: 1, documentId: 'source-1', slug: 'source-one', is_active: true, parser_health_status: 'blocked' }]);
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: [] });
+    expect(mockAddToQueue).toHaveBeenCalledTimes(1);
+    expect(mockAddToQueue).toHaveBeenCalledWith(
+      'parse-source-one', expect.objectContaining({ phase: 'scan' }), expect.anything(),
+    );
+  });
+
   it('passes the exact same immutable snapshot object and hash to scan and details jobs', async () => {
     const ctx = makeCtx();
     const result = await parseAll(ctx, 37);
@@ -101,6 +130,33 @@ describe('parse stage canonical snapshot propagation', () => {
     expect(ctx.recordJobIds).toHaveBeenCalledTimes(2);
     expect(ctx.recordJobIds.mock.invocationCallOrder[0]).toBeLessThan(mockAttachSourceStageJob.mock.invocationCallOrder[0]);
     expect(ctx.recordJobIds.mock.invocationCallOrder[1]).toBeLessThan(mockAttachSourceStageJob.mock.invocationCallOrder[1]);
+  });
+
+  it('sanitizes raw failed-job text before pipeline state and queue reconciliation', async () => {
+    const ctx = makeCtx();
+    mockGetJob.mockImplementation((id: number) => ({
+      id, status: 'failed', error: 'raw adapter response contains private payload', cancellation_requested_at: null,
+    }));
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: ['parser.transient'] });
+    expect(mockReconcileSourceStageQueueFailure).toHaveBeenCalledWith(expect.objectContaining({
+      cancelled: false,
+      errorMessage: 'parser.transient',
+    }));
+    expect(JSON.stringify(mockUpdateState.mock.calls)).not.toContain('raw adapter response');
+  });
+
+  it('derives cancellation from queue state rather than message text', async () => {
+    const ctx = makeCtx();
+    mockGetJob.mockImplementation((id: number) => ({
+      id, status: 'failed', error: 'not a cancellation-shaped message', cancellation_requested_at: 123,
+    }));
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 0, errors: ['parser.cancelled'] });
+    expect(mockReconcileSourceStageQueueFailure).toHaveBeenCalledWith(expect.objectContaining({
+      cancelled: true,
+      errorMessage: 'parser.cancelled',
+    }));
   });
 
   it('does not read sources or enqueue jobs for an empty snapshot', async () => {

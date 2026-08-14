@@ -111,12 +111,21 @@ describe('source internalUpdateStats', () => {
 
     expect(protectedFieldCtx.status).toBe(400);
     expect(strapi._query.update).not.toHaveBeenCalled();
+
+    const rawErrorCtx = makeCtx();
+    rawErrorCtx.request = { body: { data: { last_parse_error: 'raw adapter failure contains sensitive payload marker' } } };
+    await actions.internalUpdateStats(rawErrorCtx);
+
+    expect(rawErrorCtx.status).toBe(400);
+    expect(strapi._query.update).not.toHaveBeenCalled();
   });
 });
 
 describe('source internalFindStats', () => {
   it('returns only parser statistics needed for counter updates', async () => {
     const source = {
+      is_active: true,
+      parser_health_status: 'healthy',
       last_parse_status: 'success',
       last_parse_error: null,
       last_parsed_at: '2026-08-10T07:00:00.000Z',
@@ -135,6 +144,7 @@ describe('source internalFindStats', () => {
     expect(strapi._query.findOne).toHaveBeenCalledWith({
       where: { documentId: 'source-document-id' },
       select: [
+        'is_active', 'parser_health_status',
         'last_parse_status', 'last_parse_error', 'last_parsed_at',
         'total_found', 'total_created', 'total_details_fetched',
         'total_details_needed', 'parse_count',

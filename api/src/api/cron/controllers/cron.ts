@@ -8,12 +8,28 @@ import { scorePropertiesBatch } from '../../../services/focusEngine';
 import type { StrapiInstance } from '../../../types/strapi';
 import { randomUUID } from 'node:crypto';
 import { isCatalogCleanupMaintenanceModeEnabled } from '../../../services/property-catalog-cleanup';
+import { createParserCanaryService } from '../../../services/parser-canary';
+import { isNormalParserSourceAllowed } from '../../../services/parser-source-quarantine';
 
 function getQueue() {
   return getQueueService();
 }
 
 export default {
+  async parserCanary(ctx: any) {
+    try {
+      const windowKey = `manual-${Math.floor(Date.now() / 600_000)}`;
+      const result = await createParserCanaryService(strapi as unknown as StrapiInstance).run({
+        trigger: 'manual',
+        windowKey,
+      });
+      ctx.body = { ok: true, ...result };
+    } catch {
+      strapi.log.error('[cron] parserCanary failed');
+      ctx.internalServerError('Parser canary failed');
+    }
+  },
+
   async parseSource(ctx: any) {
     try {
       if (isCatalogCleanupMaintenanceModeEnabled()) {
@@ -39,6 +55,11 @@ export default {
 
       if (!source.is_active) {
         ctx.badRequest(`Source ${slug} is not active`);
+        return;
+      }
+      if (!isNormalParserSourceAllowed(source)) {
+        ctx.status = 409;
+        ctx.body = { error: `Source ${slug} is quarantined by parser health policy` };
         return;
       }
 

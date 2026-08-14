@@ -6,11 +6,14 @@
  * 27 карточек на страницу, ~48 страниц.
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parsePrice,
   projectLegacyAddress,
@@ -41,8 +44,9 @@ const TITLE_EXCLUDE_PATTERNS = [
 ];
 
 const PROPERTY_LOCATION_CONTAINER = '#info';
-const PROPERTY_LOCATION_ADDRESS_ROWS = `${PROPERTY_LOCATION_CONTAINER} .panel__wrapper p`;
-const PROPERTY_LOCATION_ADDRESS_FIELD = `${PROPERTY_LOCATION_ADDRESS_ROWS} span.js-share-search`;
+const PROPERTY_LOCATION_ADDRESS_FIELD = '#info.field.Адрес местонахождения';
+const PROPERTY_LOCATION_DESCRIPTION_FIELD = '#info.field.Общая информация.address';
+const PROPERTY_LOCATION_REGION_FIELD = '#info.field.Регион';
 
 interface PropertyLocationElement {
   textContent?: string | null;
@@ -54,41 +58,61 @@ interface PropertyLocationDocument {
 }
 
 export interface AggregatorPropertyLocationFields {
+  propertyBlockFound?: boolean;
   address?: string;
+  region?: string;
+  propertyText?: string;
 }
 
-/** Read geography only from the exact, labelled current-property DOM field. */
+/** Read only exact labelled fields from the current lot's `#info` panel. */
 export function extractAggregatorPropertyLocationFields(
   document?: PropertyLocationDocument,
 ): AggregatorPropertyLocationFields {
   const documentLike = document ?? globalThis.document as unknown as PropertyLocationDocument;
   const rows = documentLike?.querySelectorAll('#info .panel__wrapper p') ?? [];
+  const fields: AggregatorPropertyLocationFields = { propertyBlockFound: false };
   for (const row of Array.from(rows)) {
     const label = (typeof row.querySelector('span.text-grey')?.textContent === 'string'
       ? row.querySelector('span.text-grey')?.textContent?.replace(/\s+/g, ' ').trim()
       : undefined)
       ?.replace(/:$/, '')
       .toLocaleLowerCase('ru-RU');
-    if (label !== 'адрес местонахождения') continue;
-
-    const rawAddress = row.querySelector('span.js-share-search')?.textContent;
-    const address = typeof rawAddress === 'string'
-      ? rawAddress.replace(/\s+/g, ' ').trim() || undefined
+    const rawValue = row.querySelector('span.js-share-search')?.textContent;
+    const value = typeof rawValue === 'string'
+      ? rawValue.replace(/\s+/g, ' ').trim() || undefined
       : undefined;
-    if (address) return { address };
+    if (label === 'адрес местонахождения' || label === 'регион' || label === 'общая информация') {
+      fields.propertyBlockFound = true;
+    }
+    if (!value) continue;
+    if (label === 'адрес местонахождения') fields.address = value;
+    if (label === 'регион') fields.region = value;
+    if (label === 'общая информация') fields.propertyText = value;
   }
-  return {};
+  return fields;
 }
 
 export function normalizeAggregatorPropertyLocation(
   fields: AggregatorPropertyLocationFields,
 ): PropertyLocation {
-  if (fields.address) {
+  const address = fields.address ?? extractAddressFromBoundedPropertyText(fields.propertyText);
+  if (address) {
     return normalizeStructuredLocation({
-      address: fields.address,
+      address,
+      ...(fields.region ? { region: fields.region } : {}),
       status: 'confirmed_address',
       source_kind: 'dom_field',
-      source_path: PROPERTY_LOCATION_ADDRESS_FIELD,
+      source_path: fields.address
+        ? PROPERTY_LOCATION_ADDRESS_FIELD
+        : PROPERTY_LOCATION_DESCRIPTION_FIELD,
+    });
+  }
+  if (fields.region) {
+    return normalizeStructuredLocation({
+      region: fields.region,
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: PROPERTY_LOCATION_REGION_FIELD,
     });
   }
 
@@ -238,14 +262,14 @@ export class AggregatorBankrotParser implements SourceParser {
       logger.info(`[aggregator-bankrot] Total: ${allProperties.length} properties`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[aggregator-bankrot] Parse error: ${err.message}`);
+      logger.error(`[aggregator-bankrot] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -264,12 +288,11 @@ export class AggregatorBankrotParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём загрузки панелей
-      try {
-        await page.waitForSelector('.panel, article.lot-page, .lot-data__list', { timeout: 10000 });
-      } catch {
-        await page.waitForTimeout(3000);
-      }
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('#info .panel__wrapper p')).some((row) => (
+        /^(адрес местонахождения|регион|общая информация)$/iu.test(
+          (row.querySelector('span.text-grey')?.textContent || '').replace(/:\s*$/u, '').trim(),
+        ) && (row.textContent || '').trim().length > 0
+      )), undefined, { timeout: 10000 });
 
       const locationFields = await page.evaluate(extractAggregatorPropertyLocationFields);
       const details = await page.evaluate(() => {
@@ -339,18 +362,36 @@ export class AggregatorBankrotParser implements SourceParser {
       });
 
       const property_location = normalizeAggregatorPropertyLocation(locationFields);
+      const locationLabelId = property_location.status === 'confirmed_address'
+        ? 'property.location.address'
+        : property_location.status === 'confirmed_region_only'
+          ? 'property.location.region'
+          : undefined;
+      const parserDiagnostics = createParserExtractionDiagnostics({
+        adapterVersion: 'aggregator-bankrot.v1',
+        propertyBlockFound: locationFields.propertyBlockFound === true,
+        ...(locationLabelId ? { locationLabelId } : {}),
+        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        semanticSignals: [
+          ...(locationFields.propertyBlockFound ? ['property.block'] : []),
+          ...(locationFields.propertyText ? ['property.description'] : []),
+          ...(locationFields.region ? ['property.location.region'] : []),
+          ...(property_location.status === 'confirmed_address' ? ['property.location.address'] : []),
+        ],
+      });
       return {
         description: details.description,
         contacts: details.contacts,
         property_location,
+        parser_diagnostics: parserDiagnostics,
         address: projectLegacyAddress(property_location),
         city: derivePropertyRegion(property_location),
         latitude: property_location.latitude,
         longitude: property_location.longitude,
       };
     } catch (err: any) {
-      logger.warn(`[aggregator-bankrot] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[aggregator-bankrot] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       if (page) try { await page.close(); } catch {}
       if (ownBrowser) try { await ownBrowser.close(); } catch {}

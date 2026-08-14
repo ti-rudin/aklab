@@ -5,6 +5,7 @@
 
 import { config } from './config';
 import { logger } from './logger';
+import { safeParserErrorCode } from './parser-error';
 
 interface StrapiResponse<T> {
   data: T;
@@ -47,7 +48,7 @@ export async function propertyExists(source: string, externalId: string): Promis
     }
     return data.data.exists;
   } catch (err: any) {
-    logger.warn(`propertyExists check failed: ${err.message}`);
+    logger.warn(`propertyExists check failed: ${safeParserErrorCode(err)}`);
     return true; // fail-closed: при ошибке считаем что существует (пропускаем, не дублируем)
   }
 }
@@ -293,6 +294,22 @@ export async function createProperty(props: {
   return data.data;
 }
 
+export async function isSourceNormalWorkAllowed(documentId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/internal/sources/${encodeURIComponent(documentId)}/stats`, { headers: HEADERS });
+    if (!res.ok) return false;
+    const json = (await res.json()) as StrapiResponse<{
+      is_active?: unknown;
+      parser_health_status?: unknown;
+    }>;
+    const source = json.data;
+    if (!source || source.is_active !== true) return false;
+    return source.parser_health_status === 'healthy' || source.parser_health_status === 'degraded';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Обновить статистику Source после парсинга.
  * Strapi 5 REST API использует documentId, а не числовой id.
@@ -335,7 +352,7 @@ export async function updateSourceStats(documentId: string, data: {
         logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
       }
     } catch (err: any) {
-      logger.warn(`updateSourceStats GET error: ${err.message}`);
+      logger.warn(`updateSourceStats GET error: ${safeParserErrorCode(err)}`);
     }
   }
 
@@ -377,7 +394,7 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
       logger.warn(`resetSourceDetailsCounters failed (${putRes.status})`);
     }
   } catch (err: any) {
-    logger.warn(`resetSourceDetailsCounters error: ${err.message}`);
+    logger.warn(`resetSourceDetailsCounters error: ${safeParserErrorCode(err)}`);
   }
 }
 
@@ -398,7 +415,7 @@ export async function logCron(entry: {
       body: JSON.stringify({ data: entry }),
     });
   } catch (err: any) {
-    logger.warn(`logCron failed: ${err.message}`);
+    logger.warn(`logCron failed: ${safeParserErrorCode(err)}`);
   }
 }
 
@@ -412,6 +429,13 @@ export type ParserRunSourceCounters = {
   created: number;
   skipped: number;
   failed: number;
+  property_block_found: number;
+  location_label_found: number;
+  location_confirmed_address: number;
+  location_confirmed_region_only: number;
+  location_missing: number;
+  location_unresolved: number;
+  schema_mismatch: number;
 };
 
 export async function markParserRunSourceStageRunning(identityKey: string, jobId: number): Promise<void> {
@@ -429,8 +453,11 @@ export async function markParserRunSourceStageRunning(identityKey: string, jobId
 export async function finishParserRunSourceStage(identityKey: string, payload: {
   job_id: number;
   status: 'success' | 'success_empty' | 'degraded' | 'blocked' | 'schema_changed' | 'failed' | 'cancelled';
+  detail_supported: boolean;
   counters: ParserRunSourceCounters;
-  error_class?: 'transient' | 'rate_limited' | 'blocked' | 'schema_changed' | 'permanent' | 'cancelled';
+  diagnostics_schema_version?: 1;
+  semantic_fingerprint?: string;
+  error_class?: 'transient' | 'rate_limited' | 'blocked' | 'anti_bot' | 'http_block' | 'schema_changed' | 'permanent' | 'cancelled';
   error_message?: string;
 }): Promise<void> {
   const res = await fetch(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/terminal`, {

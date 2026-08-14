@@ -1,6 +1,28 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/service-shared';
-import { MetsParser, missingMetsPropertyLocation } from '../sources/m-ets';
+import {
+  extractMetsPropertyLocationFields,
+  extractMetsPropertyLocation,
+  MetsParser,
+  missingMetsPropertyLocation,
+} from '../sources/m-ets';
+
+function fixture(name: string): Document {
+  return new JSDOM(readFileSync(join(__dirname, 'fixtures', name), 'utf8')).window.document;
+}
+
+describe('m-ets: detail failure contract', () => {
+  it('rethrows an unhydrated property block and closes the page', async () => {
+    const failure = new Error('property block timeout');
+    const page = { goto: vi.fn(), waitForFunction: vi.fn().mockRejectedValue(failure), close: vi.fn() };
+    await expect(new MetsParser().fetchDetails('https://example.test/lot', { newPage: async () => page } as any))
+      .rejects.toBe(failure);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+});
 
 const playwrightHarness = vi.hoisted(() => {
   const page = {
@@ -154,6 +176,56 @@ describe('m-ets: combined price + area extraction', () => {
 });
 
 describe('m-ets: fail-closed detail geography', () => {
+  it('extracts location inputs only from the current-property block fixture', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('property-location.html'));
+
+    expect(fields).toEqual({
+      propertyBlockFound: true,
+      propertyDescription: 'Помещение. Адрес (местоположение): Россия, Волгоградская область, город Волгоград, улица 51-й Гвардейской, дом 46. Имеются ограничения.',
+      propertyRegion: 'Волгоградская область',
+    });
+    expect(extractMetsPropertyLocation(fields).address).toContain('Волгоград');
+    expect(extractMetsPropertyLocation(fields).address).not.toContain('Вавилова');
+  });
+
+  it('does not read a pledgee postal address when property geography is absent', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('pledgee-address-adversarial.html'));
+
+    expect(fields.propertyRegion).toBeUndefined();
+    expect(extractMetsPropertyLocation(fields).status).toBe('missing');
+    expect(JSON.stringify(fields)).not.toContain('Вавилова');
+  });
+
+  it('uses the bounded current-property description and ignores a pledgee address', () => {
+    const location = extractMetsPropertyLocation({
+      propertyDescription: 'Помещение. Адрес (местоположение): Россия, Волгоградская область, город Волгоград, улица 51-й Гвардейской, дом 46. Имеются ограничения. Залогодержатель находится по адресу: г. Москва, ул. Вавилова, д. 19.',
+      propertyRegion: 'Волгоградская область',
+    });
+
+    expect(location).toEqual({
+      address: 'Россия, Волгоградская область, город Волгоград, улица 51-й Гвардейской, дом 46',
+      region: 'Волгоградская область',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: 'details.field.Сведения об имуществе.address',
+    });
+  });
+
+  it('falls back to the explicit property region and ignores a pledgee address', () => {
+    const location = extractMetsPropertyLocation({
+      propertyDescription: 'Здание коровника, кадастровый номер 34:20:070003:276. Залогодержатель находится по адресу: г. Москва, ул. Вавилова, д. 19.',
+      propertyRegion: 'Волгоградская область',
+    });
+
+    expect(location).toEqual({
+      region: 'Волгоградская область',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: 'details.field.Регион местонахождения имущества',
+    });
+    expect(projectLegacyAddress(location)).toBe('');
+  });
+
   it('does not certify mixed description, party address, or global map data', () => {
     const location = missingMetsPropertyLocation('detail.property_location');
 
@@ -220,41 +292,19 @@ describe('m-ets: external_id construction', () => {
 });
 
 describe('m-ets: adversarial listing geography', () => {
-  it('fails closed when Bashkortostan property location is absent and a Moscow pledgee leaks through party text', async () => {
-    playwrightHarness.page.evaluate.mockReset();
-    playwrightHarness.page.evaluate
-      .mockResolvedValueOnce({
-        code: 200,
-        data: [{ lot_id: 9001, data: '<article class="card-so">ignored by mocked DOM evaluation</article>' }],
-        meta: { pages: 1, total: 1 },
-      })
-      .mockResolvedValueOnce([{
-        lot_id: 9001,
-        href: '/lots/9001',
-        title: 'Нежилое помещение, Республика Башкортостан',
-        regNumber: '9001',
-        region: 'Республика Башкортостан',
-        costText: '1 000 000 ₽',
-        costType: 'Начальная цена',
-        minPriceText: '',
-        currentPriceText: '1 000 000 ₽',
-        description: 'Залогодержатель: ПАО Сбербанк, г. Москва, ул. Вавилова, д. 19',
-        auctionType: 'Торги по банкротству',
-        endDate: '',
-      }]);
+  it('fails closed when Bashkortostan property location is absent and a Moscow pledgee leaks through party text', () => {
+    const propertyLocation = extractMetsPropertyLocation({
+      propertyDescription: 'Залогодержатель: ПАО Сбербанк, г. Москва, ул. Вавилова, д. 19',
+    });
 
-    const [property] = await new MetsParser().parse(1);
-
-    expect(property.property_location).toEqual({
+    expect(propertyLocation).toEqual({
       status: 'missing',
       source_kind: 'dom_field',
-      source_path: 'listing.property_location',
+      source_path: 'details.field.Регион местонахождения имущества',
     });
-    expect(property.address).toBe('');
-    expect(property.city).toBe('other');
-    expect(projectLegacyAddress(property.property_location!)).toBe('');
-    expect(derivePropertyRegion(property.property_location!)).toBe('other');
-    expect(property.latitude).toBeUndefined();
-    expect(property.longitude).toBeUndefined();
+    expect(projectLegacyAddress(propertyLocation)).toBe('');
+    expect(derivePropertyRegion(propertyLocation)).toBe('other');
+    expect(propertyLocation.latitude).toBeUndefined();
+    expect(propertyLocation.longitude).toBeUndefined();
   });
 });

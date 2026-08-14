@@ -62,7 +62,29 @@ export function registerCrons(strapi: Core.Strapi): void {
 
   strapi.log.info('[cron] Registered: pipeline:daily (at digest_time from settings)');
 
-  // 2. Remove a listing only when its explicit application/trading deadline is
+  // 2. One orchestrated canary window three hours before the daily pipeline.
+  cron.schedule('0 * * * *', async () => {
+    try {
+      const setting = await getSetting(strapi);
+      if (!setting) return;
+      const digestTime: string = setting.digest_time || '09:00';
+      const [digestHour] = digestTime.split(':').map(Number);
+      const targetHour = (digestHour + 21) % 24;
+      const now = new Date();
+      const msk = new Date(now.toLocaleString('en-US', { timeZone: CRON_TIMEZONE }));
+      if (msk.getHours() !== targetHour) return;
+      const windowKey = `${msk.getFullYear()}-${String(msk.getMonth() + 1).padStart(2, '0')}-${String(msk.getDate()).padStart(2, '0')}`;
+      const { createParserCanaryService } = await import('../services/parser-canary');
+      const result = await createParserCanaryService(strapi as unknown as StrapiInstance).run({ trigger: 'cron', windowKey });
+      strapi.log.info(`[cron] parser:canary completed skipped=${result.skipped}`);
+    } catch {
+      strapi.log.error('[cron] parser:canary failed');
+    }
+  }, { timezone: CRON_TIMEZONE });
+
+  strapi.log.info('[cron] Registered: parser:canary (3h before pipeline:daily)');
+
+  // 3. Remove a listing only when its explicit application/trading deadline is
   // past. A rejected listing remains stored while its auction is active, so
   // parser identity deduplication keeps working.
   cron.schedule('15 3 * * *', async () => {

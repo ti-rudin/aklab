@@ -107,7 +107,7 @@ describe('cron controller', () => {
     });
 
     it('should enqueue a parse job for an active source', async () => {
-      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true, parser_health_status: 'healthy' };
       mockStrapi.entityService.findMany.mockResolvedValue([source]);
       mockQueue.addToQueue.mockReturnValue({ id: 'job1' });
 
@@ -134,7 +134,7 @@ describe('cron controller', () => {
     });
 
     it('should reject manual parse while the persisted pipeline lifecycle is non-idle', async () => {
-      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true, parser_health_status: 'healthy' };
       mockStrapi.entityService.findMany.mockResolvedValue([source]);
       mockPipeline.getState.mockResolvedValue({ status: 'cancelling' });
 
@@ -146,8 +146,20 @@ describe('cron controller', () => {
       expect(mockQueue.addToQueue).not.toHaveBeenCalled();
     });
 
+    it.each([null, undefined, 'schema_changed', 'blocked'])('rejects manual parse for a %s source', async (parser_health_status) => {
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true, parser_health_status };
+      mockStrapi.entityService.findMany.mockResolvedValue([source]);
+
+      const ctx = makeCtx({ params: { slug: 'tender' } });
+      await cronController.parseSource(ctx);
+
+      expect(ctx.status).toBe(409);
+      expect(ctx.body).toEqual({ error: 'Source tender is quarantined by parser health policy' });
+      expect(mockQueue.addToQueue).not.toHaveBeenCalled();
+    });
+
     it('should report when a concurrent manual request reuses the live job', async () => {
-      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true };
+      const source = { id: 1, documentId: 'doc1', slug: 'tender', is_active: true, parser_health_status: 'healthy' };
       mockStrapi.entityService.findMany.mockResolvedValue([source]);
       mockQueue.addToQueue.mockReturnValue({ id: 42, correlation_id: 'manual-parse-earlier-request' });
 

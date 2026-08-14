@@ -4,12 +4,14 @@
  * Playwright, HTML scraping. Работает с сервера (Mac timeout).
  * URL: https://www.roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost
  */
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   createStealthContext,
   derivePropertyRegion,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parsePrice,
   projectLegacyAddress,
@@ -34,6 +36,14 @@ export function missingRoseltorgPropertyLocation(): PropertyLocation {
     status: 'missing',
     source_kind: 'dom_field',
     source_path: UNVERIFIED_PROPERTY_LOCATION_SOURCE_PATH,
+  });
+}
+
+export function createRoseltorgParserDiagnostics() {
+  return createParserExtractionDiagnostics({
+    adapterVersion: 'roseltorg.v1',
+    propertyBlockFound: false,
+    semanticSignals: ['detail.response'],
   });
 }
 
@@ -197,14 +207,14 @@ export class RoseltorgParser implements SourceParser {
       logger.info(`[roseltorg] Total: ${allProperties.length} properties`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[roseltorg] Parse error: ${err.message}`);
+      logger.error(`[roseltorg] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -276,6 +286,7 @@ export class RoseltorgParser implements SourceParser {
         description: details.description,
         contacts: details.contacts,
         property_location: propertyLocation,
+        parser_diagnostics: createRoseltorgParserDiagnostics(),
         address: projectLegacyAddress(propertyLocation),
         city: derivePropertyRegion(propertyLocation),
         latitude: propertyLocation.latitude,
@@ -283,8 +294,8 @@ export class RoseltorgParser implements SourceParser {
         photo_urls: details.photo_urls,
       };
     } catch (err: any) {
-      logger.warn(`[roseltorg] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[roseltorg] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       if (page) try { await page.close(); } catch {}
       if (ownBrowser) try { await ownBrowser.close(); } catch {}

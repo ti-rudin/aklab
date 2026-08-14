@@ -11,6 +11,12 @@ export default {
     },
     {
       method: 'POST',
+      path: '/cron/canary',
+      handler: 'cron.parserCanary',
+      config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },
+    },
+    {
+      method: 'POST',
       path: '/cron/parse/:slug',
       handler: 'cron.parseSource',
       config: { auth: false, policies: ['global::authenticated-user', 'global::aklab-admin'] },

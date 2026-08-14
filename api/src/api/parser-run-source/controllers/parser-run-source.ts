@@ -1,43 +1,85 @@
 import { factories } from '@strapi/strapi';
+import { isSafeParserTelemetryError } from '../../../services/parser-error-safety';
 
 const UID = 'api::parser-run-source.parser-run-source';
 const TERMINAL_STATUSES = new Set([
   'success', 'success_empty', 'degraded', 'blocked', 'schema_changed', 'failed', 'cancelled',
 ]);
-const ERROR_CLASSES = new Set(['transient', 'rate_limited', 'blocked', 'schema_changed', 'permanent', 'cancelled']);
+const ERROR_CLASSES = new Set(['transient', 'rate_limited', 'blocked', 'anti_bot', 'http_block', 'schema_changed', 'permanent', 'cancelled']);
 const COUNTER_KEYS = [
   'listed', 'eligible', 'existing', 'pre_filtered', 'details_attempted',
   'details_ok', 'created', 'skipped', 'failed',
+  'property_block_found', 'location_label_found', 'location_confirmed_address',
+  'location_confirmed_region_only', 'location_missing', 'location_unresolved', 'schema_mismatch',
 ] as const;
 
-function isCounterSnapshot(value: unknown): value is Record<typeof COUNTER_KEYS[number], number> {
+function isCounterSnapshot(value: unknown, detailSupported: boolean): value is Record<typeof COUNTER_KEYS[number], number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const counters = value as Record<string, unknown>;
   const keys = Object.keys(counters);
-  return keys.length === COUNTER_KEYS.length
+  const exact = keys.length === COUNTER_KEYS.length
     && keys.every(key => COUNTER_KEYS.includes(key as typeof COUNTER_KEYS[number]))
     && COUNTER_KEYS.every(key => Number.isSafeInteger(counters[key]) && (counters[key] as number) >= 0);
+  if (!exact) return false;
+  if (!detailSupported) {
+    return (counters.details_attempted as number) === 0
+      && (counters.details_ok as number) === 0
+      && (counters.property_block_found as number) === 0
+      && (counters.location_label_found as number) === 0
+      && (counters.location_confirmed_address as number) === 0
+      && (counters.location_confirmed_region_only as number) === 0
+      && (counters.location_missing as number) === 0
+      && (counters.schema_mismatch as number) === 0;
+  }
+  const classified = (counters.location_confirmed_address as number)
+    + (counters.location_confirmed_region_only as number)
+    + (counters.location_missing as number);
+  return (counters.details_ok as number) <= (counters.details_attempted as number)
+    && classified <= (counters.details_ok as number)
+    && (counters.location_unresolved as number) <= (counters.location_missing as number)
+    && (counters.property_block_found as number) <= (counters.details_ok as number)
+    && (counters.location_label_found as number) <= (counters.property_block_found as number)
+    && (counters.schema_mismatch as number) <= (counters.details_ok as number);
 }
 
 function terminalPayload(ctx: any): {
   jobId: number;
   status: string;
+  detailSupported: boolean;
   counters: Record<typeof COUNTER_KEYS[number], number>;
+  diagnosticsSchemaVersion?: 1;
+  semanticFingerprint?: string;
   errorClass?: string;
   errorMessage?: string;
 } | null {
   const data = ctx.request?.body?.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const fields = Object.keys(data);
-  const allowed = new Set(['job_id', 'status', 'counters', 'error_class', 'error_message']);
+  const allowed = new Set([
+    'job_id', 'status', 'detail_supported', 'counters', 'diagnostics_schema_version', 'semantic_fingerprint',
+    'error_class', 'error_message',
+  ]);
   if (!fields.length || fields.some(field => !allowed.has(field))) return null;
-  if (!Number.isSafeInteger(data.job_id) || data.job_id <= 0 || !TERMINAL_STATUSES.has(data.status) || !isCounterSnapshot(data.counters)) return null;
+  if (!Number.isSafeInteger(data.job_id) || data.job_id <= 0 || !TERMINAL_STATUSES.has(data.status) || typeof data.detail_supported !== 'boolean' || !isCounterSnapshot(data.counters, data.detail_supported)) return null;
   if (data.error_class != null && (!ERROR_CLASSES.has(data.error_class) || typeof data.error_class !== 'string')) return null;
-  if (data.error_message != null && (typeof data.error_message !== 'string' || data.error_message.length > 1_000)) return null;
+  if (data.error_message != null && !isSafeParserTelemetryError(data.error_message)) return null;
+  const hasDiagnosticsVersion = data.diagnostics_schema_version !== undefined;
+  const hasFingerprint = data.semantic_fingerprint !== undefined;
+  if (hasDiagnosticsVersion !== hasFingerprint) return null;
+  if (hasDiagnosticsVersion && (
+    data.diagnostics_schema_version !== 1
+    || typeof data.semantic_fingerprint !== 'string'
+    || !/^[a-f0-9]{64}$/.test(data.semantic_fingerprint)
+  )) return null;
   return {
     jobId: data.job_id,
     status: data.status,
+    detailSupported: data.detail_supported,
     counters: data.counters,
+    ...(hasDiagnosticsVersion ? {
+      diagnosticsSchemaVersion: 1 as const,
+      semanticFingerprint: data.semantic_fingerprint,
+    } : {}),
     ...(data.error_class ? { errorClass: data.error_class } : {}),
     ...(data.error_message ? { errorMessage: data.error_message } : {}),
   };
@@ -45,7 +87,10 @@ function terminalPayload(ctx: any): {
 
 function sameTerminalSnapshot(existing: any, payload: NonNullable<ReturnType<typeof terminalPayload>>): boolean {
   return existing.status === payload.status
+    && existing.detail_supported === payload.detailSupported
     && COUNTER_KEYS.every(key => existing[key] === payload.counters[key])
+    && (existing.diagnostics_schema_version ?? undefined) === payload.diagnosticsSchemaVersion
+    && (existing.semantic_fingerprint ?? undefined) === payload.semanticFingerprint
     && (existing.error_class ?? undefined) === payload.errorClass
     && (existing.error_message ?? undefined) === payload.errorMessage;
 }
@@ -116,7 +161,12 @@ export default factories.createCoreController(UID as any, ({ strapi }) => ({
       where: { id: existing.id },
       data: {
         status: payload.status,
+        detail_supported: payload.detailSupported,
         ...payload.counters,
+        ...(payload.diagnosticsSchemaVersion ? {
+          diagnostics_schema_version: payload.diagnosticsSchemaVersion,
+          semantic_fingerprint: payload.semanticFingerprint,
+        } : {}),
         finished_at: new Date().toISOString(),
         ...(payload.errorClass ? { error_class: payload.errorClass } : {}),
         ...(payload.errorMessage ? { error_message: payload.errorMessage } : {}),

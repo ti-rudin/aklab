@@ -1,5 +1,6 @@
-import { createParseHandler } from '@aklab/service-shared';
+import { createParseHandler, createParserQueueHandler } from '@aklab/service-shared';
 import { TorgiGovParser } from './sources/torgi-gov';
 
 const parser = new TorgiGovParser();
-export const handleParseJob = createParseHandler(parser);
+const parseHandler = createParseHandler(parser);
+export const handleParseJob = createParserQueueHandler(parser, parseHandler);

@@ -97,6 +97,7 @@ const GLOBAL_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
   { resource: 'cron', method: 'GET', path: '/cron/queue-stats', handler: 'cron.queueStats', config: ADMIN_CONFIG },
   { resource: 'cron', method: 'POST', path: '/cron/parse/:slug', handler: 'cron.parseSource', config: ADMIN_CONFIG },
   { resource: 'cron', method: 'POST', path: '/cron/analyze', handler: 'cron.analyzeAll', config: ADMIN_CONFIG },
+  { resource: 'cron', method: 'POST', path: '/cron/canary', handler: 'cron.parserCanary', config: ADMIN_CONFIG },
   { resource: 'cron', method: 'POST', path: '/cron/digest', handler: 'cron.sendDigest', config: ADMIN_CONFIG },
   { resource: 'cron', method: 'POST', path: '/cron/score', handler: 'cron.scoreProperties', config: ADMIN_CONFIG },
   { resource: 'cron', method: 'GET', path: '/cron/analyze-progress', handler: 'cron.analyzeProgress', config: ADMIN_CONFIG },

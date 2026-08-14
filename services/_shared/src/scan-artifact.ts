@@ -46,6 +46,20 @@ export interface ScanArtifactExpectedMetadata {
   profileCount: number;
 }
 
+export interface LocationUnresolvedDiagnostic {
+  external_id: string;
+  source_path: string;
+  status: 'missing';
+}
+
+export interface LocationUnresolvedManifest {
+  schemaVersion: 1;
+  runId: string;
+  source: string;
+  items: LocationUnresolvedDiagnostic[];
+  checksum: string;
+}
+
 const ARTIFACT_KEYS = [
   'schemaVersion',
   'runId',
@@ -161,6 +175,53 @@ export function getScanArtifactPath(source: string, runId: string, directory = D
   assertSafeScanSegment(source, 'source');
   assertSafeScanSegment(runId, 'runId');
   return join(directory, `${source}-${runId}.json`);
+}
+
+export function getLocationUnresolvedManifestPath(
+  source: string,
+  runId: string,
+  directory = DEFAULT_SCAN_ARTIFACT_DIR,
+): string {
+  assertSafeScanSegment(source, 'source');
+  assertSafeScanSegment(runId, 'runId');
+  return join(directory, `${source}-${runId}.location-unresolved.json`);
+}
+
+function assertBoundedDiagnosticText(value: unknown, label: string): asserts value is string {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    fail(`${label} must be bounded text`);
+  }
+}
+
+export function writeLocationUnresolvedManifest(
+  source: string,
+  runId: string,
+  items: LocationUnresolvedDiagnostic[],
+  directory = DEFAULT_SCAN_ARTIFACT_DIR,
+): LocationUnresolvedManifest {
+  assertSafeScanSegment(source, 'source');
+  assertSafeScanSegment(runId, 'runId');
+  if (!Array.isArray(items) || items.length < 1 || items.length > 10_000) fail('items are invalid');
+  for (const item of items) {
+    if (!isRecord(item) || Object.keys(item).sort().join(',') !== 'external_id,source_path,status') fail('item has unexpected fields');
+    assertBoundedDiagnosticText(item.external_id, 'external_id');
+    assertBoundedDiagnosticText(item.source_path, 'source_path');
+    if (item.status !== 'missing') fail('status is invalid');
+  }
+  const payload = { schemaVersion: 1 as const, runId, source, items };
+  const checksum = createHash('sha256').update(canonicalScanArtifactJson(payload)).digest('hex');
+  const manifest: LocationUnresolvedManifest = { ...payload, checksum };
+  mkdirSync(directory, { recursive: true });
+  const target = getLocationUnresolvedManifestPath(source, runId, directory);
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, canonicalScanArtifactJson(manifest), 'utf-8');
+    renameSync(temporary, target);
+  } catch (error) {
+    try { unlinkSync(temporary); } catch {}
+    throw error;
+  }
+  return manifest;
 }
 
 export function writeScanArtifact(input: ScanArtifactWriteInput, directory = DEFAULT_SCAN_ARTIFACT_DIR): ScanArtifact {

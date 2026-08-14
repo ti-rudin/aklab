@@ -6,13 +6,16 @@
  *
  * Playwright, stealth context, anti-ban.
  */
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   createStealthContext,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   extractAuctionEndAt,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   parsePrice,
   projectLegacyAddress,
@@ -40,11 +43,72 @@ function searchApiUrl(page: number): string {
   return `${BASE_URL}/ajax/api/search?category=${NEDVIZH_CATEGORIES}&page=${page}`;
 }
 
-// M-ETS does not expose a source-faithful property location field in the
-// repository fixtures, and the live page is unavailable to this audit (403).
-// Until a bounded API/DOM contract is documented, geography must fail closed.
+// Live evidence: every detail page has a bounded current-property block
+// (`.lot-info-block.info-type_1`) with a description and an explicit property region.
 const LISTING_PROPERTY_LOCATION_SOURCE_PATH = 'listing.property_location';
-const DETAIL_PROPERTY_LOCATION_SOURCE_PATH = 'detail.property_location';
+const DETAIL_PROPERTY_DESCRIPTION_SOURCE_PATH = 'details.field.Сведения об имуществе.address';
+const DETAIL_PROPERTY_REGION_SOURCE_PATH = 'details.field.Регион местонахождения имущества';
+
+export interface MetsPropertyLocationFields {
+  propertyBlockFound?: boolean;
+  propertyDescription?: unknown;
+  propertyRegion?: unknown;
+}
+
+/** Browser-safe extraction from the bounded current-property block only. */
+export function extractMetsPropertyLocationFields(documentLike?: Document): MetsPropertyLocationFields {
+  const doc = documentLike ?? document;
+  const propertyBlock = doc.querySelector('.lot-info-block.info-type_1');
+  if (!propertyBlock) return { propertyBlockFound: false };
+
+  const description = propertyBlock.querySelector('[itemprop="description"]')?.textContent
+    ?.replace(/\s+/g, ' ')
+    .trim();
+  let propertyRegion: string | undefined;
+  for (const item of Array.from(propertyBlock.querySelectorAll('.lot-info-item'))) {
+    const label = (item.querySelector('.title')?.textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/:$/, '')
+      .trim()
+      .toLocaleLowerCase('ru-RU');
+    if (label !== 'регион местонахождения имущества') continue;
+    propertyRegion = item.querySelector('.value')?.textContent?.replace(/\s+/g, ' ').trim() || undefined;
+    break;
+  }
+  return {
+    propertyBlockFound: true,
+    ...(description ? { propertyDescription: description.slice(0, 2000) } : {}),
+    ...(propertyRegion ? { propertyRegion } : {}),
+  };
+}
+
+function cleanMetsField(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() || undefined : undefined;
+}
+
+export function extractMetsPropertyLocation(fields: MetsPropertyLocationFields): PropertyLocation {
+  const propertyDescription = cleanMetsField(fields.propertyDescription);
+  const region = cleanMetsField(fields.propertyRegion);
+  const address = extractAddressFromBoundedPropertyText(propertyDescription);
+  if (address) {
+    return normalizeStructuredLocation({
+      address,
+      ...(region ? { region } : {}),
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: DETAIL_PROPERTY_DESCRIPTION_SOURCE_PATH,
+    });
+  }
+  if (region) {
+    return normalizeStructuredLocation({
+      region,
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: DETAIL_PROPERTY_REGION_SOURCE_PATH,
+    });
+  }
+  return missingMetsPropertyLocation(DETAIL_PROPERTY_REGION_SOURCE_PATH);
+}
 
 export function missingMetsPropertyLocation(sourcePath: string): PropertyLocation {
   return normalizeStructuredLocation({
@@ -244,7 +308,7 @@ export class MetsParser implements SourceParser {
             break;
           }
         } catch (err: any) {
-          logger.warn(`[m-ets] Ошибка на странице ${pageNum}: ${err.message}`);
+          logger.warn(`[m-ets] Ошибка на странице ${pageNum}: ${safeParserErrorCode(err)}`);
           // Продолжаем со следующей страницы
         }
       }
@@ -252,14 +316,14 @@ export class MetsParser implements SourceParser {
       logger.info(`[m-ets] Итого: ${allProperties.length} объектов недвижимости`);
       return allProperties;
     } catch (err: any) {
-      logger.error(`[m-ets] Ошибка парсинга: ${err.message}`);
+      logger.error(`[m-ets] Ошибка парсинга: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -278,21 +342,12 @@ export class MetsParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      // Ждём основные блоки страницы лота
-      try {
-        await page.waitForSelector('h2.lot-title, .lot-info-block, [itemprop="description"]', { timeout: 15000 });
-      } catch {
-        await page.waitForTimeout(3000);
-      }
+      await page.waitForFunction(() => (
+        (document.querySelector('.lot-info-block.info-type_1')?.textContent || '').trim().length > 0
+      ), undefined, { timeout: 15000 });
 
+      const locationFields = await page.evaluate(extractMetsPropertyLocationFields);
       const details = await page.evaluate(() => {
-        // ─── Описание: itemprop="description" внутри .lot-info-block.info-type_1 ───
-        let description = '';
-        const descEl = document.querySelector('[itemprop="description"]');
-        if (descEl) {
-          description = (descEl.textContent || '').trim().slice(0, 2000);
-        }
-
         // ─── Контакты: .lot-info-block.info-type_4 → .lot-info-item ───
         let organizerName = '';
         let phone = '';
@@ -355,7 +410,6 @@ export class MetsParser implements SourceParser {
         }
 
         return {
-          description: description || undefined,
           contacts: contacts || undefined,
           priceText: priceText || undefined,
           dates: dates.length ? dates : undefined,
@@ -365,17 +419,38 @@ export class MetsParser implements SourceParser {
       });
 
       // Добавляем задаток к описанию, если найден
-      let desc = details.description;
+      let desc = locationFields.propertyDescription;
       if (details.depositText) {
         const depositNote = `Задаток: ${details.depositText}`;
         desc = desc ? `${desc}\n${depositNote}` : depositNote;
       }
 
-      const propertyLocation = missingMetsPropertyLocation(DETAIL_PROPERTY_LOCATION_SOURCE_PATH);
+      const propertyLocation = extractMetsPropertyLocation({
+        propertyDescription: locationFields.propertyDescription,
+        propertyRegion: locationFields.propertyRegion,
+      });
+      const locationLabelId = propertyLocation.status === 'confirmed_address'
+        ? 'property.location.address'
+        : propertyLocation.status === 'confirmed_region_only'
+          ? 'property.location.region'
+          : undefined;
+      const parserDiagnostics = createParserExtractionDiagnostics({
+        adapterVersion: 'm-ets.v1',
+        propertyBlockFound: locationFields.propertyBlockFound === true,
+        ...(locationLabelId ? { locationLabelId } : {}),
+        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        semanticSignals: [
+          ...(locationFields.propertyBlockFound ? ['property.block'] : []),
+          ...(locationFields.propertyDescription ? ['property.description'] : []),
+          ...(locationFields.propertyRegion ? ['property.location.region'] : []),
+          ...(propertyLocation.status === 'confirmed_address' ? ['property.location.address'] : []),
+        ],
+      });
       return {
         description: desc,
         contacts: details.contacts,
         property_location: propertyLocation,
+        parser_diagnostics: parserDiagnostics,
         address: projectLegacyAddress(propertyLocation),
         city: derivePropertyRegion(propertyLocation),
         latitude: propertyLocation.latitude,
@@ -384,8 +459,8 @@ export class MetsParser implements SourceParser {
         auction_end_at: extractAuctionEndAt(details.auctionText),
       };
     } catch (err: any) {
-      logger.warn(`[m-ets] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[m-ets] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       if (page) try { await page.close(); } catch {}
       if (ownBrowser) try { await ownBrowser.close(); } catch {}
