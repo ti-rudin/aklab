@@ -6,7 +6,7 @@
   "parsers": [
     { "slug": "parser-fabrikant", "pm2_name": "aklab-parser-fabrikant", "port": 1345, "health_port": 1345 },
     { "slug": "parser-torgi-gov", "pm2_name": "aklab-parser-torgi-gov", "port": 1346, "health_port": 1346 },
-    { "slug": "parser-aggregator-bankrot", "pm2_name": "aklab-parser-aggregator-bankrot", "port": 1348, "health_port": 1348 },
+    { "slug": "parser-aggregator-bankrot", "pm2_name": "aklab-parser-aggregator-bankrot", "port": 1348, "health_port": 1348, "max_memory_restart": "1024M" },
     { "slug": "parser-alfalot", "pm2_name": "aklab-parser-alfalot", "port": 1349, "health_port": 1349 },
     { "slug": "parser-etprf", "pm2_name": "aklab-parser-etprf", "port": 1350, "health_port": 1350 },
     { "slug": "parser-sberbank-ast", "pm2_name": "aklab-parser-sberbank-ast", "port": 1351, "health_port": 1351 },
