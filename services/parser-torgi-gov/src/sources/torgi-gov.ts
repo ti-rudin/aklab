@@ -25,8 +25,10 @@ const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
 const PUBLIC_LOT_URL = 'https://torgi.gov.ru/new/public/lots/lot';
 const MAX_PAGES = 30; // API отдаёт 10 на страницу (size игнорирует), 30 стр = 300 items
 const ITEMS_PER_PAGE = 10;
-const REQUEST_MAX_ATTEMPTS = 3;
-const REQUEST_BASE_DELAY_MS = 1_000;
+const REQUEST_RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000] as const;
+const REQUEST_MAX_ATTEMPTS = REQUEST_RETRY_DELAYS_MS.length + 1;
+const REQUEST_RECOVERY_COOLDOWN_MS = 15_000;
+const REQUEST_MAX_RETRY_AFTER_MS = 120_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 const MONITORED_REGION_CODES = new Set(['77', '50', '69']);
@@ -40,12 +42,21 @@ function isTransientHttpStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+function retryAfterDelayMs(response: Response): number {
+  const raw = response.headers?.get?.('retry-after');
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return 0;
+  return Math.min(seconds * 1_000, REQUEST_MAX_RETRY_AFTER_MS);
+}
+
 export async function fetchTorgiResponseWithRetry(
   url: string,
   fetchImpl: FetchImplementation = fetch,
   sleep: Sleep = sleepDefault,
 ): Promise<Response> {
   let lastError: unknown;
+  let recoveredFromTransient = false;
 
   for (let attempt = 1; attempt <= REQUEST_MAX_ATTEMPTS; attempt++) {
     try {
@@ -56,18 +67,26 @@ export async function fetchTorgiResponseWithRetry(
         },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (!isTransientHttpStatus(response.status) || attempt === REQUEST_MAX_ATTEMPTS) {
+      if (!isTransientHttpStatus(response.status)) {
+        if (recoveredFromTransient && response.ok) {
+          await sleep(REQUEST_RECOVERY_COOLDOWN_MS);
+        }
         return response;
       }
+      if (attempt === REQUEST_MAX_ATTEMPTS) return response;
+
+      recoveredFromTransient = true;
       logger.warn(`[torgi-gov] transient HTTP ${response.status}; retry ${attempt}/${REQUEST_MAX_ATTEMPTS}`);
       await response.body?.cancel().catch(() => {});
+      const scheduledDelay = REQUEST_RETRY_DELAYS_MS[attempt - 1];
+      await sleep(Math.max(scheduledDelay, retryAfterDelayMs(response)));
     } catch (error) {
       lastError = error;
       if (attempt === REQUEST_MAX_ATTEMPTS) throw error;
+      recoveredFromTransient = true;
       logger.warn(`[torgi-gov] transient request failure (${safeParserErrorCode(error)}); retry ${attempt}/${REQUEST_MAX_ATTEMPTS}`);
+      await sleep(REQUEST_RETRY_DELAYS_MS[attempt - 1]);
     }
-
-    await sleep(REQUEST_BASE_DELAY_MS * attempt);
   }
 
   throw lastError instanceof Error ? lastError : new Error('Torgi request failed');

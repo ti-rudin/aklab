@@ -50,12 +50,16 @@ function extractArea(item: any): number | undefined {
 
 describe('torgi-gov: detail failure contract', () => {
   it('rejects an unsuccessful detail response instead of returning stale scan data', async () => {
+    vi.useFakeTimers();
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 503 } as Response);
     try {
-      await expect(new TorgiGovParser().fetchDetails(buildTorgiLotUrl('21000005000000031466_1')))
+      const rejection = expect(new TorgiGovParser().fetchDetails(buildTorgiLotUrl('21000005000000031466_1')))
         .rejects.toThrow('parser.transient');
+      await vi.runAllTimersAsync();
+      await rejection;
     } finally {
       fetchMock.mockRestore();
+      vi.useRealTimers();
     }
   });
 
@@ -87,7 +91,51 @@ describe('torgi-gov: request retry contract', () => {
 
     expect(response.status).toBe(200);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('survives a sustained transient window and cools down after recovery', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response('busy-1', { status: 503 }))
+      .mockResolvedValueOnce(new Response('busy-2', { status: 503 }))
+      .mockResolvedValueOnce(new Response('busy-3', { status: 503 }))
+      .mockResolvedValueOnce(new Response('busy-4', { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const response = await fetchTorgiResponseWithRetry(
+      'https://torgi.gov.ru/new/api/public/lotcards/search?page=0',
+      fetchImpl,
+      sleep,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([
+      5_000,
+      15_000,
+      30_000,
+      60_000,
+      15_000,
+    ]);
+  });
+
+  it('honors a longer Retry-After delay from the server', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response('busy', {
+        status: 503,
+        headers: { 'retry-after': '20' },
+      }))
+      .mockResolvedValueOnce(new Response('{"content":[]}', { status: 200 }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await fetchTorgiResponseWithRetry(
+      'https://torgi.gov.ru/new/api/public/lotcards/search?page=0',
+      fetchImpl,
+      sleep,
+    );
+
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([20_000, 15_000]);
   });
 
   it('does not retry an explicit HTTP block', async () => {
