@@ -94,6 +94,36 @@
     },
     "notes": {
       "type": "text"
+    },
+    "parser_health_status": {
+      "type": "enumeration",
+      "enum": ["healthy", "degraded", "schema_changed", "blocked"],
+      "default": "healthy"
+    },
+    "last_health_checked_at": {
+      "type": "datetime"
+    },
+    "last_schema_fingerprint": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "last_health_reason": {
+      "type": "text"
+    },
+    "last_health_alert_at": {
+      "type": "datetime"
+    },
+    "last_health_alert_key": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "parser_health_degraded_streak": {
+      "type": "integer",
+      "default": 0,
+      "min": 0
+    },
+    "last_health_recovered_at": {
+      "type": "datetime"
     }
   }
 }

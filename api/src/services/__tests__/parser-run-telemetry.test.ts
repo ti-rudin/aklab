@@ -67,7 +67,7 @@ describe('parser run telemetry', () => {
 
     await expect(telemetry.finishSourceStage({
       runId: 'run-1', sourceSlug: 'fabrikant', stage: 'scan', jobId: 42,
-      status: 'success', counters: { listed: 10, eligible: 4, existing: 3, pre_filtered: 3, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0 },
+      status: 'success', counters: { listed: 10, eligible: 4, existing: 3, pre_filtered: 3, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0, property_block_found: 0, location_label_found: 0, location_confirmed_address: 0, location_confirmed_region_only: 0, location_missing: 0, location_unresolved: 0, schema_mismatch: 0 },
     })).rejects.toThrow('does not own telemetry row');
 
     expect(update).not.toHaveBeenCalled();
@@ -82,7 +82,7 @@ describe('parser run telemetry', () => {
     const telemetry = createParserRunTelemetry({
       db: { query: vi.fn().mockReturnValue({ findOne, update }) },
     } as any);
-    const counters = { listed: 10, eligible: 4, existing: 3, pre_filtered: 3, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0 };
+    const counters = { listed: 10, eligible: 4, existing: 3, pre_filtered: 3, details_attempted: 0, details_ok: 0, created: 0, skipped: 0, failed: 0, property_block_found: 0, location_label_found: 0, location_confirmed_address: 0, location_confirmed_region_only: 0, location_missing: 0, location_unresolved: 0, schema_mismatch: 0 };
 
     await telemetry.finishSourceStage({
       runId: 'run-1', sourceSlug: 'fabrikant', stage: 'scan', jobId: 41, status: 'success', counters,
@@ -238,7 +238,7 @@ describe('parser run telemetry', () => {
 
     expect(update).toHaveBeenCalledWith({
       where: { id: 7 },
-      data: expect.objectContaining({ status: 'cancelled', error_message: 'Cancellation requested', finished_at: expect.any(String) }),
+      data: expect.objectContaining({ status: 'cancelled', error_message: 'parser.cancelled', finished_at: expect.any(String) }),
     });
   });
 

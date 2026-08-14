@@ -1,7 +1,7 @@
 import { PermanentError } from '@aklab/sqlite-queue';
 import type { Job, WorkerContext } from '@aklab/sqlite-queue';
 import type { SourceParser, ParseResult } from './types';
-import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters, markParserRunSourceStageRunning, finishParserRunSourceStage } from './strapi-client';
+import { propertyExists, createProperty, preFilterProperty, logCron, updateSourceStats, resetSourceDetailsCounters, markParserRunSourceStageRunning, finishParserRunSourceStage, isSourceNormalWorkAllowed } from './strapi-client';
 import type { ParseRules, UserFilterSnapshot } from '@aklab/parse-rules';
 import { normalizeUserFilterSnapshot, snapshotMatchesCandidate } from '@aklab/parse-rules';
 import { randomDelay } from './anti-ban';
@@ -14,10 +14,14 @@ import {
   normalizeStructuredLocation,
   projectLegacyAddress,
 } from './property-location';
+import { aggregateSemanticFingerprints, isParserExtractionDiagnostics } from './parser-diagnostics';
+import { classifyParserError, ParserSourceError, safeParserErrorCode } from './parser-error';
+import type { ParserErrorClass } from './parser-error';
 import {
   cleanupScanArtifact,
   LEGACY_FILTER_SNAPSHOT_HASH,
   readScanArtifact,
+  writeLocationUnresolvedManifest,
   writeScanArtifact,
 } from './scan-artifact';
 
@@ -84,6 +88,12 @@ function throwIfCancellationRequested(workerContext?: WorkerContext): void {
   }
 }
 
+async function throwIfSourceQuarantined(documentId?: string): Promise<void> {
+  if (documentId && !(await isSourceNormalWorkAllowed(documentId))) {
+    throw new ParserSourceError('blocked');
+  }
+}
+
 function isCancellationError(error: any): boolean {
   return error instanceof PermanentError && error.message.includes('cancelled');
 }
@@ -127,13 +137,22 @@ export function createParseHandler(parser: SourceParser) {
     let filterContext: FilterContext | undefined;
     const startedAt = new Date().toISOString();
     let total = 0, created = 0, filtered = 0, preFiltered = 0, detailsFetched = 0, detailsNeeded = 0;
-    let existing = 0, detailsAttempted = 0, detailsOk = 0, skipped = 0, itemFailures = 0;
+    let existing = 0, detailsAttempted = 0, detailsOk = 0, skipped = 0, itemFailures = 0, locationUnresolved = 0;
+    let propertyBlockFound = 0, locationLabelFound = 0, locationConfirmedAddress = 0;
+    let locationConfirmedRegionOnly = 0, locationMissing = 0, schemaMismatch = 0;
+    const semanticFingerprints = new Set<string>();
+    const unresolvedDiagnostics: Array<{ external_id: string; source_path: string; status: 'missing' }> = [];
     let telemetrySent = false;
-    const finishTelemetry = async (status: 'success' | 'success_empty' | 'failed' | 'cancelled', errorMessage?: string) => {
+    const finishTelemetry = async (
+      status: 'success' | 'success_empty' | 'failed' | 'cancelled',
+      errorMessage?: string,
+      errorClass?: ParserErrorClass,
+    ) => {
       if (!req.telemetryIdentityKey || telemetrySent) return;
       await finishParserRunSourceStage(req.telemetryIdentityKey, {
         job_id: job.id,
         status,
+        detail_supported: typeof parser.fetchDetails === 'function',
         counters: {
           listed: total,
           eligible: Math.max(0, total - existing - preFiltered),
@@ -144,8 +163,20 @@ export function createParseHandler(parser: SourceParser) {
           created,
           skipped,
           failed: itemFailures,
+          property_block_found: propertyBlockFound,
+          location_label_found: locationLabelFound,
+          location_confirmed_address: locationConfirmedAddress,
+          location_confirmed_region_only: locationConfirmedRegionOnly,
+          location_missing: locationMissing,
+          location_unresolved: locationUnresolved,
+          schema_mismatch: schemaMismatch,
         },
-        ...(errorMessage ? { error_message: errorMessage.slice(0, 1_000) } : {}),
+        ...(semanticFingerprints.size > 0 ? {
+          diagnostics_schema_version: 1 as const,
+          semantic_fingerprint: aggregateSemanticFingerprints(semanticFingerprints),
+        } : {}),
+        ...(errorMessage ? { error_message: errorMessage } : {}),
+        ...(errorClass ? { error_class: errorClass } : {}),
       });
       telemetrySent = true;
     };
@@ -167,8 +198,10 @@ export function createParseHandler(parser: SourceParser) {
       // reset source counters, invoke parser.parse(), or touch Property APIs.
       if (filterContext.usesSnapshot && filterContext.profileCount === 0) {
         await finishTelemetry('success_empty');
-        return { created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0 };
+        return { created: 0, filtered: 0, total: 0, detailsFetched: 0, detailsNeeded: 0, locationUnresolved: 0 };
       }
+      await throwIfSourceQuarantined(req.documentId);
+      throwIfCancellationRequested(workerContext);
       // ═══════════════════════════════════════════════════════════════
       // ФАЗА 1: СКАНИРОВАНИЕ
       // Парсинг списков + дедупликация + предфильтр
@@ -183,7 +216,8 @@ export function createParseHandler(parser: SourceParser) {
           throwIfCancellationRequested(workerContext);
         }
 
-        // Парсинг списков (без загрузки деталей)
+        // Re-read quarantine after counter reset, immediately before adapter work.
+        await throwIfSourceQuarantined(req.documentId);
         throwIfCancellationRequested(workerContext);
         const properties = await parser.parse(depth);
         throwIfCancellationRequested(workerContext);
@@ -242,7 +276,7 @@ export function createParseHandler(parser: SourceParser) {
             newProperties.push(prop);
           } catch (err: any) {
             if (isCancellationError(err)) throw err;
-            logger.warn(`Existence check failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
+            logger.warn(`Existence check failed: ${prop.external_id}: ${safeParserErrorCode(err)}`, { correlationId: corrId });
           }
         }
 
@@ -270,8 +304,8 @@ export function createParseHandler(parser: SourceParser) {
           console.log(`[parse-handler:${req.source}] SCAN: artifact saved for ${corrId}`);
         } catch (err: any) {
           if (isCancellationError(err)) throw err;
-          logger.error(`Failed to save scan results: ${err.message}`, { correlationId: corrId });
-          throw new PermanentError(`Failed to write scan artifact for ${req.source}: ${err.message}`);
+          logger.error(`Failed to save scan results: ${safeParserErrorCode(err)}`, { correlationId: corrId });
+          throw new PermanentError(`Failed to write scan artifact for ${req.source}: ${safeParserErrorCode(err)}`);
         }
 
         // Обновляем статистику источника (Phase 1 результат)
@@ -306,7 +340,7 @@ export function createParseHandler(parser: SourceParser) {
           }).catch(() => {});
           console.log(`[parse-handler:${req.source}] SCAN RETURN: total=${total} new=${newProperties.length} detailsNeeded=${detailsNeeded}`);
           await finishTelemetry(total === 0 ? 'success_empty' : 'success');
-          return { created: 0, filtered: preFiltered, total, detailsFetched: 0, detailsNeeded };
+          return { created: 0, filtered: preFiltered, total, detailsFetched: 0, detailsNeeded, locationUnresolved: 0 };
         }
       }
 
@@ -344,6 +378,7 @@ export function createParseHandler(parser: SourceParser) {
         let sharedBrowser: any = undefined;
         let sharedContext: any = undefined;
         if (parser.fetchDetails && newProperties.length > 0) {
+          await throwIfSourceQuarantined(req.documentId);
           try {
             throwIfCancellationRequested(workerContext);
             const { chromium } = await import('playwright');
@@ -365,7 +400,7 @@ export function createParseHandler(parser: SourceParser) {
               }
               throw err;
             }
-            logger.warn(`Failed to launch shared browser: ${err.message}. Falling back to per-request browsers.`, { correlationId: corrId });
+            logger.warn(`Failed to launch shared browser: ${safeParserErrorCode(err)}. Falling back to per-request browsers.`, { correlationId: corrId });
           }
         }
 
@@ -374,15 +409,27 @@ export function createParseHandler(parser: SourceParser) {
           for (const prop of newProperties) {
             throwIfCancellationRequested(workerContext);
             try {
+              let detailFailed = false;
               // Загрузка детальной страницы (если парсер поддерживает)
               if (parser.fetchDetails) {
                 try {
-                  detailsAttempted++;
+                  await throwIfSourceQuarantined(req.documentId);
                   throwIfCancellationRequested(workerContext);
+                  detailsAttempted++;
                   const details = await parser.fetchDetails(prop.url, sharedContext);
                   detailsOk++;
                   throwIfCancellationRequested(workerContext);
                   if (details && Object.keys(details).length > 0) {
+                    const diagnostics = details.parser_diagnostics;
+                    if (diagnostics !== undefined) {
+                      if (!isParserExtractionDiagnostics(diagnostics)) {
+                        throw new TypeError('Invalid parser diagnostics');
+                      }
+                      if (diagnostics.property_block_found) propertyBlockFound++;
+                      if (diagnostics.location_label_id) locationLabelFound++;
+                      if (diagnostics.schema_mismatch) schemaMismatch++;
+                      semanticFingerprints.add(diagnostics.semantic_fingerprint);
+                    }
                     if (details.property_location !== undefined) {
                       const detailLocation = normalizeStructuredLocation(details.property_location as any);
                       const location = mergePropertyLocation(prop.property_location, detailLocation);
@@ -396,7 +443,7 @@ export function createParseHandler(parser: SourceParser) {
                     // Geography fields without a typed location are never
                     // allowed to replace the canonical scan/detail location.
                     for (const [key, value] of Object.entries(details)) {
-                      if (key === 'property_location' || key === 'address' || key === 'city'
+                      if (key === 'parser_diagnostics' || key === 'property_location' || key === 'address' || key === 'city'
                         || key === 'latitude' || key === 'longitude' || key === 'parties') continue;
                       if (value !== undefined && value !== null) {
                         (prop as any)[key] = value;
@@ -405,6 +452,12 @@ export function createParseHandler(parser: SourceParser) {
                     if (details.parties !== undefined) {
                       prop.parties = dedupeParties([...(prop.parties ?? []), ...details.parties]);
                     }
+                    // The detail merge is another typed persistence boundary.
+                    // Re-project all legacy fields from the final canonical location.
+                    canonicalizeProperty(prop);
+                    if (prop.property_location.status === 'confirmed_address') locationConfirmedAddress++;
+                    else if (prop.property_location.status === 'confirmed_region_only') locationConfirmedRegionOnly++;
+                    else locationMissing++;
                     detailsFetched++;
                     console.log(`[parse-handler:${req.source}] DETAIL ${detailsFetched}/${detailsNeeded}: ${prop.external_id}`);
                     // Промежуточное обновление для UI
@@ -418,15 +471,44 @@ export function createParseHandler(parser: SourceParser) {
                     }
                   }
                 } catch (err: any) {
+                  if (err instanceof ParserSourceError) throw err;
                   if (isCancellationError(err)) throw err;
                   if (isInvalidPropertyLocationError(err)) throw err;
                   if (filterContext.usesSnapshot) throw err;
-                  logger.warn(`fetchDetails failed for ${prop.url}: ${err.message}`, { correlationId: corrId });
+                  detailFailed = true;
+                  itemFailures++;
+                  logger.warn('fetchDetails failed', {
+                    correlationId: corrId,
+                    source: req.source,
+                    externalId: String(prop.external_id).slice(0, 128),
+                    errorCode: safeParserErrorCode(err),
+                  });
                 }
                 // Антибан: пауза между детальными страницами (2-5 сек)
                 throwIfCancellationRequested(workerContext);
                 await randomDelay(2000, 5000);
                 throwIfCancellationRequested(workerContext);
+              }
+
+              // A failed detail request is not a successful unresolved result and
+              // must never fall through to persistence using stale scan fields.
+              if (detailFailed) {
+                skipped++;
+                continue;
+              }
+
+              // Catalog records are user-visible real-estate candidates. After
+              // details, unresolved geography is retained only as run telemetry.
+              if (prop.property_location.status === 'missing') {
+                locationUnresolved++;
+                skipped++;
+                unresolvedDiagnostics.push({
+                  external_id: String(prop.external_id).slice(0, 256),
+                  source_path: String(prop.property_location.source_path).slice(0, 256),
+                  status: 'missing',
+                });
+                logger.warn(`Skipping unresolved property location: ${prop.external_id}`, { correlationId: corrId });
+                continue;
               }
 
               if (filterContext.usesSnapshot && !snapshotMatchesCandidate(prop, filterContext.snapshot!, { phase: 'details' })) {
@@ -443,7 +525,9 @@ export function createParseHandler(parser: SourceParser) {
               // expiry when an unambiguous deadline is available.
               prop.auction_end_at ??= extractAuctionEndAt(`${prop.description || ''}\n${prop.title || ''}`);
 
-              // Создание объекта в Strapi
+              // Создание объекта в Strapi. A quarantine applied during details
+              // must stop persistence before the next user-visible side effect.
+              await throwIfSourceQuarantined(req.documentId);
               throwIfCancellationRequested(workerContext);
               const result = await createProperty({
                 source: req.source,
@@ -478,11 +562,12 @@ export function createParseHandler(parser: SourceParser) {
                 }
               }
             } catch (err: any) {
+              if (err instanceof ParserSourceError) throw err;
               if (isCancellationError(err)) throw err;
               if (isInvalidPropertyLocationError(err)) throw err;
               if (filterContext.usesSnapshot) throw err;
               itemFailures++;
-              logger.warn(`Failed: ${prop.external_id}: ${err.message}`, { correlationId: corrId });
+              logger.warn(`Failed: ${prop.external_id}: ${safeParserErrorCode(err)}`, { correlationId: corrId });
             }
           }
         } finally {
@@ -502,21 +587,26 @@ export function createParseHandler(parser: SourceParser) {
 
     } catch (err: any) {
       cancelled = isCancellationError(err);
-      errorMsg = err.message;
-      if (!cancelled) logger.error(`Parse failed: ${err.message}`, { correlationId: corrId });
+      const errorClass: ParserErrorClass = cancelled
+        ? 'cancelled'
+        : isInvalidPropertyLocationError(err)
+          ? 'permanent'
+          : (classifyParserError(err) ?? 'transient');
+      errorMsg = `parser.${errorClass}`;
+      if (!cancelled) logger.error(`Parse failed: ${errorMsg}`, { correlationId: corrId });
       if (req.documentId && !cancelled) {
         await updateSourceStats(req.documentId, {
           last_parse_status: 'error',
-          last_parse_error: err.message,
+          last_parse_error: errorMsg,
           last_parsed_at: new Date().toISOString(),
         }).catch(() => {});
       }
       try {
-        await finishTelemetry(cancelled ? 'cancelled' : 'failed', err.message);
+        await finishTelemetry(cancelled ? 'cancelled' : 'failed', errorMsg, errorClass);
       } catch (telemetryError: any) {
-        logger.warn(`Telemetry terminal update failed: ${telemetryError.message}`, { correlationId: corrId });
+        logger.warn(`Telemetry terminal update failed: ${safeParserErrorCode(telemetryError)}`, { correlationId: corrId });
       }
-      throw err;
+      throw new ParserSourceError(errorClass);
     } finally {
       // Cancellation is a cooperative queue outcome, not a late cron-side effect.
       if (!cancelled) {
@@ -552,12 +642,15 @@ export function createParseHandler(parser: SourceParser) {
     }
 
     console.log(`[parse-handler:${req.source}] DONE: created=${created} filtered=${filtered} preFiltered=${preFiltered} total=${total} details=${detailsFetched}/${detailsNeeded}`);
+    if (phase !== 'scan' && unresolvedDiagnostics.length > 0) {
+      writeLocationUnresolvedManifest(req.source, corrId, unresolvedDiagnostics);
+    }
     await finishTelemetry(total === 0 ? 'success_empty' : 'success');
     if (phase !== 'scan') {
       // The only destructive artifact operation is immediately before a
       // successful return, after details and both terminal telemetry paths.
       cleanupScanArtifact(req.source, corrId);
     }
-    return { created, filtered, total, detailsFetched, detailsNeeded };
+    return { created, filtered, total, detailsFetched, detailsNeeded, locationUnresolved };
   };
 }

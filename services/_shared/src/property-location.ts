@@ -42,6 +42,38 @@ function invalid(message: string): never {
   throw new TypeError(`Invalid property location: ${message}`);
 }
 
+const PARTY_CONTEXT_PATTERN = /(?:организатор\p{L}*|должник\p{L}*|залогодержател\p{L}*|кредитор\p{L}*|продав(?:ец|ц\p{L}*)|собственник\p{L}*|контактн\p{L}*\s+лиц\p{L}*)/iu;
+const PROPERTY_ADDRESS_LABEL_PATTERN = /(?:почтовый\s+адрес\s+ориентира|адрес\s*\((?:местоположение|местонахождение)\)(?:\s+объекта)?|адрес(?:\s+местоположения)?\s+объекта|(?:объект\s+недвижимости\s+)?(?:находится|располож\p{L}*)\s+по\s+адресу|место\s+нахождения|местонахождение|(?<!почтовый\s)адрес\p{L}*)\s*:\s*/giu;
+const PROPERTY_ADDRESS_STOP_PATTERN = /(?:[,;.]?\s+)(?=(?:кадастров(?:ый|ого|ому|ым)?(?:\s+|\s*\()|кадастровый\s+номер|к\/н(?=$|[\s,;:.]))|(?:общая\s+)?площад(?:ь|и)(?=$|[\s,;:.])|(?:категория|назначение|вид\s+собственности|вид\s+разрешенного\s+использования)(?=$|[\s,;:.])|(?:имеется|имеются|существующие|существующих|ограничения|обременения)(?=$|[\s,;:.])|(?:ознакомиться|малоэтажный|год\s+постройки|этажность|кол-во|тип\s+земли|начальная\s+цена|задаток)(?=$|[\s,;:.])|(?:(?:почтовый|юридический|фактический)\s+)?адрес\p{L}*\s+(?:организатор\p{L}*|должник\p{L}*|залогодержател\p{L}*|кредитор\p{L}*|продав(?:ец|ц\p{L}*)|собственник\p{L}*)|(?:организатор\p{L}*|должник\p{L}*|залогодержател\p{L}*|кредитор\p{L}*|продав(?:ец|ц\p{L}*)|собственник\p{L}*|контактн\p{L}*\s+лиц\p{L}*)(?:\s*:|.{0,40}\s+по\s+адресу\s*:))/iu;
+
+/**
+ * Extract an explicitly labelled address from an already isolated current-property field.
+ * This helper must never receive body text, excerpts, titles, or party/contact blocks.
+ */
+export function extractAddressFromBoundedPropertyText(value: unknown): string | undefined {
+  const text = cleanText(value)?.replace(/\s+/g, ' ');
+  if (!text) return undefined;
+
+  for (const match of text.matchAll(PROPERTY_ADDRESS_LABEL_PATTERN)) {
+    const prefix = text.slice(0, match.index ?? 0);
+    const label = match[0].toLocaleLowerCase('ru-RU');
+    if (PARTY_CONTEXT_PATTERN.test(prefix)) continue;
+    if (/^почтовый\s+адрес\s*:/u.test(label)) continue;
+
+    const remainder = text.slice((match.index ?? 0) + match[0].length);
+    const stop = remainder.search(PROPERTY_ADDRESS_STOP_PATTERN);
+    const candidate = (stop === -1 ? remainder : remainder.slice(0, stop))
+      .replace(/[\s,;.]+$/u, '')
+      .trim();
+    if (candidate.length >= 8
+      && !PARTY_CONTEXT_PATTERN.test(candidate)
+      && !/(?:https?:\/\/|www\.|\S+@\S+)/iu.test(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function coordinate(value: unknown, min: number, max: number, name: string): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
@@ -114,7 +146,7 @@ export function mergePropertyLocation(
   scan: PropertyLocation,
   details: PropertyLocation,
 ): PropertyLocation {
-  if (details.status === 'missing') return scan;
+  if (details.status === 'missing') return scan.status === 'missing' ? { ...details } : scan;
   if (LOCATION_STRENGTH[scan.status] > LOCATION_STRENGTH[details.status]) return scan;
   return { ...details };
 }

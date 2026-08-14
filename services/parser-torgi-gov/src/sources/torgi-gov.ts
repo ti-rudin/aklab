@@ -10,12 +10,15 @@
 
 import {
   classifyPropertyType,
+  createParserExtractionDiagnostics,
   derivePropertyRegion,
   normalizeStructuredLocation,
   parseAuctionEndAt,
+  parserHttpError,
   projectLegacyAddress,
+  safeParserErrorCode,
 } from '@aklab/service-shared';
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 
 const API_URL = 'https://torgi.gov.ru/new/api/public/lotcards/search';
@@ -110,6 +113,36 @@ export function extractTorgiPropertyLocation(item: Record<string, unknown>): Pro
   });
 }
 
+export function createTorgiParserDiagnostics(
+  item: Record<string, unknown>,
+  propertyLocation: PropertyLocation,
+) {
+  const knownSignals = [
+    ['lotDescription', 'property.description'],
+    ['lotName', 'property.name'],
+    ['estateAddress', 'property.location.address'],
+    ['lotAddress', 'property.location.address'],
+    ['subjectRFCode', 'property.location.region'],
+    ['biddEndTime', 'property.auction_end'],
+  ] as const;
+  const semanticSignals = knownSignals
+    .filter(([key]) => Object.prototype.hasOwnProperty.call(item, key))
+    .map(([, signal]) => signal);
+  const propertyBlockFound = semanticSignals.length > 0;
+  const locationLabelId = propertyLocation.status === 'confirmed_address'
+    ? 'property.location.address'
+    : propertyLocation.status === 'confirmed_region_only'
+      ? 'property.location.region'
+      : undefined;
+  return createParserExtractionDiagnostics({
+    adapterVersion: 'torgi-gov.v1',
+    propertyBlockFound,
+    ...(locationLabelId ? { locationLabelId } : {}),
+    ...(!locationLabelId && propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+    semanticSignals,
+  });
+}
+
 export class TorgiGovParser implements SourceParser {
   name = 'torgi-gov';
 
@@ -130,7 +163,8 @@ export class TorgiGovParser implements SourceParser {
         const properties = await this.searchQuery(query, depth);
         allProperties.push(...properties);
       } catch (err: any) {
-        logger.warn(`[torgi-gov] Search "${query}" failed: ${err.message}`);
+        logger.warn(`[torgi-gov] Search failed: ${safeParserErrorCode(err)}`);
+        throw err;
       }
       // Пауза между поисковыми запросами (3-6 сек)
       await randomDelay(3000, 6000);
@@ -147,7 +181,7 @@ export class TorgiGovParser implements SourceParser {
     return unique;
   }
 
-  async fetchDetails(url: string): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string): Promise<ParserDetailResult> {
     // torgi.gov.ru — Angular SPA, HTML пустой. Используем JSON API.
     // URL: https://torgi.gov.ru/new/public/lots/lot/{noticeNumber}_{lotNumber}
     // API: GET https://torgi.gov.ru/new/api/public/lotcards/{noticeNumber}_{lotNumber}
@@ -155,8 +189,7 @@ export class TorgiGovParser implements SourceParser {
     try {
       const lotId = extractTorgiLotId(url);
       if (!lotId) {
-        logger.warn(`[torgi-gov] Cannot extract lot ID from URL: ${url}`);
-        return {};
+        throw new Error('Invalid Torgi lot identifier');
       }
 
       const apiUrl = `https://torgi.gov.ru/new/api/public/lotcards/${lotId}`;
@@ -171,8 +204,7 @@ export class TorgiGovParser implements SourceParser {
       });
 
       if (!response.ok) {
-        logger.warn(`[torgi-gov] API returned ${response.status} for ${apiUrl}`);
-        return {};
+        throw parserHttpError(response.status);
       }
 
       const data = await response.json() as any;
@@ -190,6 +222,7 @@ export class TorgiGovParser implements SourceParser {
         description,
         contacts,
         property_location,
+        parser_diagnostics: createTorgiParserDiagnostics(data, property_location),
         address: projectLegacyAddress(property_location),
         city: derivePropertyRegion(property_location),
         latitude: property_location.latitude,
@@ -197,8 +230,8 @@ export class TorgiGovParser implements SourceParser {
         auction_end_at,
       };
     } catch (err: any) {
-      logger.warn(`[torgi-gov] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[torgi-gov] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     }
   }
 
@@ -233,8 +266,7 @@ export class TorgiGovParser implements SourceParser {
       });
 
       if (!response.ok) {
-        logger.warn(`[torgi-gov] API returned ${response.status}`);
-        break;
+        throw parserHttpError(response.status);
       }
 
       const data = await response.json() as any;

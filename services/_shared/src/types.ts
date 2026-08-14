@@ -1,3 +1,5 @@
+import type { ParserExtractionDiagnostics } from './parser-diagnostics';
+
 export type PropertyLocationStatus =
   | 'confirmed_address'
   | 'confirmed_region_only'
@@ -83,8 +85,13 @@ export interface SourceParser {
    * Вызывается для каждого НОВОГО объекта (не дубля) после parse().
    * Опционально — парсеры без детальных страниц могут не реализовывать.
    */
-  fetchDetails?(url: string, browser?: any): Promise<Partial<ParsedProperty>>;
+  fetchDetails?(url: string, browser?: any): Promise<ParserDetailResult>;
 }
+
+/** Adapter-only detail result; diagnostics are consumed before Property persistence. */
+export type ParserDetailResult = Partial<ParsedProperty> & {
+  parser_diagnostics?: ParserExtractionDiagnostics;
+};
 
 /** Опции для запуска парсинга. */
 export interface ParseOptions {
@@ -100,4 +107,6 @@ export interface ParseResult {
   detailsFetched: number;
   /** Количество объектов, которым текущий run назначил Phase 2. */
   detailsNeeded: number;
+  /** Successful detail responses that remained fail-closed without property geography. */
+  locationUnresolved: number;
 }

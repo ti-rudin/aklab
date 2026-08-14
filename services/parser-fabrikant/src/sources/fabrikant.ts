@@ -16,9 +16,11 @@
  */
 
 import { classifyPropertyType } from '@aklab/service-shared';
-import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
+import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
+  createParserExtractionDiagnostics,
   logger,
+  safeParserErrorCode,
   normalizeStructuredLocation,
   randomDelay,
   createStealthContext,
@@ -64,6 +66,7 @@ type PropertyLocationFields = {
   address?: string;
   region?: string;
   region_code?: string;
+  propertyBlockFound?: boolean;
 };
 
 function cleanLocationField(value: string | undefined): string | undefined {
@@ -101,6 +104,28 @@ function propertyLocationFromFields(fields: PropertyLocationFields): PropertyLoc
     status: 'missing',
     source_kind: 'dom_field',
     source_path: PROPERTY_LOCATION_CONTAINER,
+  });
+}
+
+export function createFabrikantParserDiagnostics(fields: PropertyLocationFields) {
+  const location = propertyLocationFromFields(fields);
+  const locationLabelId = location.status === 'confirmed_address'
+    ? 'property.location.address'
+    : location.status === 'confirmed_region_only'
+      ? 'property.location.region'
+      : undefined;
+  const propertyBlockFound = fields.propertyBlockFound === true;
+  return createParserExtractionDiagnostics({
+    adapterVersion: 'fabrikant.v1',
+    propertyBlockFound,
+    ...(locationLabelId ? { locationLabelId } : {}),
+    ...(!locationLabelId && propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+    semanticSignals: [
+      ...(propertyBlockFound ? ['property.block'] : []),
+      ...(fields.address ? ['property.location.address'] : []),
+      ...(fields.region ? ['property.location.region'] : []),
+      ...(fields.region_code ? ['property.location.region_code'] : []),
+    ],
   });
 }
 
@@ -253,14 +278,14 @@ export class FabrikantParser implements SourceParser {
       return allProperties;
 
     } catch (err: any) {
-      logger.error(`[fabrikant] Parse error: ${err.message}`);
+      logger.error(`[fabrikant] Parse error: ${safeParserErrorCode(err)}`);
       throw err;
     } finally {
       await browser.close();
     }
   }
 
-  async fetchDetails(url: string, sharedContext?: any): Promise<Partial<ParsedProperty>> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     let ownBrowser: any = undefined;
     let context: any;
     if (sharedContext) {
@@ -316,6 +341,7 @@ export class FabrikantParser implements SourceParser {
 
         const locationContainer = document.querySelector(selectors.container);
         const locationFields = {
+          propertyBlockFound: Boolean(locationContainer),
           address: locationContainer?.querySelector(selectors.address)?.textContent || undefined,
           region: locationContainer?.querySelector(selectors.region)?.textContent || undefined,
           region_code: locationContainer?.querySelector(selectors.okato)?.textContent || undefined,
@@ -341,15 +367,17 @@ export class FabrikantParser implements SourceParser {
         okato: PROPERTY_LOCATION_OKATO_FIELD,
       });
 
+      const propertyLocation = propertyLocationFromFields(details.locationFields);
       return {
         description: details.description,
         contacts: details.contacts,
-        property_location: propertyLocationFromFields(details.locationFields),
+        property_location: propertyLocation,
+        parser_diagnostics: createFabrikantParserDiagnostics(details.locationFields),
         photo_urls: details.photo_urls,
       };
     } catch (err: any) {
-      logger.warn(`[fabrikant] fetchDetails error for ${url}: ${err.message}`);
-      return {};
+      logger.warn(`[fabrikant] fetchDetails failed (${safeParserErrorCode(err)})`);
+      throw err;
     } finally {
       if (page) try { await page.close(); } catch {}
       if (ownBrowser) try { await ownBrowser.close(); } catch {}

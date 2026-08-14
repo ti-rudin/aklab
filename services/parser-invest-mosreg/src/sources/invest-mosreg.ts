@@ -9,7 +9,7 @@
  *   287 — Аренда
  *   1008 — Коммерческие объекты (ЦИАН)
  */
-import { classifyPropertyType, derivePropertyRegion, normalizeStructuredLocation, projectLegacyAddress } from '@aklab/service-shared';
+import { classifyPropertyType, derivePropertyRegion, normalizeStructuredLocation, projectLegacyAddress, safeParserErrorCode } from '@aklab/service-shared';
 import type { PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import { logger, randomDelay } from '@aklab/service-shared';
 import { resolveInvestMosregSourceUrl } from './source-url';
@@ -219,7 +219,7 @@ export class InvestMosregParser implements SourceParser {
 
         await randomDelay(500, 1500);
       } catch (err: any) {
-        logger.error(`[invest-mosreg] Ошибка menu_id=${menuId}: ${err.message}`);
+        logger.error(`[invest-mosreg] Ошибка menu_id=${menuId}: ${safeParserErrorCode(err)}`);
       }
     }
 

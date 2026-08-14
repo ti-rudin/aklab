@@ -4,7 +4,7 @@ import {
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
-import { missingRoseltorgPropertyLocation } from '../sources/roseltorg';
+import { createRoseltorgParserDiagnostics, missingRoseltorgPropertyLocation } from '../sources/roseltorg';
 
 /**
  * Тесты extraction-логики parser-roseltorg.
@@ -143,5 +143,15 @@ describe('roseltorg: fail-closed property geography', () => {
     expect(derivePropertyRegion(location)).toBe('other');
     expect(location.latitude).toBeUndefined();
     expect(location.longitude).toBeUndefined();
+  });
+});
+
+describe('roseltorg: parser diagnostics', () => {
+  it('reports the unverified property block truthfully', () => {
+    expect(createRoseltorgParserDiagnostics()).toMatchObject({
+      schema_version: 1,
+      property_block_found: false,
+      schema_mismatch: 'property_block_missing',
+    });
   });
 });

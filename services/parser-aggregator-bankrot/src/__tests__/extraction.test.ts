@@ -1,13 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 import {
   derivePropertyRegion,
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
 import {
+  AggregatorBankrotParser,
   extractAggregatorPropertyLocationFields,
   normalizeAggregatorPropertyLocation,
 } from '../sources/aggregator-bankrot';
+
+function fixture(name: string): Document {
+  return new JSDOM(readFileSync(join(__dirname, 'fixtures', name), 'utf8')).window.document;
+}
+
+describe('aggregator-bankrot: detail failure contract', () => {
+  it('rethrows an unhydrated property block and closes the page', async () => {
+    const failure = new Error('property block timeout');
+    const page = { goto: vi.fn(), waitForFunction: vi.fn().mockRejectedValue(failure), close: vi.fn() };
+    await expect(new AggregatorBankrotParser().fetchDetails('https://example.test/lot', { newPage: async () => page } as any))
+      .rejects.toBe(failure);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+});
 
 /**
  * Тесты extraction-логики parser-aggregator-bankrot.
@@ -133,12 +151,41 @@ describe('aggregator-bankrot: extractArea', () => {
 });
 
 describe('aggregator-bankrot: typed property location', () => {
-  function extractLocation(address?: string, label = 'Адрес местонахождения:') {
-    const rows = (address === undefined ? [] : [label]).map((rowLabel) => ({
-      textContent: `${rowLabel} ${address ?? ''}`,
+  it('reads allowlisted #info fields from a representative property fixture only', () => {
+    const fields = extractAggregatorPropertyLocationFields(fixture('property-location.html'));
+    const location = normalizeAggregatorPropertyLocation(fields);
+
+    expect(fields).toEqual({
+      propertyBlockFound: true,
+      region: 'Самарская область',
+      propertyText: 'Жилой дом расположен по адресу: Самарская область, г. Кинель, массив Горный, СДТ Вагонник, участок 95. Кадастровый номер 63:03:0211006:640.',
+    });
+    expect(location.status).toBe('confirmed_address');
+    expect(location.address).toContain('г. Кинель');
+    expect(JSON.stringify(fields)).not.toContain('Арбат');
+  });
+
+  it('keeps a representative region-only fixture region-only despite organizer geography', () => {
+    const fields = extractAggregatorPropertyLocationFields(fixture('region-only.html'));
+    const location = normalizeAggregatorPropertyLocation(fields);
+
+    expect(location.status).toBe('confirmed_region_only');
+    expect(location.region).toBe('Кемеровская область');
+    expect(JSON.stringify(fields)).not.toContain('Москва');
+  });
+
+  function extractLocation(fields: { address?: string; region?: string; propertyText?: string; unrelatedLabel?: string } = {}) {
+    const specs = [
+      ['Адрес местонахождения:', fields.unrelatedLabel ? undefined : fields.address],
+      ['Регион:', fields.region],
+      ['Общая информация:', fields.propertyText],
+      [fields.unrelatedLabel ?? '', fields.unrelatedLabel ? fields.address : undefined],
+    ].filter((entry): entry is [string, string] => Boolean(entry[0]) && entry[1] !== undefined);
+    const rows = specs.map(([rowLabel, value]) => ({
+      textContent: `${rowLabel} ${value}`,
       querySelector(selector: string) {
         if (selector === 'span.text-grey') return { textContent: rowLabel, querySelector: () => null };
-        if (selector === 'span.js-share-search') return { textContent: address, querySelector: () => null };
+        if (selector === 'span.js-share-search') return { textContent: value, querySelector: () => null };
         return null;
       },
     }));
@@ -150,13 +197,13 @@ describe('aggregator-bankrot: typed property location', () => {
   }
 
   it('uses the explicitly labelled current-property field and ignores title, description, and party geography', () => {
-    const location = extractLocation('Тверская область, г. Тверь, ул. Ленина, д. 10');
+    const location = extractLocation({ address: 'Тверская область, г. Тверь, ул. Ленина, д. 10' });
 
     expect(location).toEqual({
       address: 'Тверская область, г. Тверь, ул. Ленина, д. 10',
       status: 'confirmed_address',
       source_kind: 'dom_field',
-      source_path: '#info .panel__wrapper p span.js-share-search',
+      source_path: '#info.field.Адрес местонахождения',
     });
     expect(derivePropertyRegion(location)).toBe('tver');
     expect(projectLegacyAddress(location)).toBe(location.address);
@@ -177,7 +224,10 @@ describe('aggregator-bankrot: typed property location', () => {
   });
 
   it('does not treat mixed text in the info container as a property field', () => {
-    const location = extractLocation('г. Москва, ул. Арбат, д. 1', 'Организатор:');
+    const location = extractLocation({
+      address: 'г. Москва, ул. Арбат, д. 1',
+      unrelatedLabel: 'Организатор:',
+    });
 
     expect(location.status).toBe('missing');
     expect(projectLegacyAddress(location)).toBe('');
@@ -185,10 +235,39 @@ describe('aggregator-bankrot: typed property location', () => {
   });
 
   it('requires the semantic property address value to be non-empty', () => {
-    const location = extractLocation(' ');
+    const location = extractLocation({ address: ' ' });
 
     expect(location.status).toBe('missing');
     expect(projectLegacyAddress(location)).toBe('');
+  });
+
+  it('uses the live Region and General information fields of the current lot', () => {
+    const location = extractLocation({
+      region: 'Самарская область',
+      propertyText: 'Жилой дом расположен по адресу: Самарская область, г. Кинель, массив Горный, СДТ Вагонник, участок 95. Кадастровый номер 63:03:0211006:640',
+    });
+
+    expect(location).toEqual({
+      address: 'Самарская область, г. Кинель, массив Горный, СДТ Вагонник, участок 95',
+      region: 'Самарская область',
+      status: 'confirmed_address',
+      source_kind: 'dom_field',
+      source_path: '#info.field.Общая информация.address',
+    });
+  });
+
+  it('falls back to the explicit current-property Region field', () => {
+    const location = extractLocation({
+      region: 'Кемеровская область',
+      propertyText: 'Здание 814 кв.м. и земельный участок 2128 кв.м.',
+    });
+
+    expect(location).toEqual({
+      region: 'Кемеровская область',
+      status: 'confirmed_region_only',
+      source_kind: 'dom_field',
+      source_path: '#info.field.Регион',
+    });
   });
 });
 

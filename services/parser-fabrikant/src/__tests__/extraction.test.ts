@@ -4,7 +4,7 @@ import {
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
-import { extractPropertyLocationFromHtml } from '../sources/fabrikant';
+import { createFabrikantParserDiagnostics, extractPropertyLocationFromHtml } from '../sources/fabrikant';
 
 /**
  * Тесты extraction-логики parser-fabrikant.
@@ -266,5 +266,21 @@ describe('fabrikant: HTML card extraction simulation', () => {
     const result = extractFromCardHtml(html);
     expect(result).not.toBeNull();
     expect(result!.price_text).toBe('');
+  });
+});
+
+describe('fabrikant: parser diagnostics', () => {
+  it('fingerprints bounded property signals without raw content', () => {
+    const diagnostic = createFabrikantParserDiagnostics({
+      propertyBlockFound: true,
+      address: 'sensitive raw address',
+    });
+    expect(diagnostic).toMatchObject({
+      schema_version: 1,
+      property_block_found: true,
+      location_label_id: 'property.location.address',
+    });
+    expect(diagnostic.semantic_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(diagnostic)).not.toContain('sensitive');
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   dedupeParties,
   derivePropertyRegion,
+  extractAddressFromBoundedPropertyText,
   mergePropertyLocation,
   normalizeStructuredLocation,
   projectLegacyAddress,
@@ -9,6 +10,67 @@ import {
 import type { PropertyLocation, PropertyParty } from '../types';
 
 describe('property location contract', () => {
+  describe('bounded current-property address extraction', () => {
+    it.each([
+      [
+        'объект недвижимости. Адрес (местоположение): Россия, Волгоградская область, город Волгоград, улица 51-й Гвардейской, дом 46. Имеются ограничения.',
+        'Россия, Волгоградская область, город Волгоград, улица 51-й Гвардейской, дом 46',
+      ],
+      [
+        'Квартира расположена по адресу: Московская область, г. Лобня, ул. Центральная, д. 1, кв. 3, кадастровый номер 50:41:0040110:1076.',
+        'Московская область, г. Лобня, ул. Центральная, д. 1, кв. 3',
+      ],
+      [
+        'Земельный участок. Место нахождения: Красноярский край, р-н Уярский, с. Восточное, ул. Зеленая, д. 20, площадь 3200 кв. м.',
+        'Красноярский край, р-н Уярский, с. Восточное, ул. Зеленая, д. 20',
+      ],
+      [
+        'Местоположение установлено относительно ориентира. Почтовый адрес ориентира: Республика Мордовия, Лямбирский район, с. Владимировка, ул. Дачная, 33. Площадь: 1031 кв.м.',
+        'Республика Мордовия, Лямбирский район, с. Владимировка, ул. Дачная, 33',
+      ],
+      [
+        'Объект недвижимости находится по адресу: Тверская область, г. Тверь, ул. Советская, д. 1',
+        'Тверская область, г. Тверь, ул. Советская, д. 1',
+      ],
+      [
+        'Адресу: Тверская область, г. Тверь, ул. Советская, д. 1',
+        'Тверская область, г. Тверь, ул. Советская, д. 1',
+      ],
+    ])('extracts an explicit address from a semantically bounded property field', (text, expected) => {
+      expect(extractAddressFromBoundedPropertyText(text)).toBe(expected);
+    });
+
+    it('does not accept contact labels or arbitrary unlabelled geography', () => {
+      expect(extractAddressFromBoundedPropertyText(
+        'Организатор: Банк. Почтовый адрес: г. Москва, ул. Вавилова, д. 19',
+      )).toBeUndefined();
+      expect(extractAddressFromBoundedPropertyText(
+        'Квартира. Залогодержатель находится по адресу: г. Москва, ул. Вавилова, д. 19',
+      )).toBeUndefined();
+      expect(extractAddressFromBoundedPropertyText(
+        'Квартира, Московская область, г. Лобня, ул. Центральная, д. 1',
+      )).toBeUndefined();
+      expect(extractAddressFromBoundedPropertyText(
+        'Должник: Тестовое общество. Адрес: г. Москва, ул. Вавилова, д. 19',
+      )).toBeUndefined();
+      expect(extractAddressFromBoundedPropertyText('Адрес: https://example.test/lot/1')).toBeUndefined();
+      expect(extractAddressFromBoundedPropertyText('Адрес: test@example.test')).toBeUndefined();
+    });
+
+    it('stops before the next explicit party label', () => {
+      for (const text of [
+        'Адрес: г. Тверь, ул. Советская, д. 1. Организатор: Тестовое общество, г. Москва',
+        'Адрес: г. Тверь, ул. Советская, д. 1. Почтовый адрес организатора: г. Москва, ул. Вавилова, д. 19',
+        'Адрес: г. Тверь, ул. Советская, д. 1. Адрес залогодержателя: г. Москва, ул. Вавилова, д. 19',
+        'Адрес: г. Тверь, ул. Советская, д. 1. Залогодержатель находится по адресу: г. Москва, ул. Вавилова, д. 19',
+      ]) {
+        const address = extractAddressFromBoundedPropertyText(text);
+        expect(address).toBe('г. Тверь, ул. Советская, д. 1');
+        expect(address).not.toContain('Москва');
+      }
+    });
+  });
+
   it('rejects the removed legacy-unverified status', () => {
     expect(() => normalizeStructuredLocation({
       status: 'legacy_unverified',

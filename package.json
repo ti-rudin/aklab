@@ -1,6 +1,6 @@
 {
   "name": "aklab",
-  "version": "1.1.87",
+  "version": "1.1.88",
   "main": "ecosystem-local.config.js",
   "workspaces": [
     "lib/*",
@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:unit": "vitest run --reporter=verbose",
+    "test:parser-contracts": "STRAPI_API_TOKEN=test-only-placeholder-token NODE_ENV=test vitest run services/_shared/src/__tests__/property-location.test.ts services/_shared/src/__tests__/parser-diagnostics.test.ts services/_shared/src/__tests__/parser-probe.test.ts services/_shared/__tests__/parser-error.test.ts services/_shared/__tests__/parse-handler.test.ts services/_shared/__tests__/strapi-client.test.ts services/parser-*/src/__tests__/extraction.test.ts api/src/services/__tests__/parser-error-safety.test.ts api/src/services/__tests__/parser-run-telemetry.test.ts api/src/services/__tests__/parser-source-health.test.ts api/src/services/__tests__/parser-source-quarantine.test.ts api/src/services/__tests__/parser-health-alerts.test.ts api/src/services/__tests__/parser-canary.test.ts api/src/api/parser-run-source/controllers/__tests__/parser-run-source.test.ts api/src/api/source/controllers/__tests__/source.test.ts api/src/services/pipeline/__tests__/stages.test.ts api/src/api/cron/controllers/__tests__/cron.test.ts api/src/cron/__tests__/cron-registration.test.ts api/src/api/__tests__/route-auth.test.ts",
     "test:e2e": "BASE_URL=\"${SMOKE_UI_URL:-http://127.0.0.1:5174}\" npm --prefix app run test:e2e -- --reporter=line",
     "smoke": "node scripts/smoke-test.js",
     "smoke:local": "node scripts/smoke-test.js --local",

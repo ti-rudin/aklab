@@ -42,19 +42,30 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
     job_id: number;
     status: 'success' | 'success_empty' | 'degraded' | 'blocked' |
       'schema_changed' | 'failed' | 'cancelled';
+    detail_supported: boolean;
     counters: {
       listed: number; eligible: number; existing: number; pre_filtered: number;
       details_attempted: number; details_ok: number; created: number;
       skipped: number; failed: number;
+      property_block_found: number; location_label_found: number;
+      location_confirmed_address: number; location_confirmed_region_only: number;
+      location_missing: number; location_unresolved: number;
+      schema_mismatch: number;
     };
-    error_class?: 'transient' | 'rate_limited' | 'blocked' |
-      'schema_changed' | 'permanent' | 'cancelled';
-    error_message?: string;
+    diagnostics_schema_version?: 1;
+    semantic_fingerprint?: string; // SHA-256 of bounded semantic IDs only
+    error_class?: 'transient' | 'rate_limited' | 'blocked' | 'anti_bot' |
+      'http_block' | 'schema_changed' | 'permanent' | 'cancelled';
+    error_message?: `parser.${string}`; // controlled allowlisted code only; never raw exception text
   }
 }
 ```
 
 Контроллер проверяет ownership по сохранённому `job_id`, отвергает неизвестные поля и отрицательные counters. Повтор идентичного terminal snapshot идемпотентен; конфликтующий terminal snapshot отклоняется.
+
+После deterministic health classification API записывает в ту же строку только operational annotation `health_status` (`healthy`, `degraded`, `schema_changed` или `blocked`) и только если соответствующий source-health CAS был выигран. Annotation получает effective persisted source status, поэтому stale normal/canary writer не может отметить строку healthy при текущем hard quarantine. Эта annotation не меняет terminal payload или counters. Исторический detail baseline строится только из строк `status=success AND health_status=healthy AND detail_supported=true`; listing-only, legacy/null, degraded и schema-changed строки в baseline не входят.
+
+`detail_supported=false` — явный listing-only contract. Такая успешная details-строка может иметь `details_attempted=0` без detail fingerprint и классифицироваться как `healthy`; capability не выводится из counters. Для `detail_supported=true` сохраняются строгие detail counter/fingerprint drift checks. Enum `error_class` одинаков в worker client, controller, API service type и schema.
 
 ## Invariants
 
@@ -62,7 +73,10 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 - retry/restart не создаёт дубль: unique-constraint race повторно читает строку-победитель;
 - `job_id` всегда реальный identifier SQLite Queue, не synthetic string;
 - counters — полный exact snapshot, не инкрементальный patch;
-- normal terminal строка не может быть перезаписана другим terminal payload;
+- для `detail_supported=true`: `location_unresolved <= location_missing`, а сумма location statuses не превышает `details_ok`; для listing-only detail extraction counters нулевые, но `location_unresolved` может фиксировать fail-closed persistence skip;
+- fingerprint не содержит raw HTML, CSS classes, адреса или party data;
+- `error_message` проходит strict controller allowlist и хранит только controlled `parser.<class>` code; worker rethrows a fresh typed safe error, pipeline state never copies raw `job.error`, and queue cancellation is derived from `cancellation_requested_at` rather than message text;
+- normal terminal строка не может быть перезаписана другим terminal payload; post-terminal annotation `health_status` допускается только для source-health CAS winner и вычисляется из уже сохранённого exact snapshot;
 - исключение — reconciliation с terminal состоянием SQLite Queue при cancellation race.
 
 ## Основные файлы
@@ -73,3 +87,8 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 - `api/src/api/parser-run-source/controllers/parser-run-source.ts`
 - `services/_shared/src/parse-handler.ts`
 - `services/_shared/src/strapi-client.ts`
+- `services/_shared/src/parser-diagnostics.ts`
+- `services/_shared/src/parser-probe.ts`
+- `api/src/services/parser-source-health.ts`
+- `api/src/services/parser-canary.ts`
+- `api/src/services/parser-health-alerts.ts`

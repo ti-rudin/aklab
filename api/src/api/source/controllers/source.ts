@@ -2,8 +2,11 @@
  * source controller — расширенный: core CRUD + healthCheck action.
  */
 import { factories } from '@strapi/strapi';
+import { isSafeParserTelemetryError } from '../../../services/parser-error-safety';
 
 const INTERNAL_SOURCE_STATS_SELECT = [
+  'is_active',
+  'parser_health_status',
   'last_parse_status',
   'last_parse_error',
   'last_parsed_at',
@@ -13,7 +16,9 @@ const INTERNAL_SOURCE_STATS_SELECT = [
   'total_details_needed',
   'parse_count',
 ] as const;
-const INTERNAL_SOURCE_STATS_FIELDS = new Set<string>(INTERNAL_SOURCE_STATS_SELECT);
+const INTERNAL_SOURCE_STATS_FIELDS = new Set<string>(
+  INTERNAL_SOURCE_STATS_SELECT.filter(field => field !== 'is_active' && field !== 'parser_health_status'),
+);
 
 function internalPayload(ctx: any): Record<string, unknown> | null {
   const data = ctx.request?.body?.data;
@@ -23,6 +28,10 @@ function internalPayload(ctx: any): Record<string, unknown> | null {
 
   const fields = Object.keys(data);
   if (fields.length === 0 || fields.some((field) => !INTERNAL_SOURCE_STATS_FIELDS.has(field))) {
+    return null;
+  }
+  if (data.last_parse_error !== undefined && data.last_parse_error !== null
+    && !isSafeParserTelemetryError(data.last_parse_error)) {
     return null;
   }
 
