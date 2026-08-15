@@ -21,6 +21,7 @@ const ALLOWED_PROFILE_FIELDS = [
   'area_from',
   'area_to',
   'stop_words',
+  'filter_rent',
   'digest_email',
   'digest_enabled',
 ] as const;
@@ -37,6 +38,7 @@ const PROFILE_SCALAR_FIELDS = [
   'area_from',
   'area_to',
   'stop_words',
+  'filter_rent',
   'digest_email',
   'digest_enabled',
   'profile_version',
@@ -69,6 +71,7 @@ export type UserProfileDto = {
   area_from: number | null;
   area_to: number | null;
   stop_words: string[];
+  filter_rent: boolean;
   digest_email: string | null;
   digest_enabled: boolean;
   profile_version: number;
@@ -280,6 +283,10 @@ function normalizeBoolean(value: unknown, malformed: boolean): boolean {
   return value;
 }
 
+function normalizeStoredBooleanWithDefault(value: unknown, defaultValue: boolean): boolean {
+  return value === undefined ? defaultValue : normalizeBoolean(value, true);
+}
+
 function assertOrderedRange(from: number | null, to: number | null, malformed: boolean): void {
   if (from !== null && to !== null && from > to) {
     if (malformed) throw new UserProfileMalformedError();
@@ -303,6 +310,7 @@ function toCanonicalProfile(record: ProfileRecord): UserParseProfile {
     const regions = normalizeArray(record.regions, REGION_VALUES);
     const propertyTypes = normalizeArray(record.property_types, PROPERTY_TYPE_VALUES);
     const stopWords = normalizeStringArray(record.stop_words, true);
+    const filterRent = normalizeStoredBooleanWithDefault(record.filter_rent, true);
     const digestEmail = normalizeStoredEmail(record.digest_email);
     const digestEnabled = normalizeBoolean(record.digest_enabled, true);
     if (digestEnabled && !digestEmail) throw new UserProfileMalformedError();
@@ -318,6 +326,7 @@ function toCanonicalProfile(record: ProfileRecord): UserParseProfile {
       areaFrom,
       areaTo,
       stopWords,
+      filterRent,
     });
   } catch {
     throw new UserProfileMalformedError();
@@ -338,6 +347,7 @@ export function toUserProfileDto(value: unknown): UserProfileDto {
     area_from: canonical.areaFrom,
     area_to: canonical.areaTo,
     stop_words: canonical.stopWords,
+    filter_rent: canonical.filterRent ?? true,
     digest_email: normalizeStoredEmail(value.digest_email),
     digest_enabled: normalizeBoolean(value.digest_enabled, true),
     profile_version: canonical.version,
@@ -566,6 +576,10 @@ export async function replaceUserProfile(
   assertOrderedRange(priceFrom, priceTo, false);
   assertOrderedRange(areaFrom, areaTo, false);
   const stopWords = normalizeStringArray(valueOrCurrent(input, 'stop_words', existing, current.stopWords), false);
+  const filterRent = normalizeBoolean(
+    valueOrCurrent(input, 'filter_rent', existing, current.filterRent ?? true),
+    false,
+  );
   const candidate = normalizeCandidateProfile({
     userId,
     profileId: current.profileId,
@@ -577,6 +591,7 @@ export async function replaceUserProfile(
     areaFrom,
     areaTo,
     stopWords,
+    filterRent,
   });
   const currentDigestEmail = normalizeStoredEmail(existing.digest_email);
   const currentDigestEnabled = normalizeBoolean(existing.digest_enabled, true);
@@ -598,6 +613,7 @@ export async function replaceUserProfile(
     && candidate.areaFrom === current.areaFrom
     && candidate.areaTo === current.areaTo
     && sameArray(candidate.stopWords, current.stopWords)
+    && candidate.filterRent === (current.filterRent ?? true)
     && digestEmail === currentDigestEmail
     && digestEnabled === currentDigestEnabled
   ) {
@@ -616,6 +632,7 @@ export async function replaceUserProfile(
       area_from: candidate.areaFrom,
       area_to: candidate.areaTo,
       stop_words: candidate.stopWords,
+      filter_rent: candidate.filterRent,
       digest_email: digestEmail,
       digest_enabled: digestEnabled,
       profile_version: currentVersion + 1,

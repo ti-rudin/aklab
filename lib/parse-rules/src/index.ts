@@ -102,6 +102,11 @@ export interface UserParseProfile {
   areaFrom: number | null;
   areaTo: number | null;
   stopWords: string[];
+  /**
+   * Explicit user choice for excluding rental listings. Optional only so
+   * already persisted v1 snapshots retain their original canonical hash.
+   */
+  filterRent?: boolean;
 }
 
 export interface UserFilterSnapshot {
@@ -169,6 +174,12 @@ function normalizeNullableNumber(value: unknown, field: string): number | null {
   return value;
 }
 
+function normalizeOptionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new TypeError(`${field} must be a boolean when provided`);
+  return value;
+}
+
 function normalizeStringArray(value: unknown, field: string): string[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new TypeError(`${field} must be an array`);
@@ -198,6 +209,7 @@ function normalizeEnumArray<T extends string>(value: unknown, field: string, all
 
 function profilePayload(input: unknown): UserParseProfile {
   if (!isRecord(input)) throw new TypeError('profile must be an object');
+  const filterRent = normalizeOptionalBoolean(input.filterRent, 'filterRent');
 
   // Read only the allowlisted contract fields. PII and arbitrary fields never enter the payload.
   const payload: UserParseProfile = {
@@ -211,6 +223,7 @@ function profilePayload(input: unknown): UserParseProfile {
     areaFrom: normalizeNullableNumber(input.areaFrom, 'areaFrom'),
     areaTo: normalizeNullableNumber(input.areaTo, 'areaTo'),
     stopWords: normalizeStringArray(input.stopWords, 'stopWords'),
+    ...(filterRent === undefined ? {} : { filterRent }),
   };
 
   if (payload.priceFrom !== null && payload.priceTo !== null && payload.priceFrom > payload.priceTo) {
@@ -405,6 +418,10 @@ function matchesStopWords(stopWords: readonly string[], candidate: RecordValue):
   return !stopWords.some(stopWord => availableText.includes(stopWord));
 }
 
+function matchesRentFilter(filterRent: boolean | undefined, candidate: RecordValue): boolean {
+  return filterRent !== true || matchesStopWords(['аренд'], candidate);
+}
+
 /** Match one whole profile. Every populated profile constraint is ANDed. */
 export function matchesProfile(
   profile: UserParseProfile,
@@ -418,7 +435,8 @@ export function matchesProfile(
       && matchesEnum(normalized.propertyTypes, candidate, ['propertyType', 'property_type'])
       && matchesRange(normalized.priceFrom, normalized.priceTo, candidate, ['price', 'minimum_price'])
       && matchesRange(normalized.areaFrom, normalized.areaTo, candidate, ['area_sqm', 'area'])
-      && matchesStopWords(normalized.stopWords, candidate);
+      && matchesStopWords(normalized.stopWords, candidate)
+      && matchesRentFilter(normalized.filterRent, candidate);
   } catch {
     // Invalid persisted input must never widen a user scope.
     return false;

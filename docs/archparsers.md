@@ -195,15 +195,23 @@ profiles[], SHA-256 hash
 - user/profile/version identifiers;
 - regions и property types;
 - price/area ranges;
-- stop words.
+- stop words;
+- профильный флаг `filterRent` для исключения объявлений об аренде.
 
 Email и другие PII в parser snapshot не входят.
+
+`filterRent=true` исключает candidate, если в известных текстовых полях есть основа
+`аренд`, до вызова persistence path. Новые профили получают этот флаг явным со
+значением `true`. Уже сохранённый v1 snapshot без поля не дополняется задним числом:
+он сохраняет исходный canonical hash и не получает дополнительного rental-ограничения.
 
 Правила matching:
 
 - ограничения внутри одного профиля объединяются через **AND**;
 - готовые профили объединяются через **OR**;
 - invalid snapshot/hash всегда fail-closed;
+- rental filter действует внутри одного профиля и поэтому сохраняет OR-семантику
+  между несколькими профилями;
 - scan пропускает неизвестные ещё поля, чтобы details могли их дополнить;
 - details повторно применяет тот же snapshot к полному candidate;
 - изменение пользовательского профиля во время run не меняет scope уже запущенного pipeline.

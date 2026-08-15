@@ -89,6 +89,7 @@ describe('multi-user additive schema contract', () => {
       'area_to',
       'digest_email',
       'digest_enabled',
+      'filter_rent',
       'price_from',
       'price_to',
       'profile_version',
@@ -116,6 +117,7 @@ describe('multi-user additive schema contract', () => {
     }
     expect(profile.attributes.digest_email).toMatchObject({ type: 'text' });
     expect(profile.attributes.digest_email.required).not.toBe(true);
+    expect(profile.attributes.filter_rent).toMatchObject({ type: 'boolean', default: true, required: true });
     expect(profile.attributes.digest_enabled).toMatchObject({ type: 'boolean', default: false, required: true });
     expect(profile.attributes.profile_version).toMatchObject({
       type: 'integer',

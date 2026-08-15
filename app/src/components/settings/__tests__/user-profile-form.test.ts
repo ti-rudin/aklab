@@ -38,6 +38,7 @@ describe('user-profile-form contracts', () => {
       area_from: null,
       area_to: null,
       stop_words: [],
+      filter_rent: true,
       digest_email: '',
       digest_enabled: false,
     })
@@ -106,11 +107,20 @@ describe('user-profile-form contracts', () => {
       area_from: null,
       area_to: 500,
       stop_words: ['аукцион', 'земля'],
+      filter_rent: true,
       digest_email: 'user@example.test',
       digest_enabled: true,
     })
 
     expect(JSON.stringify(profilePayload({ profile_version: 1, ...validDraft() }))).not.toContain('user_id')
+  })
+
+  it('keeps an explicit disabled rent filter in the profile update payload', () => {
+    expect(profilePayload({
+      profile_version: 1,
+      ...validDraft(),
+      filter_rent: false,
+    })).toMatchObject({ filter_rent: false })
   })
 
   it('serializes a disabled empty recipient as nullable instead of an invalid empty email', () => {
