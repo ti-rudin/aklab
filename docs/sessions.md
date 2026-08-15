@@ -496,3 +496,11 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 3. **Pipeline depth vs settings depth.** Два независимых поля «Глубина» — одно для cron, другое для ручного запуска. Пользователь менял одно, ожидал что второе применится.
 4. **Парсеры без fetchDetails.** investmoscow/invest-mosreg не нужен (JSON API). fabrikant/roseltorg — просто не был реализован. Добавлен в v1.0.105.
 5. **roseltorg URL guessing.** Парсер пробовал 5 случайных URL'ов вместо одного правильного. Всегда лучше один проверенный URL с фильтрами, чем угадывание.
+
+### 2026-08-15: Profile-scoped rent filter + production catalog rebuild (v1.1.94 → v1.1.95)
+
+**Что сделано:** добавлен `filter_rent` в profile API/UI и immutable parser snapshot; rental-кандидаты отсекаются shared parse rules до `createProperty()`. Выпуск v1.1.94 выявил legacy compatibility gap: существующий profile с физическим `filter_rent=NULL` завершал full run до scan (`USER_PROFILE_MALFORMED`).
+
+**Исправление:** v1.1.95 нормализует `undefined|null` к effective `filterRent=true`; добавлен RED/GREEN regression test. PR #80 смержен, production SHA `fcaa8e787b46947be14c54ac264b837dd1a30cf4`.
+
+**Acceptance:** guarded cleanup → full run `ab0507a4-bac3-455e-9c7d-b41ac55847a9` succeeded (`idle/done`): 3 115 found, 538 aggregate `pre_filtered`, 1 249 persisted, 137 undervalued, queue 0, обе SQLite integrity checks `ok`, duplicate `(source, external_id)` groups 0, API/UI 204/200. Snapshot зафиксировал `filterRent=true`; persisted rental-marker stem `аренд` в title+description: 0. Telemetry `pre_filtered` пока не разделяет rental и другие profile rules, поэтому exact rental-only count не заявляется.
