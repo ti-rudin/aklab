@@ -51,6 +51,11 @@ export interface UserParseProfile {
     areaFrom: number | null;
     areaTo: number | null;
     stopWords: string[];
+    /**
+     * Explicit user choice for excluding rental listings. Optional only so
+     * already persisted v1 snapshots retain their original canonical hash.
+     */
+    filterRent?: boolean;
 }
 export interface UserFilterSnapshot {
     schemaVersion: 1;

@@ -294,6 +294,21 @@ describe('pure user filter snapshot contract', () => {
     expect(matchesProfile(stopProfile, { ...withoutStopWord, title: 'Офис', address: 'Москва', description: 'ЗЕМЕЛЬНЫЙ УЧАСТОК' }, 'details')).toBe(false);
   });
 
+  it('excludes rental candidates only when the profile rent filter is enabled', () => {
+    const rentalCandidate = {
+      city: 'moscow',
+      property_type: 'office',
+      title: 'Аренда офиса в бизнес-центре',
+      description: 'Помещение сдаётся в аренду',
+    };
+    const filterRent = { filterRent: true } as Partial<UserParseProfile>;
+    const allowRent = { filterRent: false } as Partial<UserParseProfile>;
+
+    expect(matchesProfile(profile(filterRent), rentalCandidate, 'scan')).toBe(false);
+    expect(matchesProfile(profile(filterRent), rentalCandidate, 'details')).toBe(false);
+    expect(matchesProfile(profile(allowRent), rentalCandidate, 'details')).toBe(true);
+  });
+
   it('requires constrained numeric and enum fields in details and includes range boundaries', () => {
     const constrained = profile({
       priceFrom: 1_000,

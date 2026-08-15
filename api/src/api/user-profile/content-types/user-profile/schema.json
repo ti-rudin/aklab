@@ -51,6 +51,11 @@
       "type": "json",
       "default": []
     },
+    "filter_rent": {
+      "type": "boolean",
+      "default": true,
+      "required": true
+    },
     "digest_email": {
       "type": "text"
     },

@@ -123,6 +123,7 @@ describe('replaceUserProfile', () => {
         area_from: null,
         area_to: 20,
         stop_words: ['a', 'z'],
+        filter_rent: true,
         digest_email: 'User@example.test',
         digest_enabled: true,
         profile_version: 4,
@@ -130,6 +131,21 @@ describe('replaceUserProfile', () => {
     });
     expect(strapi.entityService.update).not.toHaveBeenCalled();
     expect(JSON.stringify(strapi.profileQuery.update.mock.calls[0][0].data)).not.toContain('user_id');
+  });
+
+  it('persists an explicit rent filter choice through the versioned profile update', async () => {
+    const strapi = makeStrapi();
+    const existing = profile({ filter_rent: true });
+    strapi.profileQuery.findOne.mockResolvedValue(existing);
+    strapi.profileQuery.update.mockResolvedValue({ ...existing, filter_rent: false, profile_version: 4 });
+
+    await expect(replaceUserProfile(strapi as any, 7, { filter_rent: false }, 3))
+      .resolves.toMatchObject({ filter_rent: false, profile_version: 4 });
+
+    expect(strapi.profileQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 12, profile_version: 3 },
+      data: expect.objectContaining({ filter_rent: false, profile_version: 4 }),
+    }));
   });
 
   it('normalizes a comma-delimited digest recipient list before persisting it', async () => {
@@ -499,6 +515,7 @@ describe('profile API DTO and admin pagination service', () => {
       area_from: null,
       area_to: 200,
       stop_words: ['secret'],
+      filter_rent: true,
       digest_email: null,
       digest_enabled: false,
       profile_version: 3,
@@ -532,6 +549,7 @@ describe('profile API DTO and admin pagination service', () => {
         'area_from',
         'area_to',
         'stop_words',
+        'filter_rent',
         'digest_email',
         'digest_enabled',
         'profile_version',

@@ -76,6 +76,7 @@ describe('ensureUserProfile', () => {
         area_from: null,
         area_to: null,
         stop_words: [],
+        filter_rent: true,
         digest_email: null,
         digest_enabled: false,
         profile_version: 1,

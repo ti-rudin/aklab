@@ -22,6 +22,23 @@
       </div>
 
       <div class="rounded-xl p-4 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
+        <label class="flex items-center gap-2 text-sm cursor-pointer" style="color: var(--text-main)">
+          <input
+            data-testid="profile-filter-rent"
+            type="checkbox"
+            :checked="modelValue.filter_rent"
+            :disabled="disabled"
+            class="rounded"
+            @change="setField('filter_rent', ($event.target as HTMLInputElement).checked)"
+          />
+          Фильтровать аренду
+        </label>
+        <p class="text-xs mt-2" style="color: var(--text-muted)">
+          Исключать объявления об аренде из персональной выдачи и дайджеста.
+        </p>
+      </div>
+
+      <div class="rounded-xl p-4 border" style="background: var(--bg-elevated); border-color: var(--border-subtle)">
         <label class="block text-sm font-semibold mb-1" style="color: var(--text-main)">Регионы</label>
         <p class="text-xs mb-3" style="color: var(--text-muted)">Нужно выбрать хотя бы один регион.</p>
         <div class="flex flex-wrap gap-2">

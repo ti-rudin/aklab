@@ -25,6 +25,7 @@ export interface ProfileDraft {
   area_from: number | null
   area_to: number | null
   stop_words: string[]
+  filter_rent: boolean
   digest_email: string
   digest_enabled: boolean
 }
@@ -49,6 +50,7 @@ export interface ProfileUpdatePayload {
   area_from: number | null
   area_to: number | null
   stop_words: string[]
+  filter_rent: boolean
   digest_email: string | null
   digest_enabled: boolean
 }
@@ -64,6 +66,7 @@ export type ProfileInput = {
   area_from?: unknown
   area_to?: unknown
   stop_words?: unknown
+  filter_rent?: unknown
   digest_email?: unknown
   digest_enabled?: unknown
   profile_version?: unknown
@@ -105,6 +108,7 @@ export function createEmptyProfileDraft(): ProfileDraft {
     area_from: null,
     area_to: null,
     stop_words: [],
+    filter_rent: true,
     digest_email: '',
     digest_enabled: false,
   }
@@ -152,6 +156,12 @@ function readStoredNumeric(value: unknown): number | null {
   return normalizeNumericInput(value as NumericInput)
 }
 
+function readFilterRent(value: unknown, allowLegacyDefault: boolean): boolean {
+  if (value === undefined && allowLegacyDefault) return true
+  if (typeof value !== 'boolean') throw new Error('Некорректное значение фильтра аренды')
+  return value
+}
+
 function normalizePayloadArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.map(item => typeof item === 'string' ? item.trim().toLowerCase() : item as never))]
@@ -168,6 +178,7 @@ export function profileDraftFromDto(value: Partial<ProfileDto> | null | undefine
     area_from: readStoredNumeric(source.area_from),
     area_to: readStoredNumeric(source.area_to),
     stop_words: normalizeStopWords(source.stop_words || []),
+    filter_rent: readFilterRent(source.filter_rent, true),
     digest_email: typeof source.digest_email === 'string' ? source.digest_email : '',
     digest_enabled: source.digest_enabled === true,
   }
@@ -221,6 +232,7 @@ export function profilePayload(dto: ProfileInput): ProfileUpdatePayload {
     area_from: readNumeric(dto.area_from),
     area_to: readNumeric(dto.area_to),
     stop_words: normalizeStopWords(dto.stop_words || []),
+    filter_rent: readFilterRent(dto.filter_rent, true),
     digest_email: normalizeDigestRecipients(dto.digest_email ?? '').join(', '),
     digest_enabled: dto.digest_enabled === true,
   }
@@ -241,6 +253,7 @@ export function profilePayload(dto: ProfileInput): ProfileUpdatePayload {
     area_from: draft.area_from,
     area_to: draft.area_to,
     stop_words: draft.stop_words,
+    filter_rent: draft.filter_rent,
     digest_email: draft.digest_email || null,
     digest_enabled: draft.digest_enabled,
   }

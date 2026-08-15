@@ -13,6 +13,7 @@ const draft: ProfileDraft = {
   area_from: null,
   area_to: null,
   stop_words: ['земля'],
+  filter_rent: true,
   digest_email: '',
   digest_enabled: false,
 }
@@ -44,5 +45,16 @@ describe('ParsingRulesPanel', () => {
     const api = (await import('@/api/strapi')).default
     expect(api.get).not.toHaveBeenCalled()
     expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('renders the rent filter checkbox and emits an explicit opt-out', async () => {
+    const wrapper = mount(ParsingRulesPanel, { props: { modelValue: draft } })
+    const checkbox = wrapper.get('[data-testid="profile-filter-rent"]')
+
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    await checkbox.setValue(false)
+
+    const updates = wrapper.emitted('update:modelValue') || []
+    expect(updates[updates.length - 1]?.[0]).toMatchObject({ filter_rent: false })
   })
 })
