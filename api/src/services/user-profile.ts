@@ -284,7 +284,7 @@ function normalizeBoolean(value: unknown, malformed: boolean): boolean {
 }
 
 function normalizeStoredBooleanWithDefault(value: unknown, defaultValue: boolean): boolean {
-  return value === undefined ? defaultValue : normalizeBoolean(value, true);
+  return value === undefined || value === null ? defaultValue : normalizeBoolean(value, true);
 }
 
 function assertOrderedRange(from: number | null, to: number | null, malformed: boolean): void {

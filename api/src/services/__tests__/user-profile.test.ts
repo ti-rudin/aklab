@@ -486,6 +486,17 @@ describe('buildSingleUserSnapshot', () => {
     expect(serialized).not.toMatch(/email|username|role/);
   });
 
+  it('defaults a legacy nullable rent filter to enabled in the immutable snapshot', async () => {
+    const strapi = makeStrapi();
+    strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
+    strapi.profileQuery.findOne.mockResolvedValue(profile({ filter_rent: null }));
+
+    await expect(buildSingleUserSnapshot(strapi as any, 7, now)).resolves.toMatchObject({
+      scope: 'single',
+      profiles: [expect.objectContaining({ filterRent: true })],
+    });
+  });
+
   it('aborts on malformed target profile rather than treating it as not-ready', async () => {
     const strapi = makeStrapi();
     strapi.userQuery.findOne.mockResolvedValue(activeUser(7));
