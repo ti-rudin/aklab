@@ -34,6 +34,7 @@ type Projection = {
 };
 
 const BASE = config.strapi.url;
+const APP_URL = config.app.url;
 const PAGE_SIZE = 100;
 const MAX_PROPERTIES = 100_000;
 const MAX_PAGES = MAX_PROPERTIES / PAGE_SIZE;
@@ -394,14 +395,8 @@ function formatScore(value: unknown): string {
   return Number.isFinite(score) ? String(score) : '—';
 }
 
-function safeHttpsUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
+function propertyPageUrl(property: Property): string {
+  return new URL(`/properties/${encodeURIComponent(String(property.documentId))}`, APP_URL).toString();
 }
 
 function labelsForTags(tags: unknown): string[] {
@@ -411,10 +406,8 @@ function labelsForTags(tags: unknown): string[] {
 
 function propertyRow(property: Property): string {
   const title = displayText(property.title);
-  const href = safeHttpsUrl(property.url);
-  const titleHtml = href
-    ? `<a href="${escapeHtml(href)}">${escapeHtml(title)}</a>`
-    : escapeHtml(title);
+  const href = propertyPageUrl(property);
+  const titleHtml = `<a href="${escapeHtml(href)}">${escapeHtml(title)}</a>`;
   const tags = labelsForTags(property.tags).map((tag) =>
     `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:8px;font-size:11px;background:#e0e7ff;color:#3730a3">${escapeHtml(tag)}</span>`,
   ).join(' ');
@@ -437,7 +430,7 @@ function propertyText(property: Property): string {
   const title = displayText(property.title);
   const city = cityLabel[String(property.city)] || displayText(property.city);
   const tags = labelsForTags(property.tags);
-  const href = safeHttpsUrl(property.url);
+  const href = propertyPageUrl(property);
   return [
     title,
     city,
