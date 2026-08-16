@@ -4,6 +4,7 @@ const schema = z.object({
   PORT: z.coerce.number().default(1342),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   STRAPI_URL: z.string().url().default('http://127.0.0.1:1338'),
+  AKLAB_APP_URL: z.string().url('AKLAB_APP_URL must be a valid public site URL'),
   STRAPI_API_TOKEN: z.string().min(1, 'STRAPI_API_TOKEN required'),
   QUEUE_DB_PATH: z.string().default('../../queue.db'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
@@ -24,6 +25,7 @@ if (!parsed.success) {
 export const config = {
   port: parsed.data.PORT,
   nodeEnv: parsed.data.NODE_ENV,
+  app: { url: parsed.data.AKLAB_APP_URL },
   strapi: { url: parsed.data.STRAPI_URL, apiToken: parsed.data.STRAPI_API_TOKEN },
   queue: { dbPath: parsed.data.QUEUE_DB_PATH },
   logging: { level: parsed.data.LOG_LEVEL },

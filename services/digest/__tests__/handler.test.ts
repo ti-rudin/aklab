@@ -25,6 +25,7 @@ vi.mock('../src/utils/logger', () => ({ logger }));
 
 vi.mock('../src/config', () => ({
   config: {
+    app: { url: 'https://aklab.test' },
     strapi: { url: 'http://localhost:1338', apiToken: 'service-secret' },
     smtp: {
       host: 'smtp.test.com',
@@ -379,7 +380,7 @@ describe('handleDigestJob immutable internal projection contract', () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain('not-an-email');
   });
 
-  it('sends escaped HTML and a text alternative while accepting only safe https links', async () => {
+  it('links HTML and text digests to internal property pages instead of source URLs', async () => {
     mockFetch
       .mockResolvedValueOnce(delivery({ enabled: true, email: 'user@example.com' }))
       .mockResolvedValueOnce(propertiesPage([
@@ -398,10 +399,15 @@ describe('handleDigestJob immutable internal projection contract', () => {
     expect(mail.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(mail.html).toContain('&lt;/span&gt;&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(mail.html).not.toContain('<img');
+    expect(mail.html).toContain('href="https://aklab.test/properties/property-1"');
+    expect(mail.html).toContain('href="https://aklab.test/properties/property-2"');
     expect(mail.html).not.toContain('href="javascript:');
-    expect(mail.html).toContain('href="https://example.com/safe"');
+    expect(mail.html).not.toContain('href="https://example.com/safe"');
     expect(mail.text).toContain('<img src=x onerror=alert(1)>');
+    expect(mail.text).toContain('https://aklab.test/properties/property-1');
+    expect(mail.text).toContain('https://aklab.test/properties/property-2');
     expect(mail.text).not.toContain('javascript:alert(1)');
+    expect(mail.text).not.toContain('https://example.com/safe');
   });
 
   it('never logs email, service token, user, profile, or snapshot data', async () => {

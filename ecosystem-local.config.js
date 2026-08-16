@@ -94,6 +94,7 @@ module.exports = {
         NODE_ENV: 'development',
         QUEUE_DB_PATH: __dirname + '/queue.db',
         STRAPI_URL: 'http://localhost:1338',
+        AKLAB_APP_URL: process.env.AKLAB_APP_URL || '',
         STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
         EMAIL_SMTP_HOST: process.env.EMAIL_SMTP_HOST || 'smtp.yandex.ru',
         EMAIL_SMTP_PORT: process.env.EMAIL_SMTP_PORT || '465',

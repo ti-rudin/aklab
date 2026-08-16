@@ -15,6 +15,7 @@ const requiredVars = [
   'TRANSFER_TOKEN_SALT',
   'STRAPI_API_TOKEN',
   'DATABASE_FILENAME',
+  'AKLAB_APP_URL',
 ];
 
 const recommendedVars = [
@@ -29,6 +30,14 @@ const missing = requiredVars.filter(v => !process.env[v]);
 if (missing.length > 0) {
   console.error('❌ Отсутствуют критические env переменные:');
   missing.forEach(v => console.error(`   - ${v}`));
+  process.exit(1);
+}
+
+try {
+  const appUrl = new URL(process.env.AKLAB_APP_URL);
+  if (appUrl.protocol !== 'https:') throw new Error('unsupported protocol');
+} catch {
+  console.error('❌ AKLAB_APP_URL должен быть валидным публичным HTTPS URL');
   process.exit(1);
 }
 

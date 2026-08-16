@@ -125,6 +125,7 @@ const workerApps = [
       PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
+      AKLAB_APP_URL: process.env.AKLAB_APP_URL || '',
       STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
       EMAIL_SMTP_HOST: process.env.EMAIL_SMTP_HOST || 'smtp.yandex.ru',
       EMAIL_SMTP_PORT: process.env.EMAIL_SMTP_PORT || '465',
