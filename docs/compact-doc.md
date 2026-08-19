@@ -223,9 +223,9 @@ Singleton в `api/src/services/queueService.ts`.
 | alfalot | Playwright SPA | ecosystem.alfalot.ru |
 | investmoscow | fetch + Nuxt SSR | `__NUXT_DATA__` |
 | sberbank-ast | Playwright AJAX | XML `input#xmlData` |
-| m-ets | Playwright SPA | фильтр `auction_type=bankruptcy` |
+| m-ets | Playwright SPA | multi-lot trade: 2× info-type_1 на lot-URL; scope `itemscope` + `meta[itemprop=price]`; URL slug `228875-1` |
 | aggregator-bankrot | fetch JSON API | max_memory_restart 1024M |
-| etprf | Playwright AJAX | sale.etprf.ru |
+| etprf | Playwright AJAX | multi-lot fail-closed + lot-scope `#lot-{id}`; `ETPRF_BASE_URL` |
 | torgi-gov | fetch JSON API | `/new/api/public/lotcards` |
 | invest-mosreg | fetch JSON API | цена в млн.руб., площадь в га → конвертация ×1M / ×10000 |
 | fabrikant | Playwright SPA | multi-lot expand + lot-scoped fetchDetails; `FABRIKANT_BASE_URL` |

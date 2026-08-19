@@ -2,6 +2,17 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.97 — multi-lot audit ETPRF + М-ЕТС, prod deploy)
+**Сделано 19–20 августа 2026:**
+- ✅ `docs/plan-lots-audit.md`: этапы A–E завершены (F не входим — критерий ≥3 адаптеров не выполнен). Live probe локально + `scripts/probe-multi-lot-live.js`.
+- ✅ `parser-etprf`: `etprf-extraction.ts`, lot-scope `#lot-{id}`, fail-closed при >1 «Регион…»; fixture + tests; `ETPRF_BASE_URL`.
+- ✅ `parser-m-ets`: live trade `228875-N` — 2× `info-type_1` на lot-URL без `data-lot-id`; scope через `meta[itemprop=price]` в `[itemscope]`; slug URL `228875-1` (не `/lot/{id}`).
+- ✅ `parser-torgi-gov`: unit test distinct `external_id` per lotNumber. Alfalot / aggregator / sberbank-ast / invest* — live `ok`, код не меняли.
+- ✅ Release `[release] v1.1.97` commit `6e4a2f4` → push `main`. Deploy SSH `--ref 6e4a2f49c134e606795f504d8b9aab28f4108ee4`: успех, PM2 15/15 online, API 204, app 200.
+- ⚠️ Первый deploy attempt: блок preflight из-за untracked `scripts/probe-multi-lot-live.js` на prod (остался от раннего probe) — удалён, redeploy OK.
+- ⚠️ Локально после `tsc` parser-etprf могут появляться `.js` в `services/_shared/src/` — артефакты, не коммитить.
+- ⚠️ **Не сделано:** этап 5 `planlot.md` — зачистка mixed-карточки `rj1dq0t2kn7grd3qdq68k4ky` в prod БД.
+
 ## Session handoff (v1.1.96 — Fabrikant multi-lot, prod deploy)
 **Сделано 19 августа 2026:**
 - ✅ Инцидент `rj1dq0t2kn7grd3qdq68k4ky`: процедура Fabrikant №5566409 (3 лота) — парсер смешивал брянский title лота 3 с московским address/price первого `lot_delivery_place`. Root cause зафиксирован в `docs/planlot.md`.
