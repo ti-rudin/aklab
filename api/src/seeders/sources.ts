@@ -23,7 +23,8 @@ export async function seedSources(strapi: StrapiInstance): Promise<void> {
       parser: 'fedresurs' as const,
       auction_type: 'bankruptcy' as const,
       region: 'Россия',
-      is_active: true,
+      // Отключён: блокируется Qrator, нет PM2-сервиса в services.json
+      is_active: false,
       schedule: '0 3 * * *',
       health_port: 1357,
     },
@@ -136,7 +137,17 @@ export async function seedSources(strapi: StrapiInstance): Promise<void> {
       });
 
       if (existing && existing.length > 0) {
-        strapi.log.info(`[seed] Source "${src.name}" уже существует — skip`);
+        // Синхронизируем is_active для уже существующих источников, чтобы
+        // изменения в defaults.is_active (например, отключение fedresurs) применялись.
+        const current = existing[0] as any;
+        if (current.is_active !== src.is_active) {
+          await strapi.entityService.update('api::source.source', current.id, {
+            data: { is_active: src.is_active },
+          });
+          strapi.log.info(`[seed] Source "${src.name}" is_active обновлён → ${src.is_active}`);
+        } else {
+          strapi.log.info(`[seed] Source "${src.name}" уже существует — skip`);
+        }
         continue;
       }
 

@@ -2,8 +2,11 @@ import { chromium, FullConfig } from '@playwright/test';
 import * as fs from 'fs';
 
 const FRONTEND = process.env.FRONTEND_URL || 'https://aklab-dev.tirobots.ru';
-const EMAIL = process.env.TEST_USER_EMAIL || 'test@aklab.tirobots.ru';
-const PASS = process.env.TEST_USER_PASSWORD || 'Test1234!';
+const EMAIL = process.env.TEST_USER_EMAIL;
+const PASS = process.env.TEST_USER_PASSWORD;
+if (!EMAIL || !PASS) {
+  throw new Error('E2E setup requires TEST_USER_EMAIL and TEST_USER_PASSWORD env vars');
+}
 
 // Auth API — prefer localhost (works inside server), fallback to external
 const API_INTERNAL = process.env.API_URL_INTERNAL || 'http://localhost:1338';
@@ -20,7 +23,7 @@ async function globalSetup(config: FullConfig) {
   for (const apiBase of [API_INTERNAL, API_EXTERNAL]) {
     try {
       const resp = await page.request.post(`${apiBase}/api/auth/local`, {
-        data: { identifier: EMAIL, password: PASS },
+        data: { identifier: EMAIL!, password: PASS! },
         timeout: 10000,
       });
       const body = await resp.json();

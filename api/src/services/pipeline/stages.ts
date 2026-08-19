@@ -418,8 +418,24 @@ export async function analyze(ctx: PipelineContext): Promise<{ undervalued: numb
   const analysisWhere: any = { is_undervalued: { $null: true } };
 
   if (ctx.isCancelled()) return { undervalued: 0, errors };
-  const properties = await ctx.strapi.entityService.findMany('api::property.property', { filters: analysisWhere, limit: -1 });
-  const total = properties?.length || 0;
+
+  // Курсорная пагинация вместо limit: -1 во избежание OOM при больших каталогах
+  const PAGE_SIZE = 500;
+  const allProperties: any[] = [];
+  let page = 1;
+  while (true) {
+    const batch = await ctx.strapi.entityService.findMany('api::property.property', {
+      filters: analysisWhere,
+      limit: PAGE_SIZE,
+      start: (page - 1) * PAGE_SIZE,
+    });
+    if (!batch || batch.length === 0) break;
+    allProperties.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+    page++;
+  }
+  const properties = allProperties;
+  const total = properties.length;
   if (!total) {
     await updateState(ctx.strapi, { stage: 'analyzing_skipped', analyze_total: 0, analyze_done: 0 }, 'Анализ пропущен — нет необработанных shared объектов');
     return { undervalued: 0, errors };

@@ -7,13 +7,15 @@ import { SqliteQueue } from '@aklab/sqlite-queue';
 import type { Job, WorkerContext } from '@aklab/sqlite-queue';
 import { config } from './config';
 import { logger } from './logger';
+import { startHealthServer } from './health-server';
 
 let queue: SqliteQueue | null = null;
 
 export function startQueueWorker(handler: (job: Job, workerContext: WorkerContext) => Promise<any>): void {
+  const concurrency = parseInt(process.env.PARSER_CONCURRENCY || '2', 10);
   queue = new SqliteQueue(config.queue.dbPath, { disableTimers: true });
-  queue.process(config.queueName, handler, { concurrency: 2 });
-  logger.info(`Queue worker started — listening on ${config.queueName}`);
+  queue.process(config.queueName, handler, { concurrency });
+  logger.info(`Queue worker started — listening on ${config.queueName} (concurrency=${concurrency})`);
 }
 
 export function stopQueueWorker(): void {
@@ -24,29 +26,57 @@ export function stopQueueWorker(): void {
   }
 }
 
-export function gracefulStopQueueWorker(timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (!queue) {
-      resolve();
-      return;
-    }
+export async function gracefulStopQueueWorker(timeoutMs: number): Promise<void> {
+  if (!queue) return;
+  const q = queue;
+  queue = null;
+  try {
+    await q.gracefulClose(timeoutMs);
+    logger.info('Queue worker stopped gracefully');
+  } catch (err: any) {
+    logger.warn(`Queue graceful close error: ${err.message}`);
+  }
+}
 
-    const timer = setTimeout(() => {
-      logger.warn('Graceful stop timeout — force closing');
-      stopQueueWorker();
-      resolve();
-    }, timeoutMs);
+/**
+ * Шаблон запуска парсер-микросервиса: health server + queue worker + SIGTERM.
+ * Устраняет дублирование ~35 строк в каждом из 10+ парсеров.
+ */
+export function createParserMicroservice(
+  serviceName: string,
+  handler: (job: Job, workerContext: WorkerContext) => Promise<any>,
+  options?: {
+    shutdownTimeoutMs?: number;
+    concurrency?: number;
+  }
+): void {
+  const SHUTDOWN_TIMEOUT_MS = options?.shutdownTimeoutMs ?? 15000;
+  const concurrency = options?.concurrency
+    ?? parseInt(process.env.PARSER_CONCURRENCY || '2', 10);
 
-    // Ждём завершения активных задач через queue.close() (graceful)
-    // Если за timeoutMs не завершатся — сработает setTimeout выше
-    try {
-      queue.close();
-      queue = null;
-      logger.info('Queue worker stopped gracefully');
-    } catch (err: any) {
-      logger.warn(`Queue close error: ${err.message}`);
-    }
-    clearTimeout(timer);
-    resolve();
+  async function main(): Promise<void> {
+    logger.info(`Starting ${serviceName} service...`);
+    await startHealthServer();
+    // Используем собственный queue для каждого микросервиса (не shared global)
+    const q = new SqliteQueue(config.queue.dbPath, { disableTimers: true });
+    queue = q;
+    q.process(config.queueName, handler, { concurrency });
+    logger.info(`${serviceName} service ready (queue=${config.queueName} concurrency=${concurrency})`);
+  }
+
+  function setupShutdown(): void {
+    const shutdown = async (signal: string) => {
+      logger.info(`[${serviceName}] Received ${signal} — shutting down...`);
+      await gracefulStopQueueWorker(SHUTDOWN_TIMEOUT_MS);
+      process.exit(0);
+    };
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
+    process.on('SIGINT', () => void shutdown('SIGINT'));
+  }
+
+  setupShutdown();
+  main().catch((err) => {
+    logger.error(`[${serviceName}] Startup failed: ${err.message}`);
+    process.exit(1);
   });
 }

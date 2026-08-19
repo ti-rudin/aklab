@@ -3,87 +3,84 @@
 Быстрый onboarding для новой сессии. Прочитай этот файл целиком, прежде
 чем что-то делать в проекте.
 
+Актуальная версия: `cat package.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['version'])"`
+
+---
+
 ## Суть проекта
 
 Сервис мониторинга коммерческой недвижимости. Автоматически находит
 объекты (офисы, склады, торговые помещения), цена которых на 20%+ ниже
-рыночной. Парсит 10 активных источников (Алфалот, Инвест Москва, Сбербанк-АСТ, М-ЕТС, Агрегатор Банкрот, ЕТПРФ, ГИС Торги, Инвест МО, Фабрикант, Росэлторг), считает
-"рыночную" цену через похожие объекты в радиусе X км, шлёт алерты в
-Telegram (мгновенно) и утренний дайджест на email.
+рыночной. Парсит 10 активных источников (Алфалот, Инвест Москва,
+Сбербанк-АСТ, М-ЕТС, Агрегатор Банкрот, ЭТПРФ, ГИС Торги, Инвест МО,
+Фабрикант, Росэлторг), сравнивает цену с рыночным эталоном (MarketReference)
+по паре «город + тип объекта», шлёт утренний дайджест на email.
 
-Полная бизнес-логика — `docs/plan1.md`. Текущий статус — **prod + dev полностью работают**,
-15 PM2 процессов, 10 парсеров, analyzer, digest, photo-fetcher.
+Полная бизнес-логика — `docs/plan1.md`.
+
+---
 
 ## Архитектура
 
 ### Компоненты
 
-| Компонент | Технология | Порт prod | Порт dev | Где крутится |
-|-----------|-----------|-----------|----------|--------------|
-| Frontend | Vue 3 + Vite | 5174 | 5174 | Vite preview (prod + dev) |
-| Backend | Strapi 5.44.0 + SQLite | 1338 | 1338 | Strapi start (prod + dev) |
-| Reverse proxy (prod) | Traefik v2.10 (Docker) | 80/443 | — | 213.184.136.221 (localhost) |
-| Reverse proxy (dev) | Traefik v2.10 (Docker) | 80/443 | — | 192.168.11.131 (отдельный хост) |
+| Компонент | Технология | Порт |
+|-----------|-----------|------|
+| Frontend | Vue 3 + Vite | 5174 |
+| Backend | Strapi 5 + SQLite | 1338 |
+| Reverse proxy prod | Traefik v2.10 (Docker) | 80/443 |
+| Reverse proxy dev | Traefik v2.10 (Docker) | 80/443 |
 
-PM2-процессы на проде (213.184.136.221): 15 процессов (api, app, 10 парсеров,
-analyzer, digest, photo-fetcher). На dev (192.168.11.151): аналогично + рядом
-`todoit-api`, `todoit-app` — это другой проект, не трогай.
+### PM2-процессы (единственный источник правды — `services/services.json`)
 
-### Run-scoped parser telemetry и production проверки (v1.1.71–v1.1.73)
+На проде (213.184.136.221): **api, app, 10 парсеров, analyzer, digest, photo-fetcher** = 15 процессов.
+На dev (192.168.11.151): аналогично + рядом `todoit-api`, `todoit-app` — другой проект, не трогай.
 
-Pipeline telemetry хранится отдельно от агрегированного `Source`: `parser_run` идентифицируется immutable `run_id`, `parser_run_source` — `identity_key = runId:sourceSlug:stage`. Строка этапа создаётся `queued` **до enqueue**, получает реальный numeric `job_id` после enqueue, worker переводит её `running`, затем посылает exact terminal counters через internal aliases с `global::service-token`.
+Актуальный список процессов: `node -e "const s=require('./services/services.json'); console.log([...s.core,...s.parsers,...s.workers].map(x=>x.pm2_name).join('\n'))"`
 
-После `waitForJobs()` terminal SQLite Queue является authoritative: failure/cancellation исправляет преждевременный worker `success`. Contract и таблица counters — `docs/run-scoped-parser-telemetry.md`. Runtime E2E подтверждён production runs 2026-07-17: terminal telemetry internal calls 200, workers корректно завершают source stages. Parser service reads также обязаны использовать минимальные internal aliases; generic user/admin reads после multi-user cutover возвращают service token `403` и через fail-closed dedup могут дать ложный `created=0`.
+### Порты микросервисов (из services.json)
 
-**SQLite boundary rules:**
-- `strapi.db.query().create()` не делает REST JSON transform: для property parser upsert сериализовать `tags` и `photo_urls`, иначе `better-sqlite3` даёт `500`.
-- Raw focus query отдаёт `first_seen_at` epoch milliseconds, REST путь — ISO. Digest freshness parser обязан поддерживать оба формата; production v1.1.73 подтвердил email `2 hot + 27 regular` после fix.
+| Сервис | Порт |
+|--------|------|
+| api (Strapi) | 1338 |
+| app (Vite) | 5174 |
+| analyzer | health 1341 |
+| digest | health 1342 |
+| parser-fabrikant | 1345 |
+| parser-torgi-gov | 1346 |
+| parser-aggregator-bankrot | 1348 |
+| parser-alfalot | 1349 |
+| parser-etprf | 1350 |
+| parser-sberbank-ast | 1351 |
+| parser-invest-mosreg | 1352 |
+| parser-investmoscow | 1353 |
+| parser-roseltorg | 1354 |
+| parser-m-ets | 1355 |
+| photo-fetcher | health 1356 |
 
-### Ссылки ГИС Торги (v1.1.74)
-
-Публичная карточка torgi.gov.ru использует маршрут `/new/public/lots/lot/{noticeNumber}_{lotNumber}`. Устаревший `/new/public/lots/reg/lot-card/{noticeNumber}/{lotNumber}` возвращает HTTP 200 со SPA-страницей 404, поэтому URL-аудит обязан проверять hydrated DOM/body. В production исправлены все 149 существующих ссылок; parser генерирует новый формат.
-
-**Фотографии (v1.1.75):** Chromium не доверяет российской CA-цепочке через `NODE_EXTRA_CA_CERTS`, поэтому `photo-fetcher` не открывает карточку Torgi через Playwright. Использовать lot API `/new/api/public/lotcards/{compoundId}`, валидировать `lotImages` как 24-символьные hex ID и скачивать оригиналы с `/new/image-preview/v1/{fileId}?disposition=inline`. Не добавлять `resize=600x600!`: production возвращал временные 503 и встречался MIME/magic mismatch. Node worker обязан иметь `NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/russian-ca-chain.pem`; TLS verification не отключать.
+**Следующий свободный порт: 1357.**
 
 ### Домены
 
 **Prod (213.184.136.221):**
-- `https://aklab.tirobots.ru` → Traefik (localhost) → :5174 (Vite preview)
-- `https://api-aklab.tirobots.ru` → Traefik (localhost) → :1338 (Strapi)
+- `https://aklab.tirobots.ru` → Traefik (localhost) → :5174
+- `https://api-aklab.tirobots.ru` → Traefik (localhost) → :1338
 
-**Dev (192.168.11.151, Traefik на 131):**
+**Dev (192.168.11.151, Traefik на .131):**
 - `https://aklab-dev.tirobots.ru` → Traefik (131) → 192.168.11.151:5174
 - `https://api-aklab-dev.tirobots.ru` → Traefik (131) → 192.168.11.151:1338
 
-- **СТАРЫЕ, УДАЛЕНЫ** из CORS и Traefik: `*.aklab.ti-soft.ru`, `todoit.ru`,
-  `app.todoit.ru`, `api.todoit.ru`. Если где-то всплывут — это баг, не лечи.
+**УДАЛЕНЫ** из CORS и Traefik: `*.aklab.ti-soft.ru`, `*.todoit.ru`. Если всплывут — баг, не лечи.
 
 ### Source of truth
 
-`~/aklab` на **213.184.136.221** — это **прод-репо**, его трогает `git pull`
-при деплое. SSH: `ssh -p 5733 root@213.184.136.221` → `su - rudin`
-`~/aklab` на **192.168.11.151** — это **dev-репо** (бывший prod)
-@@ ~/github.nosync/aklab on your mac — local copy for development
-- GitHub: `https://github.com/ti-rudin/aklab.git` (HTTPS, авторизация
-  через `gh` CLI от аккаунта `ti-rudin`)
+- `~/aklab` на **213.184.136.221** — прод-репо, его трогает `git pull` при деплое
+  SSH: `ssh -p 5733 root@213.184.136.221` → `su - rudin`
+- `~/aklab` на **192.168.11.151** — dev-репо
+- `~/github.nosync/aklab` на mac — локальная копия для разработки
+- GitHub: `https://github.com/ti-rudin/aklab.git` (авторизация через `gh` CLI от `ti-rudin`)
 
-### Архитектура
-
-- **Очередь задач** — `@aklab/sqlite-queue` (пакет в `lib/sqlite-queue/`).
-  Один файл `queue.db` (WAL), polling 200ms, stale recovery, retention.
-  Singleton в `api/src/services/queueService.ts`.
-- **Cron-планировщик** — `node-cron` в `api/src/cron/index.ts` (timezone
-  Europe/Moscow). 2 cron: `pipeline:daily` (ежечасная проверка, запуск в `digest_time`) и `cleanup:expired-auctions` (03:15; удаляет только записи с явным прошедшим `auction_end_at`).
-- **Deadline parser (v1.1.85):** timezone-less даты торгов нормализуются как МСК; ISO с явным `Z`/offset сохраняется как исходное абсолютное UTC-время. `torgi-gov` берёт срок подачи заявок из `biddEndTime`; не подменять его датой начала аукциона.
-- **Микросервисы парсеров** — каждый парсер = отдельный сервис в
-  `services/parser-<slug>/` с shared модулями в `services/_shared/`
-  (`@aklab/service-shared`). Health server + queue worker + парсер.
-  Порты: fabrikant=1345, torgi-gov=1346, analyzer=1341, digest=1342.
-  Следующий свободный: 1348.
-- **Health proxy** — `GET /api/sources/:id/health` проксирует на
-  `http://127.0.0.1:{health_port}/health`.
-- **Workspaces** в `package.json`: `lib/*` и `services/*`. Совместная
-  `node_modules/` в корне.
+---
 
 ## Структура репо
 
@@ -91,41 +88,61 @@ Pipeline telemetry хранится отдельно от агрегирован
 ~/github.nosync/aklab/
 ├── api/                        # Strapi 5 backend
 │   ├── config/                 # middlewares (CORS), server, plugins
-│   ├── src/
-│   │   ├── api/                # content-types (5 шт. — Фаза 1)
-│   │   │   ├── property/{content-types/property,controllers/property,services/property}
-│   │   │   ├── setting/{content-types/setting,controllers/setting,services/setting}  # singleton
-│   │   │   ├── market-reference/{content-types/market-reference,...}
-│   │   │   ├── user-comment/{content-types/user-comment,...}  # relation → property
-│   │   │   └── cron-log/{content-types/cron-log,...}
-│   │   ├── cron/index.ts       # node-cron регистрация (Фаза 0: stub)
-│   │   ├── services/queueService.ts  # singleton @aklab/sqlite-queue
-│   │   ├── seeders/index.ts    # bootstrap seeds: admin + Setting + public permissions
-│   │   └── index.ts            # bootstrap: QueueService.init + registerCrons + runSeeders
-│   └── .tmp/data.db            # SQLite (в .gitignore)
+│   └── src/
+│       ├── api/                # 16 content-types:
+│       │   │                   # property, setting (singleton), market-reference,
+│       │   │                   # user-comment, cron-log, source, parser-run,
+│       │   │                   # parser-run-source, user-profile, user-property-state,
+│       │   │                   # focus-rule, digest-projection, property-event
+│       │   │                   # + cron, pipeline (custom routes)
+│       ├── cron/index.ts       # 2 задачи: pipeline:daily + cleanup:expired-auctions
+│       ├── services/
+│       │   ├── queueService.ts # singleton @aklab/sqlite-queue
+│       │   ├── parseRules.ts   # re-export buildParseRules из @aklab/parse-rules
+│       │   └── pipeline/       # state.ts, stages.ts, index.ts
+│       └── seeders/index.ts    # idempotent seeds: admin, Setting, Source, permissions
 ├── app/                        # Vue 3 + Vite frontend
-│   ├── src/                    # components, views, router
-│   └── vite.config.ts          # dev-proxy, allowedHosts
-├── lib/                        # shared библиотеки (npm workspaces)
-│   ├── sqlite-queue/           # @aklab/sqlite-queue (донор tirobots)
-│   └── parse-rules/            # @aklab/parse-rules — единый ParseRules + buildParseRules
-├── services/                   # микросервисы (npm workspaces)
+│   ├── src/
+│   │   ├── views/              # Auth, PropertyListView, PropertyDetailView,
+│   │   │                       # SettingsView, ChangelogView, NotFoundView
+│   │   ├── components/         # properties/, settings/, Footer, SkeletonLoader
+│   │   ├── composables/        # usePropertyData, useFocusTab, useToast,
+│   │   │                       # useFocusParams, usePolling, usePropertyFilters
+│   │   ├── stores/auth.ts      # Pinia
+│   │   └── api/strapi.ts       # axios + JWT interceptor
+│   └── vite.config.ts          # dev-proxy /api/* → :1338, allowedHosts
+├── lib/
+│   ├── sqlite-queue/           # @aklab/sqlite-queue (WAL, polling 200ms)
+│   └── parse-rules/            # @aklab/parse-rules — ParseRules + buildParseRules
+├── services/
 │   ├── services.json           # единый манифест: slug, port, health_port, pm2_name
-│   └── _shared/                # @aklab/service-shared (config, logger, anti-ban, city-detect)
+│   ├── _shared/                # @aklab/service-shared (config, logger, anti-ban, city-detect)
+│   ├── parser-*/               # 10 парсеров + parser-fedresurs (отключён)
+│   ├── analyzer/               # сравнение Property с MarketReference
+│   ├── digest/                 # утренний email через nodemailer
+│   └── photo-fetcher/          # скачивание фото
 ├── scripts/
-│   ├── deploy-prod.sh          # production deploy (полный цикл)
-│   ├── health-check.js
+│   ├── deploy-prod.sh          # production deploy (fail-closed, exact SHA)
+│   ├── deploy-dev.sh           # dev deploy (аналог)
+│   ├── health-check.js         # проверяет все 15 сервисов из services.json
+│   ├── smoke-test.js           # smoke: health, auth, endpoints, data integrity
 │   └── check-env.js
-├── ecosystem.config.js         # PM2 prod (build + preview)
-├── ecosystem-local.config.js   # PM2 dev (npm run dev)
-├── .env.local.example          # шаблон локального .env
-├── docs/
-│   ├── compact-doc.md          # ← ЭТОТ ФАЙЛ
-│   ├── plan1.md                # бизнес-логика проекта
-│   ├── plan2.md                # план MVP (9 фаз)
-│   └── setup-local.md          # пошаговая установка локально
-└── package.json                # workspaces: ["lib/*", "services/*"]
+├── ecosystem.config.js         # PM2 prod — генерируется из services.json
+├── ecosystem-local.config.js   # PM2 dev
+├── .env.template               # шаблон .env (cp .env.template .env)
+└── docs/
+    ├── compact-doc.md          # ← ЭТОТ ФАЙЛ
+    ├── sessions.md             # хронология изменений по сессиям
+    ├── gotchas.md              # Strapi 5 gotchas (90+ пунктов)
+    ├── adding-source.md        # инструкция добавления нового источника
+    ├── setup-local.md          # пошаговая установка локально
+    ├── plan1.md                # бизнес-логика
+    ├── run-scoped-parser-telemetry.md
+    ├── multiuser.md
+    └── archive/                # выполненные планы (plan2-3, planopus*, etc.)
 ```
+
+---
 
 ## Workflow: разработка → деплой
 
@@ -134,264 +151,192 @@ Pipeline telemetry хранится отдельно от агрегирован
 ```bash
 cd ~/github.nosync/aklab
 pm2 start ecosystem-local.config.js   # api:1338, app:5174 в dev-режиме
-pm2 logs                              # логи обоих процессов
-pm2 stop ecosystem-local.config.js    # остановить
+pm2 logs
+pm2 stop ecosystem-local.config.js
 ```
 
-### Правки
+### Git workflow
 
-1. Создай feature-ветку: `git checkout -b feat/<короткое-имя>`
-2. Правки → `git add -A` → `git commit -m "..."`
-3. `git push -u origin feat/<короткое-имя>`
+```
+feature-ветка → PR → main
+```
+
+1. `git checkout -b feat/<имя>` (или `fix/<имя>`) от `main`
+2. Правки → `git commit -m "..."`
+3. `git push -u origin feat/<имя>`
 4. PR в `main` на GitHub → merge
 
-Прямой push в `main` — только через PR из `dev`. Feature-ветки — из `dev`.
+**Прямой push в `main` запрещён.** Branch protection настроена на GitHub.
 
 ### Деплой (ТОЛЬКО по команде пользователя, не автоматически)
 
-Release готовится **до** production: CI/manual workflow создаёт отдельный
-`[release]` commit с version, `package-lock.json` и `app/public/changelog.json`.
-Сервер применяет только уже существующий exact SHA и никогда не создаёт Git
-коммиты.
+Release готовится до production — один commit с version, `package-lock.json` и `app/public/changelog.json`.
 
 ```bash
 # Prod (213.184.136.221); SHA — уже merged release из origin/main
 ssh -p 5733 root@213.184.136.221 'su - rudin -c "source ~/.nvm/nvm.sh && cd ~/aklab && bash scripts/deploy-prod.sh --ref <release-sha>"'
 ```
 
-`deploy-prod.sh` fail-closed: до `fetch/merge` требует `main` и полностью
-чистый `git status --porcelain`; он **не** делает stash/reset/commit/push.
-При dirty worktree deploy останавливается, сохраняет diff для расследования и
-ничего не перезаписывает. После Git preflight используется только
-fast-forward; несовпадение `--ref` с текущим `origin/main` останавливает race.
+`deploy-prod.sh` fail-closed: требует ветку `main` и чистый `git status --porcelain`.
+Использует только fast-forward. Rollback к предыдущему SHA при ошибке.
+Дай foreground-таймаут минимум 300s.
 
-Скрипт использует `npm ci` при изменении lockfiles, собирает, перезапускает
-PM2, проверяет health и делает rollback к предыдущему SHA при ошибке. Дай
-foreground-таймаут минимум 300s.
+**GitHub Actions:** все три workflow (CI, Deploy-Dev, Deploy-Prod) отключены вручную.
+Не удалять Secrets без отдельной команды.
 
-### Manual release и deploy (GitHub Actions отключены)
-
-Все три workflow GitHub Actions (`CI — Tests`, `Deploy — Dev`, `Deploy — Prod`)
-отключены вручную. Release и production deploy выполняются оператором, только
-после явной команды пользователя.
-
-1. В feature/release-ветке вручную выполнить tests, API/app build и `git diff --check`.
-2. Подготовить version, root `package-lock.json` и `app/public/changelog.json` в одном release commit.
-3. Создать/проверить PR и merge в `main`; зафиксировать resulting merge SHA.
-4. На сервере проверить чистый `git status --porcelain`, затем выполнить:
-   ```bash
-   bash scripts/deploy-prod.sh --ref <merge-sha>
-   ```
-5. Подтвердить domain health, PM2 и exact SHA на сервере.
-
-`deploy-prod.sh` остаётся immutable production applier: `--ref <SHA>` защищает
-от race, `--force` запускает повторный `npm ci`. GitHub Actions не является
-частью release path.
-
-SSH ключ и GitHub Secrets для прежних workflows сохранены в GitHub, но не используются,
-пока workflows отключены. Не удалять secrets без отдельной команды: это изменит
-возможность аварийно восстановить automation.
-**Branch protection:** нет ни на `main`, ни на `dev`. PR workflow: dev → main.
-
-### После успешного деплоя — в локали:
+### После успешного деплоя — локально:
 
 ```bash
-cd ~/github.nosync/aklab
 git pull --ff-only origin main
 ```
 
-Без этого локаль отстанет от прод-репо (там появится release-коммит от
-deploy-prod.sh + бамп версии).
+---
 
-## Правила (проверены, не нарушать)
+## Ключевые технические решения
 
-### Безопасность
+### Очередь задач
 
-- **НИКОГДА** не запускать `npm run dev` (Vite/HMR) на серверах —
-  CVE-2025-30208, чтение произвольных файлов через `?import&raw`.
-  На серверах ТОЛЬКО `npm run build && npm run serve:prod` (или
-  `vite preview`, что в ecosystem.config.js).
-- Секреты prod и dev — **ВСЕГДА РАЗНЫЕ**. Не дублировать между окружениями.
-- `.env` **в .gitignore**, никогда не логировать и не показывать в чате.
-- Публичный email проекта: `tirobots@yandex.ru`. Другие `@tirobots.ru`
-  адреса не существуют.
+`@aklab/sqlite-queue` — файл `queue.db` (WAL), polling 200ms, stale recovery, retention.
+Singleton в `api/src/services/queueService.ts`.
 
-### Strapi 5.46.1 — особенности
+### Pipeline Orchestrator
 
-- `env.array('FOO')` возвращает `string[] | undefined`, а
-  `Core.Config.Server.app.keys: string[]` (не optional) → TS-ошибка
-  TS2322 в build. Лечить: `env.array('FOO', [])` — явный дефолт `[]`.
-- Admin build (`strapi build`) занимает **~140 секунд**. Это не баг.
-- Strapi startup после build: ещё **~10-20 сек**. Итого от PM2 restart
-  до ответа на `/_health` нужно ~150-160 сек.
-- Health check timeout в deploy-prod.sh: 190s (10s initial + 18×10s).
-  Если упадёт — Strapi обычно стартует, просто скрипт не дождался.
-- **Admin при первом старте создаётся через /admin web UI**, не через env.
-  Чтобы авто-seed из env — есть `api/src/seeders/index.ts`.
-- **Routes нужно создавать ВРУЧНУЮ через `factories.createCoreRouter(uid)`**.
-  Strapi 5 НЕ авто-генерирует CRUD-routes из content-types. Без
-  `api/src/api/<name>/routes/<name>.ts` файл endpoints возвращают 404
-  (хотя contentTypes зарегистрированы и таблицы в БД созданы).
-  Это противоречит тому, что пишут в некоторых старых туториалах для
-  Strapi 4 — для v5 нужен явный routes-файл.
+Единый сервис `api/src/services/pipeline/` — оркестрирует парсинг → анализ → дайджест.
 
-### Git / .gitignore
+- **API:** `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset` — все требуют authenticated AKLAB Admin policy.
+- **Статусы:** `idle | running | cancelling`
+- **Стадии:** `parsing_scan → parsing_scan_done → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`
+- **Двуфазный парсинг:** Phase 1 (scan) → Phase 2 (details) — Phase 2 начинается только после завершения ВСЕХ Phase 1.
+- **Pre-filter:** `preFilterProperty()` фильтрует по city, stop-словам, площади, цене ДО fetchDetails.
+- **Idempotency:** один pipeline одновременно, reject если уже `running`.
 
-В .gitignore: `.env`, `.env.local`, `.env.*.local`, `package-lock.json`
-(и в api/, и в app/), `api/src/extensions/documentation/documentation/*/full_documentation.json`
-(Strapi регенерит при dev/start). Если что-то из этого случайно
-закоммитишь — `git rm --cached <file>`.
+### Cron
 
-### Локальный .env
+`api/src/cron/index.ts`, timezone Europe/Moscow:
+- `pipeline:daily` — проверяет каждый час, запускает в `digest_time` из settings (mode=`full`)
+- `cleanup:expired-auctions` — 03:15, удаляет только записи с явным прошедшим `auction_end_at`
 
-Не трогать без необходимости. Если менять — только переменные, не
-формат/комментарии. Backup перед правкой: `cp .env .env.bak.<date>`.
+### Парсеры (10 активных, 1 отключён)
 
-## Текущее состояние (июль 2026, v1.1.75)
+| Парсер | Метод | Особенности |
+|--------|-------|-------------|
+| alfalot | Playwright SPA | ecosystem.alfalot.ru |
+| investmoscow | fetch + Nuxt SSR | `__NUXT_DATA__` |
+| sberbank-ast | Playwright AJAX | XML `input#xmlData` |
+| m-ets | Playwright SPA | фильтр `auction_type=bankruptcy` |
+| aggregator-bankrot | fetch JSON API | max_memory_restart 1024M |
+| etprf | Playwright AJAX | sale.etprf.ru |
+| torgi-gov | fetch JSON API | `/new/api/public/lotcards` |
+| invest-mosreg | fetch JSON API | цена в млн.руб., площадь в га → конвертация ×1M / ×10000 |
+| fabrikant | Playwright SPA | fetchDetails (описание, контакты, фото) |
+| roseltorg | Playwright SPA | fetchDetails + URL с фильтрами (Москва, коммерческая) |
+| ~~fedresurs~~ | — | **ОТКЛЮЧЁН** (Qrator anti-bot) |
 
-Версия: 1.1.75 (исправлены публичные ссылки и загрузка оригинальных фотографий ГИС Торги)
-- **Инфраструктура (24.06.2026):**
-  - **Prod:** 213.184.136.221:5733 (root), Ubuntu 26.04, 15GB RAM, 48GB SSD
-  - **Dev:** 192.168.11.151 (rudin), бывший prod
-  - **Traefik prod:** Docker на 213.184.136.221 (`/opt/traefik/`)
-  - **Traefik dev:** Docker на 192.168.11.131 (редактировать `/home/rudin/home-traefik/traefik-config.yml`)
-- **11 источников парсинга** (10 активных, 1 отключён: fedresurs):
-  - `services/parser-alfalot/` — Playwright SPA (ecosystem.alfalot.ru), порт 1349
-  - `services/parser-investmoscow/` — fetch + Nuxt SSR (__NUXT_DATA__), порт 1353
-  - `services/parser-sberbank-ast/` — Playwright AJAX + XML (input#xmlData), порт 1351
-  - `services/parser-m-ets/` — Playwright SPA, порт 1355
-  - `services/parser-aggregator-bankrot/` — fetch JSON API, порт 1348
-  - `services/parser-etprf/` — Playwright AJAX (sale.etprf.ru), порт 1350
-  - `services/parser-torgi-gov/` — fetch JSON API (/new/api/public/lotcards), порт 1346
-  - `services/parser-invest-mosreg/` — fetch JSON API (/aapi/map/places), порт 1352
-  - `services/parser-fabrikant/` — Playwright SPA (fabrikant.ru/procedure/search/sales), порт 1345, **fetchDetails** (описание, контакты, фото). is_active=1.
-  - `services/parser-roseltorg/` — Playwright SPA (roseltorg.ru/imuschestvo/nedvizhimost/kommercheskaya-nedvizhimost), порт 1354, **fetchDetails** (описание, контакты, фото). is_active=1.
-  - ~~`services/parser-bankruptcy/`~~ — **УДАЛЁН** (legacy монолит)
-- **15 PM2 процессов** на проде (api, app, 10 парсеров, analyzer, digest, photo-fetcher)
-- **Cron расписание**: ONE `pipeline:daily` — проверяет каждый час, запускается в `digest_time` из settings (mode='full': parseAll → analyze → digest). Очистка выполняется только `cleanup:expired-auctions` в 03:15 по `auction_end_at`.
-- **Email-дайджест**: top-100 объектов из фокуса (по focus_score), smtp_to=a@rudin.ru, 09:00 МСК. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
-- **Telegram alerts**: УДАЛЕНЫ из плана
-- **Health badges** на `/settings` (таб Парсеры) — 🟢 Online / 🔴 Offline (polling каждые 30с)
-- **Per-source cron расписание** — УДАЛЁН (v1.1.59). `rescheduleSource` — no-op. Все источники парсятся в одном pipeline:daily
-- **Health proxy** — `GET /api/sources/:id/health` → Strapi проксирует на сервис
-- **Smoke test** — `npm run smoke` (health, auth, endpoints, data integrity, 12 микросервисов)
-- **Unit тесты** — `npm run test` (vitest). 27 файлов, 578 тестов (root) + 14 файлов (app). Включают buildParseRules, createProperty, queue, pipeline, cron, focusEngine, buildPropertyWhere, **extractPrice/extractArea всех 10 парсеров**, **composables (usePropertyData, useFocusTab, usePropertyFilters, useToast)**.
-- **E2E тесты** — `cd app && HEADLESS=true npx playwright test --project=chromium`. **56/56 тестов passing** в 14 describe-блоках: unauthenticated (7), auth flow (4), dashboard (5), properties (6), settings (5), property detail (2), pagination (3), focus tab (3), detail extended (4), settings digest (4), settings rules (2), settings sources (4), market references (3), changelog+docs+404 (4). Пароль из файла `/tmp/.e2e_password` (workaround: terminal tool маскирует `***` при передаче через env). Против production: `BASE_URL=https://aklab.tirobots.ru`. **Ключевые фиксы (v1.1.32):** API-based login попробован, но откатился на UI login (стабильнее). Заменён table-row click на `navigateToFirstProperty` (API-based). `switchToTableView` возвращает boolean + handle empty tables. Селекторы: `Цена→₽`, conditional dashboard types. Hash routing timeout + double-login removed. Rate limit users-permissions 50→300. Auto-seed в deploy-prod.sh.
-- **Playwright на Ubuntu 26.04** — chromium symlinks в deploy-prod.sh (workaround). HEADLESS=true env var для headless mode.
-- **API security** — single-tenant: все endpoints `auth: false, policies: []`.
-  API-токен не работает с `config: {}` (gotcha #62). JWT протухает после `pm2 restart`.
-- **Changelog** — AI-генерация при deploy через Xiaomi MiMo (fallback: словарь TRANSLATIONS)
-- **Footer** — колонка «Продукт»: Дашборд, Объекты, Настройки. «История изменений» + «Документация»
-- **Frontend** — 7 страниц: `/` (Dashboard — статистика, горячие объекты, таблица типов недвижимости с кликабельными кнопками → фильтр по типу), `/properties` (3 таба: Все объекты, В фокусе, В работе), `/properties/:id` (полная карточка), `/settings` (4 таба: Дайджест, Правила, Парсеры, Эталоны), `/changelog`, `/documentation`, `/auth` + 404 catch-all. Навигация: Дашборд, Объекты, Настройки. Ранее отдельные `/sources`, `/market-references` объединены в табы `/settings`.
-- **Фильтры мультиселект** — тип недвижимости и город во вкладках «Все объекты» и «В фокусе» реализованы как чекбоксы (pill-стиль), не select. Множественный выбор, query builder использует `$in`. Dashboard → `/properties?property_type=X` передаёт фильтр.
-- **Карточка объекта (`/properties/:id`)** — отображает ВСЕ спарсённые данные: title, description (collapsible >300 символов), address, price, minimum_price, area, property_type, city, published_at_source, first_seen_at, focus_score + теги, «Информация о торгах» (для лотов), «Посмотреть соседей на ЦИАН» (геокодинг через Nominatim → latitude/longitude)
-- **Pipeline Orchestrator** (v1.1.0, разбит на модули в v1.1.25):
-  - **Единый сервис** `api/src/services/pipeline/` — оркестрирует парсинг → анализ → дайджест.
-    Разбит на 3 модуля: `state.ts` (get/update/reset state), `stages.ts` (parseAll/analyze/digest), `index.ts` (run/cancel/orchestrate).
-  - **Progress transport (multi-user)** — frontend использует bounded JWT Axios polling `GET /api/pipeline/status`; legacy `/api/pipeline/stream` удалён и не является API surface.
-  - **Pipeline State** — персистентное состояние в `setting.pipeline_state` (JSON singleton).
-    Статусы: `idle | running | cancelling`. Стадии: `parsing_scan → parsing_scan_done → parsing_details → parsing_done → analyzing → analyzing_done → digesting → done`.
-  - **Idempotency** — `if pipeline_state.status === 'running'` → reject (один pipeline одновременно).
-  - **Error resilience** — ошибки отдельных источников копятся в `errors[]`, pipeline идёт до конца.
-  - **Cancel** — кнопка «Отменить» в UI, статус `cancelling`.
-  - **Cron → pipeline** — cron дайджеста и auto-analyze делегируют в `pipeline.run()`, нет копипасты.
-  - **Score встроен в analyze** — один этап вместо двух (analyze + score были отдельно).
-  - **Pre-filter** (v1.1.37) — preFilterProperty() в parse-handler фильтрует по city, stop words, area, price ДО fetchDetails. Экономия: вместо 291 fetchDetails → 15.
-  - **Двуфазный парсинг** (v1.1.37) — parse-handler разделён на Phase 1 (scan: парсинг списков + дедуп + предфильтр → файл) и Phase 2 (details: чтение файла + fetchDetails + createProperty). Pipeline синхронизирует фазы глобально: Phase 2 начинается ТОЛЬКО после завершения ВСЕХ Phase 1. Счётчики НЕ прыгают.
-  - **API (multi-user)**: `POST /api/pipeline/start`, `GET /api/pipeline/status`, `POST /api/pipeline/cancel`, `POST /api/pipeline/reset`; все требуют authenticated AKLAB Admin policy. SSE endpoint отсутствует.
-  - **3 триггера в UI:**
-    1. **Запуск парсинга** (`/properties` → collapsible) — полный pipeline: парсинг → анализ → дайджест. Фильтры: цена (от/до), город (мультиселект), глубина. Вызывает `POST /pipeline/start` с `mode: 'full'`.
-    2. **Ручной запуск** (`/settings`, admin-only) — полный pipeline по обязательному target user; reconnect выполняется JWT polling.
-    3. **Пересчитать** (`/properties` → таб «В фокусе») — только scoring.
-  - **Дайджест** — top-100 объектов из фокуса (по focus_score), НЕ только is_undervalued. Разделение на 🔥 Горячее (score≥50) и 📋 Обычное (20-49).
-  - Mobile-first: инпуты стакаются на узких экранах, кнопки w-full.
-- **Мониторинг регионов** — Setting.monitored_regions (json, дефолт `["moscow","mo"]`). Дайджест фильтрует по `city[$in]`. Мультиселект на `/settings`.
-- **Глубина парсинга по расписанию** — Setting.parse_depth (integer, дефолт 20, макс 5000). Cron читает при каждом запуске и передаёт в `addToQueue()`. Поле на `/settings`.
-- **Правила парсинга** (v1.1.13):
-  - **Стоп-слова** — Setting.stop_words (json массив, дефолт `["земельный участок", "земельные участки", "зу", "участок"]`). Парсер пропускает объекты содержащие эти слова в title/description.
-  - **Диапазон цен** — Setting.price_from/price_to (decimal). Объекты вне диапазона пропускаются при парсинге.
-  - **Диапазон площади** — Setting.area_from/area_to (decimal). Объекты вне диапазона пропускаются при парсинге.
-  - **Города** — Setting.monitored_regions (json). Объекты из неотслеживаемых городов пропускаются.
-  - **Правила применяются в** `createProperty()` (`_shared/src/strapi-client.ts`) — через `ParseRules` interface, передаётся из pipeline и cron через queue job data.
-  - **UI** — `/settings` → таб «Правила» → секция «Правила парсинга» (ParsingRulesPanel.vue). Глубина, цена, площадь, города перенесены из «Дайджеста».
-  - **Предзаполнение** — формы ручного запуска на `/properties` и `/settings` предзаполняются из Setting.
-  - **buildParseRules(setting)** — единая функция в `lib/parse-rules/` (`@aklab/parse-rules`). Re-export из `api/src/services/parseRules.ts` и `_shared/src/strapi-client.ts`.
-- **Парсеры** (обновлено 07.07.2026):
-  - **10 активных парсеров** + 1 отключён (fedresurs — Qrator anti-bot).
-  - `alfalot` — Playwright SPA (ecosystem.alfalot.ru). 204 объекта, fetchDetails.
-  - `investmoscow` — fetch + Nuxt SSR (`__NUXT_DATA__`). 28 объектов.
-  - `sberbank-ast` — Playwright AJAX + XML (`input#xmlData`, `_source` теги). fetchDetails.
-  - `m-ets` — Playwright SPA. 200 объектов, fetchDetails. **Фильтр:** `auction_type='bankruptcy'` (не marketplace — там автомобили/права требования).
-  - `aggregator-bankrot` — fetch JSON API. 71 объект, fetchDetails.
-  - `etprf` — Playwright AJAX (sale.etprf.ru). 200 объектов, fetchDetails.
-  - `torgi-gov` — fetch JSON API (`/new/api/public/lotcards`). fetchDetails.
-  - `invest-mosreg` — fetch JSON API (`/aapi/map/places`). 5 объектов. **Важно:** API отдаёт цену в млн.руб. и площадь в гектарах — парсер конвертирует (×1M, ×10000).
-  - `fabrikant` — Playwright SPA (fabrikant.ru). **fetchDetails** (описание, контакты, фото). is_active=1.
-  - `roseltorg` — Playwright SPA (roseltorg.ru). **fetchDetails** + URL с фильтрами (Москва, коммерческая). is_active=1.
-  - `fedresurs` — **ОТКЛЮЧЁН** (Qrator anti-bot).
-- Содержимое:
-  - **api/src/api/** — 7 content-types (Property, Setting singleton,
-    MarketReference, UserComment, CronLog, **Source**, **Cron** (custom routes))
-  - **api/src/services/queueService.ts** — singleton-обёртка
-  - **api/src/services/parseRules.ts** — re-export из `@aklab/parse-rules` (единый buildParseRules)
-  - **api/src/cron/index.ts** — 2 cron-задачи: pipeline:daily + cleanup:expired-auctions
-  - **api/src/seeders/index.ts** — seedSettings + seedSources + seedAuthenticatedPermissions + seedTestUser + seedStrapiAdmin
-  - **services/_shared/** — `@aklab/service-shared` (config, logger, health-server, queue-worker, strapi-client, types, anti-ban, city-detect)
-  - **services/parser-fabrikant/** — FabrikantParser (порт 1345, очередь `parse-fabrikant`)
-  - **services/parser-torgi-gov/** — TorgiGovParser (порт 1346, очередь `parse-torgi-gov`)
-  - **services/analyzer/** — сравнение Property с MarketReference
-  - **services/digest/** — утренний email через nodemailer
-  - **lib/sqlite-queue/** — `@aklab/sqlite-queue` v0.1.0
-  - **lib/parse-rules/** — `@aklab/parse-rules` v0.1.0 (ParseRules interface + buildParseRules)
-  - **app/src/views/** — Auth, PropertyListView (тонкая оболочка 145 строк, 3 таба → подкомпоненты), PropertyDetailView,
-    SettingsView (4 таба: Дайджест, Правила, Парсеры, Эталоны), ChangelogView, NotFoundView
-  - **app/src/components/** — Footer, SkeletonLoader, SkeletonTable
-  - **app/src/components/properties/** — ParseLaunchPanel, PropertyAllTab, PropertyFocusTab, ConfirmClearDialog, PropertyTable, PropertyCard
-  - **app/src/components/settings/** — RulesPanel, ParsingRulesPanel, SourcesPanel, MarketReferencesPanel
-  - **app/src/composables/** — usePropertyData, useFocusTab, useToast, **useFocusParams** (buildFocusParams/buildAnalyzeBody), **usePolling** (auto-cleanup on unmount)
-  - **app/src/stores/** — auth.ts (Pinia)
-  - **app/src/api/** — strapi.ts (shared axios instance с JWT interceptor)
-  - **app/src/utils/formatters.ts** — cityLabel, typeLabel, statusLabel, statusStyle, formatPrice, **tagLabel** (10 переводов slug-тегов)
-  - **scripts/smoke-test.js** — smoke тест (npm run smoke)
-  - **scripts/generate-changelog.js** — генератор changelog из git commits
-- На проде (213.184.136.221): 15 PM2 процессов (api, app, 10 парсеров,
-  analyzer, digest, photo-fetcher). Playwright chromium установлен.
-- В .env на проде: `STRAPI_ADMIN_EMAIL=admin@aklab.tirobots.ru`,
-  `TEST_USER_EMAIL=test@aklab.tirobots.ru`
-- В БД на проде admin `ax.rudin@gmail.com` (создан Strapi через /admin
-  first-run форму, не из env). После деплоя с seed'ами должен появиться
-  ВТОРОЙ admin с email из .env
-- Vite proxy: `/api/*` → `http://localhost:1338` (только в dev-режиме)
-- Source schema: +schedule (cron expr, дефолт "0 3 * * *"), +health_port (int)
-- Health proxy: `GET /api/sources/:id/health` → Strapi проксирует на `localhost:{health_port}/health`
-- **Geocoding endpoint** — `GET /api/properties/:id/geocode` → Nominatim + кэш lat/lng в БД (auth required)
-- **Серверный поиск в focus** — `GET /api/properties/focus?search=...` → SQL LIKE по title/address (debounce 300ms на фронте)
-- **CIAN deep-link** — commercial параметры: `offer_type=commercial`, `object_type[0]=1&[1]=2&[2]=5` (офис/торговля/склад)
-- Cron: pipeline:daily запускает парсинг ВСЕХ источников в digest_time. Per-source crons удалены (v1.1.59)
-- **Strapi 5 sort** — поле `createdAt` (camelCase), НЕ `created_at`. Если
-  sort вернёт пустой массив — проверить имя поля.
-- Seeder **идемпотентен** — при добавлении новых полей в Source нужно
-  обновлять существующие записи через API (PUT /api/sources/:docId).
-- Документация: `docs/adding-source.md` — инструкция добавления нового источника
-- CORS в `api/config/middlewares.ts` уже включает
-  `https://aklab.tirobots.ru` и `http://localhost:5174`
-- **safeEval** — recursive-descent expression parser (НЕ `new Function()`). Поддерживает `+−*/%`, сравнения, `&&||`, скобки. Whitelist переменных.
-- **scorePropertiesBatch** — параметризованные запросы через `db.query().update()` (НЕ raw SQL).
-- **ecosystem.config.js** — генерирует PM2 конфиг из `services/services.json` (единый манифест).
-- **deploy-prod.sh** — читает списки сервисов из `services/services.json` (6 мест хардкода → 1 источник).
-- **.nvmrc** — Node 22, `engines.node` в package.json.
-- **Auto-deploy на prod отключён** — только `workflow_dispatch` (ручной запуск).
-- **DocumentationView** — контент вынесен в `app/public/docs/architecture.md`, рендер через marked (850→~120 строк Vue).
-- **health-check.js** — проверяет все 15 сервисов из services.json (было 2).
-- **Multi-user rollout** — проверяемый dev-only порядок `feature OFF → audit → migration → idempotent re-audit → private photo copy → dev cutover` и rollback с exact SHA описан в [docs/multiuser.md](multiuser.md). `scripts/deploy-dev.sh` — immutable exact-SHA applier (`--ref`, clean `main`, fast-forward only, WAL-safe baseline backup, feature-OFF gate). Архитектура additive: legacy `Setting`/`Property.status` сохраняются, private photo-root задаётся через `PRIVATE_PHOTO_ROOT`; runtime rollout выполняется только по явной команде.
+### Run-scoped telemetry
 
+`parser_run` идентифицируется immutable `run_id`. `parser_run_source` — `identity_key = runId:sourceSlug:stage`.
+Строка создаётся `queued` до enqueue, worker переводит `running` → terminal.
+После `waitForJobs()` terminal SQLite Queue является authoritative.
+Подробности — `docs/run-scoped-parser-telemetry.md`.
 
-## Strapi 5 — gotchas
+### Фотографии (ГИС Торги)
 
-**Вынесено в отдельный файл:** см. [docs/gotchas.md](gotchas.md)
-(90 пронумерованных пунктов, стабильный reference)
+Chromium не доверяет российской CA-цепочке через `NODE_EXTRA_CA_CERTS` → не открывает карточку Torgi через Playwright.
+Использовать lot API `/new/api/public/lotcards/{compoundId}`, валидировать `lotImages` как 24-символьные hex ID,
+скачивать с `/new/image-preview/v1/{fileId}?disposition=inline`.
+Не добавлять `resize=600x600!`. Node worker: `NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/russian-ca-chain.pem`.
 
-## Session handoff
+### Ссылки ГИС Торги
 
-**Вынесено в отдельный файл:** см. [docs/sessions.md](sessions.md)
-(хронология изменений по сессиям + инсайты)
+Публичная карточка: `/new/public/lots/lot/{noticeNumber}_{lotNumber}`.
+Устаревший маршрут `/new/public/lots/reg/lot-card/…` возвращает 200 с SPA 404 → URL-аудит обязан проверять hydrated DOM.
+
+### Deadline parser
+
+Timezone-less даты нормализуются как МСК. ISO с явным `Z`/offset — как исходное UTC.
+`torgi-gov`: срок подачи из `biddEndTime`; не подменять датой начала аукциона.
+
+### SQLite boundary rules
+
+- `strapi.db.query().create()` не делает REST JSON transform: `tags` и `photo_urls` нужно сериализовать вручную перед записью, иначе `better-sqlite3` даёт 500.
+- Raw focus query отдаёт `first_seen_at` epoch milliseconds, REST путь — ISO. Digest freshness parser обязан поддерживать оба формата.
+
+### Multi-user
+
+Архитектура additive: legacy `Setting`/`Property.status` сохраняются. Private photo-root через `PRIVATE_PHOTO_ROOT`.
+Подробности — `docs/multiuser.md`.
+
+### Правила парсинга
+
+Единая функция `buildParseRules(setting)` в `@aklab/parse-rules`.
+Параметры из `Setting`: `stop_words`, `price_from/price_to`, `area_from/area_to`, `monitored_regions`, `filter_rent`.
+Применяются в `createProperty()` через `_shared/src/strapi-client.ts`.
+
+---
+
+## Безопасность (не нарушать)
+
+- **НИКОГДА** не запускать `npm run dev` (Vite/HMR) на серверах — CVE-2025-30208.
+  На серверах только `npm run build && vite preview` (ecosystem.config.js).
+- **API security — НЕ single-tenant больше.** Pipeline endpoints требуют JWT + AKLAB Admin policy.
+  Новые endpoints создавать с явной policy. Не копировать старый паттерн `auth: false, policies: []` слепо — уточнять по контексту.
+- Секреты prod и dev — **ВСЕГДА РАЗНЫЕ**, не дублировать.
+- `.env` в `.gitignore`, никогда не логировать и не показывать в чате.
+- Публичный email: `tirobots@yandex.ru`. Другие `@tirobots.ru` не существуют.
+- `npm audit` — проверять при каждом деплое на critical/high уязвимости.
+- `safeEval` — recursive-descent expression parser (не `new Function()`).
+
+---
+
+## Strapi 5 — особенности
+
+**Подробный reference (90+ пунктов):** `docs/gotchas.md`
+
+Критичные, часто встречающиеся:
+
+- `env.array('FOO', [])` — обязателен явный дефолт `[]`, иначе TS2322 при build.
+- `strapi build` занимает ~140 сек. Startup после: ~10-20 сек. Итого до `/_health`: ~150-160 сек.
+  Health check timeout в deploy-prod.sh: 190s.
+- **Routes нужно создавать ВРУЧНУЮ** через `factories.createCoreRouter(uid)`.
+  Strapi 5 НЕ авто-генерирует CRUD-routes. Без явного файла роутов — 404.
+- `strapi.db.query()` для relations, НЕ `entityService`.
+- `createdAt` (camelCase), НЕ `created_at` в sort.
+- Seeder идемпотентен — при добавлении новых полей в Source обновлять через PUT.
+
+---
+
+## Git / .gitignore
+
+В `.gitignore`: `.env`, `.env.local`, `.env.*.local`, `package-lock.json`
+(и в api/, и в app/), `queue.db*`, `api/src/extensions/documentation/…/full_documentation.json`.
+
+Если что-то случайно закоммитишь: `git rm --cached <file>`.
+
+---
+
+## Тестирование
+
+```bash
+npm run test            # vitest (unit)
+npm run smoke           # smoke: health, auth, endpoints, 15 сервисов
+cd app && npx playwright test --project=chromium   # E2E
+```
+
+E2E против production: `BASE_URL=https://aklab.tirobots.ru`.
+Пароль из файла `/tmp/.e2e_password` (workaround: terminal маскирует env `***`).
+
+---
+
+## Ссылки на дополнительные доки
+
+| Документ | Содержимое |
+|----------|-----------|
+| `docs/gotchas.md` | Strapi 5 gotchas (90+ пунктов) |
+| `docs/sessions.md` | Хронология изменений по сессиям |
+| `docs/adding-source.md` | Добавление нового источника |
+| `docs/setup-local.md` | Локальная установка |
+| `docs/run-scoped-parser-telemetry.md` | Telemetry контракт |
+| `docs/multiuser.md` | Multi-user rollout |
+| `docs/archparsers.md` | Архитектура парсеров |
+| `docs/plan1.md` | Бизнес-логика |
+| `docs/archive/` | Выполненные планы (plan2-3, planopus*, etc.) |

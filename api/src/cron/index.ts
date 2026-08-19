@@ -44,15 +44,17 @@ export function registerCrons(strapi: Core.Strapi): void {
         return;
       }
 
-      strapi.log.info(`[cron] pipeline:daily triggered at ${digestTime} MSK (${corrId})`);
+      // Проверяем digest_enabled перед запуском дайджеста
+      const mode = setting.digest_enabled === false ? 'parse' : 'full';
+      strapi.log.info(`[cron] pipeline:daily triggered at ${digestTime} MSK mode=${mode} (${corrId})`);
 
       const { getPipelineService } = await import('../services/pipeline');
       const pipeline = getPipelineService(strapi as unknown as StrapiInstance);
 
-      // mode='full' — парсинг → анализ → дайджест (как ручной запуск из UI)
+      // mode='full' — парсинг → анализ → дайджест; mode='parse' — только парсинг+анализ
       // The pipeline resolves fresh parse_depth and builds the all-active-user
       // snapshot itself. Cron never supplies a target user or request filters.
-      await pipeline.run(undefined, undefined, 'cron');
+      await pipeline.run(undefined, undefined, 'cron', mode as import('../services/pipeline').PipelineMode);
 
       strapi.log.info(`[cron] pipeline:daily completed (${corrId})`);
     } catch (err: any) {
@@ -91,11 +93,26 @@ export function registerCrons(strapi: Core.Strapi): void {
     const corrId = `cron-expired-auctions-${Date.now()}`;
     try {
       const s = strapi as unknown as StrapiInstance;
-      const result = await s.db.query('api::property.property').deleteMany({
-        where: { auction_end_at: { $lt: new Date() } },
-      });
-      if (result.count > 0) {
-        strapi.log.info(`[cron] cleanup:expired-auctions deleted ${result.count} properties (${corrId})`);
+      const now = new Date();
+      let totalDeleted = 0;
+      const BATCH_SIZE = 200;
+
+      // Батчевое удаление во избежание единой долгой блокирующей транзакции
+      while (true) {
+        const expired = await s.db.query('api::property.property').findMany({
+          where: { auction_end_at: { $lt: now } },
+          limit: BATCH_SIZE,
+          select: ['id'],
+        }) as Array<{ id: number }>;
+        if (!expired.length) break;
+        const ids = expired.map((p) => p.id);
+        const result = await s.db.query('api::property.property').deleteMany({ where: { id: { $in: ids } } });
+        totalDeleted += result.count || 0;
+        if (expired.length < BATCH_SIZE) break;
+      }
+
+      if (totalDeleted > 0) {
+        strapi.log.info(`[cron] cleanup:expired-auctions deleted ${totalDeleted} properties (${corrId})`);
       }
     } catch {
       strapi.log.error('[cron] cleanup:expired-auctions failed');

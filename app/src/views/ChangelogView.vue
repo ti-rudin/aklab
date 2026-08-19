@@ -36,7 +36,15 @@
             {{ release.date }}<template v-if="release.time">, {{ release.time }}</template>
           </span>
         </div>
-        <ul class="release-items">
+
+        <!-- Формат с title + description -->
+        <template v-if="release.title || release.description">
+          <p v-if="release.title" class="release-title" style="color: var(--text-primary)">{{ release.title }}</p>
+          <p v-if="release.description" class="release-description" style="color: var(--text-secondary)">{{ release.description }}</p>
+        </template>
+
+        <!-- Формат с items -->
+        <ul v-if="release.items && filteredItems(release).length" class="release-items">
           <li
             v-for="item in filteredItems(release)"
             :key="item.text"
@@ -78,7 +86,9 @@ interface Release {
   version: string
   date: string
   time?: string
-  items: ChangelogItem[]
+  title?: string
+  description?: string
+  items?: ChangelogItem[]
 }
 
 const PAGE_SIZE = 10
@@ -111,7 +121,12 @@ watch(filter, () => {
 
 const visibleReleases = computed(() => {
   if (filter.value === 'all') return releases.value
-  return releases.value.filter((r) => r.items.some((item) => item.type === filter.value))
+  return releases.value.filter((r) => {
+    // Релизы с items — фильтруем по типу
+    if (r.items?.length) return r.items.some((item) => item.type === filter.value)
+    // Релизы с title/description — не скрываем (тип неизвестен), только при filter=all
+    return false
+  })
 })
 
 const paginatedReleases = computed(() => visibleReleases.value.slice(0, displayCount.value))
@@ -122,6 +137,7 @@ function showMore() {
 }
 
 function filteredItems(release: Release): ChangelogItem[] {
+  if (!release.items) return []
   if (filter.value === 'all') return release.items
   return release.items.filter((item) => item.type === filter.value)
 }
@@ -222,6 +238,18 @@ function typeLabel(type: ItemType): string {
 
 .release-date {
   font-size: 0.75rem;
+}
+
+.release-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.release-description {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: 0;
 }
 
 .release-items {

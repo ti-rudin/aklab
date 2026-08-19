@@ -1,10 +1,18 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Деплой AKLAB в production
 # Usage: ./scripts/deploy-prod.sh [--force] [--ref <release-sha>]
 # The release (version, changelog and commits) must already be in origin/main.
 
-set -euo pipefail
+set -Eeuo pipefail
+
+# === Deploy lock: защита от параллельных запусков ===
+DEPLOY_LOCK_FILE="/tmp/aklab-deploy-prod.lock"
+exec 200>"$DEPLOY_LOCK_FILE"
+if ! flock -n 200; then
+  echo "[deploy-prod] ERROR: другой deploy уже выполняется (lock: $DEPLOY_LOCK_FILE)" >&2
+  exit 2
+fi
 
 # NVM PATH
 export NVM_DIR="$HOME/.nvm"
@@ -17,7 +25,6 @@ cd "$PROJECT_ROOT"
 source "$PROJECT_ROOT/scripts/lib/deploy-git-preflight.sh"
 
 # === Сервисный манифест ===
-PARSER_SLUGS=$(node -e "const s=require('./services/services.json'); console.log(s.parsers.map(p=>p.slug).join(' '))")
 ALL_SERVICE_SLUGS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug).join(' '))")
 PM2_NAMES=$(node -e "const s=require('./services/services.json'); const all=[...s.core,...s.parsers,...s.workers]; console.log(all.map(p=>p.pm2_name).join(' '))")
 HEALTH_CHECKS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug+':'+p.health_port).join(' '))")
@@ -85,6 +92,8 @@ notify() {
 # Rollback
 ROLLBACK_SHA=""
 ROLLBACK_DB_BACKUP=""
+# shellcheck disable=SC2034
+ROLLBACK_QUEUE_BACKUP=""
 rollback() {
   local rollback_failed=0
   if [ -n "$ROLLBACK_SHA" ]; then
@@ -118,6 +127,20 @@ rollback() {
           err "DB restore verification failed"
           rollback_failed=1
         fi
+      fi
+    fi
+    # Восстановление queue.db
+    if [ -n "$ROLLBACK_QUEUE_BACKUP" ] && [ -f "$ROLLBACK_QUEUE_BACKUP" ]; then
+      rm -f queue.db-wal queue.db-shm
+      cp "$ROLLBACK_QUEUE_BACKUP" queue.db.restore || rollback_failed=1
+      if [ "$rollback_failed" -eq 0 ]; then
+        mv -f queue.db.restore queue.db || rollback_failed=1
+      fi
+      if [ "$rollback_failed" -eq 0 ] && [ "$(sqlite3 queue.db 'PRAGMA integrity_check;')" = "ok" ]; then
+        log "queue.db восстановлен из invocation-scoped backup"
+      else
+        err "queue.db restore verification failed"
+        rollback_failed=1
       fi
     fi
     pm2 startOrRestart ecosystem.config.js >/dev/null 2>&1 || rollback_failed=1
@@ -198,13 +221,16 @@ if [ -f "api/.tmp/data.db" ]; then
   ls -t "$BACKUP_DIR"/data-*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 fi
 
+ROLLBACK_QUEUE_BACKUP=""
 if [ -f "queue.db" ]; then
-  sqlite3 queue.db ".backup $BACKUP_DIR/queue-${TIMESTAMP}.db"
-  if [ "$(sqlite3 "$BACKUP_DIR/queue-${TIMESTAMP}.db" 'PRAGMA integrity_check;')" != "ok" ]; then
+  QUEUE_BACKUP_CANDIDATE="$BACKUP_DIR/queue-${TIMESTAMP}.db"
+  sqlite3 queue.db ".backup $QUEUE_BACKUP_CANDIDATE"
+  if [ "$(sqlite3 "$QUEUE_BACKUP_CANDIDATE" 'PRAGMA integrity_check;')" != "ok" ]; then
     err "Queue backup integrity check failed"
     exit 1
   fi
-  log "Backup: queue.db → $BACKUP_DIR/queue-${TIMESTAMP}.db"
+  ROLLBACK_QUEUE_BACKUP="$QUEUE_BACKUP_CANDIDATE"
+  log "Backup: queue.db → $ROLLBACK_QUEUE_BACKUP"
 fi
 
 # From this point deployment may mutate generated artifacts/runtime. The DB
@@ -352,15 +378,19 @@ if [ "$STRAPI_OK" != "true" ]; then
 fi
 log "Strapi OK"
 
-APP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4173/ 2>/dev/null || echo "000")
+# PORT_APP: порт vite preview (prod=5174, может быть переопределён в .env)
+PORT_APP="${PORT_APP:-5174}"
+APP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT_APP}/" 2>/dev/null || echo "000")
 if [ "$APP_STATUS" = "200" ]; then
-  log "App OK"
+  log "App OK (:${PORT_APP})"
 else
-  warn "App вернул $APP_STATUS (может быть нормально для SPA)"
+  err "App вернул $APP_STATUS на :${PORT_APP} — rollback"
+  exit 1
 fi
 
-# Проверяем health микросервисов (не блокирующий — warn)
+# Health микросервисов: fail-closed → rollback
 sleep 5
+FAILED_HEALTH=0
 for svc_port in $HEALTH_CHECKS; do
   SVC_NAME="${svc_port%%:*}"
   SVC_PORT="${svc_port##*:}"
@@ -368,9 +398,14 @@ for svc_port in $HEALTH_CHECKS; do
   if [ "$SVC_STATUS" = "200" ]; then
     log "${SVC_NAME} OK (:${SVC_PORT})"
   else
-    warn "${SVC_NAME} вернул ${SVC_STATUS} на :${SVC_PORT} (проверьте pm2 logs aklab-${SVC_NAME}-prod)"
+    err "${SVC_NAME} вернул ${SVC_STATUS} на :${SVC_PORT}"
+    FAILED_HEALTH=$((FAILED_HEALTH + 1))
   fi
 done
+if [ "$FAILED_HEALTH" -ne 0 ]; then
+  err "$FAILED_HEALTH микросервисов не ответили — rollback"
+  exit 1
+fi
 
 
 # === Step 9: Use the changelog already committed with the release ===

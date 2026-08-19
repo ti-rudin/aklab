@@ -635,11 +635,13 @@ async function triggerPhotoFetch(): Promise<void> {
 
 const geocoding = ref(false)
 
+const CIAN_MAP_BASE = import.meta.env.VITE_CIAN_MAP_URL || 'https://www.cian.ru/map/'
+
 const cianUrl = computed(() => {
   if (!property.value?.latitude || !property.value?.longitude) return null
   const lat = property.value.latitude
   const lng = property.value.longitude
-  return `https://www.cian.ru/map/?deal_type=sale&offer_type=commercial&object_type[0]=1&object_type[1]=2&object_type[2]=5&center=${lat},${lng}&zoom=16`
+  return `${CIAN_MAP_BASE}?deal_type=sale&offer_type=commercial&object_type[0]=1&object_type[1]=2&object_type[2]=5&center=${lat},${lng}&zoom=16`
 })
 
 function safeHttpUrl(value: unknown): string | null {

@@ -126,6 +126,8 @@ yarn-error.log
 ############################
 
 coverage
+# Playwright auth state (contains live JWT — never commit)
+tests/.auth/
 
 ############################
 # Strapi

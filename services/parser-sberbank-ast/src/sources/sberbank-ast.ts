@@ -298,15 +298,16 @@ export class SberbankAstParser implements SourceParser {
     }
   }
 
-  async fetchDetails(url: string): Promise<ParserDetailResult> {
+  async fetchDetails(url: string, sharedContext?: any): Promise<ParserDetailResult> {
     const { chromium } = await import('playwright');
-    const browser = await chromium.launch({
+    const ownBrowser = sharedContext ? null : await chromium.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
     try {
-      const context = await createStealthContext(browser);
+      const ownContext = sharedContext ? null : await createStealthContext(ownBrowser!);
+      const context = sharedContext ?? ownContext!;
       const page = await context.newPage();
       await retryGoto(page, url, 3);
 
@@ -432,7 +433,9 @@ export class SberbankAstParser implements SourceParser {
       logger.warn(`[sberbank-ast] fetchDetails failed (${safeParserErrorCode(err)})`);
       throw err;
     } finally {
-      await browser.close();
+      // Закрываем только собственные ресурсы; sharedContext — ответственность вызывающего
+      if (ownBrowser) await ownBrowser.close();
     }
+    // ownContext закрывается вместе с ownBrowser
   }
 }
