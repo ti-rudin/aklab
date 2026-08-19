@@ -29,6 +29,52 @@ const HEADERS = {
   'X-AKLAB-Service-Token': config.strapi.apiToken,
 };
 
+const FETCH_TIMEOUT_MS = parseInt(process.env.STRAPI_CLIENT_TIMEOUT_MS || '20000', 10);
+const FETCH_MAX_RETRIES = 2;
+
+/**
+ * fetch с таймаутом и ретраями.
+ * Ретраи только на сетевые ошибки и 5xx (не 4xx — они постоянные).
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  retries = FETCH_MAX_RETRIES,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timer);
+      // 4xx — постоянная ошибка, ретраи не помогут
+      if (res.status >= 400 && res.status < 500) {
+        return res; // вернуть как есть, вызывающий сам обработает
+      }
+      // 5xx — временная, ретраим
+      if (res.status >= 500 && attempt < retries) {
+        logger.warn(`[strapi-client] ${res.status} for ${url}, retry ${attempt + 1}/${retries}`);
+        await new Promise(r => setTimeout(r, (attempt + 1) * 1000));
+        continue;
+      }
+      return res;
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err?.permanent) throw err;
+      if (err?.name === 'AbortError') {
+        logger.warn(`[strapi-client] Timeout (${FETCH_TIMEOUT_MS}ms) for ${url}`);
+      }
+      if (attempt < retries) {
+        logger.warn(`[strapi-client] Fetch error for ${url}: ${safeParserErrorCode(err)}, retry ${attempt + 1}/${retries}`);
+        await new Promise(r => setTimeout(r, (attempt + 1) * 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`fetchWithTimeout: exhausted retries for ${url}`);
+}
+
 /**
  * Проверить, существует ли Property с данным source + external_id.
  */
@@ -36,7 +82,7 @@ export async function propertyExists(source: string, externalId: string): Promis
   try {
     const params = new URLSearchParams({ source, external_id: externalId });
     const url = `${BASE}/internal/properties/exists?${params.toString()}`;
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetchWithTimeout(url, { method: 'GET', headers: HEADERS });
     if (!res.ok) {
       logger.warn(`propertyExists: API returned ${res.status}, fail-closed (skip)`);
       return true; // fail-closed: при ошибке API считаем что существует
@@ -155,6 +201,9 @@ export function preFilterProperty(
   if (props.area_sqm != null) {
     if (rules?.areaFrom != null && props.area_sqm < rules.areaFrom) {
       return { pass: false, reason: `area ${props.area_sqm} < ${rules.areaFrom}` };
+    }
+    if (rules?.areaTo != null && props.area_sqm > rules.areaTo) {
+      return { pass: false, reason: `area ${props.area_sqm} > ${rules.areaTo}` };
     }
   }
 
@@ -277,7 +326,7 @@ export async function createProperty(props: {
   delete postData.city;
   delete postData.latitude;
   delete postData.longitude;
-  const res = await fetch(`${BASE}/properties/upsert`, {
+  const res = await fetchWithTimeout(`${BASE}/properties/upsert`, {
     method: 'POST',
     headers: HEADERS,
     body: JSON.stringify({ data: postData }),
@@ -333,37 +382,37 @@ export async function updateSourceStats(documentId: string, data: {
   const hasFetchDelta = data.total_details_fetched !== undefined && data.total_details_fetched !== null;
   const hasNeededVal = data.total_details_needed !== undefined && data.total_details_needed !== null;
 
-  if (data.parse_count || data.total_found || data.total_created || hasFetchDelta || hasNeededVal) {
+  // Атомарный инкремент счётчиков (без race condition GET→PUT)
+  const incrementData: Record<string, number> = {};
+  if (data.parse_count) incrementData.parse_count = data.parse_count;
+  if (data.total_found) incrementData.total_found = data.total_found;
+  if (data.total_created) incrementData.total_created = data.total_created;
+
+  if (Object.keys(incrementData).length > 0) {
     try {
-      const res = await fetch(`${BASE}/internal/sources/${encodeURIComponent(documentId)}/stats`, { headers: HEADERS });
-      if (res.ok) {
-        const json = (await res.json()) as StrapiResponse<any>;
-        const current = json.data;
-        console.log(`[strapi-client:updateStats] docId=${documentId} BEFORE: found=${current?.total_found} created=${current?.total_created} fetched=${current?.total_details_fetched} needed=${current?.total_details_needed} status=${current?.last_parse_status}`);
-        if (data.parse_count) updateData.parse_count = (current?.parse_count || 0) + data.parse_count;
-        if (data.total_found) updateData.total_found = (current?.total_found || 0) + data.total_found;
-        if (data.total_created) updateData.total_created = (current?.total_created || 0) + data.total_created;
-        // total_details_fetched: прямой SET (текущее значение, не инкремент)
-        if (hasFetchDelta) updateData.total_details_fetched = data.total_details_fetched;
-        // total_details_needed: прямой SET (точное кол-во после existence check)
-        if (hasNeededVal) updateData.total_details_needed = data.total_details_needed;
-        console.log(`[strapi-client:updateStats] docId=${documentId} SETTING:`, JSON.stringify(updateData));
-      } else {
-        logger.warn(`updateSourceStats GET failed (${res.status}) for documentId=${documentId}`);
+      const res = await fetchWithTimeout(`${BASE}/internal/sources/${encodeURIComponent(documentId)}/stats/increment`, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify({ data: incrementData }),
+      });
+      if (!res.ok) {
+        logger.warn(`updateSourceStats increment failed (${res.status}) for documentId=${documentId}`);
       }
     } catch (err: any) {
-      logger.warn(`updateSourceStats GET error: ${safeParserErrorCode(err)}`);
+      logger.warn(`updateSourceStats increment error: ${safeParserErrorCode(err)}`);
     }
   }
 
-  const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
+  // total_details_* — прямой SET (не инкремент)
+  if (hasFetchDelta) updateData.total_details_fetched = data.total_details_fetched;
+  if (hasNeededVal) updateData.total_details_needed = data.total_details_needed;
+
+  const putRes = await fetchWithTimeout(`${BASE}/internal/sources/${documentId}/stats`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: updateData }),
   });
-  if (putRes.ok) {
-    console.log(`[strapi-client:updateStats] docId=${documentId} PUT OK →`, JSON.stringify(updateData));
-  } else {
+  if (!putRes.ok) {
     // The final details path awaits this call before terminal telemetry and
     // artifact cleanup. Non-2xx must therefore be observable to preserve the
     // retry artifact. Never include an upstream body: it may contain PII.
@@ -372,11 +421,11 @@ export async function updateSourceStats(documentId: string, data: {
   }
 }
 
+
 /** Сбросить ВСЕ счётчики перед новым запуском парсинга. */
 export async function resetSourceDetailsCounters(documentId: string): Promise<void> {
-  console.log(`[strapi-client:reset] docId=${documentId} → resetting ALL counters to 0`);
   try {
-    const putRes = await fetch(`${BASE}/internal/sources/${documentId}/stats`, {
+    const putRes = await fetchWithTimeout(`${BASE}/internal/sources/${documentId}/stats`, {
       method: 'PUT',
       headers: HEADERS,
       body: JSON.stringify({ data: {
@@ -388,9 +437,7 @@ export async function resetSourceDetailsCounters(documentId: string): Promise<vo
         last_parse_error: null,
       } }),
     });
-    if (putRes.ok) {
-      console.log(`[strapi-client:reset] docId=${documentId} → OK`);
-    } else {
+    if (!putRes.ok) {
       logger.warn(`resetSourceDetailsCounters failed (${putRes.status})`);
     }
   } catch (err: any) {
@@ -409,7 +456,7 @@ export async function logCron(entry: {
   error?: string;
 }): Promise<void> {
   try {
-    await fetch(`${BASE}/internal/cron-logs`, {
+    await fetchWithTimeout(`${BASE}/internal/cron-logs`, {
       method: 'POST',
       headers: HEADERS,
       body: JSON.stringify({ data: entry }),
@@ -439,7 +486,7 @@ export type ParserRunSourceCounters = {
 };
 
 export async function markParserRunSourceStageRunning(identityKey: string, jobId: number): Promise<void> {
-  const res = await fetch(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/running`, {
+  const res = await fetchWithTimeout(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/running`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: { job_id: jobId } }),
@@ -460,7 +507,7 @@ export async function finishParserRunSourceStage(identityKey: string, payload: {
   error_class?: 'transient' | 'rate_limited' | 'blocked' | 'anti_bot' | 'http_block' | 'schema_changed' | 'permanent' | 'cancelled';
   error_message?: string;
 }): Promise<void> {
-  const res = await fetch(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/terminal`, {
+  const res = await fetchWithTimeout(`${BASE}/internal/parser-run-sources/${encodeURIComponent(identityKey)}/terminal`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: payload }),
@@ -475,7 +522,7 @@ export async function finishParserRunSourceStage(identityKey: string, payload: {
  * Получить Property по documentId (для analyzer).
  */
 export async function fetchProperty(documentId: string): Promise<any> {
-  const res = await fetch(`${BASE}/internal/properties/${encodeURIComponent(documentId)}`, { headers: HEADERS });
+  const res = await fetchWithTimeout(`${BASE}/internal/properties/${encodeURIComponent(documentId)}`, { method: 'GET', headers: HEADERS });
   if (!res.ok) throw new Error(`fetchProperty failed (${res.status})`);
   const data = (await res.json()) as StrapiResponse<any>;
   return data.data;
@@ -487,7 +534,7 @@ export async function fetchProperty(documentId: string): Promise<any> {
 export async function findActiveMarketReference(city: string, propertyType: string): Promise<any | null> {
   const params = new URLSearchParams({ city, property_type: propertyType });
   const url = `${BASE}/internal/market-references/active?${params.toString()}`;
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await fetchWithTimeout(url, { method: 'GET', headers: HEADERS });
   if (!res.ok) return null;
   const data = (await res.json()) as StrapiResponse<any | null>;
   return data.data ?? null;
@@ -497,7 +544,7 @@ export async function findActiveMarketReference(city: string, propertyType: stri
  * Получить singleton Setting (для analyzer/digest).
  */
 export async function fetchSetting(): Promise<any> {
-  const res = await fetch(`${BASE}/internal/setting/analyzer`, { headers: HEADERS });
+  const res = await fetchWithTimeout(`${BASE}/internal/setting/analyzer`, { method: 'GET', headers: HEADERS });
   if (!res.ok) return null;
   const data = (await res.json()) as StrapiResponse<any>;
   return data.data;
@@ -507,7 +554,7 @@ export async function fetchSetting(): Promise<any> {
  * Обновить Property по documentId (для analyzer).
  */
 export async function updateProperty(documentId: string, fields: Record<string, any>): Promise<void> {
-  const res = await fetch(`${BASE}/internal/properties/${documentId}`, {
+  const res = await fetchWithTimeout(`${BASE}/internal/properties/${documentId}`, {
     method: 'PUT',
     headers: HEADERS,
     body: JSON.stringify({ data: fields }),

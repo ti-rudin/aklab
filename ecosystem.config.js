@@ -8,6 +8,21 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 const services = require('./services/services.json');
 
+// PATH к Node: берём из env (задаётся через ~/.bashrc или deploy-скрипта),
+// fallback — используем PATH текущего процесса (корректен при запуске от nvm)
+const NODE_BIN_PATH = process.env.NVM_BIN || (() => {
+  const nodeDir = process.env.NVM_DIR;
+  if (!nodeDir) return process.env.PATH || '';
+  const { execSync } = require('child_process');
+  try {
+    const ver = execSync('node -v', { encoding: 'utf8' }).trim().replace(/^v/, '');
+    return `${nodeDir}/versions/node/v${ver}/bin`;
+  } catch {
+    return process.env.PATH || '';
+  }
+})();
+const SYSTEM_PATH = `${NODE_BIN_PATH}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+
 // ─────────────────────────────────────────────────────────────────
 // Ядро: Strapi API + Vue App
 // ─────────────────────────────────────────────────────────────────
@@ -20,16 +35,13 @@ const coreApps = [
     interpreter: 'none',
     max_memory_restart: '768M',
     exp_backoff_restart_delay: 100,
-    health_check: {
-      url: 'http://localhost:1338/_health',
-      interval: 15000,
-      timeout: 5000,
-      retries: 3,
-    },
+    min_uptime: 5000,
+    max_restarts: 10,
+    kill_timeout: 20000,
     env: {
       NODE_ENV: 'production',
       NVM_DIR: '/home/rudin/.nvm',
-      PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      PATH: SYSTEM_PATH,
       HOST: process.env.HOST || '0.0.0.0',
       PORT: process.env.PORT_API || '1338',
       PUBLIC_URL: process.env.PUBLIC_URL || '',
@@ -55,10 +67,13 @@ const coreApps = [
     interpreter: 'none',
     max_memory_restart: '512M',
     exp_backoff_restart_delay: 100,
+    min_uptime: 5000,
+    max_restarts: 10,
+    kill_timeout: 15000,
     env: {
       NODE_ENV: 'production',
       NVM_DIR: '/home/rudin/.nvm',
-      PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      PATH: SYSTEM_PATH,
       PORT: process.env.PORT_APP || '4173',
     },
   },
@@ -75,10 +90,13 @@ const parserApps = services.parsers.map(p => ({
   interpreter: 'none',
   max_memory_restart: p.max_memory_restart || '512M',
   exp_backoff_restart_delay: 100,
+  min_uptime: 5000,
+  max_restarts: 10,
+  kill_timeout: 20000,
   env: {
     NODE_ENV: 'production',
     NVM_DIR: '/home/rudin/.nvm',
-    PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    PATH: SYSTEM_PATH,
     PORT: String(p.port),
     SERVICE_NAME: p.slug,
     QUEUE_NAME: 'parse-' + p.slug.slice(7),
@@ -102,10 +120,13 @@ const workerApps = [
     interpreter: 'none',
     max_memory_restart: '512M',
     exp_backoff_restart_delay: 100,
+    min_uptime: 5000,
+    max_restarts: 10,
+    kill_timeout: 20000,
     env: {
       NODE_ENV: 'production',
       NVM_DIR: '/home/rudin/.nvm',
-      PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      PATH: SYSTEM_PATH,
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
       STRAPI_API_TOKEN: process.env.STRAPI_API_TOKEN || '',
@@ -119,10 +140,13 @@ const workerApps = [
     interpreter: 'none',
     max_memory_restart: '512M',
     exp_backoff_restart_delay: 100,
+    min_uptime: 5000,
+    max_restarts: 10,
+    kill_timeout: 20000,
     env: {
       NODE_ENV: 'production',
       NVM_DIR: '/home/rudin/.nvm',
-      PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      PATH: SYSTEM_PATH,
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',
       AKLAB_APP_URL: process.env.AKLAB_APP_URL || '',
@@ -142,10 +166,13 @@ const workerApps = [
     interpreter: 'none',
     max_memory_restart: '512M',
     exp_backoff_restart_delay: 100,
+    min_uptime: 5000,
+    max_restarts: 10,
+    kill_timeout: 20000,
     env: {
       NODE_ENV: 'production',
       NVM_DIR: '/home/rudin/.nvm',
-      PATH: '/home/rudin/.nvm/versions/node/v22.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      PATH: SYSTEM_PATH,
       PORT: '1356',
       QUEUE_DB_PATH: '/home/rudin/aklab/queue.db',
       STRAPI_URL: process.env.STRAPI_INTERNAL_URL || 'http://localhost:1338',

@@ -143,6 +143,11 @@ export class PipelineService implements PipelineContext {
     } catch (err: any) {
       const reason = `Восстановление run ${runId} остановлено: ошибка проверки очереди`;
       this.strapi.log.error(`[pipeline] ${reason}`);
+      // Снимаем in-memory locks чтобы forceReset не блокировался до рестарта процесса
+      this.activeRunId = null;
+      this.recoveringRunId = null;
+      this.activeJobIds.clear();
+      this.cancellationRequestedJobIds.clear();
       await this.publishRecoveryError(runId, reason);
       return;
     }
@@ -397,8 +402,8 @@ export class PipelineService implements PipelineContext {
   }
 
   /** Awaited full-pipeline entry point used by cron. It never accepts a target. */
-  async run(depth: number | undefined, targetUserId?: unknown, trigger: 'manual' | 'cron' = 'manual'): Promise<void> {
-    const runId = await this.acquireLock(trigger, 'full');
+  async run(depth: number | undefined, targetUserId?: unknown, trigger: 'manual' | 'cron' = 'manual', mode: PipelineMode = 'full'): Promise<void> {
+    const runId = await this.acquireLock(trigger, mode);
     if (!runId) throw new PipelineBusyError();
     let prepared: PreparedRun;
     try {
@@ -408,7 +413,7 @@ export class PipelineService implements PipelineContext {
       throw error;
     }
     this.handlerActive = true;
-    await this.executeRun(runId, 'full', prepared);
+    await this.executeRun(runId, mode, prepared);
   }
 
   private async executeRun(runId: string, mode: PipelineMode, prepared: PreparedRun): Promise<void> {
@@ -525,10 +530,30 @@ export class PipelineService implements PipelineContext {
     if (!ids.length || !this.activeRunId) return;
     for (const id of ids) this.activeJobIds.add(id);
 
-    const state = await this.getState();
-    if (state.run_id !== this.activeRunId) return;
-    const jobIds = [...new Set([...state.job_ids, ...ids])];
-    await updateState(this.strapi, { job_ids: jobIds }, undefined, true);
+    // Атомарный JSON-array merge через SQLite, чтобы избежать race read-modify-write.
+    // Если строки нет или run_id сменился — ничего не делаем.
+    const runId = this.activeRunId;
+    try {
+      const setting = await this.strapi.db.query('api::setting.setting').findOne({});
+      if (!setting) return;
+      await this.strapi.db.connection.raw(
+        `UPDATE setting
+           SET pipeline_state = json_set(
+             pipeline_state,
+             '$.job_ids',
+             (SELECT json_group_array(DISTINCT value)
+              FROM (
+                SELECT value FROM json_each(COALESCE(json_extract(pipeline_state, '$.job_ids'), '[]'))
+                UNION SELECT value FROM json_each(?)
+              ))
+           )
+         WHERE id = ?
+           AND json_extract(pipeline_state, '$.run_id') = ?`,
+        [JSON.stringify(ids), setting.id, runId],
+      );
+    } catch (err: any) {
+      this.strapi.log.warn(`[pipeline] recordJobIds atomic merge failed: ${err.message}`);
+    }
   }
 
   /**

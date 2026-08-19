@@ -72,6 +72,55 @@ export default factories.createCoreController('api::source.source', ({ strapi })
     ctx.body = { data: source };
   },
 
+  /**
+   * Атомарный инкремент счётчиков через SQL UPDATE ... SET col = col + delta.
+   * Принимает { data: { parse_count?, total_found?, total_created? } } — только числовые дельты.
+   * Поля last_parse_* и SET-поля (total_details_*) по-прежнему идут через internalUpdateStats.
+   */
+  async internalIncrementStats(ctx) {
+    const data = ctx.request?.body?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      ctx.status = 400;
+      ctx.body = { error: 'Invalid increment payload' };
+      return;
+    }
+
+    const ALLOWED_INCREMENT = new Set(['parse_count', 'total_found', 'total_created']);
+    const fields = Object.keys(data);
+    if (fields.length === 0 || fields.some(f => !ALLOWED_INCREMENT.has(f))) {
+      ctx.status = 400;
+      ctx.body = { error: 'Only parse_count, total_found, total_created can be incremented' };
+      return;
+    }
+
+    const db = strapi.db.connection;
+    const tableName = 'sources';
+    let query = `UPDATE ${tableName} SET `;
+    const setParts: string[] = [];
+    const bindings: number[] = [];
+    for (const field of fields) {
+      const delta = Number(data[field]);
+      if (!Number.isFinite(delta) || delta < 0) {
+        ctx.status = 400;
+        ctx.body = { error: `Invalid delta for ${field}` };
+        return;
+      }
+      setParts.push(`${field} = COALESCE(${field}, 0) + ?`);
+      bindings.push(delta);
+    }
+    query += setParts.join(', ') + ' WHERE document_id = ?';
+    bindings.push(ctx.params.id);
+
+    const result = await db.raw(query, bindings);
+    const changes = result?.[0]?.affectedRows ?? result?.changes ?? 0;
+    if (!changes) {
+      ctx.status = 404;
+      ctx.body = { error: 'Source not found' };
+      return;
+    }
+    ctx.body = { data: { ok: true } };
+  },
+
   /** Service-only parser statistics update with a strict field mask. */
   async internalUpdateStats(ctx) {
     const data = internalPayload(ctx);
@@ -115,8 +164,8 @@ export default factories.createCoreController('api::source.source', ({ strapi })
         });
         const data = await res.json();
         ctx.body = { data };
-      } catch (fetchErr: any) {
-        ctx.body = { data: { status: 'offline', error: fetchErr.message } };
+      } catch {
+        ctx.body = { data: { status: 'offline' } };
       }
     } catch (err: any) {
       ctx.internalServerError(err.message);

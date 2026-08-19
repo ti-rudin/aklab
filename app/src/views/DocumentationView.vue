@@ -56,13 +56,23 @@ function handleLinkClick(e: MouseEvent) {
 }
 
 onMounted(async () => {
-  const res = await fetch('/docs/architecture.md')
-  const md = await res.text()
+  try {
+    const res = await fetch('/docs/architecture.md')
+    if (!res.ok) {
+      html.value = '<p style="color:var(--text-muted)">Документация недоступна.</p>'
+      return
+    }
+    const md = await res.text()
 
-  // Marked renders raw HTML tags in markdown as-is — perfect for our
-  // custom div-based layout (arch-diagram, tables, parser-cards, etc.)
-  marked.setOptions({ breaks: false, gfm: true })
-  html.value = marked.parse(md) as string
+    // Marked renders raw HTML tags in markdown as-is — perfect for our
+    // custom div-based layout (arch-diagram, tables, parser-cards, etc.)
+    // html: true нужен только для кастомных div-блоков в architecture.md,
+    // но файл локальный (public/docs/) и не принимает пользовательский ввод.
+    marked.setOptions({ breaks: false, gfm: true })
+    html.value = marked.parse(md) as string
+  } catch {
+    html.value = '<p style="color:var(--text-muted)">Не удалось загрузить документацию.</p>'
+  }
 })
 </script>
 

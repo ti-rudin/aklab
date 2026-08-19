@@ -19,16 +19,14 @@ export function stopQueueWorker(): void {
   }
 }
 
-export function gracefulStopQueueWorker(timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (!queue) { resolve(); return; }
-    const timer = setTimeout(() => {
-      logger.warn('Graceful stop timeout — force closing');
-      stopQueueWorker();
-      resolve();
-    }, timeoutMs);
-    stopQueueWorker();
-    clearTimeout(timer);
-    resolve();
-  });
+export async function gracefulStopQueueWorker(timeoutMs: number): Promise<void> {
+  if (!queue) return;
+  const q = queue;
+  queue = null;
+  try {
+    await q.gracefulClose(timeoutMs);
+    logger.info('Queue worker stopped gracefully');
+  } catch (err: any) {
+    logger.warn(`Queue graceful close error: ${err.message}`);
+  }
 }

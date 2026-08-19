@@ -119,15 +119,24 @@ export function usePropertyData() {
   // scoped focus contract has no avgScore field, so it is never populated.
   const focusAvgScore = ref<number | null>(null)
 
+  // AbortController для защиты от race conditions: поздний ответ не перетрёт актуальный
+  let propertiesAbortCtrl: AbortController | null = null
+  let focusAbortCtrl: AbortController | null = null
+
   async function fetchProperties(params: PropertyQueryInput) {
+    propertiesAbortCtrl?.abort()
+    propertiesAbortCtrl = new AbortController()
+    const { signal } = propertiesAbortCtrl
+
     loading.value = true
     try {
       const query = buildPropertyQuery(params)
-      const { data } = await api.get('/properties', { params: query })
+      const { data } = await api.get('/properties', { params: query, signal })
       properties.value = (data.data || []) as Property[]
       total.value = data.meta?.total || 0
       error.value = null
     } catch (e: any) {
+      if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
       console.error('Failed to fetch properties:', e)
       error.value = e.message
     } finally {
@@ -136,15 +145,20 @@ export function usePropertyData() {
   }
 
   async function fetchFocusProperties(params: PropertyQueryInput) {
+    focusAbortCtrl?.abort()
+    focusAbortCtrl = new AbortController()
+    const { signal } = focusAbortCtrl
+
     focusLoading.value = true
     try {
       const query = buildFocusPropertyQuery(params)
-      const { data } = await api.get('/properties/focus', { params: query })
+      const { data } = await api.get('/properties/focus', { params: query, signal })
       focusProperties.value = (data.data || []) as Property[]
       focusTotal.value = data.meta?.total || 0
       focusAvgScore.value = null
       error.value = null
     } catch (e: any) {
+      if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
       console.error('Failed to fetch focus items:', e)
       error.value = e.message
       focusProperties.value = []

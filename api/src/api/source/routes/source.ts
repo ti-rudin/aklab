@@ -12,6 +12,12 @@ export default {
       handler: 'api::source.source.internalUpdateStats',
       config: { auth: false, policies: ['global::service-token'] },
     },
+    {
+      method: 'POST' as const,
+      path: '/internal/sources/:id/stats/increment',
+      handler: 'api::source.source.internalIncrementStats',
+      config: { auth: false, policies: ['global::service-token'] },
+    },
     // Health endpoint remains public for external monitoring.
     {
       method: 'GET' as const,

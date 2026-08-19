@@ -7,6 +7,14 @@
 set -Eeuo pipefail
 umask 077
 
+# === Deploy lock: защита от параллельных запусков ===
+DEPLOY_LOCK_FILE="/tmp/aklab-deploy-dev.lock"
+exec 200>"$DEPLOY_LOCK_FILE"
+if ! flock -n 200; then
+  echo "[deploy-dev] ERROR: другой deploy уже выполняется (lock: $DEPLOY_LOCK_FILE)" >&2
+  exit 2
+fi
+
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH"
@@ -47,7 +55,6 @@ warn() { echo -e "${YELLOW}[deploy-dev]${NC} $1"; }
 err()  { echo -e "${RED}[deploy-dev]${NC} $1"; }
 
 # Git must be clean before any PM2, build, DB or filesystem side effect.
-CHECKOUT_SHA="$(git rev-parse HEAD)"
 DEPLOY_SHA="$(ensure_deploy_git_preflight "$EXPECTED_SHA")"
 log "Deploy SHA: ${DEPLOY_SHA:0:8}"
 
@@ -66,7 +73,6 @@ git cat-file -e "${ROLLBACK_SHA}^{commit}" 2>/dev/null || { err "Rollback SHA is
 git merge-base --is-ancestor "$ROLLBACK_SHA" "$DEPLOY_SHA" || { err "Rollback SHA is not an ancestor of deploy SHA"; false; }
 log "Rollback SHA: ${ROLLBACK_SHA:0:8}"
 
-PARSER_SLUGS=$(node -e "const s=require('./services/services.json'); console.log(s.parsers.map(p=>p.slug).join(' '))")
 ALL_SERVICE_SLUGS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug).join(' '))")
 PM2_NAMES=$(node -e "const s=require('./services/services.json'); const all=[...s.core,...s.parsers,...s.workers]; console.log(all.map(p=>p.pm2_name).join(' '))")
 HEALTH_CHECKS=$(node -e "const s=require('./services/services.json'); const all=[...s.parsers,...s.workers]; console.log(all.map(p=>p.slug+':'+p.health_port).join(' '))")

@@ -23,7 +23,6 @@ export class Worker {
   private stopped: boolean = false;
 
   private stmtFetch: Database.Statement;
-  private stmtClaim: Database.Statement;
   private stmtComplete: Database.Statement;
   private stmtFail: Database.Statement;
   private stmtRetry: Database.Statement;
@@ -57,14 +56,7 @@ export class Worker {
       RETURNING *
     `);
 
-    // Retained for private backwards compatibility. poll() uses stmtFetch above.
-    this.stmtClaim = db.prepare(`
-      UPDATE jobs
-      SET status = 'active', started_at = ?, attempts = attempts + 1,
-          locked_by = ?, lease_token = ?, lease_expires_at = ?, heartbeat_at = ?,
-          lease_duration_ms = ?, cancellation_requested_at = NULL
-      WHERE id = ? AND status = 'pending'
-    `);
+    // stmtClaim удалён: poll() использует атомарный stmtFetch (SELECT + UPDATE за одну операцию)
 
     this.stmtComplete = db.prepare(`
       UPDATE jobs
@@ -108,8 +100,20 @@ export class Worker {
     this.start();
   }
 
+  private idleStreak: number = 0;
+  private currentPollInterval: number = 0;
+
   private start(): void {
-    this.pollTimer = setInterval(() => this.poll(), this.pollInterval);
+    this.currentPollInterval = this.pollInterval;
+    this.schedulePoll();
+  }
+
+  private schedulePoll(): void {
+    if (this.stopped) return;
+    this.pollTimer = setTimeout(() => {
+      this.poll();
+      if (!this.stopped) this.schedulePoll();
+    }, this.currentPollInterval);
   }
 
   private poll(): void {
@@ -128,7 +132,15 @@ export class Worker {
         this.queueName,
         now
       ) as JobRow | undefined;
-      if (!row) return;
+      if (!row) {
+        // Адаптивный backoff при пустой очереди: до 2s (не влияет на latency занятых воркеров)
+        this.idleStreak = Math.min(this.idleStreak + 1, 10);
+        this.currentPollInterval = Math.min(this.pollInterval * Math.pow(1.5, Math.min(this.idleStreak, 4)), 2000);
+        return;
+      }
+      // Есть работа — сбрасываем backoff
+      this.idleStreak = 0;
+      this.currentPollInterval = this.pollInterval;
 
       this.activeCount++;
       const job = this.rowToJob(row);
@@ -169,8 +181,14 @@ export class Worker {
 
       const completed = this.stmtComplete.run(JSON.stringify(result), Date.now(), job.id, leaseToken);
       // Cancellation can race a successful handler between the check and UPDATE.
-      if (completed.changes === 0 && this.isCancellationRequested(job.id, leaseToken)) {
-        this.failCancelled(job.id, leaseToken);
+      if (completed.changes === 0) {
+        if (this.isCancellationRequested(job.id, leaseToken)) {
+          this.failCancelled(job.id, leaseToken);
+        } else {
+          // Lease lost (stale recovery claimed the row) — handler result is silently dropped.
+          // Log so operators can investigate potential double-processing.
+          console.warn(`[SqliteQueue] Job ${job.id} (${this.queueName}): complete skipped — lease lost or job no longer active`);
+        }
       }
     } catch (err) {
       console.error(`[SqliteQueue] Failed to save result for job ${job.id}:`, err);
@@ -234,7 +252,7 @@ export class Worker {
   stop(): void {
     this.stopped = true;
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
   }
@@ -243,7 +261,7 @@ export class Worker {
   async gracefulStop(timeoutMs = 15000): Promise<void> {
     this.stopped = true;
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
 

@@ -5,6 +5,41 @@ import { logger } from './utils/logger';
 
 type MrCache = Map<string, any>;
 
+// Process-level кэш MarketReference с TTL (не пересоздаётся per-job).
+// Это безопасно: данные readonly между разными analyze-jobs одного запуска.
+const MR_CACHE_TTL_MS = parseInt(process.env.ANALYZER_MR_CACHE_TTL_MS || '600000', 10); // 10 минут
+const processLevelMrCache: MrCache = new Map();
+let mrCachePopulatedAt: number | null = null;
+
+// Кэш настроек (threshold_percent) — инвалидируется вместе с MR-кэшем
+let cachedSetting: any = null;
+let settingCachedAt: number | null = null;
+
+function getOrResetProcessMrCache(): MrCache {
+  const now = Date.now();
+  if (mrCachePopulatedAt !== null && now - mrCachePopulatedAt > MR_CACHE_TTL_MS) {
+    processLevelMrCache.clear();
+    mrCachePopulatedAt = null;
+  }
+  if (mrCachePopulatedAt === null) {
+    mrCachePopulatedAt = now;
+    // Сбрасываем кэш настроек вместе с MR-кэшем
+    cachedSetting = null;
+    settingCachedAt = null;
+  }
+  return processLevelMrCache;
+}
+
+async function getCachedSetting(): Promise<any> {
+  const now = Date.now();
+  if (cachedSetting !== null && settingCachedAt !== null && now - settingCachedAt < MR_CACHE_TTL_MS) {
+    return cachedSetting;
+  }
+  cachedSetting = await fetchSetting();
+  settingCachedAt = now;
+  return cachedSetting;
+}
+
 // Кэш передаётся явно, чтобы не разделяться между одновременно выполняемыми job.
 export function clearMrCache(cache?: MrCache) {
   cache?.clear();
@@ -38,9 +73,8 @@ export interface AnalyzeRequest {
 
 // workerContext is optional for direct/manual legacy invocations.
 export async function handleAnalyzeJob(job: Job, workerContext?: WorkerContext): Promise<{ analyzed: boolean; undervalued: boolean }> {
-  // Кэш допускается только внутри текущего analyzer job.
-  const mrCache: MrCache = new Map();
-  clearMrCache(mrCache);
+  // Используем process-level кэш с TTL, а не per-job Map.
+  const mrCache: MrCache = getOrResetProcessMrCache();
 
   const req = job.data as AnalyzeRequest;
   const corrId = req.correlationId || job.correlation_id || `analyze-${Date.now()}`;
@@ -73,11 +107,12 @@ export async function handleAnalyzeJob(job: Job, workerContext?: WorkerContext):
       return { analyzed: true, undervalued: false };
     }
 
-    // Use threshold from job data (frontend filter) or from settings
-    let threshold: number = req.threshold || 0;
+    // Use threshold from job data (frontend filter) or from settings (cached).
+    // Используем ??, т.к. порог 0 — валидное значение (отключить фильтр)
+    let threshold: number = req.threshold ?? 0;
     if (!threshold) {
       throwIfCancellationRequested(workerContext);
-      const setting = await fetchSetting();
+      const setting = await getCachedSetting();
       throwIfCancellationRequested(workerContext);
       threshold = setting?.threshold_percent || 20;
     }

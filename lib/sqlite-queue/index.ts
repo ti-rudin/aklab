@@ -431,13 +431,19 @@ export class SqliteQueue {
     }
   }
 
-  /** Очистить старые completed/failed задачи */
+  /** Очистить старые completed/failed задачи и освободить место в файле БД */
   private cleanOldJobs(): void {
     try {
       const threshold = Date.now() - this.retentionHours * 3600_000;
       const result = this.stmtCleanup.run(threshold);
       if (result.changes > 0) {
         console.log(`[SqliteQueue] Cleaned ${result.changes} old jobs`);
+        // Возвращаем освобождённые страницы ОС (auto_vacuum = INCREMENTAL)
+        try {
+          this.db.pragma('incremental_vacuum');
+        } catch {
+          // Не критично — cleanup состоялся
+        }
       }
     } catch (err) {
       console.error('[SqliteQueue] Cleanup error:', err);

@@ -189,7 +189,7 @@ watch(() => route.path, () => {
 const handleLogout = async () => {
   await authStore.logout()
   mobileMenuOpen.value = false
-  router.push('/')
+  router.push('/auth')
 }
 </script>
 
