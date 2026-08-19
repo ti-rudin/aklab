@@ -76,7 +76,7 @@ export declare class SqliteQueue {
     getDetailedStats(): QueueStatsDetailed;
     /** Восстановить зависшие задачи, prioritizing a lease over legacy started_at. */
     private recoverStaleJobs;
-    /** Очистить старые completed/failed задачи */
+    /** Очистить старые completed/failed задачи и освободить место в файле БД */
     private cleanOldJobs;
     /** Отменить pending job (для отмены delayed/scheduled задач). */
     cancelJob(id: number): boolean;
