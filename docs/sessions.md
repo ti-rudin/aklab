@@ -497,6 +497,24 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 4. **Парсеры без fetchDetails.** investmoscow/invest-mosreg не нужен (JSON API). fabrikant/roseltorg — просто не был реализован. Добавлен в v1.0.105.
 5. **roseltorg URL guessing.** Парсер пробовал 5 случайных URL'ов вместо одного правильного. Всегда лучше один проверенный URL с фильтрами, чем угадывание.
 
+### 2026-08-19: Комплексный аудит + деплой v1.1.96
+
+**Что сделано:** Полный аудит кодовой базы с последующим исправлением 18+ проблем:
+- **Безопасность:** удалён `tests/.auth/storage.json` с JWT из git; `tests/global-setup.ts` переведён на env-переменные; добавлен `tests/.auth/` в `.gitignore`
+- **Queue:** graceful shutdown через `queue.gracefulClose()`; adaptive backoff (idleStreak + currentPollInterval); `incremental_vacuum` после `cleanOldJobs`; lease-loss warn
+- **Strapi client:** `fetchWithTimeout` с ретраями; атомарный `internalIncrementStats`; `areaTo` фильтрация
+- **Pipeline:** атомарный `recordJobIds` через `json_set`; cursor-based pagination в analyze; batch cleanup; `mode` параметр
+- **Analyzer:** process-level TTL кэш MarketReference и Setting
+- **Frontend:** AbortController для race conditions; исправлен logout; env-переменная для Cian URL; фикс отображения описания релиза в Changelog
+- **Deploy:** flock mutex; rollback queue.db; исправлены health check порты
+
+**Deploy pitfalls (новые):**
+1. `--ref` требует полный 40-символьный SHA
+2. `lib/sqlite-queue` артефакты (.js/.d.ts) в git — пересобирать локально до push, иначе deploy падает на dirty worktree check
+3. Правильный prod-сервер: `213.184.136.221:5733` (не `192.168.11.101`)
+
+**Результат:** PR #82 + #83 смержены, задеплоен v1.1.96, все 15 сервисов online.
+
 ### 2026-08-15: Profile-scoped rent filter + production catalog rebuild (v1.1.94 → v1.1.95)
 
 **Что сделано:** добавлен `filter_rent` в profile API/UI и immutable parser snapshot; rental-кандидаты отсекаются shared parse rules до `createProperty()`. Выпуск v1.1.94 выявил legacy compatibility gap: существующий profile с физическим `filter_rent=NULL` завершал full run до scan (`USER_PROFILE_MALFORMED`).
