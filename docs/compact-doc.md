@@ -228,7 +228,7 @@ Singleton в `api/src/services/queueService.ts`.
 | etprf | Playwright AJAX | sale.etprf.ru |
 | torgi-gov | fetch JSON API | `/new/api/public/lotcards` |
 | invest-mosreg | fetch JSON API | цена в млн.руб., площадь в га → конвертация ×1M / ×10000 |
-| fabrikant | Playwright SPA | fetchDetails (описание, контакты, фото) |
+| fabrikant | Playwright SPA | multi-lot expand + lot-scoped fetchDetails; `FABRIKANT_BASE_URL` |
 | roseltorg | Playwright SPA | fetchDetails + URL с фильтрами (Москва, коммерческая) |
 | ~~fedresurs~~ | — | **ОТКЛЮЧЁН** (Qrator anti-bot) |
 

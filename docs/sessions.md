@@ -2,6 +2,16 @@
 
 > Извлечено из docs/compact-doc.md. Хронологический порядок.
 
+## Session handoff (v1.1.96 — Fabrikant multi-lot, prod deploy)
+**Сделано 19 августа 2026:**
+- ✅ Инцидент `rj1dq0t2kn7grd3qdq68k4ky`: процедура Fabrikant №5566409 (3 лота) — парсер смешивал брянский title лота 3 с московским address/price первого `lot_delivery_place`. Root cause зафиксирован в `docs/planlot.md`.
+- ✅ `parser-fabrikant`: fail-closed при >1 delivery_place без lot-scope; expand процедуры в `parse()` (1 лот = 1 Property); lot-view URL через `FABRIKANT_BASE_URL`; lot-scoped `fetchDetails` + price из текущего лота. Модули `fabrikant-url.ts`, `fabrikant-extraction.ts`; fixture + 32 unit tests.
+- ✅ Планы: `docs/planlot.md` (Fabrikant fix), `docs/plan-lots-audit.md` (остальные парсеры).
+- ✅ Commit `047a881` → push `main`. Production deploy SSH `--ref 047a88143e20d014951634eab5e5a01ffd274dd5`: успех, version `1.1.96`, PM2 manifest 15/15 online (+ legacy `aklab-parser-fedresurs` stopped), API domain 204, app 200, `aklab-parser-fabrikant` health OK.
+- ⚠️ **Не сделано (этап 5 planlot):** зачистка mixed-карточки `rj1dq0t2kn7grd3qdq68k4ky` в prod БД — ждёт отдельной команды + backup.
+- ⚠️ `FABRIKANT_BASE_URL` не задан в prod `.env` (recommended warning); fallback `https://www.fabrikant.ru`.
+- 📌 **Deploy skill:** перед prod deploy читать `.hermes/skills/devops/aklab-deploy/SKILL.md`; GitHub Actions `Deploy — Prod` отключён (422). Release `[release]` commit не делался — feature commit задеплоен напрямую.
+
 ## Session handoff (v1.1.86 — ЦИАН: порядок координат карты)
 **Релиз 12 августа 2026:**
 - ✅ Причина неправильной точки на карте ЦИАН: frontend строил `center=longitude,latitude`. Исправлено на `center=latitude,longitude`; для контрольного объекта это `55.757855,37.805572`.
