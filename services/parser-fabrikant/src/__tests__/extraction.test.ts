@@ -1,48 +1,29 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { describe, it, expect } from 'vitest';
 import {
   derivePropertyRegion,
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
-import { createFabrikantParserDiagnostics, extractPropertyLocationFromHtml } from '../sources/fabrikant';
+import {
+  buildLotViewUrl,
+} from '../sources/fabrikant-url';
+import {
+  buildParsedPropertyFromLot,
+  createFabrikantParserDiagnostics,
+  extractArea,
+  extractLotDetailsFromHtml,
+  extractProcedureLotsFromHtml,
+  extractPropertyLocationFromHtml,
+  isFabrikantLotEligible,
+  propertyLocationFromFields,
+} from '../sources/fabrikant';
 
-/**
- * Тесты extraction-логики parser-fabrikant.
- *
- * Функция extractPropertyLocationFromHtml экспортируется как чистый
- * extraction seam, чтобы fixture тестировал тот же selector contract,
- * который используется detail-page extraction.
- * Источник: services/parser-fabrikant/src/sources/fabrikant.ts
- */
-
-// --- Replicated non-location extraction functions from fabrikant.ts ---
-
-function extractArea(title: string): number | undefined {
-  let match = title.match(/(\d[\d\s]*[,.]?\d*)\s*кв\.?\s*м/i);
-  if (match) {
-    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) return num;
-  }
-
-  match = title.match(/площад[ьь]ю\s+(\d[\d\s]*[,.]?\d*)/i);
-  if (match) {
-    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) return num;
-  }
-
-  match = title.match(/пл\.\s*(\d[\d\s]*[,.]?\d*)/);
-  if (match) {
-    const cleaned = match[1].replace(/\s/g, '').replace(',', '.');
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) return num;
-  }
-
-  return undefined;
-}
-
-// --- Tests ---
+const MULTI_LOT_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures/multi-lot-procedure.html'),
+  'utf8',
+);
 
 const PROPERTY_LOCATION_FIXTURE = `
   <article>
@@ -98,6 +79,35 @@ describe('fabrikant: typed property location extraction', () => {
     expect(derivePropertyRegion(location)).toBe('other');
   });
 
+  it('fails closed on multi-lot HTML without lot scope (incident guard)', () => {
+    const location = extractPropertyLocationFromHtml(MULTI_LOT_FIXTURE);
+
+    expect(location.status).toBe('missing');
+    expect(location.address).toBeUndefined();
+    expect(projectLegacyAddress(location)).toBe('');
+  });
+
+  it('extracts Bryansk only when lot-c is scoped', () => {
+    const location = extractPropertyLocationFromHtml(MULTI_LOT_FIXTURE, 'lot-c');
+
+    expect(location).toMatchObject({
+      address: 'Брянская область, г. Клинцы, ул. Горького, 31А',
+      region: 'Брянская область',
+      status: 'confirmed_address',
+    });
+    expect(location.address).not.toContain('Рязанский');
+  });
+
+  it('extracts Moscow Ryazan only for lot-a', () => {
+    const location = extractPropertyLocationFromHtml(MULTI_LOT_FIXTURE, 'lot-a');
+
+    expect(location).toMatchObject({
+      address: 'г. Москва, Рязанский пр-кт, 24 к.2',
+      region: 'Москва',
+      status: 'confirmed_address',
+    });
+  });
+
   it('keeps a separate property region when the property address field is absent', () => {
     const html = `
       <section class="panel-group-element-lot_delivery_place">
@@ -133,6 +143,65 @@ describe('fabrikant: typed property location extraction', () => {
       source_kind: 'dom_field',
       source_path: '.panel-group-element-lot_delivery_place .form-group-element-lot_delivery_place-okato',
     });
+  });
+});
+
+describe('fabrikant: multi-lot procedure expand', () => {
+  const baseUrl = 'https://www.fabrikant.example';
+  const procedureId = 'PROC-SANITIZED';
+
+  it('extracts three independent lots from procedure HTML', () => {
+    const lots = extractProcedureLotsFromHtml(MULTI_LOT_FIXTURE);
+    expect(lots).toHaveLength(3);
+    expect(lots.map(lot => lot.lotId)).toEqual(['lot-a', 'lot-b', 'lot-c']);
+  });
+
+  it('emits three ParsedProperty candidates with lot-view URLs', () => {
+    const lots = extractProcedureLotsFromHtml(MULTI_LOT_FIXTURE);
+    const properties = lots
+      .filter(lot => isFabrikantLotEligible(lot.title, lot.subject ?? '', lot.hasDeliveryPlace))
+      .map(lot => buildParsedPropertyFromLot(lot, procedureId, baseUrl));
+
+    expect(properties).toHaveLength(3);
+    expect(properties[0].url).toBe(buildLotViewUrl(procedureId, 'lot-a', baseUrl));
+    expect(properties[2].title).toContain('Брянская');
+    expect(properties[2].price).toBe(70136153.26);
+    expect(properties[0].price).toBe(10000);
+    expect(properties[1].price).toBe(10000);
+  });
+
+  it('allows OOO-title lots when delivery_place is present', () => {
+    const lots = extractProcedureLotsFromHtml(MULTI_LOT_FIXTURE);
+    expect(isFabrikantLotEligible(lots[0].title, lots[0].subject ?? '', lots[0].hasDeliveryPlace)).toBe(true);
+    expect(isFabrikantLotEligible(lots[1].title, lots[1].subject ?? '', lots[1].hasDeliveryPlace)).toBe(true);
+  });
+});
+
+describe('fabrikant: lot-scoped fetchDetails extraction', () => {
+  const lotViewUrl = 'https://www.fabrikant.example/v2/trades/procedure/lot/view/PROC/lot-c';
+
+  it('returns Bryansk geography and price for lot-c', () => {
+    const details = extractLotDetailsFromHtml(MULTI_LOT_FIXTURE, lotViewUrl);
+    const location = propertyLocationFromFields(details.locationFields);
+
+    expect(details.price).toBe(70136153.26);
+    expect(details.description).toContain('Клинцы');
+    expect(location.address).toContain('Клинцы');
+    expect(location.address).not.toContain('Рязанский');
+  });
+
+  it('fails closed without lotId on multi-lot HTML', () => {
+    const details = extractLotDetailsFromHtml(MULTI_LOT_FIXTURE);
+    const location = propertyLocationFromFields(details.locationFields);
+    expect(location.status).toBe('missing');
+    expect(location.address).toBeUndefined();
+  });
+
+  it('does not use organizer postal address as property location', () => {
+    const details = extractLotDetailsFromHtml(MULTI_LOT_FIXTURE, 'lot-a');
+    const location = propertyLocationFromFields(details.locationFields);
+    expect(location.address).not.toContain('Казань');
+    expect(location.address).toContain('Москва');
   });
 });
 
@@ -193,11 +262,6 @@ describe('fabrikant: parsePrice', () => {
 });
 
 describe('fabrikant: HTML card extraction simulation', () => {
-  /**
-   * Simulate the page.evaluate() logic that extracts data from
-   * [data-slot="card"] elements on fabrikant.ru
-   */
-
   interface CardData {
     lot_id: string;
     title: string;
@@ -206,7 +270,6 @@ describe('fabrikant: HTML card extraction simulation', () => {
   }
 
   function extractFromCardHtml(html: string): CardData | null {
-    // Simulates the DOM extraction logic from fabrikant.ts page.evaluate()
     const lotIdMatch = html.match(/data-id="([^"]+)"/);
     if (!lotIdMatch) return null;
     const lotId = lotIdMatch[1];
@@ -215,7 +278,6 @@ describe('fabrikant: HTML card extraction simulation', () => {
     const title = anchorMatch?.[1]?.trim() || '';
     if (!title) return null;
 
-    // Extract all text slots
     const textSlots = [...html.matchAll(/data-slot="text"[^>]*>([^<]+)</g)].map(m => m[1].trim());
     let priceText = '';
     let procNumber = '';
@@ -282,5 +344,17 @@ describe('fabrikant: parser diagnostics', () => {
     });
     expect(diagnostic.semantic_fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(diagnostic)).not.toContain('sensitive');
+  });
+
+  it('marks multi-lot unscoped pages as location_label_missing', () => {
+    const diagnostic = createFabrikantParserDiagnostics({
+      propertyBlockFound: true,
+      multiLotUnscoped: true,
+    });
+    expect(diagnostic).toMatchObject({
+      property_block_found: true,
+      schema_mismatch: 'location_label_missing',
+    });
+    expect(diagnostic.location_label_id).toBeUndefined();
   });
 });

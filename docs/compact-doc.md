@@ -339,4 +339,6 @@ E2E против production: `BASE_URL=https://aklab.tirobots.ru`.
 | `docs/multiuser.md` | Multi-user rollout |
 | `docs/archparsers.md` | Архитектура парсеров |
 | `docs/plan1.md` | Бизнес-логика |
+| `docs/planlot.md` | Fabrikant: сплит многолотовых процедур |
+| `docs/plan-lots-audit.md` | Аудит многолотовости остальных парсеров |
 | `docs/archive/` | Выполненные планы (plan2-3, planopus*, etc.) |

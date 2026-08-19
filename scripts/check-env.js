@@ -24,6 +24,7 @@ const recommendedVars = [
   'EMAIL_SMTP_PASS',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
+  'FABRIKANT_BASE_URL',
 ];
 
 const missing = requiredVars.filter(v => !process.env[v]);
