@@ -16,7 +16,6 @@ export declare class Worker {
     private pollTimer;
     private stopped;
     private stmtFetch;
-    private stmtClaim;
     private stmtComplete;
     private stmtFail;
     private stmtRetry;
@@ -24,7 +23,10 @@ export declare class Worker {
     private stmtCancellationRequested;
     private stmtLeaseValid;
     constructor(db: Database.Database, queueName: string, handler: JobHandler, opts?: WorkerOptions);
+    private idleStreak;
+    private currentPollInterval;
     private start;
+    private schedulePoll;
     private poll;
     private completeOrCancel;
     private failOrRetry;
