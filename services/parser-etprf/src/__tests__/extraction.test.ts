@@ -1,21 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 import {
   derivePropertyRegion,
   parsePrice,
   projectLegacyAddress,
 } from '@aklab/service-shared';
 import {
+  assertNoMixedRegionRow,
+  expectMissingLocation,
+} from './multi-lot-assertions';
+import {
   EtprfParser,
-  extractEtprfPropertyLocationFields,
   extractEtprfListingLocation,
+  extractEtprfLotDetailsFromHtml,
   extractEtprfPropertyLocation,
+  extractEtprfPropertyLocationFields,
+  appendEtprfLotScope,
 } from '../sources/etprf';
 
-function fixture(name: string): Document {
-  return new JSDOM(readFileSync(join(__dirname, 'fixtures', name), 'utf8')).window.document;
+function fixtureHtml(name: string): string {
+  return readFileSync(join(__dirname, 'fixtures', name), 'utf8');
 }
 
 describe('etprf: detail failure contract', () => {
@@ -125,7 +130,7 @@ describe('etprf: extractArea', () => {
 
 describe('etprf: typed property location', () => {
   it('extracts bounded property fields from representative details-table HTML', () => {
-    const fields = extractEtprfPropertyLocationFields(fixture('property-location.html'));
+    const fields = extractEtprfPropertyLocationFields(fixtureHtml('property-location.html'));
     const location = extractEtprfPropertyLocation(fields);
 
     expect(fields.propertyRegion).toBe('Ярославская область');
@@ -136,7 +141,7 @@ describe('etprf: typed property location', () => {
   });
 
   it('ignores organizer postal address when property fields are absent', () => {
-    const fields = extractEtprfPropertyLocationFields(fixture('organizer-postal-address.html'));
+    const fields = extractEtprfPropertyLocationFields(fixtureHtml('organizer-postal-address.html'));
 
     expect(fields).toEqual({ propertyBlockFound: false });
     expect(extractEtprfPropertyLocation(fields).status).toBe('missing');
@@ -205,6 +210,45 @@ describe('etprf: typed property location', () => {
     });
     expect(projectLegacyAddress(location)).toBe('');
     expect(derivePropertyRegion(location)).toBe('other');
+  });
+});
+
+describe('etprf: multi-lot notification extraction', () => {
+  const multiLotHtml = fixtureHtml('multi-lot-notification.html');
+
+  it('fails closed without lot scope when two regions are present', () => {
+    const fields = extractEtprfPropertyLocationFields(multiLotHtml);
+    const location = extractEtprfPropertyLocation(fields);
+    expect(fields.multiLotUnscoped).toBe(true);
+    expectMissingLocation(location);
+  });
+
+  it('returns Bryansk only for LOT-B scope', () => {
+    const details = extractEtprfLotDetailsFromHtml(multiLotHtml, 'LOT-B');
+    const location = extractEtprfPropertyLocation(details.locationFields);
+    expect(location.region).toBe('Брянская область');
+    assertNoMixedRegionRow({
+      location,
+      expectedRegionHint: 'Брянская',
+      forbiddenRegionHint: 'Тверская',
+    });
+    expect(details.priceText).toContain('70 000 000');
+  });
+
+  it('returns Moscow only for LOT-A scope', () => {
+    const details = extractEtprfLotDetailsFromHtml(multiLotHtml, 'LOT-A');
+    const location = extractEtprfPropertyLocation(details.locationFields);
+    expect(location.region).toBe('Москва');
+    assertNoMixedRegionRow({
+      location,
+      expectedRegionHint: 'Москва',
+      forbiddenRegionHint: 'Клинцы',
+    });
+  });
+
+  it('adds lot hash to listing URL for fetchDetails scope', () => {
+    expect(appendEtprfLotScope('https://sale.etprf.example/Notification/id/999', 'LOT-A'))
+      .toBe('https://sale.etprf.example/Notification/id/999#lot-LOT-A');
   });
 });
 

@@ -1,5 +1,12 @@
 [
   {
+    "version": "v1.1.97",
+    "date": "20.08.2026",
+    "time": "00:22",
+    "title": "Аудит многолотовости парсеров ETPRF и М-ЕТС",
+    "description": "ETPRF и М-ЕТС больше не смешивают поля соседних лотов на одной странице: lot-scope, fail-closed без идентификатора лота, scope по itemscope meta price на М-ЕТС. Добавлены regression-тесты и live-probe скрипт."
+  },
+  {
     "version": "v1.1.96",
     "date": "16.08.2026",
     "time": "11:58",

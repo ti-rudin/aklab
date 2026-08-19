@@ -6,6 +6,7 @@ import { derivePropertyRegion, parsePrice, projectLegacyAddress } from '@aklab/s
 import {
   extractMetsPropertyLocationFields,
   extractMetsPropertyLocation,
+  extractLotIdFromMetsUrl,
   MetsParser,
   missingMetsPropertyLocation,
 } from '../sources/m-ets';
@@ -238,6 +239,49 @@ describe('m-ets: fail-closed detail geography', () => {
     expect(derivePropertyRegion(location)).toBe('other');
     expect(location.latitude).toBeUndefined();
     expect(location.longitude).toBeUndefined();
+  });
+});
+
+describe('m-ets: multi-lot trade extraction', () => {
+  it('fails closed without lot scope when multiple info-type_1 blocks exist', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('multi-lot-trade.html'));
+    expect(fields.multiLotUnscoped).toBe(true);
+    expect(extractMetsPropertyLocation(fields).status).toBe('missing');
+  });
+
+  it('returns Bryansk geography for scoped lot 1002', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('multi-lot-trade.html'), '1002');
+    const location = extractMetsPropertyLocation(fields);
+    expect(location.region).toBe('Брянская область');
+    expect(fields.propertyDescription).toContain('Клинцы');
+    expect(JSON.stringify(location)).not.toContain('Рязанский');
+  });
+
+  it('returns Moscow geography for scoped lot 1001', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('multi-lot-trade.html'), '1001');
+    const location = extractMetsPropertyLocation(fields);
+    expect(location.region).toBe('Москва');
+    expect(fields.propertyDescription).toContain('Москва');
+  });
+
+  it('selects current lot via itemscope meta price without explicit lotId (live DOM shape)', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('multi-lot-trade-live.html'));
+    const location = extractMetsPropertyLocation(fields);
+    expect(location.region).toBe('Москва');
+    expect(fields.propertyDescription).toContain('Рязанский');
+    expect(JSON.stringify(location)).not.toContain('Клинцы');
+  });
+
+  it('selects lot 2 via itemscope meta price on canonical /228875-2 page', () => {
+    const fields = extractMetsPropertyLocationFields(fixture('multi-lot-trade-live-lot2.html'));
+    const location = extractMetsPropertyLocation(fields);
+    expect(location.region).toBe('Брянская область');
+    expect(fields.propertyDescription).toContain('Клинцы');
+  });
+
+  it('parses trade slug from canonical m-ets URLs', () => {
+    expect(extractLotIdFromMetsUrl('https://m-ets.ru/228875-2')).toBe('228875-2');
+    expect(extractLotIdFromMetsUrl('https://m-ets.ru/lot/268741965')).toBe('268741965');
   });
 });
 

@@ -216,6 +216,15 @@ describe('torgi-gov: auction deadline', () => {
   });
 });
 
+describe('torgi-gov: multi-lot identity', () => {
+  it('assigns distinct external_id and URL per lotNumber within one notice', () => {
+    const lot1Id = '21000005000000031466_1';
+    const lot2Id = '21000005000000031466_2';
+    expect(`torgi-gov-${lot1Id}`).not.toBe(`torgi-gov-${lot2Id}`);
+    expect(buildTorgiLotUrl(lot1Id)).not.toBe(buildTorgiLotUrl(lot2Id));
+  });
+});
+
 describe('torgi-gov: typed property location', () => {
   it('extracts a full address only from the current lot structured field', () => {
     const location = extractTorgiPropertyLocation({

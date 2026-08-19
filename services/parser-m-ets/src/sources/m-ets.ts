@@ -53,13 +53,64 @@ export interface MetsPropertyLocationFields {
   propertyBlockFound?: boolean;
   propertyDescription?: unknown;
   propertyRegion?: unknown;
+  multiLotUnscoped?: boolean;
+}
+
+export function extractLotIdFromMetsUrl(url: string): string | undefined {
+  try {
+    const path = new URL(url).pathname.replace(/^\/+|\/+$/g, '');
+    if (/^\d+-\d+$/.test(path)) return path;
+    if (/^\d+$/.test(path)) return path;
+  } catch {
+    // fall through for relative URLs in tests
+  }
+  return url.match(/\/lot\/(\d+)/)?.[1];
+}
+
+function blockHasScopedPrice(block: Element): boolean {
+  return Boolean(block.closest('[itemscope]')?.querySelector('meta[itemprop="price"]'));
+}
+
+function findMetsPropertyBlock(doc: Document, lotId?: string): Element | null {
+  const blocks = Array.from(doc.querySelectorAll('.lot-info-block.info-type_1'));
+  if (blocks.length === 0) return null;
+  if (blocks.length === 1) return blocks[0];
+
+  const pricedBlocks = blocks.filter(blockHasScopedPrice);
+  if (pricedBlocks.length === 1) return pricedBlocks[0];
+  if (pricedBlocks.length > 1) return null;
+
+  if (!lotId) return null;
+
+  for (const block of blocks) {
+    const scopedRoot = block.closest('[data-lot-id]');
+    if (scopedRoot?.getAttribute('data-lot-id') === lotId) return block;
+  }
+
+  const canonical = doc.querySelector('link[rel="canonical"]')?.getAttribute('href') || '';
+  if (canonical.includes(lotId)) {
+    const lotIndexMatch = lotId.match(/-(\d+)$/);
+    if (lotIndexMatch) {
+      const idx = Number(lotIndexMatch[1]) - 1;
+      if (idx >= 0 && idx < blocks.length) return blocks[idx];
+    }
+  }
+
+  return null;
 }
 
 /** Browser-safe extraction from the bounded current-property block only. */
-export function extractMetsPropertyLocationFields(documentLike?: Document): MetsPropertyLocationFields {
+export function extractMetsPropertyLocationFields(documentLike?: Document, lotId?: string): MetsPropertyLocationFields {
   const doc = documentLike ?? document;
-  const propertyBlock = doc.querySelector('.lot-info-block.info-type_1');
-  if (!propertyBlock) return { propertyBlockFound: false };
+  const blocks = Array.from(doc.querySelectorAll('.lot-info-block.info-type_1'));
+  if (blocks.length === 0) return { propertyBlockFound: false };
+
+  const propertyBlock = findMetsPropertyBlock(doc, lotId);
+  if (!propertyBlock) {
+    return blocks.length > 1
+      ? { propertyBlockFound: true, multiLotUnscoped: true }
+      : { propertyBlockFound: false };
+  }
 
   const description = propertyBlock.querySelector('[itemprop="description"]')?.textContent
     ?.replace(/\s+/g, ' ')
@@ -87,6 +138,10 @@ function cleanMetsField(value: unknown): string | undefined {
 }
 
 export function extractMetsPropertyLocation(fields: MetsPropertyLocationFields): PropertyLocation {
+  if (fields.multiLotUnscoped) {
+    return missingMetsPropertyLocation(DETAIL_PROPERTY_REGION_SOURCE_PATH);
+  }
+
   const propertyDescription = cleanMetsField(fields.propertyDescription);
   const region = cleanMetsField(fields.propertyRegion);
   const address = extractAddressFromBoundedPropertyText(propertyDescription);
@@ -346,7 +401,52 @@ export class MetsParser implements SourceParser {
         (document.querySelector('.lot-info-block.info-type_1')?.textContent || '').trim().length > 0
       ), undefined, { timeout: 15000 });
 
-      const locationFields = await page.evaluate(extractMetsPropertyLocationFields);
+      const lotId = extractLotIdFromMetsUrl(url);
+      const locationFields = await page.evaluate((scopedLotId?: string) => {
+        const fn = (documentLike?: Document, lot?: string) => {
+          const doc = documentLike ?? document;
+          const blocks = Array.from(doc.querySelectorAll('.lot-info-block.info-type_1'));
+          if (blocks.length === 0) return { propertyBlockFound: false };
+
+          const pricedBlocks = blocks.filter((block) => (
+            Boolean(block.closest('[itemscope]')?.querySelector('meta[itemprop="price"]'))
+          ));
+          let propertyBlock: Element | null = blocks.length === 1 ? blocks[0] : null;
+          if (!propertyBlock && pricedBlocks.length === 1) propertyBlock = pricedBlocks[0];
+          if (!propertyBlock && lot) {
+            propertyBlock = blocks.find((block) => (
+              block.closest('[data-lot-id]')?.getAttribute('data-lot-id') === lot
+            )) ?? null;
+            const canonical = doc.querySelector('link[rel="canonical"]')?.getAttribute('href') || '';
+            if (!propertyBlock && lot && canonical.includes(lot)) {
+              const lotIndexMatch = lot.match(/-(\d+)$/);
+              if (lotIndexMatch) {
+                const idx = Number(lotIndexMatch[1]) - 1;
+                if (idx >= 0 && idx < blocks.length) propertyBlock = blocks[idx];
+              }
+            }
+          }
+          if (!propertyBlock) {
+            return blocks.length > 1
+              ? { propertyBlockFound: true, multiLotUnscoped: true }
+              : { propertyBlockFound: false };
+          }
+          const description = propertyBlock.querySelector('[itemprop="description"]')?.textContent?.replace(/\s+/g, ' ').trim();
+          let propertyRegion: string | undefined;
+          for (const item of Array.from(propertyBlock.querySelectorAll('.lot-info-item'))) {
+            const label = (item.querySelector('.title')?.textContent ?? '').replace(/\s+/g, ' ').replace(/:$/, '').trim().toLocaleLowerCase('ru-RU');
+            if (label !== 'регион местонахождения имущества') continue;
+            propertyRegion = item.querySelector('.value')?.textContent?.replace(/\s+/g, ' ').trim() || undefined;
+            break;
+          }
+          return {
+            propertyBlockFound: true,
+            ...(description ? { propertyDescription: description.slice(0, 2000) } : {}),
+            ...(propertyRegion ? { propertyRegion } : {}),
+          };
+        };
+        return fn(document, scopedLotId);
+      }, lotId);
       const details = await page.evaluate(() => {
         // ─── Контакты: .lot-info-block.info-type_4 → .lot-info-item ───
         let organizerName = '';
@@ -435,12 +535,14 @@ export class MetsParser implements SourceParser {
           ? 'property.location.region'
           : undefined;
       const parserDiagnostics = createParserExtractionDiagnostics({
-        adapterVersion: 'm-ets.v1',
+        adapterVersion: 'm-ets.v2',
         propertyBlockFound: locationFields.propertyBlockFound === true,
         ...(locationLabelId ? { locationLabelId } : {}),
-        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        ...(locationFields.multiLotUnscoped ? { schemaMismatch: 'location_label_missing' as const } : {}),
+        ...(!locationLabelId && locationFields.propertyBlockFound && !locationFields.multiLotUnscoped ? { schemaMismatch: 'location_label_missing' as const } : {}),
         semanticSignals: [
           ...(locationFields.propertyBlockFound ? ['property.block'] : []),
+          ...(locationFields.multiLotUnscoped ? ['property.multi_lot.unscoped'] : []),
           ...(locationFields.propertyDescription ? ['property.description'] : []),
           ...(locationFields.propertyRegion ? ['property.location.region'] : []),
           ...(propertyLocation.status === 'confirmed_address' ? ['property.location.address'] : []),
