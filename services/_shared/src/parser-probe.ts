@@ -14,6 +14,9 @@ export interface ParserProbeResult {
   listing_ok: boolean;
   detail_supported: boolean;
   detail_ok: boolean;
+  details_attempted: number;
+  details_ok: number;
+  details_failed: number;
   property_block_found: number;
   location_label_found: number;
   confirmed_address: number;
@@ -168,7 +171,10 @@ export function createParserQueueHandler(parser: SourceParser, parseHandler: Par
         checked,
         listing_ok: checked > 0,
         detail_supported: detailSupported,
-        detail_ok: checked > 0 && (!detailSupported || detailFailures === 0),
+        detail_ok: detailFailures === 0,
+        details_attempted: detailSupported ? checked : 0,
+        details_ok: detailSupported ? checked - detailFailures : 0,
+        details_failed: detailSupported ? detailFailures : 0,
         property_block_found: propertyBlockFound,
         location_label_found: locationLabelFound,
         confirmed_address: confirmedAddress,

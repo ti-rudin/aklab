@@ -146,6 +146,51 @@ describe('parser health alerts', () => {
   });
 
   it.each([
+    {
+      previousStatus: 'degraded' as const,
+      previousStreak: 2,
+      previousFingerprint: 'd'.repeat(64),
+      previousReason: 'degraded.details_ok_ratio_drop',
+    },
+    {
+      previousStatus: 'blocked' as const,
+      previousStreak: 7,
+      previousFingerprint: 'b'.repeat(64),
+      previousReason: 'blocked.typed_error',
+    },
+  ])('preserves authoritative health metadata while a healthy canary is held against $previousStatus', async ({
+    previousStatus, previousStreak, previousFingerprint, previousReason,
+  }) => {
+    const h = harness({
+      parser_health_status: previousStatus,
+      parser_health_degraded_streak: previousStreak,
+      last_schema_fingerprint: previousFingerprint,
+      last_health_reason: previousReason,
+      last_health_alert_at: '2026-08-14T10:00:00.000Z',
+      last_health_alert_key: 'b'.repeat(64),
+    });
+
+    await expect(recordParserSourceHealth(h.strapi, {
+      source: h.source,
+      classification: classification('healthy', 'healthy.within_baseline'),
+      runId: 'held-canary', stage: 'canary', counters,
+      now: new Date('2026-08-14T12:00:00.000Z'),
+    })).resolves.toMatchObject({ alert: 'not_due', applied: true, persistedStatus: previousStatus });
+
+    const sourceUpdate = h.update.mock.calls[0][0].data;
+    expect(sourceUpdate).toMatchObject({
+      parser_health_status: previousStatus,
+      last_health_checked_at: '2026-08-14T12:00:00.000Z',
+      parser_health_degraded_streak: previousStreak,
+    });
+    expect(sourceUpdate).not.toHaveProperty('last_schema_fingerprint');
+    expect(sourceUpdate).not.toHaveProperty('last_health_reason');
+    expect(h.source.last_schema_fingerprint).toBe(previousFingerprint);
+    expect(h.source.last_health_reason).toBe(previousReason);
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['schema_changed', 'canary'], ['blocked', 'canary'], ['unknown_legacy_state', 'canary'], [null, 'canary'],
     ['schema_changed', 'details'], ['blocked', 'details'], ['unknown_legacy_state', 'details'], [null, 'details'],
   ] as const)('does not auto-release %s quarantine from %s health recording', async (parser_health_status, stage) => {

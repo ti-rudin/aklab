@@ -80,7 +80,7 @@ export async function recordParserSourceHealth(
   const previousStreak = Number.isSafeInteger(source.parser_health_degraded_streak)
     ? Math.max(0, source.parser_health_degraded_streak)
     : 0;
-  const degradedStreak = holdDegradedCanary
+  const degradedStreak = holdPreviousHealth
     ? previousStreak
     : classification.status === 'degraded' ? previousStreak + 1 : 0;
   const hard = classification.status === 'schema_changed'
@@ -101,8 +101,10 @@ export async function recordParserSourceHealth(
   const sourceUpdate: Record<string, unknown> = {
     parser_health_status: persistedStatus,
     last_health_checked_at: nowIso,
-    last_schema_fingerprint: classification.schema_fingerprint,
-    last_health_reason: classification.reason_code,
+    ...(holdPreviousHealth ? {} : {
+      last_schema_fingerprint: classification.schema_fingerprint,
+      last_health_reason: classification.reason_code,
+    }),
     parser_health_degraded_streak: degradedStreak,
   };
   const expectedStatus = rawPreviousStatus === null || rawPreviousStatus === undefined

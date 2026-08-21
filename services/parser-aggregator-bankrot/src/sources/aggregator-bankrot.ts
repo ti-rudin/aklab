@@ -377,7 +377,6 @@ export class AggregatorBankrotParser implements SourceParser {
         adapterVersion: 'aggregator-bankrot.v1',
         propertyBlockFound: locationFields.propertyBlockFound === true,
         ...(locationLabelId ? { locationLabelId } : {}),
-        ...(!locationLabelId && locationFields.propertyBlockFound ? { schemaMismatch: 'location_label_missing' as const } : {}),
         semanticSignals: [
           ...(locationFields.propertyBlockFound ? ['property.block'] : []),
           ...(locationFields.propertyText ? ['property.description'] : []),

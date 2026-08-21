@@ -77,6 +77,12 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 
 `detail_supported=false` — явный listing-only contract. Такая успешная details-строка может иметь `details_attempted=0` без detail fingerprint и классифицироваться как `healthy`; capability не выводится из counters. Для `detail_supported=true` сохраняются строгие detail counter/fingerprint drift checks. Enum `error_class` одинаков в worker client, controller, API service type и schema.
 
+Canary probe results carry exact safe-integer `details_attempted`, `details_ok` и `details_failed` counters with `details_ok + details_failed = details_attempted`; detail-capable probes use `details_attempted=checked`, while listing-only probes use `0/0/0`. The legacy `detail_ok` flag, when present, is derived from `details_failed === 0`.
+
+If the bounded cancellation-ack window expires while owned jobs remain active, canary returns `{ run_id, skipped: true, reason: 'terminal_ack_pending', pending_job_ids, results: [] }`, keeps lifecycle state `cancelling`, writes no health, and does not release the owner. Pending IDs are safe numeric IDs in ascending order.
+
+When a healthy canary is held against persisted degraded or hard health, the Source update may refresh the check timestamp but omits incoming `last_schema_fingerprint` and `last_health_reason`; persisted status and degraded streak remain authoritative.
+
 ## Item-level detail failures
 
 - Обычное исключение непосредственно из `parser.fetchDetails()` ограничивается одной карточкой: `failed` и `skipped` увеличиваются, обработка immutable artifact продолжается, terminal source status становится `degraded` с `parser.transient`.

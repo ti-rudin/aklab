@@ -51,8 +51,8 @@ describe('aggregator-bankrot: detail failure contract', () => {
     });
     expect(result.parser_diagnostics).toMatchObject({
       property_block_found: true,
-      schema_mismatch: 'location_label_missing',
     });
+    expect(result.parser_diagnostics).not.toHaveProperty('schema_mismatch');
     expect(result.address).toBe('');
     expect(result.city).toBe('other');
     expect(page.waitForFunction).toHaveBeenCalledTimes(2);
