@@ -23,6 +23,16 @@
 6. После `waitForJobs()` pipeline сверяет terminal SQLite Queue. Если queue зафиксировала failure/cancellation после worker callback, очередь является источником истины и telemetry приводится к `failed`/`cancelled`; reconciliation сохраняет точный allowlisted `parser.<class>` из queue, а не подменяет любой failure классом `permanent`. Queue cancellation всегда нормализуется как `parser.cancelled`, даже если stale worker error содержал другой allowlisted class.
 7. После завершения pipeline `parser-run` получает `succeeded`, `degraded`, `failed` или `cancelled`.
 
+## Queue provenance envelopes
+
+Новые queue jobs несут явный origin без отдельной generic telemetry table:
+
+- analyzer pipeline: `{ documentId, origin: 'pipeline', runId, stage: 'analyze' }`;
+- read-only canary probe: `{ operation: 'probe', origin: 'canary', runId, stage: 'probe', source, maxItems, timeoutMs }`;
+- user lazy photo fetch: `{ documentId, url, source, origin: 'user', stage: 'photo_fetch' }`.
+
+Analyzer и photo worker сохраняют совместимость с legacy payload, где отсутствуют все provenance-поля. Если любое provenance-поле присутствует, соответствующий полный envelope обязателен; partial/malformed payload отклоняется до внешнего fetch или другого side effect. Lazy photo jobs намеренно не получают `runId`: это пользовательское действие, а не parser-run stage.
+
 ## Protected worker aliases
 
 Оба endpoint доступны только внутренним сервисам через `global::service-token`:
@@ -66,6 +76,12 @@ PUT /api/internal/parser-run-sources/:identityKey/terminal
 После deterministic health classification API записывает в ту же строку только operational annotation `health_status` (`healthy`, `degraded`, `schema_changed` или `blocked`) и только если соответствующий source-health CAS был выигран. Annotation получает effective persisted source status, поэтому stale normal/canary writer не может отметить строку healthy при текущем hard quarantine. Эта annotation не меняет terminal payload или counters. Исторический detail baseline строится только из строк `status=success AND health_status=healthy AND detail_supported=true`; listing-only, legacy/null, degraded и schema-changed строки в baseline не входят.
 
 `detail_supported=false` — явный listing-only contract. Такая успешная details-строка может иметь `details_attempted=0` без detail fingerprint и классифицироваться как `healthy`; capability не выводится из counters. Для `detail_supported=true` сохраняются строгие detail counter/fingerprint drift checks. Enum `error_class` одинаков в worker client, controller, API service type и schema.
+
+Canary probe results carry exact safe-integer `details_attempted`, `details_ok` и `details_failed` counters with `details_ok + details_failed = details_attempted`; detail-capable probes use `details_attempted=checked`, while listing-only probes use `0/0/0`. The legacy `detail_ok` flag, when present, is derived from `details_failed === 0`.
+
+If the bounded cancellation-ack window expires while owned jobs remain active, canary returns `{ run_id, skipped: true, reason: 'terminal_ack_pending', pending_job_ids, results: [] }`, keeps lifecycle state `cancelling`, writes no health, and does not release the owner. Pending IDs are safe numeric IDs in ascending order.
+
+When a healthy canary is held against persisted degraded or hard health, the Source update may refresh the check timestamp but omits incoming `last_schema_fingerprint` and `last_health_reason`; persisted status and degraded streak remain authoritative.
 
 ## Item-level detail failures
 

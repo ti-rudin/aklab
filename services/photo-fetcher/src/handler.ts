@@ -10,6 +10,7 @@
  */
 
 import type { Browser } from 'playwright';
+import { PermanentError } from '@aklab/sqlite-queue';
 import type { Job } from '@aklab/sqlite-queue';
 import * as fs from 'fs/promises';
 import { fetchProperty, updateProperty, logCron } from '@aklab/service-shared';
@@ -31,12 +32,32 @@ export interface PhotoFetchRequest {
   url: string;
   source: string;
   correlationId?: string;
+  origin?: 'user';
+  stage?: 'photo_fetch';
+  runId?: never;
+}
+
+function validatePhotoProvenance(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new PermanentError('Invalid photo provenance');
+  }
+  const req = value as Record<string, unknown>;
+  const hasProvenance = ['origin', 'stage', 'runId'].some(key => Object.prototype.hasOwnProperty.call(req, key));
+  if (!hasProvenance) return;
+  if (
+    req.origin !== 'user'
+    || req.stage !== 'photo_fetch'
+    || Object.prototype.hasOwnProperty.call(req, 'runId')
+  ) {
+    throw new PermanentError('Invalid photo provenance');
+  }
 }
 
 const MAX_PHOTOS = 20;
 const PAGE_TIMEOUT = 45000;
 
 export async function handlePhotoFetchJob(job: Job): Promise<{ fetched: boolean; count: number }> {
+  validatePhotoProvenance(job.data);
   const req = job.data as PhotoFetchRequest;
   const corrId = req.correlationId || job.correlation_id || `photo-${Date.now()}`;
   const startedAt = new Date().toISOString();

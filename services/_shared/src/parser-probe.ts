@@ -14,6 +14,9 @@ export interface ParserProbeResult {
   listing_ok: boolean;
   detail_supported: boolean;
   detail_ok: boolean;
+  details_attempted: number;
+  details_ok: number;
+  details_failed: number;
   property_block_found: number;
   location_label_found: number;
   confirmed_address: number;
@@ -26,6 +29,9 @@ export interface ParserProbeResult {
 
 interface ProbeRequest {
   operation: 'probe';
+  origin: 'canary';
+  runId: string;
+  stage: 'probe';
   source: string;
   maxItems: number;
   timeoutMs: number;
@@ -36,9 +42,13 @@ type ParseHandler = (job: Job, workerContext?: WorkerContext) => Promise<any>;
 function probeRequest(value: unknown, parserName: string): ProbeRequest | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const req = value as Record<string, unknown>;
-  const allowed = new Set(['operation', 'source', 'maxItems', 'timeoutMs']);
-  if (Object.keys(req).some(key => !allowed.has(key))) return null;
-  if (req.operation !== 'probe' || req.source !== parserName || typeof req.source !== 'string'
+  const expectedKeys = ['operation', 'origin', 'runId', 'stage', 'source', 'maxItems', 'timeoutMs'];
+  const actualKeys = Object.keys(req).sort();
+  if (actualKeys.length !== expectedKeys.length
+    || actualKeys.some((key, index) => key !== expectedKeys.slice().sort()[index])) return null;
+  if (req.operation !== 'probe' || req.origin !== 'canary' || req.stage !== 'probe'
+    || typeof req.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(req.runId)
+    || req.source !== parserName || typeof req.source !== 'string'
     || !/^[a-z0-9][a-z0-9-]{0,49}$/.test(req.source)
     || !Number.isSafeInteger(req.maxItems) || (req.maxItems as number) < 1 || (req.maxItems as number) > 3
     || !Number.isSafeInteger(req.timeoutMs) || (req.timeoutMs as number) < 1_000 || (req.timeoutMs as number) > 120_000) {
@@ -161,7 +171,10 @@ export function createParserQueueHandler(parser: SourceParser, parseHandler: Par
         checked,
         listing_ok: checked > 0,
         detail_supported: detailSupported,
-        detail_ok: checked > 0 && (!detailSupported || detailFailures === 0),
+        detail_ok: detailFailures === 0,
+        details_attempted: detailSupported ? checked : 0,
+        details_ok: detailSupported ? checked - detailFailures : 0,
+        details_failed: detailSupported ? detailFailures : 0,
         property_block_found: propertyBlockFound,
         location_label_found: locationLabelFound,
         confirmed_address: confirmedAddress,

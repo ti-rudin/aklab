@@ -28,15 +28,26 @@ function safeProbeResult(source: string, value: unknown): any | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const result = value as Record<string, unknown>;
   const keys = [
-    'source', 'checked', 'listing_ok', 'detail_supported', 'detail_ok', 'property_block_found', 'location_label_found',
+    'source', 'checked', 'listing_ok', 'detail_supported', 'detail_ok', 'details_attempted', 'details_ok', 'details_failed',
+    'property_block_found', 'location_label_found',
     'confirmed_address', 'confirmed_region_only', 'missing', 'semantic_fingerprint', 'status', 'reason',
   ];
   if (Object.keys(result).some(key => !keys.includes(key)) || result.source !== source) return null;
-  const counts = ['checked', 'property_block_found', 'location_label_found', 'confirmed_address', 'confirmed_region_only', 'missing'];
+  const counts = [
+    'checked', 'details_attempted', 'details_ok', 'details_failed',
+    'property_block_found', 'location_label_found', 'confirmed_address', 'confirmed_region_only', 'missing',
+  ];
   if (counts.some(key => !Number.isSafeInteger(result[key]) || (result[key] as number) < 0)) return null;
   if (typeof result.listing_ok !== 'boolean' || typeof result.detail_supported !== 'boolean'
     || typeof result.detail_ok !== 'boolean') return null;
   if (counts.slice(1).some(key => (result[key] as number) > (result.checked as number))) return null;
+  if ((result.details_ok as number) + (result.details_failed as number) !== result.details_attempted) return null;
+  if (result.detail_supported) {
+    if (result.details_attempted !== result.checked) return null;
+  } else if (result.details_attempted !== 0 || result.details_ok !== 0 || result.details_failed !== 0) {
+    return null;
+  }
+  if (result.detail_ok !== (result.details_failed === 0)) return null;
   const locationTotal = (result.confirmed_address as number)
     + (result.confirmed_region_only as number)
     + (result.missing as number);
@@ -53,7 +64,10 @@ function degradedResult(source: string, reason: 'job_failed' | 'malformed_result
     checked: 0,
     listing_ok: false,
     detail_supported: true,
-    detail_ok: false,
+    detail_ok: true,
+    details_attempted: 0,
+    details_ok: 0,
+    details_failed: 0,
     property_block_found: 0,
     location_label_found: 0,
     confirmed_address: 0,
@@ -76,7 +90,7 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
     async run(options: CanaryOptions) {
       if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(options.windowKey)) throw new Error('Invalid canary window key.');
       const maxItems = options.maxItems ?? 2;
-      const probeTimeoutMs = options.probeTimeoutMs ?? 60_000;
+      const probeTimeoutMs = options.probeTimeoutMs ?? 120_000;
       if (!Number.isSafeInteger(maxItems) || maxItems < 1 || maxItems > 3
         || !Number.isSafeInteger(probeTimeoutMs) || probeTimeoutMs < 1_000 || probeTimeoutMs > 120_000) {
         throw new Error('Invalid canary bounds.');
@@ -96,6 +110,7 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
       });
       if (!acquired) return { run_id: runId, skipped: true, reason: 'pipeline_not_idle', results: [] };
 
+      let acknowledgementExpired = false;
       try {
         const sources = await strapi.entityService.findMany('api::source.source', {
           filters: { is_active: true },
@@ -105,6 +120,9 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
           const correlationId = `${runId}:${source.slug}`;
           const job = queue.addToQueue(`parse-${source.slug}`, {
             operation: 'probe',
+            origin: 'canary',
+            runId,
+            stage: 'probe',
             source: source.slug,
             maxItems,
             timeoutMs: probeTimeoutMs,
@@ -130,11 +148,43 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
             for (const { id } of jobs) {
               const current = queue.getJob(id);
               if (!current || (current.status !== 'completed' && current.status !== 'failed')) {
-                queue.requestCancellation(id);
+                try {
+                  queue.requestCancellation(id);
+                } catch {
+                  strapi.log.warn('[parser-canary] Cancellation request failed; awaiting terminal acknowledgement');
+                }
               }
             }
           }
-          if (cancellationRequested && now() >= cancellationDeadline) break;
+          if (cancellationRequested && now() >= cancellationDeadline) {
+            acknowledgementExpired = true;
+            const pendingJobIds = jobs
+              .filter(({ id }) => {
+                const current = queue.getJob(id);
+                return !current || (current.status !== 'completed' && current.status !== 'failed');
+              })
+              .map(({ id }) => id)
+              .filter((id): id is number => Number.isSafeInteger(id))
+              .sort((left, right) => left - right);
+            await updateState(
+              strapi,
+              {
+                run_id: runId,
+                status: 'cancelling',
+                stage: 'canary',
+                job_ids: pendingJobIds,
+              },
+              'Parser canary ожидает terminal acknowledgement задач',
+              true,
+            );
+            return {
+              run_id: runId,
+              skipped: true,
+              reason: 'terminal_ack_pending',
+              pending_job_ids: pendingJobIds,
+              results: [],
+            };
+          }
           await sleep(250);
         }
 
@@ -144,12 +194,12 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
           if (!job || job.status !== 'completed') return degradedResult(slug, 'job_failed');
           return safeProbeResult(slug, job.result) ?? degradedResult(slug, 'malformed_result');
         });
-        for (const result of results) {
+        if (!acknowledgementExpired) for (const result of results) {
           const source = (sources ?? []).find((candidate: any) => candidate.slug === result.source);
           if (!source) continue;
           const healthCounters: ParserSourceHealthCounters = {
-            details_attempted: result.detail_supported ? result.checked : 0,
-            details_ok: result.detail_supported && result.detail_ok ? result.checked : 0,
+            details_attempted: result.details_attempted,
+            details_ok: result.details_ok,
             property_block_found: result.property_block_found,
             location_label_found: result.location_label_found,
             location_confirmed_address: result.confirmed_address,
@@ -168,6 +218,8 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
                 ? 'blocked.typed_error'
                 : result.reason === 'diagnostics_missing'
                   ? 'degraded.diagnostics_missing'
+                  : result.reason === 'no_samples'
+                    ? 'degraded.canary_no_samples'
                   : result.reason === 'location_missing'
                     ? 'degraded.canary_location_missing'
                     : 'degraded.zero_detail_success';
@@ -187,13 +239,15 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
         }
         return { run_id: runId, skipped: false, results };
       } finally {
-        const released = await tryReleaseOwnedState(strapi, runId, {
-          ...emptyState(),
-          status: 'idle',
-          stage: 'idle',
-          updated_at: new Date(now()).toISOString(),
-        });
-        if (!released) strapi.log.warn('[parser-canary] Lifecycle ownership changed before release');
+        if (!acknowledgementExpired) {
+          const released = await tryReleaseOwnedState(strapi, runId, {
+            ...emptyState(),
+            status: 'idle',
+            stage: 'idle',
+            updated_at: new Date(now()).toISOString(),
+          });
+          if (!released) strapi.log.warn('[parser-canary] Lifecycle ownership changed before release');
+        }
       }
     },
   };

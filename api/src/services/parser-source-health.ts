@@ -59,6 +59,10 @@ export type ParserSourceHealthReasonCode =
   | 'degraded.diagnostics_missing'
   | 'degraded.canary_location_missing'
   | 'degraded.confirmed_count_zero'
+  | 'degraded.details_ok_ratio_below_floor'
+  | 'degraded.location_missing_ratio_above_ceiling'
+  | 'degraded.canary_no_samples'
+  | 'degraded.terminal_status_floor'
   | 'degraded.details_ok_ratio_drop'
   | 'degraded.location_failure_ratio_growth';
 
@@ -99,6 +103,8 @@ const BLOCKING_ERROR_CLASSES = new Set<ParserSourceHealthErrorClass>([
 ]);
 
 const MIN_RATIO_SAMPLE = 20;
+const MIN_DETAIL_SUCCESS_RATIO = 0.8;
+const MAX_LOCATION_MISSING_RATIO = 0.2;
 const RATIO_DELTA = 0.2;
 
 function assertSafeText(value: unknown, field: string): asserts value is string {
@@ -289,6 +295,18 @@ export function classifyParserSourceHealth(
     return result('degraded', 'degraded.zero_detail_success');
   }
 
+  if (counters.details_attempted >= MIN_RATIO_SAMPLE) {
+    const detailSuccess = ratio(counters.details_ok, counters.details_attempted);
+    if (detailSuccess < MIN_DETAIL_SUCCESS_RATIO) {
+      return result('degraded', 'degraded.details_ok_ratio_below_floor');
+    }
+
+    const locationMissing = ratio(counters.location_missing, counters.details_attempted);
+    if (locationMissing > MAX_LOCATION_MISSING_RATIO) {
+      return result('degraded', 'degraded.location_missing_ratio_above_ceiling');
+    }
+  }
+
   const healthyBaseline = input.healthy_baseline ?? [];
   const confirmedCount = counters.location_confirmed_address + counters.location_confirmed_region_only;
   const historicalConfirmed = healthyBaseline.some(sample => (
@@ -327,33 +345,61 @@ export function classifyParserSourceHealth(
 }
 
 function countersFromRow(row: any): ParserSourceHealthCounters {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) throw new TypeError('Invalid counters.');
+  const read = (field: keyof ParserSourceHealthCounters): number => {
+    const value = row[field];
+    assertCounter(value, `counters.${field}`);
+    return value;
+  };
   return {
-    details_attempted: Number(row?.details_attempted) || 0,
-    details_ok: Number(row?.details_ok) || 0,
-    property_block_found: Number(row?.property_block_found) || 0,
-    location_label_found: Number(row?.location_label_found) || 0,
-    location_confirmed_address: Number(row?.location_confirmed_address) || 0,
-    location_confirmed_region_only: Number(row?.location_confirmed_region_only) || 0,
-    location_missing: Number(row?.location_missing) || 0,
-    location_unresolved: Number(row?.location_unresolved) || 0,
-    schema_mismatch: Number(row?.schema_mismatch) || 0,
+    details_attempted: read('details_attempted'),
+    details_ok: read('details_ok'),
+    property_block_found: read('property_block_found'),
+    location_label_found: read('location_label_found'),
+    location_confirmed_address: read('location_confirmed_address'),
+    location_confirmed_region_only: read('location_confirmed_region_only'),
+    location_missing: read('location_missing'),
+    location_unresolved: read('location_unresolved'),
+    schema_mismatch: read('schema_mismatch'),
   };
 }
+
+function optionalFingerprint(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  assertFingerprint(value, field);
+  return value;
+}
+
+const TERMINAL_STATUSES = new Set(['success', 'success_empty', 'degraded', 'blocked', 'schema_changed', 'failed', 'cancelled']);
 
 /** Classify one immutable current-run details row and persist only Source summary/alerts. */
 export async function recordParserRunSourceHealth(strapi: StrapiInstance, input: {
   runId: string;
   source: any;
-}): Promise<ParserSourceHealthClassification> {
+}): Promise<ParserSourceHealthClassification | null> {
   const identityKey = `${input.runId}:${input.source.slug}:details`;
   const query = strapi.db.query('api::parser-run-source.parser-run-source');
   const current = await query.findOne({ where: { identity_key: identityKey } });
   if (!current) throw new Error('Current parser source telemetry is missing.');
+  if (!TERMINAL_STATUSES.has(current.status)) throw new TypeError('Invalid current parser source status.');
   const counters = countersFromRow(current);
-  const fingerprint = typeof current.semantic_fingerprint === 'string' && /^[a-f0-9]{64}$/.test(current.semantic_fingerprint)
-    ? current.semantic_fingerprint
-    : createHash('sha256').update(JSON.stringify(['diagnostics_missing', input.source.slug])).digest('hex');
-  const detailSupported = current.detail_supported === true;
+  if (typeof current.detail_supported !== 'boolean') throw new TypeError('Invalid detail_supported.');
+  if (current.error_class != null && !ERROR_CLASSES.has(current.error_class)) {
+    throw new TypeError('Invalid error_class.');
+  }
+  const currentFingerprint = optionalFingerprint(current.semantic_fingerprint, 'semantic_fingerprint');
+  const detailSupported = current.detail_supported;
+  if (
+    detailSupported
+    && (current.status === 'success' || current.status === 'success_empty')
+    && counters.details_attempted === 0
+    && currentFingerprint === undefined
+    && current.error_class == null
+  ) {
+    return null;
+  }
+  const fingerprint = currentFingerprint
+    ?? createHash('sha256').update(JSON.stringify(['diagnostics_missing', input.source.slug])).digest('hex');
   const baselineRows = detailSupported ? await query.findMany({
     where: {
       source_slug: input.source.slug,
@@ -366,20 +412,21 @@ export async function recordParserRunSourceHealth(strapi: StrapiInstance, input:
     orderBy: { finished_at: 'desc' },
     limit: 5,
   }) : [];
-  const healthy_baseline = (baselineRows ?? []).map((row: any) => ({
-    counters: countersFromRow(row),
-    ...(typeof row.semantic_fingerprint === 'string' && /^[a-f0-9]{64}$/.test(row.semantic_fingerprint)
-      ? { schema_fingerprint: row.semantic_fingerprint }
-      : {}),
-  }));
-  const classification: ParserSourceHealthClassification = !detailSupported
+  const healthy_baseline = (baselineRows ?? []).map((row: any) => {
+    const schemaFingerprint = optionalFingerprint(row.semantic_fingerprint, 'healthy_baseline.semantic_fingerprint');
+    return {
+      counters: countersFromRow(row),
+      ...(schemaFingerprint === undefined ? {} : { schema_fingerprint: schemaFingerprint }),
+    };
+  });
+  let classification: ParserSourceHealthClassification = !detailSupported
     ? classifyParserSourceHealth({
         counters,
         detail_supported: false,
         schema_fingerprint: fingerprint,
         error_class: current.error_class ?? null,
       })
-    : current.semantic_fingerprint
+    : currentFingerprint !== undefined
     ? classifyParserSourceHealth({
         counters,
         detail_supported: true,
@@ -392,6 +439,13 @@ export async function recordParserRunSourceHealth(strapi: StrapiInstance, input:
         reason_code: 'degraded.diagnostics_missing',
         schema_fingerprint: fingerprint,
       };
+  if (current.status === 'degraded' && classification.status === 'healthy') {
+    classification = {
+      status: 'degraded',
+      reason_code: 'degraded.terminal_status_floor',
+      schema_fingerprint: classification.schema_fingerprint,
+    };
+  }
   const healthWrite = await recordParserSourceHealth(strapi, {
     source: input.source,
     classification,

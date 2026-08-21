@@ -472,6 +472,8 @@ export default factories.createCoreController('api::property.property', ({ strap
           documentId: property.documentId,
           url: property.url,
           source: property.source,
+          origin: 'user',
+          stage: 'photo_fetch',
         }, { correlationId: `photo-lazy-${property.documentId}` });
 
         ctx.body = { queued: true };

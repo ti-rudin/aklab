@@ -4,8 +4,14 @@ import { createParserExtractionDiagnostics } from '../parser-diagnostics';
 import { ParserSourceError } from '../parser-error';
 import type { SourceParser } from '../types';
 
-function job(data: Record<string, unknown>) {
-  return { id: 9, data, correlation_id: 'probe-run' } as any;
+function job(data: Record<string, unknown>, withProvenance = true) {
+  return {
+    id: 9,
+    data: withProvenance
+      ? { operation: 'probe', origin: 'canary', runId: 'run-1', stage: 'probe', ...data }
+      : data,
+    correlation_id: 'probe-run',
+  } as any;
 }
 
 function property(id: string) {
@@ -55,7 +61,7 @@ describe('parser probe handler', () => {
     expect(parseHandler).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       source: 'probe-source', checked: 2, listing_ok: true, detail_ok: true,
-      detail_supported: true,
+      detail_supported: true, details_attempted: 2, details_ok: 2, details_failed: 0,
       property_block_found: 2, location_label_found: 2,
       confirmed_address: 0, confirmed_region_only: 2, missing: 0,
       status: 'healthy',
@@ -87,9 +93,79 @@ describe('parser probe handler', () => {
       checked: 1,
       listing_ok: true,
       detail_supported: false,
-      detail_ok: true,
+      detail_ok: true, details_attempted: 0, details_ok: 0, details_failed: 0,
       confirmed_address: 1,
       status: 'healthy',
+    });
+  });
+
+  it('classifies typed missing with a hydrated property block as location_missing, not schema_changed', async () => {
+    const parser: SourceParser = {
+      name: 'typed-missing',
+      parse: vi.fn().mockResolvedValue([property('typed-missing')]),
+      fetchDetails: vi.fn().mockResolvedValue({
+        property_location: property('typed-missing').property_location,
+        parser_diagnostics: createParserExtractionDiagnostics({
+          adapterVersion: 'typed-missing.v1',
+          propertyBlockFound: true,
+          semanticSignals: ['property.block'],
+        }),
+      }),
+    };
+
+    const result = await createParserQueueHandler(parser, vi.fn())(
+      job({ operation: 'probe', source: 'typed-missing', maxItems: 1, timeoutMs: 5_000 }),
+    );
+
+    expect(result).toMatchObject({
+      source: 'typed-missing',
+      checked: 1,
+      details_attempted: 1,
+      details_ok: 1,
+      details_failed: 0,
+      property_block_found: 1,
+      missing: 1,
+      status: 'degraded',
+      reason: 'location_missing',
+    });
+    expect(result.status).not.toBe('schema_changed');
+  });
+
+  it('preserves exact partial detail counters for one successful and one failed candidate', async () => {
+    const parser: SourceParser = {
+      name: 'partial-details',
+      parse: vi.fn().mockResolvedValue([property('success'), property('failure')]),
+      fetchDetails: vi.fn()
+        .mockResolvedValueOnce({
+          property_location: {
+            address: 'г. Москва, ул. Тестовая, д. 1',
+            status: 'confirmed_address',
+            source_kind: 'dom_field',
+            source_path: 'details.property.address',
+          },
+          parser_diagnostics: createParserExtractionDiagnostics({
+            adapterVersion: 'partial-details.v1',
+            propertyBlockFound: true,
+            locationLabelId: 'property.location.address',
+            semanticSignals: ['property.block', 'property.location.address'],
+          }),
+        })
+        .mockRejectedValueOnce(new Error('detail request failed')),
+    };
+
+    const result = await createParserQueueHandler(parser, vi.fn())(
+      job({ operation: 'probe', source: 'partial-details', maxItems: 2, timeoutMs: 5_000 }),
+    );
+
+    expect(result).toMatchObject({
+      source: 'partial-details',
+      checked: 2,
+      details_attempted: 2,
+      details_ok: 1,
+      details_failed: 1,
+      detail_ok: false,
+      status: 'degraded',
+      reason: 'detail_failed',
     });
   });
 
@@ -125,7 +201,7 @@ describe('parser probe handler', () => {
     const parser = { name: 'source', parse: vi.fn() } as any;
     const parseHandler = vi.fn().mockResolvedValue({ created: 1 });
     const handler = createParserQueueHandler(parser, parseHandler);
-    const normalJob = job({ source: 'source', phase: 'scan' });
+    const normalJob = job({ source: 'source', phase: 'scan' }, false);
 
     await expect(handler(normalJob)).resolves.toEqual({ created: 1 });
     expect(parseHandler).toHaveBeenCalledWith(normalJob, undefined);
@@ -174,6 +250,22 @@ describe('parser probe handler', () => {
 
     await expect(handler(job({ operation: 'probe', source: 'source', maxItems: 4, timeoutMs: 5_000 })))
       .rejects.toThrow(/probe request/i);
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(parseHandler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { operation: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'run-1', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'pipeline', runId: 'run-1', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'bad run', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'run-1', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000, extra: true },
+  ])('requires the exact canary provenance envelope: %o', async (data) => {
+    const parser = { name: 'source', parse: vi.fn().mockResolvedValue([]) } as any;
+    const parseHandler = vi.fn();
+    const handler = createParserQueueHandler(parser, parseHandler);
+
+    await expect(handler(job(data, false))).rejects.toThrow(/probe request/i);
     expect(parser.parse).not.toHaveBeenCalled();
     expect(parseHandler).not.toHaveBeenCalled();
   });

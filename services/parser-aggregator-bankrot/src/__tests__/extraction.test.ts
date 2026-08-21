@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { errors as playwrightErrors } from 'playwright';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
@@ -23,6 +24,55 @@ describe('aggregator-bankrot: detail failure contract', () => {
     const page = { goto: vi.fn(), waitForFunction: vi.fn().mockRejectedValue(failure), close: vi.fn() };
     await expect(new AggregatorBankrotParser().fetchDetails('https://example.test/lot', { newPage: async () => page } as any))
       .rejects.toBe(failure);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+
+  it('classifies a hydrated property block without location labels as typed missing', async () => {
+    const page = {
+      goto: vi.fn(),
+      waitForFunction: vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new playwrightErrors.TimeoutError('location labels timeout')),
+      evaluate: vi.fn()
+        .mockResolvedValueOnce(extractAggregatorPropertyLocationFields(fixture('info-without-location.html')))
+        .mockResolvedValueOnce({ description: 'bounded property details' }),
+      close: vi.fn(),
+    };
+
+    const result = await new AggregatorBankrotParser().fetchDetails(
+      'https://example.test/lot',
+      { newPage: async () => page } as any,
+    );
+
+    expect(result.property_location).toEqual({
+      status: 'missing',
+      source_kind: 'dom_field',
+      source_path: '#info',
+    });
+    expect(result.parser_diagnostics).toMatchObject({
+      property_block_found: true,
+    });
+    expect(result.parser_diagnostics).not.toHaveProperty('schema_mismatch');
+    expect(result.address).toBe('');
+    expect(result.city).toBe('other');
+    expect(page.waitForFunction).toHaveBeenCalledTimes(2);
+    expect(page.close).toHaveBeenCalledOnce();
+  });
+
+  it('rethrows non-timeout errors from the location-label wait', async () => {
+    const failure = new Error('label evaluation failed');
+    const page = {
+      goto: vi.fn(),
+      waitForFunction: vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(failure),
+      close: vi.fn(),
+    };
+
+    await expect(new AggregatorBankrotParser().fetchDetails(
+      'https://example.test/lot',
+      { newPage: async () => page } as any,
+    )).rejects.toBe(failure);
     expect(page.close).toHaveBeenCalledOnce();
   });
 });

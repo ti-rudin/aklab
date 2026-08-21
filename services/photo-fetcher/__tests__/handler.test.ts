@@ -68,6 +68,35 @@ describe('photo-fetcher handler storage contract', () => {
     expect(JSON.stringify(mockUpdateProperty.mock.calls)).not.toContain(root);
   });
 
+  it('accepts the complete user lazy-photo provenance envelope', async () => {
+    const result = await handlePhotoFetchJob({
+      data: {
+        documentId: 'doc-1', url: 'https://torgi.gov.ru/lot', source: 'torgi-gov',
+        origin: 'user', stage: 'photo_fetch',
+      },
+      correlation_id: 'corr-1',
+    } as any);
+
+    expect(result).toEqual({ fetched: true, count: 1 });
+    expect(mockFetchProperty).toHaveBeenCalledWith('doc-1');
+  });
+
+  it.each([
+    { origin: 'user' },
+    { origin: 'user', stage: 'wrong' },
+    { origin: 'user', stage: 'photo_fetch', runId: 'run-1' },
+    { origin: 'pipeline', stage: 'photo_fetch' },
+  ])('rejects malformed or partial provenance before side effects: %o', async (provenance) => {
+    await expect(handlePhotoFetchJob({
+      data: {
+        documentId: 'doc-1', url: 'https://torgi.gov.ru/lot', source: 'torgi-gov', ...provenance,
+      },
+    } as any)).rejects.toThrow(/photo provenance/i);
+
+    expect(mockFetchProperty).not.toHaveBeenCalled();
+    expect(mockAssertAllowedDetailUrl).not.toHaveBeenCalled();
+  });
+
   it('does not use process.cwd or a release-relative fallback for storage', async () => {
     await handlePhotoFetchJob({
       data: { documentId: 'doc-1', url: 'https://torgi.gov.ru/lot', source: 'torgi-gov' },

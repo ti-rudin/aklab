@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const recordHealthMock = vi.hoisted(() => vi.fn());
 vi.mock('../parser-health-alerts', () => ({ recordParserSourceHealth: recordHealthMock }));
@@ -122,6 +122,40 @@ describe('classifyParserSourceHealth', () => {
     });
   });
 
+  it('applies an absolute detail-success floor at samples of twenty or more', () => {
+    expect(classifyParserSourceHealth(input({
+      counters: baseCounters({
+        details_ok: 79,
+        property_block_found: 79,
+        location_label_found: 79,
+        location_confirmed_address: 70,
+        location_confirmed_region_only: 0,
+        location_missing: 9,
+        location_unresolved: 9,
+      }),
+    }))).toMatchObject({
+      status: 'degraded',
+      reason_code: 'degraded.details_ok_ratio_below_floor',
+    });
+  });
+
+  it('applies an absolute location-missing ceiling at samples of twenty or more', () => {
+    expect(classifyParserSourceHealth(input({
+      counters: baseCounters({
+        details_ok: 100,
+        property_block_found: 100,
+        location_label_found: 100,
+        location_confirmed_address: 49,
+        location_confirmed_region_only: 0,
+        location_missing: 51,
+        location_unresolved: 51,
+      }),
+    }))).toMatchObject({
+      status: 'degraded',
+      reason_code: 'degraded.location_missing_ratio_above_ceiling',
+    });
+  });
+
   it('degrades when detail success drops by at least 20 percentage points against the healthy median', () => {
     const healthy = [
       baseline({ details_ok: 95 }),
@@ -144,7 +178,7 @@ describe('classifyParserSourceHealth', () => {
       }),
     }))).toMatchObject({
       status: 'degraded',
-      reason_code: 'degraded.details_ok_ratio_drop',
+      reason_code: 'degraded.details_ok_ratio_below_floor',
     });
   });
 
@@ -167,7 +201,7 @@ describe('classifyParserSourceHealth', () => {
       }),
     }))).toMatchObject({
       status: 'degraded',
-      reason_code: 'degraded.location_failure_ratio_growth',
+      reason_code: 'degraded.location_missing_ratio_above_ceiling',
     });
   });
 
@@ -207,7 +241,7 @@ describe('classifyParserSourceHealth', () => {
       }),
     }))).toEqual({
       status: 'degraded',
-      reason_code: 'degraded.confirmed_count_zero',
+      reason_code: 'degraded.location_missing_ratio_above_ceiling',
       schema_fingerprint: 'a'.repeat(64),
     });
   });
@@ -228,6 +262,115 @@ describe('classifyParserSourceHealth', () => {
 });
 
 describe('recordParserRunSourceHealth', () => {
+  beforeEach(() => {
+    recordHealthMock.mockClear();
+  });
+
+  it.each(['success', 'success_empty'] as const)('does not write a details-capable %s row with no observations', async (status) => {
+    recordHealthMock.mockResolvedValue({ alert: 'not_due', applied: true, persistedStatus: 'healthy' });
+    const current = {
+      identity_key: `run-no-observation:${status}:details`, source_slug: 'source-a', status,
+      detail_supported: true,
+      ...baseCounters({
+        details_attempted: 0,
+        details_ok: 0,
+        property_block_found: 0,
+        location_label_found: 0,
+        location_confirmed_address: 0,
+        location_confirmed_region_only: 0,
+        location_missing: 0,
+        location_unresolved: 0,
+        schema_mismatch: 0,
+      }),
+    };
+    const query = {
+      findOne: vi.fn().mockResolvedValue(current),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    };
+    const strapi = { db: { query: vi.fn().mockReturnValue(query) } } as any;
+
+    await expect(recordParserRunSourceHealth(strapi, {
+      runId: 'run-no-observation', source: { id: 7, slug: 'source-a' },
+    })).resolves.toBeNull();
+    expect(query.findMany).not.toHaveBeenCalled();
+    expect(query.update).not.toHaveBeenCalled();
+    expect(recordHealthMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed persisted counters instead of coercing them to zero', async () => {
+    const current = {
+      identity_key: 'run-malformed:source-a:details', source_slug: 'source-a', status: 'success',
+      detail_supported: true,
+      ...baseCounters({ details_attempted: 'not-a-number' as any }),
+    };
+    const query = {
+      findOne: vi.fn().mockResolvedValue(current),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    };
+    const strapi = { db: { query: vi.fn().mockReturnValue(query) } } as any;
+
+    await expect(recordParserRunSourceHealth(strapi, {
+      runId: 'run-malformed', source: { id: 7, slug: 'source-a' },
+    })).rejects.toThrow(/Invalid counters\.details_attempted/);
+    expect(query.findMany).not.toHaveBeenCalled();
+    expect(recordHealthMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an invalid persisted semantic fingerprint', async () => {
+    const current = {
+      identity_key: 'run-bad-fingerprint:source-a:details', source_slug: 'source-a', status: 'success',
+      detail_supported: true, semantic_fingerprint: 'not-a-sha', ...baseCounters(),
+    };
+    const query = {
+      findOne: vi.fn().mockResolvedValue(current),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    };
+    const strapi = { db: { query: vi.fn().mockReturnValue(query) } } as any;
+
+    await expect(recordParserRunSourceHealth(strapi, {
+      runId: 'run-bad-fingerprint', source: { id: 7, slug: 'source-a' },
+    })).rejects.toThrow(/Invalid semantic_fingerprint/);
+    expect(query.findMany).not.toHaveBeenCalled();
+    expect(recordHealthMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a terminal degraded details row degraded without evidence to recover it', async () => {
+    recordHealthMock.mockResolvedValue({ alert: 'not_due', applied: true, persistedStatus: 'degraded' });
+    const current = {
+      identity_key: 'run-floor:source-a:details', source_slug: 'source-a', status: 'degraded',
+      detail_supported: true, semantic_fingerprint: 'a'.repeat(64),
+      ...baseCounters({
+        details_attempted: 20,
+        details_ok: 20,
+        property_block_found: 20,
+        location_label_found: 20,
+        location_confirmed_address: 15,
+        location_confirmed_region_only: 3,
+        location_missing: 2,
+        location_unresolved: 2,
+      }),
+    };
+    const query = {
+      findOne: vi.fn().mockResolvedValue(current),
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue(current),
+    };
+    const strapi = { db: { query: vi.fn().mockReturnValue(query) } } as any;
+
+    await expect(recordParserRunSourceHealth(strapi, {
+      runId: 'run-floor', source: { id: 7, slug: 'source-a' },
+    })).resolves.toMatchObject({
+      status: 'degraded',
+      reason_code: 'degraded.terminal_status_floor',
+    });
+    expect(recordHealthMock).toHaveBeenCalledWith(strapi, expect.objectContaining({
+      classification: expect.objectContaining({ status: 'degraded', reason_code: 'degraded.terminal_status_floor' }),
+    }));
+  });
+
   it('uses only annotated healthy rows as baseline and annotates the current run row', async () => {
     recordHealthMock.mockResolvedValue({ alert: 'not_due', applied: true, persistedStatus: 'healthy' });
     const current = {

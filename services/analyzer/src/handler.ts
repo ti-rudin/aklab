@@ -42,7 +42,14 @@ async function getCachedSetting(): Promise<any> {
 
 // Кэш передаётся явно, чтобы не разделяться между одновременно выполняемыми job.
 export function clearMrCache(cache?: MrCache) {
-  cache?.clear();
+  if (cache) {
+    cache.clear();
+    return;
+  }
+  processLevelMrCache.clear();
+  mrCachePopulatedAt = null;
+  cachedSetting = null;
+  settingCachedAt = null;
 }
 
 function getCacheKey(city: string, propertyType: string) {
@@ -69,10 +76,34 @@ export interface AnalyzeRequest {
   documentId: string;
   threshold?: number; // override from frontend filters
   correlationId?: string;
+  origin?: 'pipeline';
+  runId?: string;
+  stage?: 'analyze';
+}
+
+const SAFE_PROVENANCE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+function validateProvenance(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new PermanentError('Invalid analyzer provenance');
+  }
+  const req = value as Record<string, unknown>;
+  const provenanceKeys = ['origin', 'runId', 'stage'] as const;
+  const hasProvenance = provenanceKeys.some(key => Object.prototype.hasOwnProperty.call(req, key));
+  if (!hasProvenance) return;
+  if (
+    req.origin !== 'pipeline'
+    || typeof req.runId !== 'string'
+    || !SAFE_PROVENANCE_RUN_ID.test(req.runId)
+    || req.stage !== 'analyze'
+  ) {
+    throw new PermanentError('Invalid analyzer provenance');
+  }
 }
 
 // workerContext is optional for direct/manual legacy invocations.
 export async function handleAnalyzeJob(job: Job, workerContext?: WorkerContext): Promise<{ analyzed: boolean; undervalued: boolean }> {
+  validateProvenance(job.data);
   // Используем process-level кэш с TTL, а не per-job Map.
   const mrCache: MrCache = getOrResetProcessMrCache();
 

@@ -33,8 +33,8 @@ try {
 /**
  * Определяет health-URL для сервиса.
  * - API (Strapi) использует /_health на порту 1338
- * - App (preview) — корневой путь /
- * - Остальные — /health на health_port (или port)
+ * - App (preview) — /index.html с Accept: text/html
+ * - Остальные — /health на health_port (или port), JSON health
  */
 function buildServiceList(m) {
   const services = [];
@@ -42,25 +42,25 @@ function buildServiceList(m) {
   // Core
   for (const svc of m.core || []) {
     if (svc.slug === 'api') {
-      services.push({ name: 'api (Strapi)', url: `http://localhost:${svc.port}/_health`, critical: true });
+      services.push({ name: 'api (Strapi)', url: `http://localhost:${svc.port}/_health`, accept: 'application/json', critical: true });
     } else if (svc.slug === 'app') {
-      services.push({ name: 'app (preview)', url: `http://localhost:${svc.port}/`, critical: true });
+      services.push({ name: 'app (preview)', url: `http://localhost:${svc.port}/index.html`, accept: 'text/html', critical: true });
     } else {
       const port = svc.health_port || svc.port;
-      services.push({ name: svc.slug, url: `http://localhost:${port}/health`, critical: true });
+      services.push({ name: svc.slug, url: `http://localhost:${port}/health`, accept: 'application/json', critical: true });
     }
   }
 
   // Parsers
   for (const svc of m.parsers || []) {
     const port = svc.health_port || svc.port;
-    services.push({ name: svc.slug, url: `http://localhost:${port}/health`, critical: false });
+    services.push({ name: svc.slug, url: `http://localhost:${port}/health`, accept: 'application/json', critical: false });
   }
 
   // Workers
   for (const svc of m.workers || []) {
     const port = svc.health_port || svc.port;
-    services.push({ name: svc.slug, url: `http://localhost:${port}/health`, critical: false });
+    services.push({ name: svc.slug, url: `http://localhost:${port}/health`, accept: 'application/json', critical: false });
   }
 
   return services;
@@ -79,7 +79,7 @@ async function checkService(service) {
   try {
     const res = await fetch(service.url, {
       signal: controller.signal,
-      headers: { 'Accept': 'application/json' },
+      headers: { 'Accept': service.accept },
     });
     clearTimeout(timeout);
     return {
@@ -139,4 +139,8 @@ async function main() {
   process.exit(anyDown ? 1 : 0);
 }
 
-main();
+module.exports = { buildServiceList, checkService, main };
+
+if (require.main === module) {
+  main();
+}
