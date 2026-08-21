@@ -6,6 +6,7 @@
  * 27 карточек на страницу, ~48 страниц.
  * Площадь из excerpt текста: "Общая площадь: 274.4 м²"
  */
+import { errors as playwrightErrors } from 'playwright';
 import type { ParserDetailResult, PropertyLocation, SourceParser, ParsedProperty } from '@aklab/service-shared';
 import {
   classifyPropertyType,
@@ -70,7 +71,9 @@ export function extractAggregatorPropertyLocationFields(
 ): AggregatorPropertyLocationFields {
   const documentLike = document ?? globalThis.document as unknown as PropertyLocationDocument;
   const rows = documentLike?.querySelectorAll('#info .panel__wrapper p') ?? [];
-  const fields: AggregatorPropertyLocationFields = { propertyBlockFound: false };
+  const fields: AggregatorPropertyLocationFields = {
+    propertyBlockFound: (documentLike?.querySelectorAll('#info .panel__wrapper').length ?? 0) > 0,
+  };
   for (const row of Array.from(rows)) {
     const label = (typeof row.querySelector('span.text-grey')?.textContent === 'string'
       ? row.querySelector('span.text-grey')?.textContent?.replace(/\s+/g, ' ').trim()
@@ -81,9 +84,6 @@ export function extractAggregatorPropertyLocationFields(
     const value = typeof rawValue === 'string'
       ? rawValue.replace(/\s+/g, ' ').trim() || undefined
       : undefined;
-    if (label === 'адрес местонахождения' || label === 'регион' || label === 'общая информация') {
-      fields.propertyBlockFound = true;
-    }
     if (!value) continue;
     if (label === 'адрес местонахождения') fields.address = value;
     if (label === 'регион') fields.region = value;
@@ -288,11 +288,17 @@ export class AggregatorBankrotParser implements SourceParser {
       page = await context.newPage();
       await retryGoto(page, url, 3);
 
-      await page.waitForFunction(() => Array.from(document.querySelectorAll('#info .panel__wrapper p')).some((row) => (
-        /^(адрес местонахождения|регион|общая информация)$/iu.test(
-          (row.querySelector('span.text-grey')?.textContent || '').replace(/:\s*$/u, '').trim(),
-        ) && (row.textContent || '').trim().length > 0
-      )), undefined, { timeout: 10000 });
+      await page.waitForFunction(() => Boolean(document.querySelector('#info .panel__wrapper')), undefined, { timeout: 10000 });
+
+      try {
+        await page.waitForFunction(() => Array.from(document.querySelectorAll('#info .panel__wrapper p')).some((row) => (
+          /^(адрес местонахождения|регион|общая информация)$/iu.test(
+            (row.querySelector('span.text-grey')?.textContent || '').replace(/:\s*$/u, '').trim(),
+          ) && (row.textContent || '').trim().length > 0
+        )), undefined, { timeout: 10000 });
+      } catch (err) {
+        if (!(err instanceof playwrightErrors.TimeoutError)) throw err;
+      }
 
       const locationFields = await page.evaluate(extractAggregatorPropertyLocationFields);
       const details = await page.evaluate(() => {
