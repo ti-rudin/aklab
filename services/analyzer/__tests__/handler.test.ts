@@ -21,6 +21,7 @@ vi.mock('@aklab/service-shared', () => ({
 
 // Mock @aklab/sqlite-queue
 vi.mock('@aklab/sqlite-queue', () => ({
+  PermanentError: class PermanentError extends Error {},
   SqliteQueue: vi.fn().mockImplementation(() => ({
     add: vi.fn(),
   })),
@@ -62,6 +63,7 @@ function makeJob(data: any) {
 describe('handleAnalyzeJob', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedFindRef.mockReset();
     clearMrCache();
   });
 
@@ -73,6 +75,29 @@ describe('handleAnalyzeJob', () => {
     expect(result).toEqual({ analyzed: false, undervalued: false });
     expect(mockedFetchProperty).toHaveBeenCalledWith('prop-1');
     expect(mockedFindRef).not.toHaveBeenCalled();
+  });
+
+  it('accepts a complete pipeline provenance envelope before fetching the property', async () => {
+    mockedFetchProperty.mockResolvedValue(null);
+
+    await expect(handleAnalyzeJob(makeJob({
+      documentId: 'prop-1',
+      origin: 'pipeline',
+      runId: 'run-1',
+      stage: 'analyze',
+    }))).resolves.toEqual({ analyzed: false, undervalued: false });
+
+    expect(mockedFetchProperty).toHaveBeenCalledWith('prop-1');
+  });
+
+  it.each([
+    { documentId: 'prop-1', origin: 'pipeline' },
+    { documentId: 'prop-1', origin: 'pipeline', runId: 'run-1', stage: 'wrong' },
+    { documentId: 'prop-1', origin: 'other', runId: 'run-1', stage: 'analyze' },
+    { documentId: 'prop-1', origin: 'pipeline', runId: 'bad run', stage: 'analyze' },
+  ])('rejects malformed or partial provenance before fetchProperty: %o', async (data) => {
+    await expect(handleAnalyzeJob(makeJob(data))).rejects.toThrow(/provenance/i);
+    expect(mockedFetchProperty).not.toHaveBeenCalled();
   });
 
   it('should return analyzed=true (not undervalued) if no market reference found', async () => {
@@ -297,27 +322,25 @@ describe('handleAnalyzeJob', () => {
     expect(result).toEqual({ analyzed: true, undervalued: false });
   });
 
-  it('should not reuse a cached market reference in the next analyzer job', async () => {
+  it('should reuse a cached market reference in the next analyzer job', async () => {
     mockedFetchProperty.mockResolvedValue({
       documentId: 'prop-1',
       city: 'moscow',
       property_type: 'office',
       price_per_sqm: 100000,
     });
-    mockedFindRef
-      .mockResolvedValueOnce({ price_per_sqm: 100000 })
-      .mockResolvedValueOnce({ price_per_sqm: 200000 });
+    mockedFindRef.mockResolvedValue({ price_per_sqm: 100000 });
     mockedFetchSetting.mockResolvedValue({ threshold_percent: 20 });
 
     await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
     const result = await handleAnalyzeJob(makeJob({ documentId: 'prop-1' }));
 
-    expect(mockedFindRef).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ analyzed: true, undervalued: true });
+    expect(mockedFindRef).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ analyzed: true, undervalued: false });
     expect(mockedUpdateProperty).toHaveBeenLastCalledWith('prop-1', {
-      is_undervalued: true,
-      deviation_percent: 50,
-      manual_price_per_sqm: 200000,
+      is_undervalued: false,
+      deviation_percent: 0,
+      manual_price_per_sqm: null,
     });
   });
 

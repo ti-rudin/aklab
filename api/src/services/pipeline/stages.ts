@@ -448,6 +448,9 @@ export async function analyze(ctx: PipelineContext): Promise<{ undervalued: numb
     const documentId = (prop as any).documentId;
     const job = qs.addToQueue('analyze-property', {
       documentId,
+      origin: 'pipeline',
+      runId,
+      stage: 'analyze',
     }, {
       correlationId: `analyze-${runId}`,
       idempotencyKey: `${runId}:${documentId}:analyze`,

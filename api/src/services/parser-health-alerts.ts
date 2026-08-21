@@ -72,17 +72,23 @@ export async function recordParserSourceHealth(
   const previousHardQuarantine = previousStatus === 'schema_changed' || previousStatus === 'blocked';
   const currentHardQuarantine = classification.status === 'schema_changed' || classification.status === 'blocked';
   const holdHardQuarantine = previousHardQuarantine && !currentHardQuarantine;
-  const persistedStatus = holdHardQuarantine ? previousStatus : classification.status;
+  const holdDegradedCanary = input.stage === 'canary'
+    && previousStatus === 'degraded'
+    && classification.status === 'healthy';
+  const holdPreviousHealth = holdHardQuarantine || holdDegradedCanary;
+  const persistedStatus = holdPreviousHealth ? previousStatus : classification.status;
   const previousStreak = Number.isSafeInteger(source.parser_health_degraded_streak)
     ? Math.max(0, source.parser_health_degraded_streak)
     : 0;
-  const degradedStreak = classification.status === 'degraded' ? previousStreak + 1 : 0;
+  const degradedStreak = holdDegradedCanary
+    ? previousStreak
+    : classification.status === 'degraded' ? previousStreak + 1 : 0;
   const hard = classification.status === 'schema_changed'
     || classification.status === 'blocked'
     || classification.reason_code === 'degraded.zero_detail_success';
   const recovery = classification.status === 'healthy'
     && previousStatus !== 'healthy'
-    && !holdHardQuarantine
+    && !holdPreviousHealth
     && Boolean(source.last_health_alert_at);
   const due = hard || recovery || (classification.status === 'degraded' && degradedStreak >= 2);
   const event = recovery ? 'recovered' : classification.status;

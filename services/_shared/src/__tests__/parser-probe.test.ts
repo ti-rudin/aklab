@@ -4,8 +4,14 @@ import { createParserExtractionDiagnostics } from '../parser-diagnostics';
 import { ParserSourceError } from '../parser-error';
 import type { SourceParser } from '../types';
 
-function job(data: Record<string, unknown>) {
-  return { id: 9, data, correlation_id: 'probe-run' } as any;
+function job(data: Record<string, unknown>, withProvenance = true) {
+  return {
+    id: 9,
+    data: withProvenance
+      ? { operation: 'probe', origin: 'canary', runId: 'run-1', stage: 'probe', ...data }
+      : data,
+    correlation_id: 'probe-run',
+  } as any;
 }
 
 function property(id: string) {
@@ -125,7 +131,7 @@ describe('parser probe handler', () => {
     const parser = { name: 'source', parse: vi.fn() } as any;
     const parseHandler = vi.fn().mockResolvedValue({ created: 1 });
     const handler = createParserQueueHandler(parser, parseHandler);
-    const normalJob = job({ source: 'source', phase: 'scan' });
+    const normalJob = job({ source: 'source', phase: 'scan' }, false);
 
     await expect(handler(normalJob)).resolves.toEqual({ created: 1 });
     expect(parseHandler).toHaveBeenCalledWith(normalJob, undefined);
@@ -174,6 +180,22 @@ describe('parser probe handler', () => {
 
     await expect(handler(job({ operation: 'probe', source: 'source', maxItems: 4, timeoutMs: 5_000 })))
       .rejects.toThrow(/probe request/i);
+    expect(parser.parse).not.toHaveBeenCalled();
+    expect(parseHandler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { operation: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'run-1', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'pipeline', runId: 'run-1', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'bad run', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000 },
+    { operation: 'probe', origin: 'canary', runId: 'run-1', stage: 'probe', source: 'source', maxItems: 1, timeoutMs: 5_000, extra: true },
+  ])('requires the exact canary provenance envelope: %o', async (data) => {
+    const parser = { name: 'source', parse: vi.fn().mockResolvedValue([]) } as any;
+    const parseHandler = vi.fn();
+    const handler = createParserQueueHandler(parser, parseHandler);
+
+    await expect(handler(job(data, false))).rejects.toThrow(/probe request/i);
     expect(parser.parse).not.toHaveBeenCalled();
     expect(parseHandler).not.toHaveBeenCalled();
   });

@@ -23,6 +23,16 @@
 6. После `waitForJobs()` pipeline сверяет terminal SQLite Queue. Если queue зафиксировала failure/cancellation после worker callback, очередь является источником истины и telemetry приводится к `failed`/`cancelled`; reconciliation сохраняет точный allowlisted `parser.<class>` из queue, а не подменяет любой failure классом `permanent`. Queue cancellation всегда нормализуется как `parser.cancelled`, даже если stale worker error содержал другой allowlisted class.
 7. После завершения pipeline `parser-run` получает `succeeded`, `degraded`, `failed` или `cancelled`.
 
+## Queue provenance envelopes
+
+Новые queue jobs несут явный origin без отдельной generic telemetry table:
+
+- analyzer pipeline: `{ documentId, origin: 'pipeline', runId, stage: 'analyze' }`;
+- read-only canary probe: `{ operation: 'probe', origin: 'canary', runId, stage: 'probe', source, maxItems, timeoutMs }`;
+- user lazy photo fetch: `{ documentId, url, source, origin: 'user', stage: 'photo_fetch' }`.
+
+Analyzer и photo worker сохраняют совместимость с legacy payload, где отсутствуют все provenance-поля. Если любое provenance-поле присутствует, соответствующий полный envelope обязателен; partial/malformed payload отклоняется до внешнего fetch или другого side effect. Lazy photo jobs намеренно не получают `runId`: это пользовательское действие, а не parser-run stage.
+
 ## Protected worker aliases
 
 Оба endpoint доступны только внутренним сервисам через `global::service-token`:

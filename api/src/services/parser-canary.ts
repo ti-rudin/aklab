@@ -76,7 +76,7 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
     async run(options: CanaryOptions) {
       if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(options.windowKey)) throw new Error('Invalid canary window key.');
       const maxItems = options.maxItems ?? 2;
-      const probeTimeoutMs = options.probeTimeoutMs ?? 60_000;
+      const probeTimeoutMs = options.probeTimeoutMs ?? 120_000;
       if (!Number.isSafeInteger(maxItems) || maxItems < 1 || maxItems > 3
         || !Number.isSafeInteger(probeTimeoutMs) || probeTimeoutMs < 1_000 || probeTimeoutMs > 120_000) {
         throw new Error('Invalid canary bounds.');
@@ -96,6 +96,7 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
       });
       if (!acquired) return { run_id: runId, skipped: true, reason: 'pipeline_not_idle', results: [] };
 
+      let acknowledgementExpired = false;
       try {
         const sources = await strapi.entityService.findMany('api::source.source', {
           filters: { is_active: true },
@@ -105,6 +106,9 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
           const correlationId = `${runId}:${source.slug}`;
           const job = queue.addToQueue(`parse-${source.slug}`, {
             operation: 'probe',
+            origin: 'canary',
+            runId,
+            stage: 'probe',
             source: source.slug,
             maxItems,
             timeoutMs: probeTimeoutMs,
@@ -134,7 +138,21 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
               }
             }
           }
-          if (cancellationRequested && now() >= cancellationDeadline) break;
+          if (cancellationRequested && now() >= cancellationDeadline) {
+            acknowledgementExpired = true;
+            await updateState(
+              strapi,
+              {
+                run_id: runId,
+                status: 'cancelling',
+                stage: 'canary',
+                job_ids: jobs.map(job => job.id),
+              },
+              'Parser canary ожидает terminal acknowledgement задач',
+              true,
+            );
+            break;
+          }
           await sleep(250);
         }
 
@@ -144,7 +162,7 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
           if (!job || job.status !== 'completed') return degradedResult(slug, 'job_failed');
           return safeProbeResult(slug, job.result) ?? degradedResult(slug, 'malformed_result');
         });
-        for (const result of results) {
+        if (!acknowledgementExpired) for (const result of results) {
           const source = (sources ?? []).find((candidate: any) => candidate.slug === result.source);
           if (!source) continue;
           const healthCounters: ParserSourceHealthCounters = {
@@ -168,6 +186,8 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
                 ? 'blocked.typed_error'
                 : result.reason === 'diagnostics_missing'
                   ? 'degraded.diagnostics_missing'
+                  : result.reason === 'no_samples'
+                    ? 'degraded.canary_no_samples'
                   : result.reason === 'location_missing'
                     ? 'degraded.canary_location_missing'
                     : 'degraded.zero_detail_success';
@@ -187,13 +207,15 @@ export function createParserCanaryService(strapi: StrapiInstance, dependencies: 
         }
         return { run_id: runId, skipped: false, results };
       } finally {
-        const released = await tryReleaseOwnedState(strapi, runId, {
-          ...emptyState(),
-          status: 'idle',
-          stage: 'idle',
-          updated_at: new Date(now()).toISOString(),
-        });
-        if (!released) strapi.log.warn('[parser-canary] Lifecycle ownership changed before release');
+        if (!acknowledgementExpired) {
+          const released = await tryReleaseOwnedState(strapi, runId, {
+            ...emptyState(),
+            status: 'idle',
+            stage: 'idle',
+            updated_at: new Date(now()).toISOString(),
+          });
+          if (!released) strapi.log.warn('[parser-canary] Lifecycle ownership changed before release');
+        }
       }
     },
   };

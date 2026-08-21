@@ -58,12 +58,31 @@ describe('parser canary orchestrator', () => {
 
     expect(queue.addToQueue).toHaveBeenCalledTimes(2);
     expect(queue.addToQueue).toHaveBeenCalledWith('parse-m-ets', {
-      operation: 'probe', source: 'm-ets', maxItems: 2, timeoutMs: 5_000,
+      operation: 'probe', origin: 'canary', runId: 'canary-test', stage: 'probe',
+      source: 'm-ets', maxItems: 2, timeoutMs: 5_000,
     }, expect.objectContaining({ idempotencyKey: 'canary:2026-08-14:m-ets', maxAttempts: 1 }));
     expect(result).toEqual({ run_id: 'canary-test', skipped: false, results: [healthy('m-ets'), healthy('etprf')] });
     expect(mockRelease).toHaveBeenCalledWith(
       expect.anything(), 'canary-test', expect.objectContaining({ status: 'idle', stage: 'idle' }),
     );
+  });
+
+  it('uses a cooperative 120 second default probe budget', async () => {
+    const completed = { id: 31, status: 'completed', result: healthy('m-ets') };
+    const queue = {
+      addToQueue: vi.fn().mockReturnValue(completed),
+      getJob: vi.fn().mockReturnValue(completed),
+      requestCancellation: vi.fn(),
+    } as any;
+    const service = createParserCanaryService(strapi(), {
+      queue, runId: () => 'canary-default', sleep: vi.fn(), recordHealth: vi.fn(),
+    });
+
+    await service.run({ trigger: 'manual', windowKey: 'default-budget' });
+
+    expect(queue.addToQueue).toHaveBeenCalledWith('parse-m-ets', expect.objectContaining({
+      origin: 'canary', runId: 'canary-default', stage: 'probe', timeoutMs: 120_000,
+    }), expect.anything());
   });
 
   it('keeps a successful listing-only source healthy without fake detail counters', async () => {
@@ -107,6 +126,34 @@ describe('parser canary orchestrator', () => {
     expect(mockRelease).not.toHaveBeenCalled();
   });
 
+  it('uses a separate canary_no_samples reason for an empty probe result', async () => {
+    const noSamples = {
+      source: 'm-ets', checked: 0, listing_ok: false,
+      detail_supported: true, detail_ok: false,
+      property_block_found: 0, location_label_found: 0,
+      confirmed_address: 0, confirmed_region_only: 0, missing: 0,
+      semantic_fingerprint: 'c'.repeat(64), status: 'degraded', reason: 'no_samples',
+    };
+    const completed = { id: 41, status: 'completed', result: noSamples };
+    const queue = {
+      addToQueue: vi.fn().mockReturnValue(completed),
+      getJob: vi.fn().mockReturnValue(completed),
+      requestCancellation: vi.fn(),
+    } as any;
+    const recordHealth = vi.fn();
+    const service = createParserCanaryService(strapi(), {
+      queue, runId: () => 'canary-empty', sleep: vi.fn(), recordHealth,
+    });
+
+    await service.run({ trigger: 'manual', windowKey: 'empty-sample' });
+
+    expect(recordHealth).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      classification: expect.objectContaining({
+        status: 'degraded', reason_code: 'degraded.canary_no_samples',
+      }),
+    }));
+  });
+
   it('does not leak malformed queue results and does not retry failed sources', async () => {
     const jobs = [{ id: 11, status: 'completed', result: { source: 'm-ets', address: 'secret' } }];
     const queue = {
@@ -123,7 +170,7 @@ describe('parser canary orchestrator', () => {
     expect(queue.addToQueue).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds cancellation acknowledgement waiting and releases only its owned lifecycle', async () => {
+  it('keeps cancelling state and skips health/release when acknowledgement cap finds an active job', async () => {
     let clock = 0;
     const runningJob = { id: 11, status: 'running' };
     const queue = {
@@ -146,8 +193,12 @@ describe('parser canary orchestrator', () => {
 
     expect(queue.requestCancellation).toHaveBeenCalledWith(11);
     expect(result.results[0]).toMatchObject({ status: 'degraded', reason: 'job_failed' });
-    expect(mockRelease).toHaveBeenCalledWith(
-      api, 'canary-timeout', expect.objectContaining({ status: 'idle' }),
+    expect(mockRelease).not.toHaveBeenCalled();
+    expect(mockUpdateState).toHaveBeenLastCalledWith(
+      api,
+      expect.objectContaining({ status: 'cancelling', stage: 'canary', job_ids: [11] }),
+      expect.stringMatching(/acknowledgement|terminal|ожид/i),
+      true,
     );
     expect(clock).toBeLessThanOrEqual(61_250);
   });

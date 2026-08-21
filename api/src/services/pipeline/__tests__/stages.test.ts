@@ -205,6 +205,28 @@ describe('parse stage canonical snapshot propagation', () => {
 });
 
 describe('analyze stage canonical candidate selection', () => {
+  it('adds exact pipeline provenance to analyzer queue jobs', async () => {
+    const ctx = makeCtx();
+    ctx.getFilterSnapshot.mockReturnValue(null);
+    ctx.strapi.entityService.findMany.mockResolvedValue([
+      { documentId: 'property-1', is_undervalued: null },
+    ]);
+    ctx.strapi.db = {
+      query: vi.fn(() => ({ findMany: vi.fn().mockResolvedValue([]) })),
+    };
+
+    await expect(analyze(ctx)).resolves.toEqual({ undervalued: 0, errors: [] });
+
+    expect(mockAddToQueue).toHaveBeenCalledWith(
+      'analyze-property',
+      { documentId: 'property-1', origin: 'pipeline', runId: 'run-1', stage: 'analyze' },
+      expect.objectContaining({
+        correlationId: 'analyze-run-1',
+        idempotencyKey: 'run-1:property-1:analyze',
+      }),
+    );
+  });
+
   it('uses only the shared is_undervalued marker and ignores legacy Property.status', async () => {
     const ctx = makeCtx();
     ctx.getFilterSnapshot.mockReturnValue(null);
@@ -224,7 +246,8 @@ describe('analyze stage canonical candidate selection', () => {
 
     expect(ctx.strapi.entityService.findMany).toHaveBeenCalledWith('api::property.property', {
       filters: { is_undervalued: { $null: true } },
-      limit: -1,
+      limit: 500,
+      start: 0,
     });
     const filters = ctx.strapi.entityService.findMany.mock.calls[0][1].filters;
     expect(filters).not.toHaveProperty('status');

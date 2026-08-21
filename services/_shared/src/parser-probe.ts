@@ -26,6 +26,9 @@ export interface ParserProbeResult {
 
 interface ProbeRequest {
   operation: 'probe';
+  origin: 'canary';
+  runId: string;
+  stage: 'probe';
   source: string;
   maxItems: number;
   timeoutMs: number;
@@ -36,9 +39,13 @@ type ParseHandler = (job: Job, workerContext?: WorkerContext) => Promise<any>;
 function probeRequest(value: unknown, parserName: string): ProbeRequest | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const req = value as Record<string, unknown>;
-  const allowed = new Set(['operation', 'source', 'maxItems', 'timeoutMs']);
-  if (Object.keys(req).some(key => !allowed.has(key))) return null;
-  if (req.operation !== 'probe' || req.source !== parserName || typeof req.source !== 'string'
+  const expectedKeys = ['operation', 'origin', 'runId', 'stage', 'source', 'maxItems', 'timeoutMs'];
+  const actualKeys = Object.keys(req).sort();
+  if (actualKeys.length !== expectedKeys.length
+    || actualKeys.some((key, index) => key !== expectedKeys.slice().sort()[index])) return null;
+  if (req.operation !== 'probe' || req.origin !== 'canary' || req.stage !== 'probe'
+    || typeof req.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(req.runId)
+    || req.source !== parserName || typeof req.source !== 'string'
     || !/^[a-z0-9][a-z0-9-]{0,49}$/.test(req.source)
     || !Number.isSafeInteger(req.maxItems) || (req.maxItems as number) < 1 || (req.maxItems as number) > 3
     || !Number.isSafeInteger(req.timeoutMs) || (req.timeoutMs as number) < 1_000 || (req.timeoutMs as number) > 120_000) {

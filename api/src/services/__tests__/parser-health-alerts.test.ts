@@ -124,6 +124,27 @@ describe('parser health alerts', () => {
     }));
   });
 
+  it('does not promote a persisted degraded source from a healthy canary', async () => {
+    const h = harness({
+      parser_health_status: 'degraded',
+      parser_health_degraded_streak: 2,
+      last_health_alert_at: '2026-08-14T10:00:00.000Z',
+      last_health_alert_key: 'b'.repeat(64),
+    });
+
+    await expect(recordParserSourceHealth(h.strapi, {
+      source: h.source,
+      classification: classification('healthy', 'healthy.within_baseline'),
+      runId: 'canary-1', stage: 'canary', counters,
+      now: new Date('2026-08-14T12:00:00.000Z'),
+    })).resolves.toMatchObject({ alert: 'not_due', applied: true, persistedStatus: 'degraded' });
+
+    expect(h.send).not.toHaveBeenCalled();
+    expect(h.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ parser_health_status: 'degraded' }),
+    }));
+  });
+
   it.each([
     ['schema_changed', 'canary'], ['blocked', 'canary'], ['unknown_legacy_state', 'canary'], [null, 'canary'],
     ['schema_changed', 'details'], ['blocked', 'details'], ['unknown_legacy_state', 'details'], [null, 'details'],

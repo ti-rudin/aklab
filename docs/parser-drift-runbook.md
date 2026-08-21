@@ -227,7 +227,13 @@ Canary invariants:
 5. A successful canary does not authorize a full reparse, cleanup or another deploy. Obtain those approvals separately.
 6. `detail_supported=false` is an explicit listing-only contract: a successful bounded listing sample may be `healthy` with `details_attempted=0`; it must not synthesize a failed detail phase. Adapters with a real detail method remain fail-closed: HTTP/navigation/extraction failure is thrown and cannot hydrate stale listing data as a successful detail result.
 7. A probe deadline is cooperative: timeout requests cancellation but the queue handler does not report terminal completion before its current bounded adapter operation settles and cleanup runs. The orchestrator waits a bounded cancellation-ack window, then reports a safe degraded outcome without clearing another lifecycle owner.
-8. Lifecycle release is owner-checked against the canary `run_id`; an operator reset or newer run cannot be overwritten by stale `finally` cleanup.
+8. **Lifecycle release is owner-checked against the canary `run_id`; an operator reset or newer run cannot be overwritten by stale `finally` cleanup.**
+
+Canary budget is cooperative and bounded: default `timeoutMs` is 120 seconds and the maximum is 120 seconds. The queue worker remains non-terminal until its current adapter operation and cleanup settle; the orchestrator does not use `Promise.race` or detached browser work. If the acknowledgement cap expires with an active owned job, it writes no Source health, does not release the lifecycle to `idle`, and leaves `cancelling/canary` with the owned job IDs.
+
+Health evidence has explicit floors and precedence. For detail-capable terminal rows, samples of at least 20 degrade below an 0.8 detail-success ratio or above a 0.2 missing-location ratio. A successful `success`/`success_empty` row with zero detail attempts and no fingerprint/error is no observation: it returns no classification and performs no Source/baseline/annotation write. `degraded.canary_no_samples` is distinct from detail failure. A terminal `degraded` details row remains degraded without informative recovery evidence; a healthy canary cannot promote persisted degraded or hard states, while an informative healthy full details run may recover only a non-hard degraded state. CAS, quarantine, and alert deduplication remain authoritative.
+
+The hydrated-container contract is separate from the property-location contract: a missing/unhydrated property container is a transient navigation/extraction failure, while a hydrated container with no allowlisted property location labels is a typed `missing` result. No body/title/party-address fallback is permitted.
 
 Hard source-health states are an execution quarantine, not just alert metadata:
 

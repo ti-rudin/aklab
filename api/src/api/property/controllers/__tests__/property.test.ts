@@ -663,6 +663,7 @@ describe('property controller', () => {
       expect(strapi._mockDbQuery.findOne).toHaveBeenCalledWith({ where: { documentId: 'doc123' } });
       expect(queue.addToQueue).toHaveBeenCalledWith('fetch-photos', {
         documentId: 'doc123', url: property.url, source: property.source,
+        origin: 'user', stage: 'photo_fetch',
       }, { correlationId: 'photo-lazy-doc123' });
       expect(ctx.body).toEqual({ queued: true });
       expect(strapi._scopeRepository.detail.mock.invocationCallOrder[0])
