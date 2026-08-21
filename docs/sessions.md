@@ -543,11 +543,3 @@ ssh rudin@192.168.11.151 'cd ~/aklab/api && sqlite3 .tmp/data.db "SELECT id, ema
 **Исправление:** v1.1.95 нормализует `undefined|null` к effective `filterRent=true`; добавлен RED/GREEN regression test. PR #80 смержен, production SHA `fcaa8e787b46947be14c54ac264b837dd1a30cf4`.
 
 **Acceptance:** guarded cleanup → full run `ab0507a4-bac3-455e-9c7d-b41ac55847a9` succeeded (`idle/done`): 3 115 found, 538 aggregate `pre_filtered`, 1 249 persisted, 137 undervalued, queue 0, обе SQLite integrity checks `ok`, duplicate `(source, external_id)` groups 0, API/UI 204/200. Snapshot зафиксировал `filterRent=true`; persisted rental-marker stem `аренд` в title+description: 0. Telemetry `pre_filtered` пока не разделяет rental и другие profile rules, поэтому exact rental-only count не заявляется.
-
-### 2026-08-21: восстановление после отключения питания — маршрутизация и ACME AKLAB
-
-**Что сделано:** после перезагрузки инфраструктуры проверены production AKLAB (`213.184.136.221`) и dev AKLAB (`192.168.11.151`): публичные app/API вернули 200/204. На s131 обнаружены устаревшие production-роуты `aklab.tirobots.ru`/`api-aklab.tirobots.ru`, ошибочно указывавшие на dev-хост s151, хотя production DNS и отдельный Traefik обслуживаются на 213.
-
-**Исправление:** на s131 удалены только четыре legacy production-router и два service-блока; dev-router и сервисы сохранены. Из ACME-хранилища s131 удалены только exact certificate entries production AKLAB. До каждого изменения созданы отдельные rollback-копии конфигурации и ACME-хранилища.
-
-**Причина и защита от повтора:** stale s131 resolver пытался продлевать сертификаты production-доменов; Let’s Encrypt приходил по DNS на 213, где Traefik не знал токен s131 и отвечал 404. Это давало ACME 403 на s131. После cleanup runtime s131 не содержит production AKLAB routes или certificate entries; dev и prod публично подтверждены 200/204. При миграции домена удалить и router/service, и соответствующую stale ACME certificate entry на прежнем Traefik.
