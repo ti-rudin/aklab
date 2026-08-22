@@ -85,7 +85,7 @@ When a healthy canary is held against persisted degraded or hard health, the Sou
 
 ## Item-level detail failures
 
-- Обычное исключение непосредственно из `parser.fetchDetails()` ограничивается одной карточкой: `failed` и `skipped` увеличиваются, обработка immutable artifact продолжается, terminal source status становится `degraded` с `parser.transient`.
+- Обычное исключение непосредственно из `parser.fetchDetails()` ограничивается одной карточкой: увеличивается только `failed`; `skipped` зарезервирован для успешно оценённых, но не сохранённых кандидатов (unresolved location, snapshot/create filter). Обработка immutable artifact продолжается, terminal source status становится `degraded` с `parser.transient`.
 - `ParserSourceError`, cancellation/lease loss, invalid typed location, diagnostics/merge/progress/persistence errors после возврата `fetchDetails()` остаются source-level fail-closed failures.
 - Если все выполненные detail requests источника завершились ошибкой (`details_ok=0`), stage не может стать `degraded`: он завершается `failed`, остаётся retryable, а scan artifact сохраняется.
 - Terminal `completed` и `failed` details rows проходят source-health classification/alert path после queue reconciliation; cancellation row намеренно исключается.
@@ -97,6 +97,8 @@ When a healthy canary is held against persisted degraded or hard health, the Sou
 - retry/restart не создаёт дубль: unique-constraint race повторно читает строку-победитель;
 - `job_id` всегда реальный identifier SQLite Queue, не synthetic string;
 - counters — полный exact snapshot, не инкрементальный patch;
+- для detail-capable terminal snapshot категории взаимоисключающие: `details_ok + failed = details_attempted`, а `created + skipped + failed = details_attempted`; historical rows до этого контракта могут содержать legacy overlap и не переписываются;
+- completed details-stage с effective health `degraded`, `schema_changed` или `blocked` передаёт bounded `parser.<class>` в parent aggregation: `parser_run.status=degraded`, pipeline terminal stage=`done_with_errors`; это не queue failure и не запускает retry;
 - для `detail_supported=true`: `location_unresolved <= location_missing`, а сумма location statuses не превышает `details_ok`; для listing-only detail extraction counters нулевые, но `location_unresolved` может фиксировать fail-closed persistence skip;
 - fingerprint не содержит raw HTML, CSS classes, адреса или party data;
 - `error_message` проходит strict controller allowlist и хранит только controlled `parser.<class>` code; worker rethrows a fresh typed safe error, pipeline state never copies raw `job.error`, and queue cancellation is derived from `cancellation_requested_at` rather than message text;

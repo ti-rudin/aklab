@@ -499,10 +499,10 @@ export function createParseHandler(parser: SourceParser) {
                 throwIfCancellationRequested(workerContext);
               }
 
-              // A failed detail request is not a successful unresolved result and
-              // must never fall through to persistence using stale scan fields.
+              // A failed detail item is accounted only in `failed`. `skipped`
+              // is reserved for successfully evaluated candidates that were not
+              // persisted (unresolved location, snapshot filter, create filter).
               if (detailFailed) {
-                skipped++;
                 continue;
               }
 

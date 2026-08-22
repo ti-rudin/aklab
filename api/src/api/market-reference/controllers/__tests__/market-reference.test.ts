@@ -65,6 +65,25 @@ describe('market-reference internalFindActive', () => {
       .toEqual(['moscow', 'mo', 'tver', 'tver_oblast', 'other']);
   });
 
+  it('keeps the persisted property-type enum aligned with Property and allows apartment/land lookups', async () => {
+    const strapi = makeStrapi();
+    strapi._query.findMany.mockResolvedValue([]);
+    const actions = (marketReferenceControllerFactory as any)({ strapi });
+    const propertyTypes = (marketReferenceSchema.attributes.property_type as { enum: string[] }).enum;
+
+    expect(propertyTypes).toEqual([
+      'office', 'warehouse', 'retail', 'production', 'free_purpose', 'apartment', 'land', 'other',
+    ]);
+
+    for (const property_type of ['apartment', 'land']) {
+      const ctx = makeCtx({ city: 'moscow', property_type });
+      await actions.internalFindActive(ctx);
+      expect(ctx.status).toBe(200);
+      expect(ctx.body).toEqual({ data: null });
+    }
+    expect(strapi._query.findMany).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects missing, unknown, and non-enum query values before DB access', async () => {
     const strapi = makeStrapi();
     const actions = (marketReferenceControllerFactory as any)({ strapi });
@@ -72,7 +91,7 @@ describe('market-reference internalFindActive', () => {
       { city: 'moscow' },
       { city: 'moscow', property_type: 'office', populate: '*' },
       { city: 'unknown', property_type: 'office' },
-      { city: 'moscow', property_type: 'land' },
+      { city: 'moscow', property_type: 'unknown' },
     ]) {
       const ctx = makeCtx(query);
       await actions.internalFindActive(ctx);

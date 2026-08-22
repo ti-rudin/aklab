@@ -165,6 +165,18 @@ describe('parse stage canonical snapshot propagation', () => {
     );
   });
 
+  it.each([
+    ['degraded', 'parser.transient'],
+    ['schema_changed', 'parser.schema_changed'],
+    ['blocked', 'parser.blocked'],
+  ])('propagates completed details health %s into a safe parent error', async (status, expectedError) => {
+    const ctx = makeCtx();
+    mockRecordParserRunSourceHealth.mockResolvedValue({ status });
+
+    await expect(parseAll(ctx, 1)).resolves.toEqual({ created: 1, errors: [expectedError] });
+    expect(mockReconcileSourceStageQueueFailure).not.toHaveBeenCalled();
+  });
+
   it('does not record source health for a cancelled details job', async () => {
     const ctx = makeCtx();
     mockGetJob.mockImplementation((id: number) => id === 100

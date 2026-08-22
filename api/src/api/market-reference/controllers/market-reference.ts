@@ -2,10 +2,10 @@
  * market-reference controller
  */
 import { factories } from '@strapi/strapi';
-import { REGION_VALUES } from '@aklab/parse-rules';
+import { PROPERTY_TYPE_VALUES, REGION_VALUES } from '@aklab/parse-rules';
 
 const CITIES = new Set<string>(REGION_VALUES);
-const PROPERTY_TYPES = new Set(['office', 'warehouse', 'retail', 'production', 'free_purpose', 'other']);
+const PROPERTY_TYPES = new Set<string>(PROPERTY_TYPE_VALUES);
 const QUERY_KEYS = new Set(['city', 'property_type']);
 
 function validQuery(query: unknown): query is { city: string; property_type: string } {
