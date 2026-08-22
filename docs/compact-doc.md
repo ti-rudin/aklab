@@ -336,6 +336,7 @@ E2E против production: `BASE_URL=https://aklab.tirobots.ru`.
 | `docs/adding-source.md` | Добавление нового источника |
 | `docs/setup-local.md` | Локальная установка |
 | `docs/run-scoped-parser-telemetry.md` | Telemetry контракт |
+| `docs/market-reference-baseline-2026-08-22.md` | Утверждённые apartment/land эталоны и provenance |
 | `docs/multiuser.md` | Multi-user rollout |
 | `docs/archparsers.md` | Архитектура парсеров |
 | `docs/plan1.md` | Бизнес-логика |

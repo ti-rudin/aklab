@@ -55,6 +55,8 @@ const coreApps = [
       PRIVATE_PHOTO_ROOT: process.env.PRIVATE_PHOTO_ROOT,
       PHOTOS_BASE_DIR: process.env.PHOTOS_BASE_DIR,
       MULTIUSER_ENABLED: process.env.MULTIUSER_ENABLED || 'false',
+      PARSER_ALERT_EMAIL: process.env.PARSER_ALERT_EMAIL || '',
+      PARSER_ALERT_COOLDOWN_HOURS: process.env.PARSER_ALERT_COOLDOWN_HOURS || '24',
       STRAPI_ADMIN_EMAIL: process.env.STRAPI_ADMIN_EMAIL || '',
       STRAPI_ADMIN_PASSWORD: process.env.STRAPI_ADMIN_PASSWORD || '',
     },

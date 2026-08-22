@@ -62,6 +62,13 @@ function safeTerminalParserError(job: Job): string {
   return isSafeParserTelemetryError(job.error) ? job.error : 'parser.transient';
 }
 
+function sourceHealthError(status: unknown): string | null {
+  if (status === 'degraded') return 'parser.transient';
+  if (status === 'schema_changed') return 'parser.schema_changed';
+  if (status === 'blocked') return 'parser.blocked';
+  return null;
+}
+
 /**
  * Await only jobs recorded for this run. Cancellation intentionally does not
  * short-circuit this loop: active workers must acknowledge cancellation and
@@ -388,7 +395,14 @@ export async function parseAll(ctx: PipelineContext, depth: number): Promise<{ c
     const source = sources.find((candidate: any) => candidate.slug === slug);
     if (!source) continue;
     try {
-      await recordParserRunSourceHealth(ctx.strapi, { runId, source });
+      const classification = await recordParserRunSourceHealth(ctx.strapi, { runId, source });
+      // A completed queue job can still carry a degraded source-stage result.
+      // Propagate that bounded classification to the parent run without
+      // duplicating failed/cancelled queue errors or triggering a retry.
+      if (terminalJob.status === 'completed') {
+        const healthError = sourceHealthError(classification?.status);
+        if (healthError && !errors.includes(healthError)) errors.push(healthError);
+      }
     } catch {
       errors.push('pipeline.health_summary_failed');
       ctx.strapi.log.error('[pipeline] Parser source health summary failed');

@@ -168,6 +168,8 @@ ECOSYSTEM_FLAG_TRUE="$(cd "$ROOT" && DOTENV_CONFIG_QUIET=true MULTIUSER_ENABLED=
 ECOSYSTEM_FLAG_FALSE="$(cd "$ROOT" && DOTENV_CONFIG_QUIET=true MULTIUSER_ENABLED=false node -e "const app=require('./ecosystem.config.js').apps.find(x=>x.name==='aklab-api');process.stdout.write(String(app?.env?.MULTIUSER_ENABLED))")"
 assert_eq "$ECOSYSTEM_FLAG_TRUE" 'true'
 assert_eq "$ECOSYSTEM_FLAG_FALSE" 'false'
+ECOSYSTEM_PARSER_ALERT_EMAIL="$(cd "$ROOT" && DOTENV_CONFIG_QUIET=true PARSER_ALERT_EMAIL=ops@example.test node -e "const app=require('./ecosystem.config.js').apps.find(x=>x.name==='aklab-api');process.stdout.write(String(app?.env?.PARSER_ALERT_EMAIL))")"
+assert_eq "$ECOSYSTEM_PARSER_ALERT_EMAIL" 'ops@example.test'
 if grep -q 'pm2 start ecosystem.config.js' "$ROOT/scripts/deploy-dev.sh"; then
   fail 'deploy uses PM2 start, which rejects already-managed AKLAB applications'
 fi

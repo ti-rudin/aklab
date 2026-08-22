@@ -89,7 +89,10 @@ const snapshot = {
 function makeStrapi() {
   return {
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    db: { query: vi.fn().mockReturnValue({ findOne: vi.fn().mockResolvedValue({ parse_depth: 20 }) }) },
+    db: {
+      query: vi.fn().mockReturnValue({ findOne: vi.fn().mockResolvedValue({ id: 1, parse_depth: 20 }) }),
+      connection: { raw: vi.fn().mockResolvedValue(undefined) },
+    },
     entityService: { findMany: vi.fn() },
   } as any;
 }
@@ -117,7 +120,10 @@ describe('pipeline canonical snapshot lifecycle', () => {
 
     await service.recordJobIds([42]);
 
-    expect(mockUpdateState).toHaveBeenCalledWith(strapi, { job_ids: [42] }, undefined, true);
+    expect(strapi.db.connection.raw).toHaveBeenCalledWith(
+      expect.stringContaining("json_extract(pipeline_state, '$.run_id') = ?"),
+      [JSON.stringify([42]), 1, 'run-1'],
+    );
   });
 
   it('builds the manual single snapshot once after telemetry and before stages', async () => {
@@ -150,6 +156,29 @@ describe('pipeline canonical snapshot lifecycle', () => {
       filter_snapshot_schema_version: 1,
       filter_snapshot_window_end_at: snapshot.windowEndAt,
     }), undefined, true);
+  });
+
+  it('terminalizes the parent run as degraded when parse stage reports safe source degradation', async () => {
+    const service = new PipelineService(makeStrapi());
+    mockBuildSingle.mockResolvedValue(snapshot);
+    mockParseAll.mockResolvedValue({ created: 1, errors: ['parser.transient'] });
+    mockGetState.mockImplementation(async () => ({
+      ...emptyState(),
+      run_id: (service as any).activeRunId,
+      status: (service as any).activeRunId ? 'running' : 'idle',
+    }));
+
+    await service.run(25, 7, 'manual', 'parse');
+    expect(mockFinishParserRun).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'degraded',
+      errorSummary: 'parser.transient',
+    }));
+    expect(mockUpdateState).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'idle', stage: 'done_with_errors', errors: ['parser.transient'] }),
+      'Пайплайн завершён с ошибками',
+      true,
+    );
   });
 
   it('resolves fresh setting depth and makes an unready manual profile a successful no-op', async () => {
